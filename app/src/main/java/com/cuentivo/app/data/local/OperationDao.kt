@@ -12,4 +12,7 @@ interface OperationDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIfAbsent(operation: OperationEntity): Long
+
+    @Query("SELECT resultId FROM operations WHERE idempotencyKey = :key")
+    suspend fun resultIdFor(key: String): String?
 }
