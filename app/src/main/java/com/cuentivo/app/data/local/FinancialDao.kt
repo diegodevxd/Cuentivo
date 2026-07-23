@@ -44,6 +44,15 @@ interface FinancialDao {
     @Query("SELECT COUNT(*) FROM account_movements WHERE saleId = :saleId")
     suspend fun movementCountForSale(saleId: String): Int
 
+    @Query("SELECT * FROM payments WHERE id = :paymentId")
+    suspend fun paymentForId(paymentId: String): PaymentEntity?
+
+    @Query("SELECT COUNT(*) FROM account_movements WHERE paymentId = :paymentId")
+    suspend fun movementCountForPayment(paymentId: String): Int
+
+    @Query("UPDATE payments SET canceledAtEpochMillis = :canceledAtEpochMillis WHERE id = :paymentId")
+    suspend fun markPaymentCanceled(paymentId: String, canceledAtEpochMillis: Long)
+
     @Query("UPDATE sales SET isCanceled = 1, updatedAtEpochMillis = :updatedAtEpochMillis WHERE id = :saleId")
     suspend fun markSaleCanceled(saleId: String, updatedAtEpochMillis: Long)
 
@@ -114,5 +123,25 @@ interface FinancialDao {
         markSaleCanceled(sale.id, cancellation.occurredAtEpochMillis)
         insertMovement(cancellation)
         return sale.id
+    }
+
+    /** Reverses a payment with a debit ledger entry instead of deleting evidence of collection. */
+    @Transaction
+    suspend fun cancelPaymentIdempotently(
+        operation: OperationEntity,
+        paymentId: String,
+        refund: AccountMovementEntity,
+    ): String {
+        if (reserveOperation(operation) == -1L) {
+            return requireNotNull(operationResultId(operation.idempotencyKey))
+        }
+        val payment = requireNotNull(paymentForId(paymentId)) { "Payment does not exist." }
+        require(payment.canceledAtEpochMillis == null) { "Payment is already canceled." }
+        require(refund.type == "REFUND" && refund.direction == "DEBIT")
+        require(refund.businessId == payment.businessId && refund.customerId == payment.customerId && refund.paymentId == payment.id)
+        require(refund.amountCents == payment.amountCents) { "Refund must match the original payment." }
+        markPaymentCanceled(payment.id, refund.occurredAtEpochMillis)
+        insertMovement(refund)
+        return payment.id
     }
 }

@@ -55,4 +55,21 @@ class OperationDaoTest {
         assertEquals(0, dao.customerBalanceCents(sale.businessId, sale.customerId))
         assertEquals(2, dao.movementCountForSale(sale.id))
     }
+
+    @Test fun payment_reversal_restores_debt_without_erasing_the_payment() = runBlocking {
+        val dao = database.financialDao()
+        val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)
+        val charge = AccountMovementEntity("charge-1", sale.businessId, sale.customerId, sale.id, null, "CHARGE", 1_000, "DEBIT", 1, sale.sellerUserId, null, null)
+        dao.createSaleIdempotently(OperationEntity("sale-key", "SALE", sale.id, 1), sale, listOf(SaleItemEntity("item-1", sale.id, null, "Producto", 1, 1_000, 0, 1_000)), charge)
+        val payment = PaymentEntity("payment-1", sale.businessId, sale.customerId, 1_000, "CASH", 2, null, null, sale.sellerUserId, 2, null)
+        val paymentMovement = AccountMovementEntity("payment-movement-1", sale.businessId, sale.customerId, sale.id, payment.id, "PAYMENT", 1_000, "CREDIT", 2, sale.sellerUserId, null, null)
+        dao.registerPaymentIdempotently(OperationEntity("payment-key", "PAYMENT", payment.id, 2), payment, emptyList(), paymentMovement)
+        val refund = AccountMovementEntity("refund-1", sale.businessId, sale.customerId, sale.id, payment.id, "REFUND", 1_000, "DEBIT", 3, sale.sellerUserId, paymentMovement.id, null)
+
+        val result = dao.cancelPaymentIdempotently(OperationEntity("refund-key", "PAYMENT_REVERSAL", payment.id, 3), payment.id, refund)
+
+        assertEquals(payment.id, result)
+        assertEquals(1_000, dao.customerBalanceCents(sale.businessId, sale.customerId))
+        assertEquals(2, dao.movementCountForPayment(payment.id))
+    }
 }
