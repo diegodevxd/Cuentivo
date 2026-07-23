@@ -72,4 +72,20 @@ class OperationDaoTest {
         assertEquals(1_000, dao.customerBalanceCents(sale.businessId, sale.customerId))
         assertEquals(2, dao.movementCountForPayment(payment.id))
     }
+
+    @Test fun report_totals_use_sales_payments_and_overdue_balances() = runBlocking {
+        val dao = database.financialDao()
+        val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "S-1", 1, 5, 1_000, 0, 1_000, false, null, 1, 1)
+        val charge = AccountMovementEntity("charge-1", sale.businessId, sale.customerId, sale.id, null, "CHARGE", 1_000, "DEBIT", 1, sale.sellerUserId, null, null)
+        dao.createSaleIdempotently(OperationEntity("sale-key", "SALE", sale.id, 1), sale, listOf(SaleItemEntity("item-1", sale.id, null, "Producto", 1, 1_000, 0, 1_000)), charge)
+        val payment = PaymentEntity("payment-1", sale.businessId, sale.customerId, 300, "CASH", 2, null, null, sale.sellerUserId, 2, null)
+        val paymentMovement = AccountMovementEntity("payment-movement-1", sale.businessId, sale.customerId, sale.id, payment.id, "PAYMENT", 300, "CREDIT", 2, sale.sellerUserId, null, null)
+        val allocation = PaymentAllocationEntity("allocation-1", payment.id, sale.id, 300)
+        dao.registerPaymentIdempotently(OperationEntity("payment-key", "PAYMENT", payment.id, 2), payment, listOf(allocation), paymentMovement)
+
+        assertEquals(1_000, dao.salesTotalCents("business-1", 1, 2))
+        assertEquals(300, dao.collectedTotalCents("business-1", 1, 2))
+        assertEquals(700, dao.businessReceivableCents("business-1"))
+        assertEquals(700, dao.overdueBalanceCents("business-1", 6))
+    }
 }

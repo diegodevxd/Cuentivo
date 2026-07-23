@@ -35,6 +35,15 @@ interface FinancialDao {
     @Query("SELECT COALESCE(SUM(CASE WHEN balanceCents > 0 THEN balanceCents ELSE 0 END), 0) FROM (SELECT customerId, SUM(CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END) AS balanceCents FROM account_movements WHERE businessId = :businessId GROUP BY customerId)")
     suspend fun businessReceivableCents(businessId: String): Long
 
+    @Query("SELECT COALESCE(SUM(totalCents), 0) FROM sales WHERE businessId = :businessId AND isCanceled = 0 AND saleDateEpochDay BETWEEN :startEpochDay AND :endEpochDay")
+    suspend fun salesTotalCents(businessId: String, startEpochDay: Long, endEpochDay: Long): Long
+
+    @Query("SELECT COALESCE(SUM(amountCents), 0) FROM payments WHERE businessId = :businessId AND canceledAtEpochMillis IS NULL AND paymentDateEpochDay BETWEEN :startEpochDay AND :endEpochDay")
+    suspend fun collectedTotalCents(businessId: String, startEpochDay: Long, endEpochDay: Long): Long
+
+    @Query("SELECT COALESCE(SUM(CASE WHEN outstandingCents > 0 THEN outstandingCents ELSE 0 END), 0) FROM (SELECT sale.id, sale.totalCents - COALESCE(SUM(CASE WHEN payment.canceledAtEpochMillis IS NULL THEN allocation.amountCents ELSE 0 END), 0) AS outstandingCents FROM sales AS sale LEFT JOIN payment_allocations AS allocation ON allocation.saleId = sale.id LEFT JOIN payments AS payment ON payment.id = allocation.paymentId WHERE sale.businessId = :businessId AND sale.isCanceled = 0 AND sale.dueDateEpochDay IS NOT NULL AND sale.dueDateEpochDay < :todayEpochDay GROUP BY sale.id)")
+    suspend fun overdueBalanceCents(businessId: String, todayEpochDay: Long): Long
+
     @Query("SELECT * FROM sales WHERE id = :saleId")
     suspend fun saleForId(saleId: String): SaleEntity?
 
