@@ -1,4 +1,4 @@
-package com.example.organizationlabs.ui.theme
+package com.cuentivo.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
