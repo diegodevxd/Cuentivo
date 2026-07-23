@@ -88,4 +88,22 @@ class OperationDaoTest {
         assertEquals(700, dao.businessReceivableCents("business-1"))
         assertEquals(700, dao.overdueBalanceCents("business-1", 6))
     }
+
+    @Test fun customer_search_and_archive_are_isolated_by_business() = runBlocking {
+        val dao = database.customerDao()
+        val customer = CustomerEntity("customer-1", "business-1", "Ana L?pez", "ana lopez", "5551234", null, null, null, null, true, 1, 1, null)
+        dao.insert(customer)
+        assertEquals(1, dao.searchActive("business-1", "ana", "555").size)
+        dao.archive(customer.id, 2)
+        assertEquals(0, dao.searchActive("business-1", "ana", "555").size)
+    }
+
+    @Test fun product_search_and_archive_keep_catalog_entries_without_deleting_them() = runBlocking {
+        val dao = database.productDao()
+        val product = ProductEntity("product-1", "business-1", "Cuaderno", null, "CUA-1", "Papeler?a", 2_500, null, null, null, true, 1, 1, null)
+        dao.insert(product)
+        assertEquals(1, dao.searchActive("business-1", "cuad", "CUA").size)
+        dao.archive(product.id, 2)
+        assertEquals(0, dao.searchActive("business-1", "cuad", "CUA").size)
+    }
 }

@@ -7,4 +7,6 @@ import androidx.room.RoomDatabase
 abstract class CuentivoDatabase : RoomDatabase() {
     abstract fun operationDao(): OperationDao
     abstract fun financialDao(): FinancialDao
+    abstract fun customerDao(): CustomerDao
+    abstract fun productDao(): ProductDao
 }
