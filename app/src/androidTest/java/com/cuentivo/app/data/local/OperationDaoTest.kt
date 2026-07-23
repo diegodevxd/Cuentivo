@@ -106,4 +106,14 @@ class OperationDaoTest {
         dao.archive(product.id, 2)
         assertEquals(0, dao.searchActive("business-1", "cuad", "CUA").size)
     }
+
+    @Test fun migration_execution_persists_a_valid_plan_atomically() = runBlocking {
+        val plan = com.cuentivo.app.domain.LegacyMigrationPlanner.plan("business-1", "owner-1", listOf(com.cuentivo.app.domain.LegacyMovimiento(10, "Ana", "pedido", 1_000, null, 10, null), com.cuentivo.app.domain.LegacyMovimiento(11, "Ana", "pago", 200, null, 11, null)))
+        val repository = com.cuentivo.app.domain.LegacyMigrationRepository(database)
+        val report = repository.execute(plan)
+
+        assertEquals(1, report.sales)
+        assertEquals(1, report.payments)
+        assertEquals(800, database.financialDao().customerBalanceCents("business-1", "legacy-customer-10"))
+    }
 }
