@@ -115,5 +115,6 @@ class OperationDaoTest {
         assertEquals(1, report.sales)
         assertEquals(1, report.payments)
         assertEquals(800, database.financialDao().customerBalanceCents("business-1", "legacy-customer-10"))
+        assertEquals("MIGRATION_EXECUTED", database.auditDao().forBusiness("business-1").single().action)
     }
 }
