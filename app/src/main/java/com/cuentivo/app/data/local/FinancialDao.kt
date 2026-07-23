@@ -35,6 +35,18 @@ interface FinancialDao {
     @Query("SELECT COALESCE(SUM(CASE WHEN balanceCents > 0 THEN balanceCents ELSE 0 END), 0) FROM (SELECT customerId, SUM(CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END) AS balanceCents FROM account_movements WHERE businessId = :businessId GROUP BY customerId)")
     suspend fun businessReceivableCents(businessId: String): Long
 
+    @Query("SELECT * FROM sales WHERE id = :saleId")
+    suspend fun saleForId(saleId: String): SaleEntity?
+
+    @Query("SELECT COALESCE(SUM(allocation.amountCents), 0) FROM payment_allocations AS allocation INNER JOIN payments AS payment ON payment.id = allocation.paymentId WHERE allocation.saleId = :saleId AND payment.canceledAtEpochMillis IS NULL")
+    suspend fun activeAllocatedPaymentCents(saleId: String): Long
+
+    @Query("SELECT COUNT(*) FROM account_movements WHERE saleId = :saleId")
+    suspend fun movementCountForSale(saleId: String): Int
+
+    @Query("UPDATE sales SET isCanceled = 1, updatedAtEpochMillis = :updatedAtEpochMillis WHERE id = :saleId")
+    suspend fun markSaleCanceled(saleId: String, updatedAtEpochMillis: Long)
+
     @Transaction
     suspend fun insertSaleWithCharge(sale: SaleEntity, items: List<SaleItemEntity>, charge: AccountMovementEntity) {
         insertSale(sale)
@@ -80,5 +92,27 @@ interface FinancialDao {
         insertAllocations(allocations)
         insertMovement(movement)
         return payment.id
+    }
+
+    /** Cancels only the unpaid amount; a refunded payment is a separate ledger event. */
+    @Transaction
+    suspend fun cancelSaleIdempotently(
+        operation: OperationEntity,
+        saleId: String,
+        cancellation: AccountMovementEntity,
+    ): String {
+        if (reserveOperation(operation) == -1L) {
+            return requireNotNull(operationResultId(operation.idempotencyKey))
+        }
+        val sale = requireNotNull(saleForId(saleId)) { "Sale does not exist." }
+        require(!sale.isCanceled) { "Sale is already canceled." }
+        require(cancellation.type == "CANCELLATION" && cancellation.direction == "CREDIT")
+        require(cancellation.businessId == sale.businessId && cancellation.customerId == sale.customerId && cancellation.saleId == sale.id)
+        val allocatedCents = activeAllocatedPaymentCents(sale.id)
+        val outstandingCents = sale.totalCents - allocatedCents
+        require(outstandingCents >= 0 && cancellation.amountCents == outstandingCents) { "Cancellation must compensate the unpaid amount." }
+        markSaleCanceled(sale.id, cancellation.occurredAtEpochMillis)
+        insertMovement(cancellation)
+        return sale.id
     }
 }

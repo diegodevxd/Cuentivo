@@ -19,4 +19,8 @@ class SaleStatusCalculatorTest {
             SaleStatusCalculator.status(totalCents = 1_000, paidCents = 250, dueDateEpochDay = 20, todayEpochDay = 10),
         )
     }
+
+    @Test fun `marks a cancelled sale as cancelled`() {
+        assertEquals(SalePaymentStatus.CANCELED, SaleStatusCalculator.status(totalCents = 1_000, paidCents = 0, dueDateEpochDay = 10, todayEpochDay = 11, isCanceled = true))
+    }
 }
