@@ -3,6 +3,8 @@ package com.cuentivo.app.domain
 enum class MovementType {
     CHARGE,
     PAYMENT,
+    CANCELLATION,
+    REFUND,
 }
 
 data class AccountMovement(
@@ -30,6 +32,8 @@ object FinancialCalculator {
             when (movement.type) {
                 MovementType.CHARGE -> movement.amountCents
                 MovementType.PAYMENT -> -movement.amountCents
+                MovementType.CANCELLATION -> -movement.amountCents
+                MovementType.REFUND -> movement.amountCents
             }
         }
 
