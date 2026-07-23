@@ -1,5 +1,7 @@
 *.iml
 .gradle
+/.audit-betterorganitazion/
+/.idea/
 /local.properties
 /.idea/caches
 /.idea/libraries
