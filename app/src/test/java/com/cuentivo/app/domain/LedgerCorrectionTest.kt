@@ -29,4 +29,28 @@ class LedgerCorrectionTest {
 
         assertEquals(3_000, balance)
     }
+
+    @Test
+    fun `a debit adjustment increases a customer balance`() {
+        val balance = FinancialCalculator.customerBalance(
+            movements = listOf(
+                AccountMovement(MovementType.CHARGE, 1_000),
+                AccountMovement(MovementType.ADJUSTMENT_DEBIT, 250),
+            ),
+        )
+
+        assertEquals(1_250, balance)
+    }
+
+    @Test
+    fun `a credit adjustment reduces a customer balance`() {
+        val balance = FinancialCalculator.customerBalance(
+            movements = listOf(
+                AccountMovement(MovementType.CHARGE, 1_000),
+                AccountMovement(MovementType.ADJUSTMENT_CREDIT, 250),
+            ),
+        )
+
+        assertEquals(750, balance)
+    }
 }

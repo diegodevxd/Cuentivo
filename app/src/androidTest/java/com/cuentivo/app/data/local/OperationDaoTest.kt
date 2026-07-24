@@ -73,6 +73,28 @@ class OperationDaoTest {
         assertEquals(2, dao.movementCountForPayment(payment.id))
     }
 
+    @Test fun repeated_adjustment_key_creates_only_one_auditable_movement() = runBlocking {
+        val dao = database.financialDao()
+        val adjustment = AccountMovementEntity(
+            id = "adjustment-1", businessId = "business-1", customerId = "customer-1",
+            saleId = null, paymentId = null, type = "ADJUSTMENT", amountCents = 250,
+            direction = "DEBIT", occurredAtEpochMillis = 1, createdByUserId = "owner-1",
+            reversesMovementId = null, notes = "Cargo por entrega",
+        )
+
+        val first = dao.registerAdjustmentIdempotently(
+            OperationEntity("adjustment-key", "ADJUSTMENT", adjustment.id, 1), adjustment,
+        )
+        val retry = dao.registerAdjustmentIdempotently(
+            OperationEntity("adjustment-key", "ADJUSTMENT", "adjustment-2", 2),
+            adjustment.copy(id = "adjustment-2"),
+        )
+
+        assertEquals("adjustment-1", first)
+        assertEquals("adjustment-1", retry)
+        assertEquals(250, dao.customerBalanceCents("business-1", "customer-1"))
+    }
+
     @Test fun report_totals_use_sales_payments_and_overdue_balances() = runBlocking {
         val dao = database.financialDao()
         val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "S-1", 1, 5, 1_000, 0, 1_000, false, null, 1, 1)
@@ -87,6 +109,28 @@ class OperationDaoTest {
         assertEquals(300, dao.collectedTotalCents("business-1", 1, 2))
         assertEquals(700, dao.businessReceivableCents("business-1"))
         assertEquals(700, dao.overdueBalanceCents("business-1", 6))
+    }
+
+    @Test fun payment_allocation_cannot_exceed_sale_outstanding_balance() = runBlocking {
+        val dao = database.financialDao()
+        val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)
+        dao.createSaleIdempotently(
+            OperationEntity("sale-key", "SALE", sale.id, 1), sale,
+            listOf(SaleItemEntity("item-1", sale.id, null, "Producto", 1, 1_000, 0, 1_000)),
+            AccountMovementEntity("charge-1", sale.businessId, sale.customerId, sale.id, null, "CHARGE", 1_000, "DEBIT", 1, sale.sellerUserId, null, null),
+        )
+        val payment = PaymentEntity("payment-1", sale.businessId, sale.customerId, 1_100, "CASH", 2, null, null, sale.sellerUserId, 2, null)
+        val movement = AccountMovementEntity("payment-movement-1", sale.businessId, sale.customerId, null, payment.id, "PAYMENT", 1_100, "CREDIT", 2, sale.sellerUserId, null, null)
+
+        try {
+            dao.registerPaymentIdempotently(
+                OperationEntity("payment-key", "PAYMENT", payment.id, 2), payment,
+                listOf(PaymentAllocationEntity("allocation-1", payment.id, sale.id, 1_100)), movement,
+            )
+            throw AssertionError("Expected an allocation validation failure.")
+        } catch (_: IllegalArgumentException) {
+            assertEquals(1_000, dao.customerBalanceCents(sale.businessId, sale.customerId))
+        }
     }
 
     @Test fun customer_search_and_archive_are_isolated_by_business() = runBlocking {

@@ -106,10 +106,49 @@ interface FinancialDao {
         if (reserveOperation(operation) == -1L) {
             return requireNotNull(operationResultId(operation.idempotencyKey))
         }
+        require(payment.amountCents > 0) { "Payment must be positive." }
+        require(allocations.sumOf { it.amountCents } <= payment.amountCents) {
+            "Allocations cannot exceed the payment amount."
+        }
+        allocations.groupBy { it.saleId }.forEach { (saleId, saleAllocations) ->
+            val allocationCents = saleAllocations.sumOf { it.amountCents }
+            saleAllocations.forEach { allocation ->
+                require(allocation.paymentId == payment.id && allocation.amountCents > 0) {
+                    "Allocation must belong to this payment and be positive."
+                }
+            }
+            val sale = requireNotNull(saleForId(saleId)) { "Allocated sale does not exist." }
+            require(sale.businessId == payment.businessId && sale.customerId == payment.customerId && !sale.isCanceled) {
+                "Allocation sale must belong to the payment customer and business."
+            }
+            val outstandingCents = sale.totalCents - activeAllocatedPaymentCents(sale.id)
+            require(allocationCents <= outstandingCents) {
+                "Allocation cannot exceed the sale outstanding balance."
+            }
+        }
         insertPayment(payment)
         insertAllocations(allocations)
         insertMovement(movement)
         return payment.id
+    }
+
+    /** Stores an immutable, documented balance correction without duplicating retries. */
+    @Transaction
+    suspend fun registerAdjustmentIdempotently(
+        operation: OperationEntity,
+        adjustment: AccountMovementEntity,
+    ): String {
+        if (reserveOperation(operation) == -1L) {
+            return requireNotNull(operationResultId(operation.idempotencyKey))
+        }
+        require(adjustment.type == "ADJUSTMENT") { "Adjustment type is required." }
+        require(adjustment.direction == "DEBIT" || adjustment.direction == "CREDIT") {
+            "Adjustment direction must be DEBIT or CREDIT."
+        }
+        require(adjustment.amountCents > 0) { "Adjustment must be positive." }
+        require(!adjustment.notes.isNullOrBlank()) { "Adjustment reason is required." }
+        insertMovement(adjustment)
+        return adjustment.id
     }
 
     /** Cancels only the unpaid amount; a refunded payment is a separate ledger event. */

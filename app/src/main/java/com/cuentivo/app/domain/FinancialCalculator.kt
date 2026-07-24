@@ -5,6 +5,8 @@ enum class MovementType {
     PAYMENT,
     CANCELLATION,
     REFUND,
+    ADJUSTMENT_DEBIT,
+    ADJUSTMENT_CREDIT,
 }
 
 data class AccountMovement(
@@ -34,6 +36,8 @@ object FinancialCalculator {
                 MovementType.PAYMENT -> -movement.amountCents
                 MovementType.CANCELLATION -> -movement.amountCents
                 MovementType.REFUND -> movement.amountCents
+                MovementType.ADJUSTMENT_DEBIT -> movement.amountCents
+                MovementType.ADJUSTMENT_CREDIT -> -movement.amountCents
             }
         }
 
