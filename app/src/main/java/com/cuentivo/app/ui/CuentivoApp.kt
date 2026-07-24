@@ -13,6 +13,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,19 +51,25 @@ fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = e
 
 @Composable
 private fun ProductsScreen(products: List<ProductEntity>, padding: PaddingValues) {
+    var query by remember { mutableStateOf("") }
     Column(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Productos", style = MaterialTheme.typography.headlineSmall)
-        if (products.isEmpty()) Text("Aún no tienes productos registrados")
-        products.forEach { product -> Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(product.name); Text(formatMoney(product.salePriceCents)); product.category?.let { Text(it, style = MaterialTheme.typography.labelLarge) } } } }
+        OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o SKU") }, modifier = Modifier.fillMaxWidth())
+        val filtered = products.filter { it.name.contains(query, true) || (it.sku?.contains(query, true) == true) }
+        if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes productos registrados" else "No se encontraron productos")
+        filtered.forEach { product -> Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(product.name); Text(formatMoney(product.salePriceCents)); product.category?.let { Text(it, style = MaterialTheme.typography.labelLarge) } } } }
     }
 }
 
 @Composable
 private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: PaddingValues) {
+    var query by remember { mutableStateOf("") }
     Column(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Clientes", style = MaterialTheme.typography.headlineSmall)
-        if (customers.isEmpty()) Text("Aún no tienes clientes registrados")
-        customers.forEach { row -> Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(row.customer.name); Text(formatMoney(row.balanceCents)) } } }
+        OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o teléfono") }, modifier = Modifier.fillMaxWidth())
+        val filtered = customers.filter { it.customer.name.contains(query, true) || (it.customer.phone?.contains(query) == true) }
+        if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes clientes registrados" else "No se encontraron clientes")
+        filtered.forEach { row -> Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(row.customer.name); Text(formatMoney(row.balanceCents)) } } }
     }
 }
 
