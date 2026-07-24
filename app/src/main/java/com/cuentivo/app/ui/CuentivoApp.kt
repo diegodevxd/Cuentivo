@@ -1,5 +1,6 @@
 package com.cuentivo.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -19,14 +21,17 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -46,11 +51,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.ProductEntity
+import com.cuentivo.app.domain.AccessDecision
+import com.cuentivo.app.domain.FeatureAccessManager
+import com.cuentivo.app.domain.Money
+import com.cuentivo.app.domain.SaleDraft
+import com.cuentivo.app.domain.SaleDraftLine
 import com.cuentivo.app.domain.StatementEntry
+import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.dashboard.DashboardUiState
-import java.math.BigDecimal
-import java.text.NumberFormat
-import java.util.Locale
 
 private enum class AppDestination(val label: String, val icon: ImageVector) {
     HOME("Inicio", Icons.Filled.Home),
@@ -65,20 +73,29 @@ fun CuentivoApp(
     state: DashboardUiState,
     customers: List<CustomerBalanceRow> = emptyList(),
     products: List<ProductEntity> = emptyList(),
+    tier: SubscriptionTier = SubscriptionTier.FREE,
     onCreateBusiness: () -> Unit = {},
-    onCreateCustomer: (String) -> Unit = {},
+    onCreateCustomer: (String, String?) -> Unit = { _, _ -> },
     onCreateProduct: (String, Long) -> Unit = { _, _ -> },
-    onCreateSale: (CustomerBalanceRow, ProductEntity) -> Unit = { _, _ -> },
+    onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit = { _, _ -> },
     onCreatePayment: (CustomerBalanceRow, Long) -> Unit = { _, _ -> },
     statementCustomer: String? = null,
     statement: List<StatementEntry> = emptyList(),
     onShowStatement: (CustomerBalanceRow) -> Unit = {},
     onDismissStatement: () -> Unit = {},
-    onShareStatement: () -> Unit = {},
+    onShareStatementCsv: () -> Unit = {},
+    onShareStatementText: () -> Unit = {},
+    onShareDebtorList: () -> Unit = {},
+    blocked: AccessDecision.Blocked? = null,
+    onDismissBlocked: () -> Unit = {},
+    onUpgrade: () -> Unit = {},
+    onSignOut: () -> Unit = {},
+    onDeleteAccount: () -> Unit = {},
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
+    var showPlans by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
         message?.let {
@@ -102,7 +119,19 @@ fun CuentivoApp(
         },
     ) { padding ->
         when (destination) {
-            AppDestination.HOME -> DashboardScreen(state, padding, onCreateBusiness, onNewSale = { destination = AppDestination.NEW_SALE })
+            AppDestination.HOME -> DashboardScreen(
+                state = state,
+                customers = customers,
+                padding = padding,
+                onCreateBusiness = onCreateBusiness,
+                onNewSale = { destination = AppDestination.NEW_SALE },
+                onShowStatement = onShowStatement,
+                onShareDebtorList = onShareDebtorList,
+                onSignOut = onSignOut,
+                onDeleteAccount = onDeleteAccount,
+                onShowPlans = { showPlans = true },
+                tier = tier,
+            )
             AppDestination.CUSTOMERS -> CustomersScreen(customers, padding, onCreateCustomer, onShowStatement)
             AppDestination.PRODUCTS -> ProductsScreen(products, padding, onCreateProduct)
             AppDestination.NEW_SALE -> NewSaleScreen(customers, products, padding, onCreateSale)
@@ -110,17 +139,146 @@ fun CuentivoApp(
         }
     }
     if (statementCustomer != null) {
-        StatementSheet(statementCustomer, statement, onShareStatement, onDismissStatement)
+        StatementSheet(statementCustomer, statement, onShareStatementCsv, onShareStatementText, onDismissStatement)
+    }
+    blocked?.let { limit ->
+        AlertDialog(
+            onDismissRequest = onDismissBlocked,
+            title = { Text(limit.title) },
+            text = { Text(limit.detail) },
+            confirmButton = {
+                TextButton(onClick = { onDismissBlocked(); showPlans = true }) { Text("Ver Cuentivo Pro") }
+            },
+            dismissButton = { TextButton(onClick = onDismissBlocked) { Text("Ahora no") } },
+        )
+    }
+    if (showPlans) {
+        SubscriptionSheet(
+            tier = tier,
+            onSubscribe = { showPlans = false; onUpgrade() },
+            onDismiss = { showPlans = false },
+        )
     }
 }
 
-/** A customer's ledger, most recent last, with one-tap CSV sharing. */
+/**
+ * The two plans, side by side, with the current one marked.
+ *
+ * Reads its limits from FeatureAccessManager rather than repeating them, so the screen can never
+ * promise something different from what the app actually enforces.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubscriptionSheet(
+    tier: SubscriptionTier,
+    onSubscribe: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Planes de Cuentivo", style = MaterialTheme.typography.headlineSmall)
+
+            PlanCard(
+                name = "Gratis",
+                price = "Sin costo",
+                isCurrent = tier == SubscriptionTier.FREE,
+                features = listOf(
+                    "Hasta ${FeatureAccessManager.FREE_CUSTOMER_LIMIT} clientes",
+                    "Hasta ${FeatureAccessManager.FREE_SALE_LIMIT} ventas registradas",
+                    "Ventas, abonos y estados de cuenta",
+                    "Compartir la cuenta de un cliente",
+                ),
+                missing = listOf(
+                    "Sin respaldo en la nube",
+                    "Sin fotos de productos ni comprobantes",
+                    "Sin importar/exportar Excel",
+                    "Sin equipo ni roles",
+                ),
+            )
+
+            PlanCard(
+                name = "Cuentivo Pro",
+                price = "$199 al mes",
+                isCurrent = tier == SubscriptionTier.PRO,
+                features = listOf(
+                    "Clientes y ventas ilimitados",
+                    "Respaldo y sincronización en la nube",
+                    "Fotos de productos y comprobantes de pago",
+                    "Importar y exportar productos en Excel",
+                    "Compartir la lista completa de deudores",
+                    "Hasta 5 integrantes con roles",
+                    "Historial y auditoría completos",
+                ),
+                missing = emptyList(),
+            )
+
+            if (tier == SubscriptionTier.FREE) {
+                FilledTonalButton(onClick = onSubscribe, modifier = Modifier.fillMaxWidth()) {
+                    Text("Suscribirme a Pro")
+                }
+                Text(
+                    "El cobro se hace por Google Play y puedes cancelarlo cuando quieras desde la " +
+                        "tienda. Tus datos no se borran si cancelas.",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "Tu suscripción se administra desde Google Play.",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanCard(
+    name: String,
+    price: String,
+    isCurrent: Boolean,
+    features: List<String>,
+    missing: List<String>,
+) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(
+            if (isCurrent) 2.dp else 1.dp,
+            if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                if (isCurrent) {
+                    AssistChip(onClick = {}, enabled = false, label = { Text("Tu plan") })
+                }
+            }
+            Text(price, style = MaterialTheme.typography.headlineSmall)
+            features.forEach { Text("✓  $it") }
+            missing.forEach {
+                Text("·  $it", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** A customer's ledger, most recent last, with one-tap sharing. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StatementSheet(
     customerName: String,
     entries: List<StatementEntry>,
-    onShare: () -> Unit,
+    onShareCsv: () -> Unit,
+    onShareText: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -136,7 +294,11 @@ private fun StatementSheet(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 entries.forEach { entry ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -154,7 +316,12 @@ private fun StatementSheet(
                 }
             }
             if (entries.isNotEmpty()) {
-                FilledTonalButton(onClick = onShare, modifier = Modifier.fillMaxWidth()) { Text("Compartir CSV") }
+                FilledTonalButton(onClick = onShareText, modifier = Modifier.fillMaxWidth()) {
+                    Text("Enviar por WhatsApp")
+                }
+                OutlinedButton(onClick = onShareCsv, modifier = Modifier.fillMaxWidth()) {
+                    Text("Compartir como archivo CSV")
+                }
             }
         }
     }
@@ -234,14 +401,9 @@ private fun <T> SelectorField(
 
 /**
  * Amount entry in pesos ("150.50"), converted to integer cents only at submit time.
- * BigDecimal.longValueExact() refuses more than two decimals instead of truncating,
- * so fractional money can never slip into the integer-cents system. No Double anywhere.
+ * Delegates to Money so the screens, the share texts and the CSV all agree. No Double anywhere.
  */
-internal fun pesosToCents(text: String): Long? = try {
-    BigDecimal(text.trim()).movePointRight(2).longValueExact().takeIf { it > 0 }
-} catch (error: Exception) {
-    null
-}
+internal fun pesosToCents(text: String): Long? = Money.positiveCentsFromPesos(text)
 
 @Composable
 private fun MoneyField(label: String, text: String, onTextChange: (String) -> Unit) {
@@ -281,15 +443,26 @@ private fun FormDialog(
     )
 }
 
+/**
+ * Sale composition: pick a customer, add as many products as needed, then save.
+ *
+ * The cart is a domain SaleDraft rather than loose state, so the totals shown here are the same
+ * integers that get written to the ledger.
+ */
 @Composable
 private fun NewSaleScreen(
     customers: List<CustomerBalanceRow>,
     products: List<ProductEntity>,
     padding: PaddingValues,
-    onCreateSale: (CustomerBalanceRow, ProductEntity) -> Unit,
+    onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit,
 ) {
     var customer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
-    var product by remember { mutableStateOf<ProductEntity?>(null) }
+    var draft by remember { mutableStateOf(SaleDraft()) }
+    var picked by remember { mutableStateOf<ProductEntity?>(null) }
+    var quantityText by remember { mutableStateOf("1") }
+    var discountText by remember { mutableStateOf("") }
+    var dueInDays by remember { mutableStateOf<Long?>(null) }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -307,32 +480,110 @@ private fun NewSaleScreen(
         )
         SelectorField(
             label = "Producto",
-            selected = product,
+            selected = picked,
             placeholder = "Toca para elegir el producto",
             options = products,
             optionTitle = { it.name },
             optionDetail = { formatMoney(it.salePriceCents) },
             emptyText = "Primero agrega un producto en la pestaña Productos",
-            onSelect = { product = it },
+            onSelect = { picked = it },
         )
-        val chosenCustomer = customer
-        val chosenProduct = product
-        if (chosenCustomer != null && chosenProduct != null) {
-            Card(modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = quantityText,
+            onValueChange = { raw -> quantityText = raw.filter { it.isDigit() }.take(4) },
+            label = { Text("Cantidad") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        val quantity = quantityText.toIntOrNull() ?: 0
+        val chosenProduct = picked
+        FilledTonalButton(
+            enabled = chosenProduct != null && quantity > 0,
+            onClick = {
+                if (chosenProduct != null && quantity > 0) {
+                    draft = draft.withLine(
+                        SaleDraftLine(
+                            productId = chosenProduct.id,
+                            productName = chosenProduct.name,
+                            quantity = quantity,
+                            unitPriceCents = chosenProduct.salePriceCents,
+                        )
+                    )
+                    picked = null
+                    quantityText = "1"
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Agregar al carrito") }
+
+        if (draft.isEmpty) {
+            Text("El carrito está vacío. Elige un producto y agrégalo.")
+        } else {
+            Text("Productos de esta venta", style = MaterialTheme.typography.titleMedium)
+            draft.lines.forEach { line ->
+                Card(
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("${line.quantity} × ${line.productName}")
+                            Text(formatMoney(line.unitPriceCents) + " c/u", style = MaterialTheme.typography.labelLarge)
+                        }
+                        Text(formatMoney(line.subtotalCents), style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { draft = draft.withoutProduct(line.productId) }) { Text("Quitar") }
+                    }
+                }
+            }
+            MoneyField("Descuento de la venta (opcional)", discountText) { discountText = it }
+            val discountCents = if (discountText.isBlank()) 0L else (Money.centsFromPesos(discountText) ?: 0L)
+            draft = draft.copy(discountCents = discountCents)
+
+            Text("¿Cuándo debe pagar?", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf<Pair<String, Long?>>("Sin fecha" to null, "7 días" to 7L, "15 días" to 15L, "30 días" to 30L)
+                    .forEach { (label, days) ->
+                        FilterChip(
+                            selected = dueInDays == days,
+                            onClick = { dueInDays = days },
+                            label = { Text(label) },
+                        )
+                    }
+            }
+
+            Card(
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("Resumen", style = MaterialTheme.typography.labelLarge)
-                    Text("${chosenProduct.name} para ${chosenCustomer.customer.name}")
-                    Text(formatMoney(chosenProduct.salePriceCents), style = MaterialTheme.typography.headlineSmall)
+                    Text("Total de la venta", style = MaterialTheme.typography.labelLarge)
+                    Text(formatMoney(draft.totalCents), style = MaterialTheme.typography.headlineSmall)
+                    if (discountCents > 0) {
+                        Text("Antes del descuento: ${formatMoney(draft.subtotalCents)}")
+                    }
                 }
             }
         }
+
+        val chosenCustomer = customer
+        val error = draft.validationError()
+        if (chosenCustomer == null && !draft.isEmpty) Text("Falta elegir al cliente")
         FilledTonalButton(
-            enabled = chosenCustomer != null && chosenProduct != null,
+            enabled = chosenCustomer != null && error == null,
             onClick = {
-                if (chosenCustomer != null && chosenProduct != null) {
-                    onCreateSale(chosenCustomer, chosenProduct)
+                if (chosenCustomer != null && error == null) {
+                    val due = dueInDays?.let { java.time.LocalDate.now().plusDays(it).toEpochDay() }
+                    onCreateSale(chosenCustomer, draft.copy(dueDateEpochDay = due))
                     customer = null
-                    product = null
+                    draft = SaleDraft()
+                    discountText = ""
+                    dueInDays = null
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -364,9 +615,26 @@ private fun PaymentScreen(
             emptyText = "Primero agrega un cliente en la pestaña Clientes",
             onSelect = { customer = it },
         )
-        customer?.let { Text("Saldo actual: ${formatMoney(it.balanceCents)}", style = MaterialTheme.typography.titleMedium) }
-        MoneyField("Monto del abono", amountText) { amountText = it }
         val cents = pesosToCents(amountText)
+        customer?.let { chosen ->
+            Card(
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Saldo actual: ${formatMoney(chosen.balanceCents)}", style = MaterialTheme.typography.titleMedium)
+                    if (cents != null) {
+                        Text("Quedará: ${formatMoney(chosen.balanceCents - cents)}")
+                    }
+                }
+            }
+        }
+        MoneyField("Monto del abono", amountText) { amountText = it }
+        Text(
+            "El abono se aplica primero a la venta más antigua por vencer.",
+            style = MaterialTheme.typography.labelLarge,
+        )
         FilledTonalButton(
             enabled = customer != null && cents != null,
             onClick = {
@@ -396,7 +664,11 @@ private fun ProductsScreen(products: List<ProductEntity>, padding: PaddingValues
         val filtered = products.filter { it.name.contains(query, true) || (it.sku?.contains(query, true) == true) }
         if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes productos registrados" else "No se encontraron productos")
         filtered.forEach { product ->
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
                 Column(Modifier.padding(16.dp)) {
                     Text(product.name)
                     Text(formatMoney(product.salePriceCents))
@@ -430,7 +702,7 @@ private fun ProductsScreen(products: List<ProductEntity>, padding: PaddingValues
 private fun CustomersScreen(
     customers: List<CustomerBalanceRow>,
     padding: PaddingValues,
-    onCreateCustomer: (String) -> Unit,
+    onCreateCustomer: (String, String?) -> Unit,
     onShowStatement: (CustomerBalanceRow) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
@@ -446,7 +718,12 @@ private fun CustomersScreen(
         if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes clientes registrados" else "No se encontraron clientes")
         else Text("Toca un cliente para ver su estado de cuenta", style = MaterialTheme.typography.labelLarge)
         filtered.forEach { row ->
-            Card(onClick = { onShowStatement(row) }, modifier = Modifier.fillMaxWidth()) {
+            Card(
+                onClick = { onShowStatement(row) },
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Column(Modifier.padding(16.dp)) {
                     Text(row.customer.name)
                     Text(formatMoney(row.balanceCents))
@@ -457,24 +734,58 @@ private fun CustomersScreen(
     }
     if (showForm) {
         var name by remember { mutableStateOf("") }
+        var phone by remember { mutableStateOf("") }
         FormDialog(
             title = "Nuevo cliente",
             confirmEnabled = name.isNotBlank(),
             onConfirm = {
                 if (name.isNotBlank()) {
-                    onCreateCustomer(name.trim())
+                    onCreateCustomer(name.trim(), phone.trim().ifBlank { null })
                     showForm = false
                 }
             },
             onDismiss = { showForm = false },
         ) {
             OutlinedTextField(name, { name = it }, label = { Text("Nombre del cliente") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = phone,
+                onValueChange = { raw -> phone = raw.filter { it.isDigit() || it == '+' }.take(15) },
+                label = { Text("Teléfono (opcional)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
 
+private enum class DebtorFilter(val label: String) {
+    OWING("Con deuda"),
+    ALL("Todos"),
+}
+
+/**
+ * Home: the money totals, then who actually owes it.
+ *
+ * The list is the point — a dashboard of four numbers tells the owner nothing about who to call
+ * today.
+ */
 @Composable
-private fun DashboardScreen(state: DashboardUiState, padding: PaddingValues, onCreateBusiness: () -> Unit, onNewSale: () -> Unit) {
+private fun DashboardScreen(
+    state: DashboardUiState,
+    customers: List<CustomerBalanceRow>,
+    padding: PaddingValues,
+    onCreateBusiness: () -> Unit,
+    onNewSale: () -> Unit,
+    onShowStatement: (CustomerBalanceRow) -> Unit,
+    onShareDebtorList: () -> Unit,
+    onSignOut: () -> Unit,
+    onDeleteAccount: () -> Unit,
+    onShowPlans: () -> Unit,
+    tier: SubscriptionTier,
+) {
+    var filter by remember { mutableStateOf(DebtorFilter.OWING) }
+    var confirmDelete by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -486,15 +797,140 @@ private fun DashboardScreen(state: DashboardUiState, padding: PaddingValues, onC
                 FilledTonalButton(onClick = onCreateBusiness, modifier = Modifier.fillMaxWidth()) { Text("Crear mi negocio") }
             }
             is DashboardUiState.Content -> {
-                Text("Buenos días, ${state.businessName}", style = MaterialTheme.typography.headlineSmall)
+                Text(state.businessName, style = MaterialTheme.typography.headlineSmall)
                 FilledTonalButton(onClick = onNewSale, modifier = Modifier.fillMaxWidth()) { Text("Nueva venta") }
                 MetricCard("Por cobrar", state.receivableCents)
-                MetricCard("Vendido este mes", state.soldCents)
-                MetricCard("Cobrado este mes", state.collectedCents)
-                if (state.overdueCents > 0) MetricCard("Pagos vencidos", state.overdueCents)
-                Text("${state.customersWithDebt} clientes por cobrar")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    Card(Modifier.weight(1f)) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Vendido este mes", style = MaterialTheme.typography.labelLarge)
+                            Text(formatMoney(state.soldCents), style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                    Card(Modifier.weight(1f)) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Cobrado este mes", style = MaterialTheme.typography.labelLarge)
+                            Text(formatMoney(state.collectedCents), style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+                if (state.overdueCents > 0) {
+                    Card(
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Pagos vencidos", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                formatMoney(state.overdueCents),
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Quién me debe", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    AssistChip(onClick = onShareDebtorList, label = { Text("Compartir lista") })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DebtorFilter.entries.forEach { option ->
+                        FilterChip(
+                            selected = filter == option,
+                            onClick = { filter = option },
+                            label = { Text(option.label) },
+                        )
+                    }
+                }
+                val listed = when (filter) {
+                    DebtorFilter.OWING -> customers.filter { it.balanceCents > 0 }
+                    DebtorFilter.ALL -> customers
+                }.sortedByDescending { it.balanceCents }
+                if (listed.isEmpty()) {
+                    Text(
+                        if (customers.isEmpty()) "Agrega tu primer cliente en la pestaña Clientes"
+                        else "Nadie tiene saldo pendiente. Todo cobrado."
+                    )
+                }
+                listed.forEach { row ->
+                    Card(
+                onClick = { onShowStatement(row) },
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(row.customer.name, style = MaterialTheme.typography.titleMedium)
+                                row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
+                            }
+                            Text(
+                                formatMoney(row.balanceCents),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (row.balanceCents > 0) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                Text("Tu cuenta", style = MaterialTheme.typography.titleMedium)
+                Card(
+                    onClick = onShowPlans,
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            if (tier == SubscriptionTier.PRO) "Cuentivo Pro" else "Plan Gratis",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            if (tier == SubscriptionTier.PRO) {
+                                "Clientes y ventas ilimitados. Toca para ver tu plan."
+                            } else {
+                                "Hasta ${FeatureAccessManager.FREE_CUSTOMER_LIMIT} clientes y " +
+                                    "${FeatureAccessManager.FREE_SALE_LIMIT} ventas. Toca para ver Pro."
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) { Text("Cerrar sesión") }
+                // Google Play requires account deletion to be reachable from inside the app.
+                TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Eliminar mi cuenta", color = MaterialTheme.colorScheme.error)
+                }
             }
         }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("¿Eliminar tu cuenta?") },
+            text = {
+                Text(
+                    "Se borrará tu cuenta y toda la información guardada en este teléfono: clientes, " +
+                        "ventas y abonos. Esta acción no se puede deshacer."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDeleteAccount() }) {
+                    Text("Sí, eliminar todo", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
+        )
     }
 }
 
@@ -508,5 +944,4 @@ private fun MetricCard(label: String, cents: Long) {
     }
 }
 
-private fun formatMoney(cents: Long): String = NumberFormat.getCurrencyInstance(Locale("es", "MX"))
-    .format(BigDecimal.valueOf(cents, 2))
+private fun formatMoney(cents: Long): String = Money.format(cents)

@@ -23,6 +23,57 @@ El modelo local existente incluye `Business`, `BusinessMember`, `Customer`, `Pro
 | 6. Suscripciones/Billing | Pendiente | **No verificable sin Play Console con productos configurados** — no escribir a ciegas. |
 | 7. Publicación | Pendiente | Requiere firma release, política de privacidad, borrado de cuenta. |
 
+## Sesión 2026-07-24 (tarde) — app usable + preparación Play Store
+
+**Objetivo del producto aclarado por Diego: la app se publica en Google Play con DOS planes — Gratis y Pro $199 MXN/mes.** No es una app local: offline-first significa que funciona sin señal y sincroniza, no que los datos vivan en un solo teléfono.
+
+Hecho, verificado con `assembleDebug assembleRelease testDebugUnitTest` → **BUILD SUCCESSFUL, 78 pruebas, 0 fallos**:
+
+- `domain/Money.kt` — única conversión centavos ↔ texto; `CuentivoApp.formatMoney`/`pesosToCents` ahora delegan aquí.
+- `domain/SaleDraft.kt` — carrito puro: varios productos, cantidad, descuento por renglón y por venta. Invariante `subtotalCents = quantity * unitPriceCents - discountCents`, la misma de `firestore.rules`. 10 pruebas.
+- `domain/DebtorShareText.kt` — textos para WhatsApp/Sharesheet. `forBusiness` (lista completa) y `forCustomer` (solo ese cliente, nunca otros).
+- `domain/SubscriptionTier.kt` — FREE/PRO, `PaidFeature`, `FeatureAccessManager`. Límites gratis: **10 clientes, 30 ventas**. Registrar abonos nunca se bloquea (bloquearlo corrompería el libro mayor para vender suscripción). Un plan desconocido degrada a FREE.
+- `FinancialDao.outstandingSalesForCustomer(...)` + `registeredSaleCount(...)` y `OutstandingSaleRow`.
+- **Venta con carrito** en UI y en `MainActivity`: N `SaleItemEntity`, un solo `CHARGE` por el total, fecha límite por chips (7/15/30 días), y se encola un `SALE_ITEM` por renglón.
+- **Abonos ya se aplican a ventas**: `PaymentAllocator` por fin tiene call site de producción; se crean `PaymentAllocationEntity` y **se encolan los `PAYMENT_ALLOCATION`** (pendiente #8 cerrado). El mensaje dice a cuántas ventas se aplicó y cuánto quedó a favor.
+- **Inicio ya no está solo**: lista de deudores ordenada por saldo, filtros (Con deuda / Todos), botón "Compartir lista", y tocar un renglón abre el estado de cuenta. Vencidos en rojo, el resto no.
+- Teléfono del cliente al darlo de alta (la columna existía y siempre se guardaba `null`).
+- **Borrado de cuenta** (requisito de Play): `AuthenticationGateway.deleteAccount` + confirmación en UI; borra primero los datos locales (`clearAllTables`) y luego la cuenta, para que un fallo deje al usuario dentro y pueda reintentar. También botón de cerrar sesión.
+- **Build de release listo**: R8 activado (`optimization.enable = true`) + `app/proguard-rules.pro` nuevo, y `signingConfigs` que lee `keystore.properties` de la raíz (ignorado por git junto con `*.jks`). Sin ese archivo el release compila sin firmar, así que el repo sigue construyendo.
+
+**Probado en teléfono por Diego** (instalando el APK debug por WhatsApp, sin cable — no quiere conectar USB; la ruta es `app/build/outputs/apk/debug/app-debug.apk`).
+
+### Rediseño visual (glassmorphism) — misma sesión
+
+El tema seguía usando la paleta morada de plantilla de Android Studio; por eso se veía plano.
+
+- `ui/theme/Color.kt`: identidad propia — azul-marino profundo (`DeepNavy`/`DeepTeal`), acento menta (`MintAccent`), dorado (`WarmSand`). Se eliminaron `Purple80`/`Pink80` y compañía.
+- `ui/theme/Theme.kt`: el efecto glass es **global y sin blur** (`Modifier.blur` no existe en minSdk 24). Se logra con degradado detrás de toda la app + colores de superficie translúcidos en el `ColorScheme`, así Card, ModalBottomSheet y NavigationBar se vuelven de vidrio sin tocar pantalla por pantalla. `background = Color.Transparent` para que el Scaffold no tape el degradado.
+- **Dos bugs de contraste encontrados por Diego probando y ya corregidos**:
+  1. Los textos fuera de una Card salían negros sobre fondo oscuro. Pintar el fondo no basta: hay que proveer `LocalContentColor` (se hace en `CuentivoTheme`).
+  2. Diálogos y bottom sheets a la misma opacidad que las tarjetas eran ilegibles. Ahora `surfaceContainerHigh` (diálogos) y `surfaceContainerLow` (hojas) usan `OverlayDark`/`OverlayLight` casi opacos; las Cards siguen glass vía `surfaceContainerHighest`.
+- `AuthenticationScreen`: disco menta con la "C" (marca provisional), título grande, y el formulario en tarjeta sólida con campos redondeados y spinner en el botón.
+
+### Apartado de suscripciones (UI)
+
+`SubscriptionSheet` + `PlanCard` dentro de `ui/CuentivoApp.kt`: los dos planes lado a lado, el actual marcado, con ✓ lo incluido y en gris lo que le falta al gratis. Se abre desde la tarjeta "Tu cuenta" del Inicio **y** desde el diálogo de límite alcanzado. Los números salen de `FeatureAccessManager`, nunca escritos a mano. **El botón "Suscribirme a Pro" todavía no cobra** — muestra un aviso, porque el producto no existe en Play Console.
+
+### Publicación — estado real
+
+- Keystore creado en `C:\Users\pibed\cuentivo-release.jks` (alias `cuentivo`), `keystore.properties` en la raíz, ignorado por git.
+- **AAB firmado generado y verificado** con `jarsigner` → `jar verified`. Ruta: `app/build/outputs/bundle/release/app-release.aab`. **Aún no subido a Play.**
+- Si se sube una segunda vez hay que subir `versionCode` (hoy 1).
+
+Lo que NO se hizo en esta sesión y sigue abierto:
+
+1. **Google Play Billing**: no hay código de cobro. Requiere que Diego cree la app en Play Console y el producto `cuentivo_pro_mensual` de $199 MXN. Hoy `MainActivity` fija `tier = SubscriptionTier.FREE` en una sola línea, lista para conectarse.
+2. **Fotos** de productos y de comprobantes de pago (`ProductEntity.imageUri` existe y sigue en `null`; `payments` necesita columna nueva → migración 4→5).
+3. **Importar/exportar productos en Excel/CSV.**
+4. **Cancelar venta/abono desde la UI** (`cancelSaleIdempotently`/`cancelPaymentIdempotently` siguen sin botón).
+5. Sync **todavía sin verificar** contra Firestore o el emulador.
+6. Ícono propio, política de privacidad, formulario de Seguridad de datos.
+7. `android:allowBackup="true"` sin decidir: hoy el respaldo de Android puede copiar la base financiera completa.
+
 ## Siguiente sesión — por dónde continuar (orden recomendado)
 
 1. **Probar en dispositivo el rediseño UX** (`installDebug`): elegir cliente 2/producto 2 en el selector, abono en pesos, crear cuenta con confirmación. Es lo que el usuario reportó roto.

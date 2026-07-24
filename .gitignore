@@ -17,3 +17,8 @@
 local.properties
 /.superpowers/
 app/google-services.json
+# Release signing. Losing the keystore means never being able to update the app on Play again:
+# keep a backup somewhere safe, just never in git.
+keystore.properties
+*.jks
+*.keystore

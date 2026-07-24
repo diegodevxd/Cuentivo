@@ -8,6 +8,26 @@ import androidx.room.Transaction
 import com.cuentivo.app.domain.AuditAction
 import com.cuentivo.app.domain.AuditTrail
 
+/**
+ * A sale with money still owed on it. Mirrors domain.OutstandingSale, which PaymentAllocator takes;
+ * kept separate so the domain layer stays free of Room.
+ */
+data class OutstandingSaleRow(
+    val id: String,
+    val outstandingCents: Long,
+    val dueDateEpochDay: Long?,
+    val saleDateEpochDay: Long,
+)
+
+/** A sale as offered for correction on screen: what it was worth and what is still unpaid. */
+data class CancelableSaleRow(
+    val id: String,
+    val saleNumber: String,
+    val saleDateEpochDay: Long,
+    val totalCents: Long,
+    val outstandingCents: Long,
+)
+
 @Dao
 interface FinancialDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -117,6 +137,56 @@ interface FinancialDao {
 
     @Query("SELECT * FROM sales WHERE id = :saleId")
     suspend fun saleForId(saleId: String): SaleEntity?
+
+    /**
+     * The customer's sales that still owe something, for feeding PaymentAllocator.
+     *
+     * Same shape as the subquery in overdueBalanceCents, minus the due-date filter: a payment is
+     * applied to whatever is unpaid, whether or not it is late yet. Canceled payments contribute
+     * nothing, so cancelling a payment puts its sale back in the queue automatically.
+     */
+    @Query(
+        "SELECT sale.id AS id, " +
+            "sale.totalCents - COALESCE(SUM(CASE WHEN payment.canceledAtEpochMillis IS NULL THEN allocation.amountCents ELSE 0 END), 0) AS outstandingCents, " +
+            "sale.dueDateEpochDay AS dueDateEpochDay, sale.saleDateEpochDay AS saleDateEpochDay " +
+            "FROM sales AS sale " +
+            "LEFT JOIN payment_allocations AS allocation ON allocation.saleId = sale.id " +
+            "LEFT JOIN payments AS payment ON payment.id = allocation.paymentId " +
+            "WHERE sale.businessId = :businessId AND sale.customerId = :customerId AND sale.isCanceled = 0 " +
+            "GROUP BY sale.id HAVING outstandingCents > 0"
+    )
+    suspend fun outstandingSalesForCustomer(businessId: String, customerId: String): List<OutstandingSaleRow>
+
+    /**
+     * The customer's sales that can still be corrected from the screen.
+     *
+     * Only sales with something unpaid are offered: cancelSaleIdempotently compensates exactly the
+     * unpaid remainder, so a fully collected sale would produce a zero movement that says nothing
+     * about the money already received. That case is a refund, which is cancelling the payment.
+     */
+    @Query(
+        "SELECT sale.id AS id, sale.saleNumber AS saleNumber, sale.saleDateEpochDay AS saleDateEpochDay, " +
+            "sale.totalCents AS totalCents, " +
+            "sale.totalCents - COALESCE(SUM(CASE WHEN payment.canceledAtEpochMillis IS NULL THEN allocation.amountCents ELSE 0 END), 0) AS outstandingCents " +
+            "FROM sales AS sale " +
+            "LEFT JOIN payment_allocations AS allocation ON allocation.saleId = sale.id " +
+            "LEFT JOIN payments AS payment ON payment.id = allocation.paymentId " +
+            "WHERE sale.businessId = :businessId AND sale.customerId = :customerId AND sale.isCanceled = 0 " +
+            "GROUP BY sale.id HAVING outstandingCents > 0 ORDER BY sale.saleDateEpochDay DESC, sale.id"
+    )
+    suspend fun cancelableSalesForCustomer(businessId: String, customerId: String): List<CancelableSaleRow>
+
+    /** The customer's payments that have not been reversed yet. */
+    @Query("SELECT * FROM payments WHERE businessId = :businessId AND customerId = :customerId AND canceledAtEpochMillis IS NULL ORDER BY paymentDateEpochDay DESC, id")
+    suspend fun activePaymentsForCustomer(businessId: String, customerId: String): List<PaymentEntity>
+
+    /**
+     * Every sale ever written for the business, for the free-plan limit.
+     *
+     * Canceled sales count too: cancelling must not become a way to reset the counter.
+     */
+    @Query("SELECT COUNT(*) FROM sales WHERE businessId = :businessId")
+    suspend fun registeredSaleCount(businessId: String): Int
 
     @Query("SELECT COALESCE(SUM(allocation.amountCents), 0) FROM payment_allocations AS allocation INNER JOIN payments AS payment ON payment.id = allocation.paymentId WHERE allocation.saleId = :saleId AND payment.canceledAtEpochMillis IS NULL")
     suspend fun activeAllocatedPaymentCents(saleId: String): Long
