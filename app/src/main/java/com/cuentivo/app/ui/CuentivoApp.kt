@@ -31,7 +31,7 @@ import java.util.Locale
 private enum class AppDestination(val label: String) { HOME("Inicio"), CUSTOMERS("Clientes"), NEW_SALE("Nueva venta"), MOVEMENTS("Movimientos"), MORE("Más") }
 
 @Composable
-fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList(), onCreateBusiness: () -> Unit = {}) {
+fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList(), onCreateBusiness: () -> Unit = {}, onCreateCustomer: (String) -> Unit = {}) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     Scaffold(
         bottomBar = {
@@ -43,7 +43,7 @@ fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = e
         },
     ) { padding ->
         if (destination == AppDestination.HOME) DashboardScreen(state, padding, onCreateBusiness)
-        else if (destination == AppDestination.CUSTOMERS) CustomersScreen(customers, padding)
+        else if (destination == AppDestination.CUSTOMERS) CustomersScreen(customers, padding, onCreateCustomer)
         else if (destination == AppDestination.MORE) ProductsScreen(products, padding)
         else PlaceholderScreen(destination.label, padding)
     }
@@ -62,10 +62,13 @@ private fun ProductsScreen(products: List<ProductEntity>, padding: PaddingValues
 }
 
 @Composable
-private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: PaddingValues) {
+private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: PaddingValues, onCreateCustomer: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
     Column(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Clientes", style = MaterialTheme.typography.headlineSmall)
+        OutlinedTextField(name, { name = it }, label = { Text("Nombre del cliente") }, modifier = Modifier.fillMaxWidth())
+        FilledTonalButton(onClick = { if (name.isNotBlank()) { onCreateCustomer(name.trim()); name = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Agregar cliente") }
         OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o teléfono") }, modifier = Modifier.fillMaxWidth())
         val filtered = customers.filter { it.customer.name.contains(query, true) || (it.customer.phone?.contains(query) == true) }
         if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes clientes registrados" else "No se encontraron clientes")

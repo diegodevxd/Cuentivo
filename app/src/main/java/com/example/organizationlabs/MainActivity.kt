@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import java.util.UUID
+import com.cuentivo.app.domain.CustomerNameNormalizer
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.ui.theme.CuentivoTheme
@@ -38,6 +39,13 @@ class MainActivity : ComponentActivity() {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
                         database.businessDao().insert(com.cuentivo.app.data.local.BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", "local-owner", "MXN", "America/Mexico_City", now, now))
+                        recreate()
+                    }
+                }, onCreateCustomer = { name ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        database.customerDao().insert(com.cuentivo.app.data.local.CustomerEntity(UUID.randomUUID().toString(), businessId, name, CustomerNameNormalizer.key(name), null, null, null, null, null, true, now, now, null))
                         recreate()
                     }
                 })
