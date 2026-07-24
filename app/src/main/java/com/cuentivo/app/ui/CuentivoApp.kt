@@ -70,6 +70,7 @@ private fun ProductsScreen(products: List<ProductEntity>, padding: PaddingValues
 private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: PaddingValues, onCreateCustomer: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     Column(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Clientes", style = MaterialTheme.typography.headlineSmall)
         OutlinedTextField(name, { name = it }, label = { Text("Nombre del cliente") }, modifier = Modifier.fillMaxWidth())
@@ -77,7 +78,8 @@ private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: Paddin
         OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o teléfono") }, modifier = Modifier.fillMaxWidth())
         val filtered = customers.filter { it.customer.name.contains(query, true) || (it.customer.phone?.contains(query) == true) }
         if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes clientes registrados" else "No se encontraron clientes")
-        filtered.forEach { row -> Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(row.customer.name); Text(formatMoney(row.balanceCents)); row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) } } } }
+        selected?.let { Text("Saldo de ${it.customer.name}: ${formatMoney(it.balanceCents)}", style = MaterialTheme.typography.titleMedium) }
+        filtered.forEach { row -> Card(onClick = { selected = row }, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(row.customer.name); Text(formatMoney(row.balanceCents)); row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) } } } }
     }
 }
 
