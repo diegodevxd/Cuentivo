@@ -1,0 +1,30 @@
+package com.cuentivo.app.ui
+
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import com.cuentivo.app.ui.dashboard.DashboardUiState
+import org.junit.Rule
+import org.junit.Test
+
+class CuentivoAppTest {
+    @get:Rule val composeRule = createComposeRule()
+
+    @Test fun empty_dashboard_explains_how_to_start() {
+        composeRule.setContent { CuentivoApp(DashboardUiState.NoBusiness) }
+
+        composeRule.onNodeWithText("Crea tu primer negocio para comenzar").assertIsDisplayed()
+        composeRule.onNodeWithText("Inicio").assertIsDisplayed()
+    }
+
+    @Test fun populated_dashboard_shows_the_primary_sale_action() {
+        composeRule.setContent {
+            CuentivoApp(DashboardUiState.Content("Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+        }
+
+        composeRule.onAllNodesWithText("Nueva venta").assertCountEquals(2)
+        composeRule.onNodeWithText("$125.00").assertIsDisplayed()
+    }
+}
