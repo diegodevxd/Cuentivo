@@ -22,6 +22,13 @@ interface CustomerDao {
 
     @Query("UPDATE customers SET isActive = 0, deletedAtEpochMillis = :archivedAtEpochMillis, updatedAtEpochMillis = :archivedAtEpochMillis WHERE id = :customerId")
     suspend fun archive(customerId: String, archivedAtEpochMillis: Long)
+
+    @Query("SELECT * FROM customers WHERE id = :customerId")
+    suspend fun byId(customerId: String): CustomerEntity?
+
+    /** Adopts a remote customer wholesale. Only call once the merge planner says the remote wins. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(customer: CustomerEntity)
 }
 
 data class CustomerBalanceRow(

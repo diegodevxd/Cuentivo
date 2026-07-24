@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
+    id("com.google.gms.google-services")
 }
 
 room {
@@ -25,6 +26,14 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Off unless explicitly asked for, so a release build can never be pointed at localhost:
+        //   .\gradlew.bat installDebug -Pcuentivo.useEmulators=true
+        buildConfigField(
+            "boolean",
+            "USE_FIREBASE_EMULATORS",
+            (project.findProperty("cuentivo.useEmulators") as? String ?: "false"),
+        )
     }
 
     buildTypes {
@@ -40,11 +49,19 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
 dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation(platform("com.google.firebase:firebase-bom:34.16.0"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
     implementation(platform(libs.androidx.compose.bom))
+    // Version managed by the Compose BOM. Core set only — material-icons-extended stays out.
+    implementation("androidx.compose.material:material-icons-core")
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)

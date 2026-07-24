@@ -19,4 +19,11 @@ interface ProductDao {
 
     @Query("UPDATE products SET isActive = 0, deletedAtEpochMillis = :archivedAtEpochMillis, updatedAtEpochMillis = :archivedAtEpochMillis WHERE id = :productId")
     suspend fun archive(productId: String, archivedAtEpochMillis: Long)
+
+    @Query("SELECT * FROM products WHERE id = :productId")
+    suspend fun byId(productId: String): ProductEntity?
+
+    /** Adopts a remote product wholesale. Only call once the merge planner says the remote wins. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(product: ProductEntity)
 }

@@ -5,6 +5,8 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.cuentivo.app.domain.AuditAction
+import com.cuentivo.app.domain.AuditTrail
 
 @Dao
 interface FinancialDao {
@@ -13,6 +15,42 @@ interface FinancialDao {
 
     @Query("SELECT resultId FROM operations WHERE idempotencyKey = :key")
     suspend fun operationResultId(key: String): String?
+
+    /**
+     * IGNORE, not ABORT: the audit id is derived from the idempotency key, so a replayed operation
+     * must find its event already there and carry on rather than blowing up the transaction.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAuditEvent(event: AuditLogEntity)
+
+    /**
+     * Records who did what, inside the caller's transaction.
+     *
+     * Being in the same transaction as the financial write is the whole point: an audit row that
+     * can be lost independently of the movement it describes is not an audit trail.
+     */
+    suspend fun recordAudit(
+        operation: OperationEntity,
+        action: AuditAction,
+        businessId: String,
+        entityType: String,
+        entityId: String,
+        userId: String,
+        timestampEpochMillis: Long,
+    ) {
+        insertAuditEvent(
+            AuditLogEntity(
+                id = AuditTrail.eventId(operation.idempotencyKey),
+                businessId = businessId,
+                entityType = entityType,
+                entityId = entityId,
+                action = action.code,
+                userId = userId,
+                timestampEpochMillis = timestampEpochMillis,
+                summary = action.summary,
+            )
+        )
+    }
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertSale(sale: SaleEntity)
@@ -28,6 +66,33 @@ interface FinancialDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertMovement(movement: AccountMovementEntity)
+
+    // Remote adoption uses IGNORE, not ABORT: a document that already exists locally is the normal
+    // reconvergence case, not an error. Nothing here can overwrite an existing financial row, which
+    // is what keeps the ledger append-only even when the write originates on another device.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun adoptSale(sale: SaleEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun adoptSaleItem(item: SaleItemEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun adoptPayment(payment: PaymentEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun adoptAllocation(allocation: PaymentAllocationEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun adoptMovement(movement: AccountMovementEntity)
+
+    @Query("SELECT * FROM sale_items WHERE id = :itemId")
+    suspend fun saleItemForId(itemId: String): SaleItemEntity?
+
+    @Query("SELECT * FROM payment_allocations WHERE id = :allocationId")
+    suspend fun allocationForId(allocationId: String): PaymentAllocationEntity?
+
+    @Query("SELECT * FROM account_movements WHERE id = :movementId")
+    suspend fun movementForId(movementId: String): AccountMovementEntity?
 
     @Query("SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END), 0) FROM account_movements WHERE businessId = :businessId AND customerId = :customerId")
     suspend fun customerBalanceCents(businessId: String, customerId: String): Long
@@ -98,6 +163,7 @@ interface FinancialDao {
         insertSale(sale)
         insertSaleItems(items)
         insertMovement(charge)
+        recordAudit(operation, AuditAction.SALE_CREATED, sale.businessId, "SALE", sale.id, sale.sellerUserId, sale.createdAtEpochMillis)
         return sale.id
     }
 
@@ -135,6 +201,7 @@ interface FinancialDao {
         insertPayment(payment)
         insertAllocations(allocations)
         insertMovement(movement)
+        recordAudit(operation, AuditAction.PAYMENT_REGISTERED, payment.businessId, "PAYMENT", payment.id, payment.createdByUserId, payment.createdAtEpochMillis)
         return payment.id
     }
 
@@ -154,6 +221,7 @@ interface FinancialDao {
         require(adjustment.amountCents > 0) { "Adjustment must be positive." }
         require(!adjustment.notes.isNullOrBlank()) { "Adjustment reason is required." }
         insertMovement(adjustment)
+        recordAudit(operation, AuditAction.ADJUSTMENT_REGISTERED, adjustment.businessId, "MOVEMENT", adjustment.id, adjustment.createdByUserId, adjustment.occurredAtEpochMillis)
         return adjustment.id
     }
 
@@ -176,6 +244,7 @@ interface FinancialDao {
         require(outstandingCents >= 0 && cancellation.amountCents == outstandingCents) { "Cancellation must compensate the unpaid amount." }
         markSaleCanceled(sale.id, cancellation.occurredAtEpochMillis)
         insertMovement(cancellation)
+        recordAudit(operation, AuditAction.SALE_CANCELED, sale.businessId, "SALE", sale.id, cancellation.createdByUserId, cancellation.occurredAtEpochMillis)
         return sale.id
     }
 
@@ -196,6 +265,7 @@ interface FinancialDao {
         require(refund.amountCents == payment.amountCents) { "Refund must match the original payment." }
         markPaymentCanceled(payment.id, refund.occurredAtEpochMillis)
         insertMovement(refund)
+        recordAudit(operation, AuditAction.PAYMENT_CANCELED, payment.businessId, "PAYMENT", payment.id, refund.createdByUserId, refund.occurredAtEpochMillis)
         return payment.id
     }
 }

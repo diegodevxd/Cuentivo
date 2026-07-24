@@ -1,0 +1,24 @@
+{
+  "score": 4,
+  "summary": "Las reglas publicadas aplican aislamiento por negocio, autenticación obligatoria, RBAC y validación estricta de esquema. Son un prototipo sólido para el contrato de sincronización futuro, pero aún requieren pruebas con Emulator Suite cuando exista el cliente de sincronización real.",
+  "findings": [
+    {
+      "check": "Acceso entre negocios y escalación de privilegios",
+      "severity": "minor",
+      "issue": "No se encontró una ruta para que un usuario autenticado lea otro negocio, cree su propia membresía privilegiada, modifique al propietario o convierta una membresía existente en OWNER. La creación del OWNER sólo funciona para el propietario del negocio creado en el mismo lote.",
+      "recommendation": "Conservar el bootstrap por lote y cubrirlo con pruebas de Emulator Suite antes de habilitar invitaciones en producción."
+    },
+    {
+      "check": "Bypass de actualización, tipos, tamaño y campos extra",
+      "severity": "minor",
+      "issue": "Las reglas invocan los validadores de dominio en todos los creates y updates permitidos; los documentos inmutables no aceptan updates ni deletes. Los textos, montos, fechas y claves se limitan explícitamente.",
+      "recommendation": "Mantener los validadores al evolucionar cada entidad y añadir tests de valores frontera."
+    },
+    {
+      "check": "Integridad de agregados financieros",
+      "severity": "minor",
+      "issue": "Un EDITOR autorizado puede crear por separado una venta, un pago o un movimiento. Eso no permite acceso no autorizado, pero el contrato actual no exige todavía que una venta y su movimiento CHARGE se envíen en el mismo lote.",
+      "recommendation": "La sincronización de Fase 3 debe enviar cada operación financiera como un lote idempotente y validar su pareja con getAfter, o usar una Cloud Function. No activar sincronización financiera hasta implementar esa garantía."
+    }
+  ]
+}

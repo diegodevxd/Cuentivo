@@ -16,3 +16,4 @@
 .cxx
 local.properties
 /.superpowers/
+app/google-services.json
