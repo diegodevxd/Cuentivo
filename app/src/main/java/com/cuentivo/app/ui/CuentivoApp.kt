@@ -77,7 +77,7 @@ private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: Paddin
         OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o teléfono") }, modifier = Modifier.fillMaxWidth())
         val filtered = customers.filter { it.customer.name.contains(query, true) || (it.customer.phone?.contains(query) == true) }
         if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes clientes registrados" else "No se encontraron clientes")
-        filtered.forEach { row -> Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(row.customer.name); Text(formatMoney(row.balanceCents)) } } }
+        filtered.forEach { row -> Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(row.customer.name); Text(formatMoney(row.balanceCents)); row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) } } } }
     }
 }
 
