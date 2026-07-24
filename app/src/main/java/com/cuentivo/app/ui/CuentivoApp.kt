@@ -31,7 +31,7 @@ import java.util.Locale
 private enum class AppDestination(val label: String) { HOME("Inicio"), CUSTOMERS("Clientes"), NEW_SALE("Nueva venta"), MOVEMENTS("Movimientos"), MORE("Más") }
 
 @Composable
-fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList(), onCreateBusiness: () -> Unit = {}, onCreateCustomer: (String) -> Unit = {}) {
+fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList(), onCreateBusiness: () -> Unit = {}, onCreateCustomer: (String) -> Unit = {}, onCreateProduct: (String, Long) -> Unit = { _, _ -> }) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     Scaffold(
         bottomBar = {
@@ -44,16 +44,21 @@ fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = e
     ) { padding ->
         if (destination == AppDestination.HOME) DashboardScreen(state, padding, onCreateBusiness)
         else if (destination == AppDestination.CUSTOMERS) CustomersScreen(customers, padding, onCreateCustomer)
-        else if (destination == AppDestination.MORE) ProductsScreen(products, padding)
+        else if (destination == AppDestination.MORE) ProductsScreen(products, padding, onCreateProduct)
         else PlaceholderScreen(destination.label, padding)
     }
 }
 
 @Composable
-private fun ProductsScreen(products: List<ProductEntity>, padding: PaddingValues) {
+private fun ProductsScreen(products: List<ProductEntity>, padding: PaddingValues, onCreateProduct: (String, Long) -> Unit) {
     var query by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
     Column(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Productos", style = MaterialTheme.typography.headlineSmall)
+        OutlinedTextField(name, { name = it }, label = { Text("Nombre del producto") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(price, { price = it.filter(Char::isDigit) }, label = { Text("Precio en centavos") }, modifier = Modifier.fillMaxWidth())
+        FilledTonalButton(onClick = { price.toLongOrNull()?.takeIf { name.isNotBlank() && it >= 0 }?.let { onCreateProduct(name.trim(), it); name = ""; price = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Agregar producto") }
         OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o SKU") }, modifier = Modifier.fillMaxWidth())
         val filtered = products.filter { it.name.contains(query, true) || (it.sku?.contains(query, true) == true) }
         if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes productos registrados" else "No se encontraron productos")

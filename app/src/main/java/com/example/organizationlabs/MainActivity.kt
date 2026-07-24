@@ -48,6 +48,13 @@ class MainActivity : ComponentActivity() {
                         database.customerDao().insert(com.cuentivo.app.data.local.CustomerEntity(UUID.randomUUID().toString(), businessId, name, CustomerNameNormalizer.key(name), null, null, null, null, null, true, now, now, null))
                         recreate()
                     }
+                }, onCreateProduct = { name, priceCents ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        database.productDao().insert(com.cuentivo.app.data.local.ProductEntity(UUID.randomUUID().toString(), businessId, name, null, null, null, priceCents, null, null, null, true, now, now, null))
+                        recreate()
+                    }
                 })
             }
         }
