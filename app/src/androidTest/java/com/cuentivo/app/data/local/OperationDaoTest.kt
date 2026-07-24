@@ -111,6 +111,16 @@ class OperationDaoTest {
         assertEquals(700, dao.overdueBalanceCents("business-1", 6))
     }
 
+    @Test fun dashboard_queries_select_the_local_business_and_count_customers_in_debt() = runBlocking {
+        database.businessDao().insert(BusinessEntity("business-1", "Mi negocio", "owner-1", "MXN", "America/Mexico_City", 1, 1))
+        database.financialDao().insertMovement(
+            AccountMovementEntity("charge-1", "business-1", "customer-1", null, null, "CHARGE", 500, "DEBIT", 1, "owner-1", null, null),
+        )
+
+        assertEquals("Mi negocio", database.businessDao().first()?.name)
+        assertEquals(1, database.financialDao().customersWithDebtCount("business-1"))
+    }
+
     @Test fun payment_allocation_cannot_exceed_sale_outstanding_balance() = runBlocking {
         val dao = database.financialDao()
         val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)

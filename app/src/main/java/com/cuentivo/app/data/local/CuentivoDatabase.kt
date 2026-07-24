@@ -10,4 +10,5 @@ abstract class CuentivoDatabase : RoomDatabase() {
     abstract fun customerDao(): CustomerDao
     abstract fun productDao(): ProductDao
     abstract fun auditDao(): AuditDao
+    abstract fun businessDao(): BusinessDao
 }

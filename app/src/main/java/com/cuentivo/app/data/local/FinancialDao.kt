@@ -35,6 +35,9 @@ interface FinancialDao {
     @Query("SELECT COALESCE(SUM(CASE WHEN balanceCents > 0 THEN balanceCents ELSE 0 END), 0) FROM (SELECT customerId, SUM(CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END) AS balanceCents FROM account_movements WHERE businessId = :businessId GROUP BY customerId)")
     suspend fun businessReceivableCents(businessId: String): Long
 
+    @Query("SELECT COUNT(*) FROM (SELECT customerId FROM account_movements WHERE businessId = :businessId GROUP BY customerId HAVING SUM(CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END) > 0)")
+    suspend fun customersWithDebtCount(businessId: String): Long
+
     @Query("SELECT COALESCE(SUM(totalCents), 0) FROM sales WHERE businessId = :businessId AND isCanceled = 0 AND saleDateEpochDay BETWEEN :startEpochDay AND :endEpochDay")
     suspend fun salesTotalCents(businessId: String, startEpochDay: Long, endEpochDay: Long): Long
 
