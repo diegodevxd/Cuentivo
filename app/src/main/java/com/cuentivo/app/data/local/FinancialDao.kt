@@ -32,6 +32,9 @@ interface FinancialDao {
     @Query("SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END), 0) FROM account_movements WHERE businessId = :businessId AND customerId = :customerId")
     suspend fun customerBalanceCents(businessId: String, customerId: String): Long
 
+    @Query("SELECT * FROM account_movements WHERE businessId = :businessId AND customerId = :customerId ORDER BY occurredAtEpochMillis DESC")
+    suspend fun customerMovements(businessId: String, customerId: String): List<AccountMovementEntity>
+
     @Query("SELECT COALESCE(SUM(CASE WHEN balanceCents > 0 THEN balanceCents ELSE 0 END), 0) FROM (SELECT customerId, SUM(CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END) AS balanceCents FROM account_movements WHERE businessId = :businessId GROUP BY customerId)")
     suspend fun businessReceivableCents(businessId: String): Long
 
