@@ -55,6 +55,17 @@ class MainActivity : ComponentActivity() {
                         database.productDao().insert(com.cuentivo.app.data.local.ProductEntity(UUID.randomUUID().toString(), businessId, name, null, null, null, priceCents, null, null, null, true, now, now, null))
                         recreate()
                     }
+                }, onCreateSale = { customer, product ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        val saleId = UUID.randomUUID().toString()
+                        val sale = com.cuentivo.app.data.local.SaleEntity(saleId, businessId, customer.customer.id, "local-owner", "V-${now}", java.time.LocalDate.now().toEpochDay(), null, product.salePriceCents, 0, product.salePriceCents, false, null, now, now)
+                        val item = com.cuentivo.app.data.local.SaleItemEntity(UUID.randomUUID().toString(), saleId, product.id, product.name, 1, product.salePriceCents, 0, product.salePriceCents)
+                        val charge = com.cuentivo.app.data.local.AccountMovementEntity(UUID.randomUUID().toString(), businessId, customer.customer.id, saleId, null, "CHARGE", product.salePriceCents, "DEBIT", now, "local-owner", null, null)
+                        database.financialDao().createSaleIdempotently(com.cuentivo.app.data.local.OperationEntity("sale-$saleId", "SALE", saleId, now), sale, listOf(item), charge)
+                        recreate()
+                    }
                 })
             }
         }

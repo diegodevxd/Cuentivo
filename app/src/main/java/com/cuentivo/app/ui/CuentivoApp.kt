@@ -31,7 +31,7 @@ import java.util.Locale
 private enum class AppDestination(val label: String) { HOME("Inicio"), CUSTOMERS("Clientes"), NEW_SALE("Nueva venta"), MOVEMENTS("Movimientos"), MORE("Más") }
 
 @Composable
-fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList(), onCreateBusiness: () -> Unit = {}, onCreateCustomer: (String) -> Unit = {}, onCreateProduct: (String, Long) -> Unit = { _, _ -> }) {
+fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList(), onCreateBusiness: () -> Unit = {}, onCreateCustomer: (String) -> Unit = {}, onCreateProduct: (String, Long) -> Unit = { _, _ -> }, onCreateSale: (CustomerBalanceRow, ProductEntity) -> Unit = { _, _ -> }) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     Scaffold(
         bottomBar = {
@@ -45,7 +45,20 @@ fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = e
         if (destination == AppDestination.HOME) DashboardScreen(state, padding, onCreateBusiness)
         else if (destination == AppDestination.CUSTOMERS) CustomersScreen(customers, padding, onCreateCustomer)
         else if (destination == AppDestination.MORE) ProductsScreen(products, padding, onCreateProduct)
+        else if (destination == AppDestination.NEW_SALE) NewSaleScreen(customers, products, padding, onCreateSale)
         else PlaceholderScreen(destination.label, padding)
+    }
+}
+
+@Composable
+private fun NewSaleScreen(customers: List<CustomerBalanceRow>, products: List<ProductEntity>, padding: PaddingValues, onCreateSale: (CustomerBalanceRow, ProductEntity) -> Unit) {
+    var customer by remember { mutableStateOf(customers.firstOrNull()) }
+    var product by remember { mutableStateOf(products.firstOrNull()) }
+    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Nueva venta", style = MaterialTheme.typography.headlineSmall)
+        customer?.let { Text("Cliente: ${it.customer.name}") } ?: Text("Primero crea un cliente")
+        product?.let { Text("Producto: ${it.name} — ${formatMoney(it.salePriceCents)}") } ?: Text("Primero crea un producto")
+        FilledTonalButton(onClick = { if (customer != null && product != null) onCreateSale(customer!!, product!!) }, modifier = Modifier.fillMaxWidth()) { Text("Registrar venta") }
     }
 }
 
