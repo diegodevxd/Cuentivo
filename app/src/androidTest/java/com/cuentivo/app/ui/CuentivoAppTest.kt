@@ -21,7 +21,7 @@ class CuentivoAppTest {
 
     @Test fun populated_dashboard_shows_the_primary_sale_action() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
         composeRule.onAllNodesWithText("Nueva venta").assertCountEquals(2)

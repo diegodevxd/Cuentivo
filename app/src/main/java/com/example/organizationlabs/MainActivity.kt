@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.room.Room
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
+import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.ui.theme.CuentivoTheme
 import com.cuentivo.app.data.local.CuentivoDatabase
 import com.cuentivo.app.domain.DashboardRepository
@@ -23,7 +24,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             CuentivoTheme {
                 val state by produceState<DashboardUiState>(initialValue = DashboardUiState.NoBusiness) { value = viewModel.load() }
-                CuentivoApp(state)
+                val customers by produceState<List<CustomerBalanceRow>>(initialValue = emptyList(), state) {
+                    value = (state as? DashboardUiState.Content)?.let { database.customerDao().activeWithBalances(it.businessId) } ?: emptyList()
+                }
+                CuentivoApp(state, customers)
             }
         }
     }

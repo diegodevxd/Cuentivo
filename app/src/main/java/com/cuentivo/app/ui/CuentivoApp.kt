@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.ui.dashboard.DashboardUiState
+import com.cuentivo.app.data.local.CustomerBalanceRow
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
@@ -28,7 +29,7 @@ import java.util.Locale
 private enum class AppDestination(val label: String) { HOME("Inicio"), CUSTOMERS("Clientes"), NEW_SALE("Nueva venta"), MOVEMENTS("Movimientos"), MORE("Más") }
 
 @Composable
-fun CuentivoApp(state: DashboardUiState) {
+fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList()) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     Scaffold(
         bottomBar = {
@@ -40,7 +41,17 @@ fun CuentivoApp(state: DashboardUiState) {
         },
     ) { padding ->
         if (destination == AppDestination.HOME) DashboardScreen(state, padding)
+        else if (destination == AppDestination.CUSTOMERS) CustomersScreen(customers, padding)
         else PlaceholderScreen(destination.label, padding)
+    }
+}
+
+@Composable
+private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: PaddingValues) {
+    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Clientes", style = MaterialTheme.typography.headlineSmall)
+        if (customers.isEmpty()) Text("Aún no tienes clientes registrados")
+        customers.forEach { row -> Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(row.customer.name); Text(formatMoney(row.balanceCents)) } } }
     }
 }
 

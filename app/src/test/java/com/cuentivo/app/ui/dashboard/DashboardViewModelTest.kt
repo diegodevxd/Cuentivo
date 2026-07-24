@@ -16,7 +16,7 @@ class DashboardViewModelTest {
     @Test
     fun snapshot_becomes_dashboard_content() = runBlocking {
         val viewModel = DashboardViewModel {
-            DashboardSnapshot("Mi negocio", 12_500, 8_000, 3_000, 500, 2)
+            DashboardSnapshot("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2)
         }
 
         assertEquals(12_500, (viewModel.load() as DashboardUiState.Content).receivableCents)
