@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.data.local.CustomerBalanceRow
+import com.cuentivo.app.data.local.ProductEntity
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
@@ -29,7 +30,7 @@ import java.util.Locale
 private enum class AppDestination(val label: String) { HOME("Inicio"), CUSTOMERS("Clientes"), NEW_SALE("Nueva venta"), MOVEMENTS("Movimientos"), MORE("Más") }
 
 @Composable
-fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList()) {
+fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList()) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     Scaffold(
         bottomBar = {
@@ -42,7 +43,17 @@ fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = e
     ) { padding ->
         if (destination == AppDestination.HOME) DashboardScreen(state, padding)
         else if (destination == AppDestination.CUSTOMERS) CustomersScreen(customers, padding)
+        else if (destination == AppDestination.MORE) ProductsScreen(products, padding)
         else PlaceholderScreen(destination.label, padding)
+    }
+}
+
+@Composable
+private fun ProductsScreen(products: List<ProductEntity>, padding: PaddingValues) {
+    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Productos", style = MaterialTheme.typography.headlineSmall)
+        if (products.isEmpty()) Text("Aún no tienes productos registrados")
+        products.forEach { product -> Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(product.name); Text(formatMoney(product.salePriceCents)); product.category?.let { Text(it, style = MaterialTheme.typography.labelLarge) } } } }
     }
 }
 

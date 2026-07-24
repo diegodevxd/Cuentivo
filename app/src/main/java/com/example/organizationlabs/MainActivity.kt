@@ -8,6 +8,7 @@ import androidx.room.Room
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import com.cuentivo.app.data.local.CustomerBalanceRow
+import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.ui.theme.CuentivoTheme
 import com.cuentivo.app.data.local.CuentivoDatabase
 import com.cuentivo.app.domain.DashboardRepository
@@ -27,7 +28,10 @@ class MainActivity : ComponentActivity() {
                 val customers by produceState<List<CustomerBalanceRow>>(initialValue = emptyList(), state) {
                     value = (state as? DashboardUiState.Content)?.let { database.customerDao().activeWithBalances(it.businessId) } ?: emptyList()
                 }
-                CuentivoApp(state, customers)
+                val products by produceState<List<ProductEntity>>(initialValue = emptyList(), state) {
+                    value = (state as? DashboardUiState.Content)?.let { database.productDao().searchActive(it.businessId, "", "") } ?: emptyList()
+                }
+                CuentivoApp(state, customers, products)
             }
         }
     }
