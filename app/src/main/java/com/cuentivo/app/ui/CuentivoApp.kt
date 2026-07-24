@@ -31,7 +31,7 @@ import java.util.Locale
 private enum class AppDestination(val label: String) { HOME("Inicio"), CUSTOMERS("Clientes"), NEW_SALE("Nueva venta"), MOVEMENTS("Movimientos"), MORE("Más") }
 
 @Composable
-fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList(), onCreateBusiness: () -> Unit = {}, onCreateCustomer: (String) -> Unit = {}, onCreateProduct: (String, Long) -> Unit = { _, _ -> }, onCreateSale: (CustomerBalanceRow, ProductEntity) -> Unit = { _, _ -> }) {
+fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList(), onCreateBusiness: () -> Unit = {}, onCreateCustomer: (String) -> Unit = {}, onCreateProduct: (String, Long) -> Unit = { _, _ -> }, onCreateSale: (CustomerBalanceRow, ProductEntity) -> Unit = { _, _ -> }, onCreatePayment: (CustomerBalanceRow, Long) -> Unit = { _, _ -> }) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     Scaffold(
         bottomBar = {
@@ -46,7 +46,20 @@ fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = e
         else if (destination == AppDestination.CUSTOMERS) CustomersScreen(customers, padding, onCreateCustomer)
         else if (destination == AppDestination.MORE) ProductsScreen(products, padding, onCreateProduct)
         else if (destination == AppDestination.NEW_SALE) NewSaleScreen(customers, products, padding, onCreateSale)
+        else if (destination == AppDestination.MOVEMENTS) PaymentScreen(customers, padding, onCreatePayment)
         else PlaceholderScreen(destination.label, padding)
+    }
+}
+
+@Composable
+private fun PaymentScreen(customers: List<CustomerBalanceRow>, padding: PaddingValues, onCreatePayment: (CustomerBalanceRow, Long) -> Unit) {
+    var amount by remember { mutableStateOf("") }
+    val customer = customers.firstOrNull { it.balanceCents > 0 }
+    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Registrar abono", style = MaterialTheme.typography.headlineSmall)
+        customer?.let { Text("Cliente: ${it.customer.name}") } ?: Text("No hay clientes con saldo pendiente")
+        OutlinedTextField(amount, { amount = it.filter(Char::isDigit) }, label = { Text("Monto en centavos") }, modifier = Modifier.fillMaxWidth())
+        FilledTonalButton(onClick = { amount.toLongOrNull()?.takeIf { it > 0 }?.let { if (customer != null) onCreatePayment(customer, it) } }, modifier = Modifier.fillMaxWidth()) { Text("Guardar abono") }
     }
 }
 

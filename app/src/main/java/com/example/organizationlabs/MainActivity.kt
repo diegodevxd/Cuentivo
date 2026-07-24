@@ -66,6 +66,16 @@ class MainActivity : ComponentActivity() {
                         database.financialDao().createSaleIdempotently(com.cuentivo.app.data.local.OperationEntity("sale-$saleId", "SALE", saleId, now), sale, listOf(item), charge)
                         recreate()
                     }
+                }, onCreatePayment = { customer, amountCents ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        val paymentId = UUID.randomUUID().toString()
+                        val payment = com.cuentivo.app.data.local.PaymentEntity(paymentId, businessId, customer.customer.id, amountCents, "CASH", java.time.LocalDate.now().toEpochDay(), null, null, "local-owner", now, null)
+                        val movement = com.cuentivo.app.data.local.AccountMovementEntity(UUID.randomUUID().toString(), businessId, customer.customer.id, null, paymentId, "PAYMENT", amountCents, "CREDIT", now, "local-owner", null, null)
+                        database.financialDao().registerPaymentIdempotently(com.cuentivo.app.data.local.OperationEntity("payment-$paymentId", "PAYMENT", paymentId, now), payment, emptyList(), movement)
+                        recreate()
+                    }
                 })
             }
         }
