@@ -7,6 +7,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.room.Room
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import java.util.UUID
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.ui.theme.CuentivoTheme
@@ -31,7 +34,13 @@ class MainActivity : ComponentActivity() {
                 val products by produceState<List<ProductEntity>>(initialValue = emptyList(), state) {
                     value = (state as? DashboardUiState.Content)?.let { database.productDao().searchActive(it.businessId, "", "") } ?: emptyList()
                 }
-                CuentivoApp(state, customers, products)
+                CuentivoApp(state, customers, products, onCreateBusiness = {
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        database.businessDao().insert(com.cuentivo.app.data.local.BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", "local-owner", "MXN", "America/Mexico_City", now, now))
+                        recreate()
+                    }
+                })
             }
         }
     }

@@ -31,7 +31,7 @@ import java.util.Locale
 private enum class AppDestination(val label: String) { HOME("Inicio"), CUSTOMERS("Clientes"), NEW_SALE("Nueva venta"), MOVEMENTS("Movimientos"), MORE("Más") }
 
 @Composable
-fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList()) {
+fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = emptyList(), products: List<ProductEntity> = emptyList(), onCreateBusiness: () -> Unit = {}) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     Scaffold(
         bottomBar = {
@@ -42,7 +42,7 @@ fun CuentivoApp(state: DashboardUiState, customers: List<CustomerBalanceRow> = e
             }
         },
     ) { padding ->
-        if (destination == AppDestination.HOME) DashboardScreen(state, padding)
+        if (destination == AppDestination.HOME) DashboardScreen(state, padding, onCreateBusiness)
         else if (destination == AppDestination.CUSTOMERS) CustomersScreen(customers, padding)
         else if (destination == AppDestination.MORE) ProductsScreen(products, padding)
         else PlaceholderScreen(destination.label, padding)
@@ -74,7 +74,7 @@ private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: Paddin
 }
 
 @Composable
-private fun DashboardScreen(state: DashboardUiState, padding: PaddingValues) {
+private fun DashboardScreen(state: DashboardUiState, padding: PaddingValues, onCreateBusiness: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -83,6 +83,7 @@ private fun DashboardScreen(state: DashboardUiState, padding: PaddingValues) {
             DashboardUiState.NoBusiness -> {
                 Text("Bienvenido a Cuentivo", style = MaterialTheme.typography.headlineSmall)
                 Text("Crea tu primer negocio para comenzar")
+                FilledTonalButton(onClick = onCreateBusiness, modifier = Modifier.fillMaxWidth()) { Text("Crear mi negocio") }
             }
             is DashboardUiState.Content -> {
                 Text("Buenos días, ${state.businessName}", style = MaterialTheme.typography.headlineSmall)
