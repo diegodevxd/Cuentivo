@@ -27,7 +27,7 @@ El modelo local existente incluye `Business`, `BusinessMember`, `Customer`, `Pro
 
 1. **Probar en dispositivo el rediseño UX** (`installDebug`): elegir cliente 2/producto 2 en el selector, abono en pesos, crear cuenta con confirmación. Es lo que el usuario reportó roto.
 2. **Sync end-to-end contra el Emulator Suite** (`firebase emulators:start` + `installDebug -Pcuentivo.useEmulators=true`): ninguna escritura remota se ha confirmado jamás. Desplegar también las reglas endurecidas (`firebase deploy --only firestore:rules`).
-3. **Fase 5 UI**: pantalla de estado de cuenta usando `CustomerStatementCsv` + `customerMovements`, y compartir CSV.
+3. ~~Fase 5 UI: pantalla de estado de cuenta.~~ **Hecho al cierre de la sesión**: tocar un cliente en la pestaña Clientes abre `StatementSheet` (hoja con movimientos cronológicos, +cargo/−abono) y botón "Compartir CSV" (intent `ACTION_SEND` texto plano con el CSV de `CustomerStatementCsv`; solo el cliente elegido, nunca otros). Fechas con `ZoneId.systemDefault()` — pendiente usar la zona del negocio. Falta probarlo en dispositivo. Queda de Fase 5: resúmenes por periodo en UI, PDF, recordatorios.
 4. **Fase 4 UI**: miembros/roles/auditoría; `MainActivity` debe consultar `Permissions.allows(...)`.
 5. Arrancar la sesión con `ECC_GATEGUARD=off`: el hook duplicó cada escritura de archivo (29 denegaciones hoy).
 

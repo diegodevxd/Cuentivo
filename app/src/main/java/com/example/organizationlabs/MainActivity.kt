@@ -77,6 +77,8 @@ class MainActivity : ComponentActivity() {
                 // recreate() refresh, which flashed the whole Activity and lost the active tab.
                 var refreshKey by remember { mutableStateOf(0) }
                 var uiMessage by remember { mutableStateOf<String?>(null) }
+                var statementCustomer by remember { mutableStateOf<String?>(null) }
+                var statementEntries by remember { mutableStateOf<List<com.cuentivo.app.domain.StatementEntry>>(emptyList()) }
                 // Backfills the owner membership for businesses created before it was published,
                 // whose queued rows are otherwise parked on PERMISSION_DENIED forever.
                 LaunchedEffect(currentUserId) {
@@ -148,6 +150,35 @@ class MainActivity : ComponentActivity() {
                         syncQueue.enqueue(businessId, "MOVEMENT", movement.id, now, mapOf("businessId" to businessId, "customerId" to movement.customerId, "saleId" to null, "paymentId" to payment.id, "type" to movement.type, "amountCents" to movement.amountCents, "direction" to movement.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
                         refreshKey++
                         uiMessage = "Abono registrado"
+                    }
+                }, statementCustomer = statementCustomer, statement = statementEntries, onShowStatement = { row ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        // The DAO returns newest-first; the statement needs chronological order
+                        // because the CSV builder derives the running balance from it.
+                        statementEntries = database.financialDao().customerMovements(businessId, row.customer.id)
+                            .asReversed()
+                            .map { movement ->
+                                com.cuentivo.app.domain.StatementEntry(
+                                    dateIso = java.time.Instant.ofEpochMilli(movement.occurredAtEpochMillis)
+                                        .atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString(),
+                                    type = movement.type,
+                                    direction = movement.direction,
+                                    amountCents = movement.amountCents,
+                                    notes = movement.notes,
+                                )
+                            }
+                        statementCustomer = row.customer.name
+                    }
+                }, onDismissStatement = { statementCustomer = null }, onShareStatement = {
+                    val name = statementCustomer
+                    if (name != null) {
+                        val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Estado de cuenta - $name")
+                            putExtra(android.content.Intent.EXTRA_TEXT, com.cuentivo.app.domain.CustomerStatementCsv.build(statementEntries))
+                        }
+                        startActivity(android.content.Intent.createChooser(share, "Compartir estado de cuenta"))
                     }
                 }, message = uiMessage, onMessageShown = { uiMessage = null })
                 }

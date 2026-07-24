@@ -46,6 +46,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.ProductEntity
+import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import java.math.BigDecimal
 import java.text.NumberFormat
@@ -69,6 +70,11 @@ fun CuentivoApp(
     onCreateProduct: (String, Long) -> Unit = { _, _ -> },
     onCreateSale: (CustomerBalanceRow, ProductEntity) -> Unit = { _, _ -> },
     onCreatePayment: (CustomerBalanceRow, Long) -> Unit = { _, _ -> },
+    statementCustomer: String? = null,
+    statement: List<StatementEntry> = emptyList(),
+    onShowStatement: (CustomerBalanceRow) -> Unit = {},
+    onDismissStatement: () -> Unit = {},
+    onShareStatement: () -> Unit = {},
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
@@ -97,12 +103,70 @@ fun CuentivoApp(
     ) { padding ->
         when (destination) {
             AppDestination.HOME -> DashboardScreen(state, padding, onCreateBusiness, onNewSale = { destination = AppDestination.NEW_SALE })
-            AppDestination.CUSTOMERS -> CustomersScreen(customers, padding, onCreateCustomer)
+            AppDestination.CUSTOMERS -> CustomersScreen(customers, padding, onCreateCustomer, onShowStatement)
             AppDestination.PRODUCTS -> ProductsScreen(products, padding, onCreateProduct)
             AppDestination.NEW_SALE -> NewSaleScreen(customers, products, padding, onCreateSale)
             AppDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment)
         }
     }
+    if (statementCustomer != null) {
+        StatementSheet(statementCustomer, statement, onShareStatement, onDismissStatement)
+    }
+}
+
+/** A customer's ledger, most recent last, with one-tap CSV sharing. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StatementSheet(
+    customerName: String,
+    entries: List<StatementEntry>,
+    onShare: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Estado de cuenta", style = MaterialTheme.typography.headlineSmall)
+            Text(customerName, style = MaterialTheme.typography.titleMedium)
+            if (entries.isEmpty()) Text("Este cliente aún no tiene movimientos")
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()).weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                entries.forEach { entry ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(statementTypeLabel(entry.type))
+                                Text(entry.dateIso, style = MaterialTheme.typography.labelLarge)
+                            }
+                            Text(
+                                (if (entry.direction == "DEBIT") "+" else "−") + formatMoney(entry.amountCents),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
+                }
+            }
+            if (entries.isNotEmpty()) {
+                FilledTonalButton(onClick = onShare, modifier = Modifier.fillMaxWidth()) { Text("Compartir CSV") }
+            }
+        }
+    }
+}
+
+private fun statementTypeLabel(type: String): String = when (type) {
+    "CHARGE" -> "Cargo"
+    "PAYMENT" -> "Abono"
+    "ADJUSTMENT" -> "Ajuste"
+    "REFUND" -> "Devolución"
+    "CANCELLATION" -> "Cancelación"
+    else -> type
 }
 
 /**
@@ -363,10 +427,14 @@ private fun ProductsScreen(products: List<ProductEntity>, padding: PaddingValues
 }
 
 @Composable
-private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: PaddingValues, onCreateCustomer: (String) -> Unit) {
+private fun CustomersScreen(
+    customers: List<CustomerBalanceRow>,
+    padding: PaddingValues,
+    onCreateCustomer: (String) -> Unit,
+    onShowStatement: (CustomerBalanceRow) -> Unit,
+) {
     var query by remember { mutableStateOf("") }
     var showForm by remember { mutableStateOf(false) }
-    var selected by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     Column(
         modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -376,9 +444,9 @@ private fun CustomersScreen(customers: List<CustomerBalanceRow>, padding: Paddin
         OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o teléfono") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         val filtered = customers.filter { it.customer.name.contains(query, true) || (it.customer.phone?.contains(query) == true) }
         if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes clientes registrados" else "No se encontraron clientes")
-        selected?.let { Text("Saldo de ${it.customer.name}: ${formatMoney(it.balanceCents)}", style = MaterialTheme.typography.titleMedium) }
+        else Text("Toca un cliente para ver su estado de cuenta", style = MaterialTheme.typography.labelLarge)
         filtered.forEach { row ->
-            Card(onClick = { selected = row }, modifier = Modifier.fillMaxWidth()) {
+            Card(onClick = { onShowStatement(row) }, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(row.customer.name)
                     Text(formatMoney(row.balanceCents))
