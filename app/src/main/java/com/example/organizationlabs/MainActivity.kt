@@ -13,7 +13,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -40,19 +42,46 @@ import com.cuentivo.app.domain.DebtorShareText
 import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.domain.OutstandingSale
+import com.cuentivo.app.domain.PaidFeature
 import com.cuentivo.app.domain.PaymentAllocator
+import com.cuentivo.app.domain.ProductSheetParser
+import com.cuentivo.app.domain.SheetImport
+import com.cuentivo.app.domain.XlsxReader
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
+import com.cuentivo.app.ui.CancelableItem
 import com.cuentivo.app.ui.CuentivoApp
+import com.cuentivo.app.ui.CuentivoLoadingScreen
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.dashboard.DashboardViewModel
 import com.cuentivo.app.auth.FirebaseAuthenticationGateway
+import com.cuentivo.app.auth.LocalSessionGuard
+import com.cuentivo.app.billing.BillingGateway
 import com.cuentivo.app.ui.auth.AuthenticationScreen
 import com.cuentivo.app.sync.FirebaseEmulators
 import com.cuentivo.app.sync.OwnerMembershipBootstrap
 import com.cuentivo.app.sync.SyncQueue
 
 class MainActivity : ComponentActivity() {
+    /**
+     * The live plan, owned by the Activity because Play answers asynchronously and can change it at
+     * any moment — a purchase made on another device shows up on the next refresh.
+     */
+    private val tierState = mutableStateOf(SubscriptionTier.FREE)
+    private val billingMessageState = mutableStateOf<String?>(null)
+    private var billingGateway: BillingGateway? = null
+
+    /** Play can confirm a purchase while the app is in the background, so re-read it on return. */
+    override fun onResume() {
+        super.onResume()
+        billingGateway?.refresh()
+    }
+
+    override fun onDestroy() {
+        billingGateway?.close()
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -63,8 +92,18 @@ class MainActivity : ComponentActivity() {
             .build()
         val syncQueue = SyncQueue(database.syncOperationDao(), applicationContext)
         val membershipBootstrap = OwnerMembershipBootstrap(database.businessDao(), database.syncOperationDao(), syncQueue)
-        val viewModel = DashboardViewModel(DashboardRepository(database.businessDao(), database.financialDao())::load)
+        val dashboardRepository = DashboardRepository(database.businessDao(), database.financialDao())
+        val sessionGuard = LocalSessionGuard(applicationContext, database)
         val authenticationGateway = FirebaseAuthenticationGateway()
+        // Held as state rather than shown directly: Play answers whenever it wants, and the
+        // composition that owns the Snackbar may not exist yet when it does.
+        val billing = BillingGateway(
+            context = applicationContext,
+            onTierChanged = { tierState.value = it },
+            onMessage = { billingMessageState.value = it },
+        )
+        billingGateway = billing
+        billing.start()
         setContent {
             CuentivoTheme {
                 var authenticatedUserId by remember { mutableStateOf(authenticationGateway.currentUserId) }
@@ -101,17 +140,40 @@ class MainActivity : ComponentActivity() {
                 var uiMessage by remember { mutableStateOf<String?>(null) }
                 var statementCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
                 var statementEntries by remember { mutableStateOf<List<StatementEntry>>(emptyList()) }
+                var cancelables by remember { mutableStateOf<List<CancelableItem>>(emptyList()) }
                 var blocked by remember { mutableStateOf<AccessDecision.Blocked?>(null) }
-                // No Billing yet: every install is on the free plan until the Play subscription is
-                // wired up. Reading it through one variable means only this line changes later.
-                val tier = SubscriptionTier.FREE
+                // Kept after the import so the rejected rows can be listed: a snackbar saying "13 con
+                // problemas" without saying which ones leaves the person with nothing to fix.
+                var importReport by remember { mutableStateOf<SheetImport?>(null) }
+                // The real plan, straight from Google Play. Was pinned to FREE until Billing existed.
+                val tier by tierState
+                val billingMessage by billingMessageState
+                LaunchedEffect(billingMessage) {
+                    billingMessage?.let {
+                        uiMessage = it
+                        billingMessageState.value = null
+                    }
+                }
 
-                // Backfills the owner membership for businesses created before it was published,
-                // whose queued rows are otherwise parked on PERMISSION_DENIED forever.
+                // Nothing may read Room before the device has been claimed for this account: the
+                // loaders below would otherwise hand back the previous person's business in the
+                // instant before it gets wiped, which is the two-accounts-one-ledger bug.
+                var sessionReady by remember(currentUserId) { mutableStateOf(false) }
                 LaunchedEffect(currentUserId) {
-                    database.businessDao().first()
-                        ?.takeIf { it.ownerUserId == currentUserId }
-                        ?.let { membershipBootstrap.ensure(it) }
+                    if (sessionGuard.adopt(currentUserId)) {
+                        uiMessage = "Este teléfono tenía datos de otra cuenta y se borraron"
+                    }
+                    // Backfills the owner membership for businesses created before it was published,
+                    // whose queued rows are otherwise parked on PERMISSION_DENIED forever.
+                    database.businessDao().firstOwnedBy(currentUserId)?.let { membershipBootstrap.ensure(it) }
+                    sessionReady = true
+                }
+                if (!sessionReady) {
+                    CuentivoLoadingScreen()
+                } else {
+                val viewModel = remember(currentUserId) {
+                    // Bound to the signed-in owner, never to "the first business in the database".
+                    DashboardViewModel { dashboardRepository.load(currentUserId) }
                 }
                 val state by produceState<DashboardUiState>(initialValue = DashboardUiState.NoBusiness, refreshKey) { value = viewModel.load() }
                 val customers by produceState<List<CustomerBalanceRow>>(initialValue = emptyList(), state, refreshKey) {
@@ -121,6 +183,47 @@ class MainActivity : ComponentActivity() {
                     value = (state as? DashboardUiState.Content)?.let { database.productDao().searchActive(it.businessId, "", "") } ?: emptyList()
                 }
                 val businessName = (state as? DashboardUiState.Content)?.businessName ?: "Mi negocio"
+
+                // Statement and correctable items load together so the sheet stays consistent: a
+                // canceled sale leaves the buttons in the same pass in which its compensating
+                // movement appears in the list above.
+                val loadStatement: suspend (String, CustomerBalanceRow) -> Unit = { businessId, row ->
+                    val financialDao = database.financialDao()
+                    // The DAO returns newest-first; the statement needs chronological order
+                    // because the CSV builder derives the running balance from it.
+                    statementEntries = financialDao.customerMovements(businessId, row.customer.id)
+                        .asReversed()
+                        .map { movement ->
+                            StatementEntry(
+                                dateIso = Instant.ofEpochMilli(movement.occurredAtEpochMillis)
+                                    .atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                                type = movement.type,
+                                direction = movement.direction,
+                                amountCents = movement.amountCents,
+                                notes = movement.notes,
+                            )
+                        }
+                    cancelables = financialDao.cancelableSalesForCustomer(businessId, row.customer.id)
+                        .map { sale ->
+                            CancelableItem(
+                                id = sale.id,
+                                kind = CancelableItem.Kind.SALE,
+                                title = "Venta del ${LocalDate.ofEpochDay(sale.saleDateEpochDay)}",
+                                detail = "${Money.format(sale.totalCents)} · debe ${Money.format(sale.outstandingCents)}",
+                                amountCents = sale.outstandingCents,
+                            )
+                        } + financialDao.activePaymentsForCustomer(businessId, row.customer.id)
+                        .map { payment ->
+                            CancelableItem(
+                                id = payment.id,
+                                kind = CancelableItem.Kind.PAYMENT,
+                                title = "Abono de ${Money.format(payment.amountCents)}",
+                                detail = "Recibido el ${LocalDate.ofEpochDay(payment.paymentDateEpochDay)}",
+                                amountCents = payment.amountCents,
+                            )
+                        }
+                    statementCustomer = row
+                }
 
                 CuentivoApp(state, customers, products, tier, onCreateBusiness = {
                     lifecycleScope.launch {
@@ -147,16 +250,125 @@ class MainActivity : ComponentActivity() {
                             uiMessage = "Cliente agregado"
                         }
                     }
-                }, onCreateProduct = { name, priceCents ->
+                }, onEditCustomer = { row, name, phone ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
-                        val product = ProductEntity(UUID.randomUUID().toString(), businessId, name, null, null, null, priceCents, null, null, null, true, now, now, null)
+                        // Descriptive data, so it is edited in place — unlike anything financial.
+                        // normalizedName is recomputed with the name it guards: leaving it stale
+                        // would let a duplicate customer slip past the unique index.
+                        val updated = row.customer.copy(
+                            name = name,
+                            normalizedName = CustomerNameNormalizer.key(name),
+                            phone = phone,
+                            updatedAtEpochMillis = now,
+                        )
+                        runCatching { database.customerDao().update(updated) }.onSuccess {
+                            syncQueue.enqueue(businessId, "CUSTOMER", updated.id, now, mapOf("businessId" to businessId, "name" to updated.name, "normalizedName" to updated.normalizedName, "phone" to updated.phone, "email" to updated.email, "address" to updated.address, "notes" to updated.notes, "creditLimitCents" to updated.creditLimitCents, "isActive" to updated.isActive, "createdAtEpochMillis" to updated.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to updated.deletedAtEpochMillis))
+                            refreshKey++
+                            uiMessage = "Cliente actualizado"
+                        }.onFailure {
+                            uiMessage = "Ya tienes otro cliente con ese nombre"
+                        }
+                    }
+                }, onArchiveCustomer = { row ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        // Re-read the balance from the ledger instead of trusting the row the screen
+                        // drew: it may be seconds old, and a sale registered meanwhile would be
+                        // archived out of the totals.
+                        val balanceCents = database.financialDao().customerBalanceCents(businessId, row.customer.id)
+                        if (balanceCents != 0L) {
+                            uiMessage = "${row.customer.name} tiene saldo de ${Money.format(balanceCents)}; no se puede eliminar"
+                            return@launch
+                        }
+                        val now = System.currentTimeMillis()
+                        database.customerDao().archive(row.customer.id, now)
+                        // Soft delete, so it travels as an ordinary update: firestore.rules allows no
+                        // delete from any client, in any collection.
+                        val archived = row.customer.copy(isActive = false, deletedAtEpochMillis = now, updatedAtEpochMillis = now)
+                        syncQueue.enqueue(businessId, "CUSTOMER", archived.id, now, mapOf("businessId" to businessId, "name" to archived.name, "normalizedName" to archived.normalizedName, "phone" to archived.phone, "email" to archived.email, "address" to archived.address, "notes" to archived.notes, "creditLimitCents" to archived.creditLimitCents, "isActive" to false, "createdAtEpochMillis" to archived.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to now))
+                        refreshKey++
+                        uiMessage = "${row.customer.name} eliminado"
+                    }
+                }, onCreateProduct = { name, priceCents, imageFileName ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        val product = ProductEntity(UUID.randomUUID().toString(), businessId, name, null, null, null, priceCents, null, null, imageFileName, true, now, now, null)
                         database.productDao().insert(product)
-                        syncQueue.enqueue(businessId, "PRODUCT", product.id, now, mapOf("businessId" to businessId, "name" to name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to priceCents, "costPriceCents" to null, "stock" to null, "imageUri" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                        syncQueue.enqueue(businessId, "PRODUCT", product.id, now, mapOf("businessId" to businessId, "name" to name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to priceCents, "costPriceCents" to null, "stock" to null, "imageUri" to imageFileName, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
                         refreshKey++
                         uiMessage = "Producto agregado"
                     }
+                }, onEditProduct = { product, name, priceCents, imageFileName ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        // Past sales keep the price they charged in their own item rows, so this
+                        // only changes what future sales will offer.
+                        val updated = product.copy(name = name, salePriceCents = priceCents, imageUri = imageFileName, updatedAtEpochMillis = now)
+                        database.productDao().update(updated)
+                        syncQueue.enqueue(businessId, "PRODUCT", updated.id, now, mapOf("businessId" to businessId, "name" to updated.name, "description" to updated.description, "sku" to updated.sku, "category" to updated.category, "salePriceCents" to updated.salePriceCents, "costPriceCents" to updated.costPriceCents, "stock" to updated.stock, "imageUri" to updated.imageUri, "isActive" to updated.isActive, "createdAtEpochMillis" to updated.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to updated.deletedAtEpochMillis))
+                        refreshKey++
+                        uiMessage = "Producto actualizado"
+                    }
+                }, onArchiveProduct = { product ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        database.productDao().archive(product.id, now)
+                        // No balance guard here: sale_items keeps the name and price charged on each
+                        // past sale, so removing the product from the catalog rewrites nothing.
+                        val archived = product.copy(isActive = false, deletedAtEpochMillis = now, updatedAtEpochMillis = now)
+                        syncQueue.enqueue(businessId, "PRODUCT", archived.id, now, mapOf("businessId" to businessId, "name" to archived.name, "description" to archived.description, "sku" to archived.sku, "category" to archived.category, "salePriceCents" to archived.salePriceCents, "costPriceCents" to archived.costPriceCents, "stock" to archived.stock, "imageUri" to archived.imageUri, "isActive" to false, "createdAtEpochMillis" to archived.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to now))
+                        refreshKey++
+                        uiMessage = "${product.name} eliminado"
+                    }
+                }, onImportProducts = { uri ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    // Announced as part of Pro, so it is gated like every other paid feature. Until
+                    // Billing exists `tier` is pinned to FREE above, so flip that one line to test it.
+                    when (val decision = FeatureAccessManager.canUse(tier, PaidFeature.SPREADSHEET)) {
+                        is AccessDecision.Blocked -> blocked = decision
+                        AccessDecision.Allowed -> lifecycleScope.launch {
+                            val outcome = runCatching {
+                                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                    ?: error("No se pudo abrir el archivo")
+                                val existing = database.productDao().searchActive(businessId, "", "")
+                                val existingNames = existing.map { CustomerNameNormalizer.key(it.name) }.toSet()
+                                // Excel keeps its cells in a zip of XML; a CSV is just text. The
+                                // zip signature decides, because a file picked from a cloud drive
+                                // often arrives without a usable name or MIME type.
+                                val isXlsx = bytes.size > 1 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()
+                                if (isXlsx) {
+                                    ProductSheetParser.parse(XlsxReader.read(bytes), existingNames)
+                                } else {
+                                    ProductSheetParser.parseCsv(bytes.toString(Charsets.UTF_8), existingNames)
+                                }
+                            }
+                            outcome.onSuccess { result ->
+                                result.accepted.forEach { parsed ->
+                                    val now = System.currentTimeMillis()
+                                    val product = ProductEntity(UUID.randomUUID().toString(), businessId, parsed.name, parsed.description, parsed.sku, parsed.category, parsed.priceCents, null, null, null, true, now, now, null)
+                                    database.productDao().insert(product)
+                                    syncQueue.enqueue(businessId, "PRODUCT", product.id, now, mapOf("businessId" to businessId, "name" to product.name, "description" to product.description, "sku" to product.sku, "category" to product.category, "salePriceCents" to product.salePriceCents, "costPriceCents" to null, "stock" to null, "imageUri" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                }
+                                refreshKey++
+                                importReport = result
+                                uiMessage = when {
+                                    result.accepted.isEmpty() && result.rejected.isEmpty() ->
+                                        "No se encontraron productos en ese archivo"
+                                    result.rejected.isEmpty() -> "Se importaron ${result.accepted.size} productos"
+                                    else -> "Se importaron ${result.accepted.size}; ${result.rejected.size} con problemas"
+                                }
+                            }.onFailure {
+                                uiMessage = "No fue posible leer ese archivo"
+                            }
+                        }
+                    }
+                }, importReport = importReport, onDismissImportReport = { importReport = null }, onShareImportTemplate = {
+                    share("Plantilla de productos - Cuentivo", ProductSheetParser.TEMPLATE_CSV)
                 }, onCreateSale = { customer, draft ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     lifecycleScope.launch {
@@ -215,26 +427,61 @@ class MainActivity : ComponentActivity() {
                             else -> "Abono aplicado a ${allocations.size} venta(s)"
                         }
                     }
-                }, statementCustomer = statementCustomer?.customer?.name, statement = statementEntries, onShowStatement = { row ->
+                }, statementCustomer = statementCustomer?.customer?.name, statement = statementEntries, cancelables = cancelables, onCancelSale = { item ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    val row = statementCustomer ?: return@CuentivoApp
                     lifecycleScope.launch {
-                        // The DAO returns newest-first; the statement needs chronological order
-                        // because the CSV builder derives the running balance from it.
-                        statementEntries = database.financialDao().customerMovements(businessId, row.customer.id)
-                            .asReversed()
-                            .map { movement ->
-                                StatementEntry(
-                                    dateIso = Instant.ofEpochMilli(movement.occurredAtEpochMillis)
-                                        .atZone(ZoneId.systemDefault()).toLocalDate().toString(),
-                                    type = movement.type,
-                                    direction = movement.direction,
-                                    amountCents = movement.amountCents,
-                                    notes = movement.notes,
-                                )
-                            }
-                        statementCustomer = row
+                        val financialDao = database.financialDao()
+                        // The unpaid amount is read again here instead of trusting what the sheet
+                        // showed: the DAO refuses a cancellation that does not match it exactly.
+                        val sale = financialDao.saleForId(item.id)
+                        val outstandingCents = sale?.let { it.totalCents - financialDao.activeAllocatedPaymentCents(it.id) }
+                        if (sale == null || outstandingCents == null || outstandingCents <= 0) {
+                            uiMessage = "Esa venta ya no se puede cancelar"
+                            return@launch
+                        }
+                        val now = System.currentTimeMillis()
+                        val cancellation = AccountMovementEntity(UUID.randomUUID().toString(), businessId, sale.customerId, sale.id, null, "CANCELLATION", outstandingCents, "CREDIT", now, currentUserId, null, "Venta cancelada desde la app")
+                        runCatching {
+                            financialDao.cancelSaleIdempotently(OperationEntity("cancel-sale-${sale.id}", "SALE", sale.id, now), sale.id, cancellation)
+                        }.onSuccess {
+                            // Only the movement is queued: sales are create-only in firestore.rules,
+                            // so the cancellation travels as its own ledger row, never as an edit.
+                            syncQueue.enqueue(businessId, "MOVEMENT", cancellation.id, now, mapOf("businessId" to businessId, "customerId" to cancellation.customerId, "saleId" to sale.id, "paymentId" to null, "type" to cancellation.type, "amountCents" to cancellation.amountCents, "direction" to cancellation.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to cancellation.notes))
+                            refreshKey++
+                            loadStatement(businessId, row)
+                            uiMessage = "Venta cancelada; se descontaron ${Money.format(outstandingCents)}"
+                        }.onFailure {
+                            uiMessage = it.message ?: "No fue posible cancelar la venta"
+                        }
                     }
-                }, onDismissStatement = { statementCustomer = null }, onShareStatementCsv = {
+                }, onCancelPayment = { item ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    val row = statementCustomer ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val financialDao = database.financialDao()
+                        val payment = financialDao.paymentForId(item.id)
+                        if (payment == null || payment.canceledAtEpochMillis != null) {
+                            uiMessage = "Ese abono ya está cancelado"
+                            return@launch
+                        }
+                        val now = System.currentTimeMillis()
+                        val refund = AccountMovementEntity(UUID.randomUUID().toString(), businessId, payment.customerId, null, payment.id, "REFUND", payment.amountCents, "DEBIT", now, currentUserId, null, "Abono cancelado desde la app")
+                        runCatching {
+                            financialDao.cancelPaymentIdempotently(OperationEntity("cancel-payment-${payment.id}", "PAYMENT", payment.id, now), payment.id, refund)
+                        }.onSuccess {
+                            syncQueue.enqueue(businessId, "MOVEMENT", refund.id, now, mapOf("businessId" to businessId, "customerId" to refund.customerId, "saleId" to null, "paymentId" to payment.id, "type" to refund.type, "amountCents" to refund.amountCents, "direction" to refund.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to refund.notes))
+                            refreshKey++
+                            loadStatement(businessId, row)
+                            uiMessage = "Abono cancelado; la deuda subió ${Money.format(payment.amountCents)}"
+                        }.onFailure {
+                            uiMessage = it.message ?: "No fue posible cancelar el abono"
+                        }
+                    }
+                }, onShowStatement = { row ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    lifecycleScope.launch { loadStatement(businessId, row) }
+                }, onDismissStatement = { statementCustomer = null; cancelables = emptyList() }, onShareStatementCsv = {
                     statementCustomer?.let { row ->
                         share("Estado de cuenta - ${row.customer.name}", CustomerStatementCsv.build(statementEntries))
                     }
@@ -251,7 +498,8 @@ class MainActivity : ComponentActivity() {
                     share("Clientes por cobrar", DebtorShareText.forBusiness(businessName, debtors))
                 }, blocked = blocked, onDismissBlocked = { blocked = null }, onUpgrade = {
                     blocked = null
-                    uiMessage = "Las suscripciones se activan en la próxima versión"
+                    // The real Activity, not applicationContext: Play needs somewhere to put its sheet.
+                    billing.launchPurchase(this@MainActivity)
                 }, onSignOut = {
                     authenticationGateway.signOut()
                     authenticatedUserId = null
@@ -259,7 +507,11 @@ class MainActivity : ComponentActivity() {
                     // Local data goes first: if the account delete fails, the person is still signed
                     // in and can retry, rather than being locked out of rows that outlived them.
                     lifecycleScope.launch {
-                        database.clearAllTables()
+                        // clearAllTables() is a blocking Room call and Room refuses to run one on the
+                        // main thread; lifecycleScope launches on Main, so this used to crash the app
+                        // the moment the button was confirmed.
+                        withContext(Dispatchers.IO) { database.clearAllTables() }
+                        sessionGuard.forget()
                         authenticationGateway.deleteAccount { result ->
                             result.onSuccess {
                                 authenticatedUserId = null
@@ -270,6 +522,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }, message = uiMessage, onMessageShown = { uiMessage = null })
+                }
                 }
             }
         }

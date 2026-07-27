@@ -1,6 +1,55 @@
 # Memoria persistente — Cuentivo
 
-Actualizada: 2026-07-24 (America/Mexico_City)
+Actualizada: 2026-07-26 (America/Mexico_City)
+
+## Sesión 2026-07-26 — bugs de MVP tras probar el APK
+
+Diego probó el APK en su teléfono al volver del viaje. Verificado con
+`assembleDebug testDebugUnitTest` → **BUILD SUCCESSFUL, 89 pruebas, 0 fallos** (eran 80).
+Plan aprobado: `C:\Users\pibed\.claude\plans\ok-amigo-mira-este-dynamic-ritchie.md`.
+
+1. **BUG GRAVE ARREGLADO — dos cuentas compartían los datos.** `prueba3@gmail.com` veía los clientes
+   y ventas de `prueba2@gmail.com`. Causa: `BusinessDao.first()` era
+   `SELECT * FROM businesses ORDER BY createdAtEpochMillis LIMIT 1`, **sin filtrar por usuario**, y
+   `DashboardRepository.load()` lo usaba tal cual; cerrar sesión sólo borraba el uid en memoria.
+   Nada que ver con Firestore.
+   - `BusinessDao.firstOwnedBy(userId)` nuevo; `DashboardRepository.load(userId)` lo usa. `first()`
+     se conserva **sólo** para `SyncWorker`, con KDoc que dice por qué.
+   - `auth/LocalSessionGuard.kt` nuevo (SharedPreferences `cuentivo.session` → `lastUserId`):
+     `adopt(uid)` hace `clearAllTables()` si el teléfono traía datos de otra persona. Si no hay
+     marcador (instalación previa) compara contra `businesses.ownerUserId`, **lo que repara solo el
+     teléfono de Diego en el primer arranque**. `forget()` se llama al eliminar la cuenta.
+   - `MainActivity`: la rama autenticada se envuelve en `sessionReady`; hasta que `adopt` termina se
+     muestra `CuentivoLoadingScreen()`, porque los `produceState` alcanzaban a leer la base anterior.
+   - Cerrar sesión ahora pide confirmación y **avisa** que lo no sincronizado se borra si entra otra
+     cuenta. Es la contrapartida honesta de la decisión tomada.
+2. **Plan gratis a 5 clientes.** Una línea en `FeatureAccessManager.FREE_CUSTOMER_LIMIT`. Las pruebas
+   se reescribieron **contra la constante**, no contra el número, más una que fija el 5.
+3. **Eliminar clientes y productos.** Borrado suave con los `archive(...)` que ya existían en los DAO;
+   se reencola la fila completa como `update` (ningún `delete` es posible desde cliente en
+   `firestore.rules`). Producto: siempre, porque `sale_items` guarda el snapshot. Cliente: **sólo con
+   saldo en cero**, releído del DAO, no del renglón que pintó la pantalla; si debe, el diálogo manda
+   a su estado de cuenta.
+4. **Fotos de producto, locales.** `data/local/ProductImageStore.kt` + Photo Picker (sin permisos,
+   sin Coil). Se reescala a 1024 px y se guarda en `filesDir/product-images/`; `imageUri` guarda
+   **sólo el nombre de archivo** (una ruta absoluta se rompe en un restore). Miniatura de 56 dp en la
+   lista, cuadro de 96 dp en los diálogos. Un producto llegado por sync muestra el marcador: subirlas
+   exige Firebase Storage y plan Blaze, y eso queda fuera.
+5. **Importar productos de Excel/CSV, sin dependencias nuevas.** `domain/ProductSheetParser.kt` (puro,
+   importación **parcial** a propósito: reporta renglón y motivo de cada rechazo) y
+   `domain/XlsxReader.kt` (el .xlsx es un zip de XML → `java.util.zip` + escáner de etiquetas propio,
+   nada de Apache POI ni `XmlPullParser`, por eso corre en `testDebugUnitTest`). Precios sucios
+   (`$1,234.50`, `1234,50`) se limpian pero siguen pasando por `Money.positiveCentsFromPesos`, que
+   rechaza el tercer decimal. Botón "Plantilla" que comparte un CSV de ejemplo.
+   **8 pruebas nuevas** en `ProductSheetImportTest`, incluidas dos que arman un .xlsx con `ZipOutputStream`.
+   ⚠️ Está detrás de `PaidFeature.SPREADSHEET`, y `MainActivity` fija `val tier = SubscriptionTier.FREE`
+   hasta que exista Billing: **para probarlo hay que cambiar esa línea a `PRO`** y regresarla antes del AAB.
+6. **`docs/DESIGN_BRIEF.md`** nuevo: brief copiable a Claude Design con las 5 pestañas, las hojas y
+   diálogos reales, la paleta, las restricciones (minSdk 24 → sin `Modifier.blur`, sin dependencias)
+   y los 8 problemas concretos del diseño actual.
+
+**Falta probar todo esto en el teléfono.** APK: `app/build/outputs/apk/debug/app-debug.apk`.
+La prueba principal es el ciclo prueba2 → prueba3 → prueba2.
 
 ## Prompt maestro / propósito
 
@@ -64,15 +113,46 @@ El tema seguía usando la paleta morada de plantilla de Android Studio; por eso 
 - **AAB firmado generado y verificado** con `jarsigner` → `jar verified`. Ruta: `app/build/outputs/bundle/release/app-release.aab`. **Aún no subido a Play.**
 - Si se sube una segunda vez hay que subir `versionCode` (hoy 1).
 
+### Sesión 2026-07-24 (noche) — corregir errores y editar catálogo
+
+Verificado con `assembleDebug testDebugUnitTest` → **BUILD SUCCESSFUL, 80 pruebas, 0 fallos**.
+
+- **Cancelar venta / abono desde la pantalla** (pendiente #4 cerrado). En la hoja de estado de cuenta hay una sección "Corregir" con las ventas que aún deben algo y los abonos vigentes; cada una pide confirmación que dice explícitamente qué le pasa al saldo y que **nada se borra**. Llama a `cancelSaleIdempotently` / `cancelPaymentIdempotently` con clave `cancel-sale-{id}` / `cancel-payment-{id}`.
+  - El monto se **relee del DAO** antes de cancelar (`totalCents - activeAllocatedPaymentCents`), no se confía en lo que mostró la pantalla: el DAO exige que la compensación sea exactamente el remanente y un `require` fallido tiraría la app. Los errores se atrapan con `runCatching` y salen como Snackbar.
+  - Solo se ofrecen ventas con remanente > 0 (`FinancialDao.cancelableSalesForCustomer`): una venta ya cobrada produciría un movimiento de cero. Abonos vigentes vía `activePaymentsForCustomer`.
+  - **Sincronización**: se encola únicamente el `MOVEMENT` compensatorio, porque ventas y pagos son create-only en `firestore.rules` y la bandera no puede viajar como edición. Por eso `RemoteMerger` ahora, al adoptar un movimiento `CANCELLATION`/`REFUND`, aplica `markSaleCanceled`/`markPaymentCanceled` sobre el padre. Depende de que las ventas se descarguen antes que los movimientos, que es el orden de `PULL_SPECS`.
+- **Editar cliente y producto** (descriptivos, no financieros). Botón "Editar" en cada renglón de Clientes y Productos.
+  - Cliente: recalcula `normalizedName` con el nombre nuevo — dejarlo viejo abriría la puerta a un duplicado pese al índice único. Si choca con otro cliente, el mensaje lo dice en vez de tronar.
+  - Producto: el precio nuevo solo afecta ventas futuras; las pasadas guardan su snapshot en `sale_items`. La pantalla lo dice.
+  - `Money.pesosText(cents)` nuevo para prellenar el campo de precio sin símbolo ni separadores, con prueba de ida y vuelta contra `centsFromPesos` (2 pruebas).
+
 Lo que NO se hizo en esta sesión y sigue abierto:
 
 1. **Google Play Billing**: no hay código de cobro. Requiere que Diego cree la app en Play Console y el producto `cuentivo_pro_mensual` de $199 MXN. Hoy `MainActivity` fija `tier = SubscriptionTier.FREE` en una sola línea, lista para conectarse.
 2. **Fotos** de productos y de comprobantes de pago (`ProductEntity.imageUri` existe y sigue en `null`; `payments` necesita columna nueva → migración 4→5).
 3. **Importar/exportar productos en Excel/CSV.**
-4. **Cancelar venta/abono desde la UI** (`cancelSaleIdempotently`/`cancelPaymentIdempotently` siguen sin botón).
+4. ~~**Cancelar venta/abono desde la UI**~~ **Hecho la misma noche** (ver arriba). Falta probarlo en el teléfono.
 5. Sync **todavía sin verificar** contra Firestore o el emulador.
 6. Ícono propio, política de privacidad, formulario de Seguridad de datos.
 7. `android:allowBackup="true"` sin decidir: hoy el respaldo de Android puede copiar la base financiera completa.
+
+## PARA RETOMAR — cierre de sesión 2026-07-24 (noche)
+
+Diego se va de viaje. Estado exacto al cerrar:
+
+- **Compilando en verde**: `assembleDebug testDebugUnitTest` → BUILD SUCCESSFUL, **80 pruebas, 0 fallos**. El APK debug de `app/build/outputs/apk/debug/app-debug.apk` ya incluye cancelar venta/abono y editar cliente/producto, pero **Diego todavía no lo probó en el teléfono**.
+- **Git**: existe el commit `43182a5` (hecho desde otra sesión, a media edición: se llevó `FinancialDao.kt` pero dejó fuera el resto). Sin commitear quedan `CuentivoApp.kt`, `MainActivity.kt`, `RemoteMerger.kt`, `Money.kt`, `PROJECT_MEMORY.md` y `MoneyPesosTextTest.kt`. **No hay remoto configurado: nada está respaldado fuera de esta máquina.** `google-services.json` y `keystore.properties` siguen fuera del control de versiones, como debe ser.
+- **Plan de publicación aprobado**: `C:\Users\pibed\.claude\plans\fuzzy-baking-whale.md`. Ahí está la lista completa y ordenada de lo que falta para Play.
+
+**Decisión de producto que cambia el plan: el Pro de $199 MXN se queda.** Diego quiere monetizar, así que NO se ocultan los precios. Consecuencia directa: **Google Play Billing pasa a ser requisito para publicar** — mostrar el precio obliga a cobrar por Play. Bloqueado hasta que Diego cree la app en Play Console y dentro de ella la suscripción `cuentivo_pro_mensual` de $199 MXN. Hoy `MainActivity` fija `val tier = SubscriptionTier.FREE` en una línea, lista para conectarse.
+
+Otras decisiones tomadas esta sesión: cuenta de Play Console **personal** (aplica el requisito de 12 testers inscritos 14 días seguidos antes de producción), y **la sincronización se verifica antes de publicar**, no después.
+
+Primeros tres pasos al volver, en orden:
+
+1. Probar en el teléfono lo de esta noche (cancelar venta, cancelar abono, editar cliente duplicado, editar precio).
+2. Verificar sync end-to-end contra el emulador y desplegar las reglas endurecidas. Es el bloqueante real.
+3. Play Console: crear la app y la suscripción, para poder empezar Billing.
 
 ## Siguiente sesión — por dónde continuar (orden recomendado)
 

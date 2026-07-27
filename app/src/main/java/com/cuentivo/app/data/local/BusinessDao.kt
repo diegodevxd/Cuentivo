@@ -10,8 +10,20 @@ interface BusinessDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(business: BusinessEntity)
 
+    /**
+     * The only business this device holds, whoever owns it.
+     *
+     * Safe for background work such as SyncWorker, which runs after LocalSessionGuard has already
+     * cleared any other person's rows, so the table holds a single business. Screens must never use
+     * this: use [firstOwnedBy] instead, or a second account signing in on the same phone inherits
+     * the first one's customers and sales.
+     */
     @Query("SELECT * FROM businesses ORDER BY createdAtEpochMillis LIMIT 1")
     suspend fun first(): BusinessEntity?
+
+    /** The signed-in person's own business. Scoping by owner is what keeps two accounts apart. */
+    @Query("SELECT * FROM businesses WHERE ownerUserId = :userId ORDER BY createdAtEpochMillis LIMIT 1")
+    suspend fun firstOwnedBy(userId: String): BusinessEntity?
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertMember(member: BusinessMemberEntity): Long

@@ -46,7 +46,7 @@ sealed interface AccessDecision {
  * which mirrors rules the server enforces.
  */
 object FeatureAccessManager {
-    const val FREE_CUSTOMER_LIMIT = 10
+    const val FREE_CUSTOMER_LIMIT = 5
     const val FREE_SALE_LIMIT = 30
 
     private const val UPGRADE = "Actualiza a Cuentivo Pro para quitar los límites."

@@ -19,8 +19,14 @@ class DashboardRepository(
     private val financialDao: FinancialDao,
     private val todayProvider: () -> LocalDate = { LocalDate.now() },
 ) {
-    suspend fun load(): DashboardSnapshot? {
-        val business = businessDao.first() ?: return null
+    /**
+     * The dashboard of the business [userId] owns — never simply "the first business on the phone".
+     *
+     * Two accounts used to share one screen because this took whatever business Room held first, so
+     * a second person signing in on the same device saw the first one's customers and balances.
+     */
+    suspend fun load(userId: String): DashboardSnapshot? {
+        val business = businessDao.firstOwnedBy(userId) ?: return null
         val today = todayProvider()
         return DashboardSnapshot(
             businessId = business.id,

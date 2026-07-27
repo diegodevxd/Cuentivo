@@ -28,6 +28,14 @@ object Money {
         null
     }
 
+    /**
+     * Cents as plain editable pesos ("150.50"), for prefilling an amount field.
+     *
+     * No currency symbol or grouping, unlike [format]: this text goes back through
+     * [centsFromPesos] when the person saves, and it must round-trip to the same integer.
+     */
+    fun pesosText(cents: Long): String = BigDecimal.valueOf(cents, 2).toPlainString()
+
     /** Same as [centsFromPesos] but rejects zero and negatives, for amounts that must be charged. */
     fun positiveCentsFromPesos(text: String): Long? = centsFromPesos(text)?.takeIf { it > 0 }
 }

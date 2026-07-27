@@ -7,17 +7,30 @@ import org.junit.Test
 
 class PlanLimitsAndShareTest {
 
+    // Written against the constant rather than a hard-coded 5: tuning the free plan is meant to be a
+    // one-line change in FeatureAccessManager, and a test repeating the number defeats that.
     @Test
     fun `free plan allows customers up to the limit`() {
-        val decision = FeatureAccessManager.canAddCustomer(SubscriptionTier.FREE, activeCustomers = 9)
+        val lastFreeSlot = FeatureAccessManager.FREE_CUSTOMER_LIMIT - 1
+        val decision = FeatureAccessManager.canAddCustomer(SubscriptionTier.FREE, activeCustomers = lastFreeSlot)
         assertTrue(decision is AccessDecision.Allowed)
     }
 
     @Test
     fun `free plan blocks the customer past the limit and says why`() {
-        val decision = FeatureAccessManager.canAddCustomer(SubscriptionTier.FREE, activeCustomers = 10)
+        val decision = FeatureAccessManager.canAddCustomer(
+            SubscriptionTier.FREE,
+            activeCustomers = FeatureAccessManager.FREE_CUSTOMER_LIMIT,
+        )
         assertTrue(decision is AccessDecision.Blocked)
         assertTrue((decision as AccessDecision.Blocked).detail.contains("Pro"))
+        // The number offered has to be the number enforced, or the upgrade prompt lies.
+        assertTrue(decision.detail.contains("${FeatureAccessManager.FREE_CUSTOMER_LIMIT}"))
+    }
+
+    @Test
+    fun `the free customer limit is five`() {
+        assertEquals(5, FeatureAccessManager.FREE_CUSTOMER_LIMIT)
     }
 
     @Test

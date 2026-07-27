@@ -300,7 +300,21 @@ class RemoteMerger(private val database: CuentivoDatabase) {
                     local = local?.let { LocalRecord(it.occurredAtEpochMillis) },
                     sameContent = local == remote,
                     report = report,
-                    write = { database.financialDao().adoptMovement(remote) },
+                    write = {
+                        database.financialDao().adoptMovement(remote)
+                        // Sales and payments are create-only in firestore.rules, so a cancellation
+                        // can never arrive as an edit of those documents: this compensating
+                        // movement is the only carrier. Sales are pulled before movements, so the
+                        // row this flags has already landed.
+                        when (remote.type) {
+                            "CANCELLATION" -> remote.saleId?.let {
+                                database.financialDao().markSaleCanceled(it, remote.occurredAtEpochMillis)
+                            }
+                            "REFUND" -> remote.paymentId?.let {
+                                database.financialDao().markPaymentCanceled(it, remote.occurredAtEpochMillis)
+                            }
+                        }
+                    },
                 )
             }
 

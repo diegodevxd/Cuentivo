@@ -25,8 +25,10 @@ android {
         applicationId = "com.cuentivo.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // Play refuses an AAB whose versionCode was already uploaded, so this goes up on every
+        // upload even when versionName does not.
+        versionCode = 4
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -79,6 +81,9 @@ android {
 }
 
 dependencies {
+    // Declares the com.android.vending.BILLING permission in the merged manifest, which Play Console
+    // requires before it will let a subscription product be created for the app.
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation(platform("com.google.firebase:firebase-bom:34.16.0"))
     implementation("com.google.firebase:firebase-analytics")
