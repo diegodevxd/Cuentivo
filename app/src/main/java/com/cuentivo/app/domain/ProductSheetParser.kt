@@ -25,6 +25,15 @@ data class SheetImport(val accepted: List<ParsedProduct>, val rejected: List<Rej
  */
 object ProductSheetParser {
 
+    /**
+     * U+FEFF, the byte order mark Excel puts at the start of a UTF-8 CSV.
+     *
+     * Built from its code point instead of pasted in as a character: a raw BOM is invisible in an
+     * editor, and any tool that re-encodes this file can eat it without anyone noticing that CSV
+     * import quietly broke. Spelled this way it is also greppable.
+     */
+    private val BYTE_ORDER_MARK = Char(0xFEFF).toString()
+
     /** What a person gets when they ask the app for an example file. */
     const val TEMPLATE_CSV = "nombre,precio,sku,categoria,descripcion\n" +
         "Jabon de coco,45.50,JAB-01,Aseo,Barra de 100 g\n" +
@@ -90,8 +99,11 @@ object ProductSheetParser {
         val field = StringBuilder()
         var quoted = false
         var index = 0
-        // Excel writes a byte order mark; left in place it becomes part of the first header cell.
-        val content = text.removePrefix("﻿")
+        // Excel writes a byte order mark; left in place it becomes part of the first header cell, so
+        // "nombre" stops matching and the whole file silently falls back to positional columns.
+        // Written as the escape rather than the raw character: a literal BOM is invisible in an
+        // editor and any tool that re-encodes the file can eat it without anyone noticing.
+        val content = text.removePrefix(BYTE_ORDER_MARK)
 
         fun endField() {
             row.add(field.toString())

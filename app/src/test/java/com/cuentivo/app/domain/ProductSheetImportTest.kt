@@ -25,6 +25,26 @@ class ProductSheetImportTest {
     }
 
     @Test
+    fun `a csv saved by Excel with a byte order mark still finds its headers`() {
+        // Excel writes U+FEFF at the very start of a UTF-8 CSV. Left in place it glues itself to the
+        // first header cell, so "nombre" stops matching, the file falls back to positional columns,
+        // and every SKU and category silently lands in the wrong field.
+        val bom = Char(0xFEFF).toString()
+        val csv = bom + "nombre,precio,sku\nJabon de coco,45.50,JAB-01"
+
+        val result = ProductSheetParser.parseCsv(csv, existingNames = emptySet())
+
+        assertEquals(emptyList<RejectedRow>(), result.rejected)
+        assertEquals(1, result.accepted.size)
+        val product = result.accepted.first()
+        // Name intact — no invisible character clinging to it.
+        assertEquals("Jabon de coco", product.name)
+        assertEquals(4_550L, product.priceCents)
+        // Proof the header row was understood: sku only lands here by name, never by position.
+        assertEquals("JAB-01", product.sku)
+    }
+
+    @Test
     fun `falls back to name and price columns when the file has no header`() {
         val result = ProductSheetParser.parseCsv("Cubeta,89.00\nEscoba,55", existingNames = emptySet())
 

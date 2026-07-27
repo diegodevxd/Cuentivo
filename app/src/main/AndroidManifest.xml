@@ -2,8 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+      Backup is off on purpose. cuentivo.db is a financial ledger and the app deliberately binds it
+      to one signed-in account: LocalSessionGuard wipes it when a different uid appears. An automatic
+      restore runs before any of that could happen and would drop one person's customers, sales and
+      balances onto another person's phone. Recovery is the sync, not Google's backup.
+      The rules files below stay configured anyway, so flipping this flag back on later cannot
+      quietly start shipping the ledger off the device.
+    -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"

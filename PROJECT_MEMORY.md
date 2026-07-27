@@ -2,6 +2,51 @@
 
 Actualizada: 2026-07-27 (America/Mexico_City)
 
+## FASE A CERRADA — 2026-07-27
+
+Verificado con las tareas por separado, todas con código de salida 0:
+
+| Tarea | Resultado |
+|---|---|
+| `testDebugUnitTest --rerun-tasks` | **114 pruebas, 0 fallos, 0 errores** |
+| `lintDebug` | **0 errores**, 30 advertencias, 1 sugerencia |
+| `assembleRelease` | exit 0; APK `apksigner verify` → *Verifies*, esquema v2, `CN=Diego Fernando Mancera Gomez, O=Capilabs` |
+| `bundleRelease` | exit 0; AAB `jarsigner -verify` → *jar verified* |
+
+**Sobre lint, con precisión:** medí el estado **posterior** al desugaring → 0 errores. El conteo de
+"30 errores" previo viene de la revisión externa; no lo medí yo antes del arreglo, así que no afirmo
+cuántos eran exactamente `NewApi`. Lo verificable es que hoy no queda ninguno. **No se creó baseline
+ni se ocultó nada.**
+
+Cambios de esta fase:
+
+1. **`.kotlin/` a `.gitignore`** y `.kotlin/errors/errors-1785181423124.log` sacado del índice con
+   `git rm --cached`. Sin reescribir historia ni force-push.
+2. **BOM del CSV.** El literal crudo (`EF BB BF`, invisible en el editor) se sustituyó por
+   `Char(0xFEFF).toString()` en una constante con nombre. ⚠️ **Desviación deliberada:** se pidió la
+   secuencia de escape `﻿`, pero la herramienta de escritura la normalizaba de vuelta al
+   carácter crudo. El punto de código explícito cumple el mismo objetivo y además es greppable.
+   Prueba nueva `a csv saved by Excel with a byte order mark still finds its headers`, corrida
+   aislada antes de seguir: 9/9 en `ProductSheetImportTest`.
+3. **Auto Backup apagado.** `android:allowBackup="false"`, confirmado en el **manifest fusionado de
+   release**. `backup_rules.xml` (API ≤30) y `data_extraction_rules.xml` (API 31+) excluyen
+   `database`, `sharedpref`, `file`, `root` y `external` en `<cloud-backup>` **y** en
+   `<device-transfer>`. Se dejan configurados aunque el flag esté en false: si alguien lo reactiva,
+   el default es respaldar todo. Motivo: `LocalSessionGuard` ata la base a un uid, y una restauración
+   corre antes de eso y mezclaría los libros de dos negocios.
+4. **Aislamiento de alertas.** `FinancialDao.salesWithDueDate` ahora exige
+   `customer.businessId = sale.businessId` además del id. Sin migración, sin tocar el esquema.
+   ⚠️ **`DueSaleIsolationTest` (androidTest, 3 casos) está escrita pero NO ejecutada**: requiere
+   emulador o dispositivo conectado y no hay ninguno. Pendiente correrla.
+
+**Permisos `AD_ID` siguen en el manifest fusionado** (`com.google.android.gms.permission.AD_ID`,
+`ACCESS_ADSERVICES_AD_ID`), confirmando el diagnóstico: los mete `firebase-analytics`. Se quitan en
+**Fase D**, fuera del alcance de hoy.
+
+`versionCode` sigue en **4**; el plan indica subir como 5 cuando toque publicar. No se tocó aquí.
+
+**Siguiente: Fase B, y empieza por verificar la sync contra el emulador ANTES de reescribirla.**
+
 ## PARA RETOMAR — 2026-07-27
 
 Plan vigente: `C:\Users\pibed\.claude\plans\ok-amigo-mira-este-dynamic-ritchie.md`
@@ -48,7 +93,15 @@ Plan vigente: `C:\Users\pibed\.claude\plans\ok-amigo-mira-este-dynamic-ritchie.m
 5. Fase D: precio localizado desde `ProductDetails`, quitar `firebase-analytics`, Crashlytics.
 
 **Decisiones vigentes:** se cierra todo antes de invitar a los 12 testers (yo recomendaba arrancar
-el reloj de 14 días en paralelo; Diego decidió lo contrario). **La nube sigue siendo de Pro.**
+el reloj de 14 días en paralelo; Diego decidió lo contrario).
+
+**La sincronización básica es para Gratis y Pro.** ⚠️ Esto **revierte** una decisión anterior del
+mismo día: al preguntárselo de forma explícita, Diego había respondido *"No: la nube sigue siendo de
+Pro"*, y así quedó registrado. Más tarde, el 2026-07-27, instruyó lo contrario. Se deja constancia
+de ambas para que el cambio sea visible y no parezca un error de registro. **Consecuencia comercial
+pendiente de resolver:** `PaidFeature.CLOUD_BACKUP` era el gancho principal de los $199; si la nube
+va en Gratis, hay que revisar qué justifica el precio de Pro (límites, fotos, Excel, equipo).
+Ningún código se ha cambiado todavía por esta decisión.
 
 **Sin probar todavía: la compra de Billing en el teléfono**, y el rediseño completo en dispositivo.
 

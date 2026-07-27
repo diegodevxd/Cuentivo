@@ -16,6 +16,8 @@
 .cxx
 local.properties
 /.superpowers/
+# Kotlin compiler scratch: error logs and session files, regenerated on every build.
+.kotlin/
 app/google-services.json
 # Release signing. Losing the keystore means never being able to update the app on Play again:
 # keep a backup somewhere safe, just never in git.

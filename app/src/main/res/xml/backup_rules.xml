@@ -1,13 +1,20 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup rules for Android 11 and below (API <= 30). On API 31+ the manifest points at
+  data_extraction_rules.xml instead, so both files have to say the same thing.
+
+  android:allowBackup is already false, which makes these rules inert today. They are filled in
+  anyway: if anyone ever flips that flag back on, the default is "back up everything", and the
+  everything here is a financial ledger tied to one account.
+
+  Nothing is included. cuentivo.db holds sales, payments and balances; the cuentivo.session
+  preferences hold which uid owns that data; product-images holds photos taken by the shop owner.
+  A restore onto a phone signed in as somebody else would mix two businesses' books together.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="root" path="." />
+    <exclude domain="external" path="." />
 </full-backup-content>

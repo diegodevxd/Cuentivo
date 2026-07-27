@@ -211,7 +211,13 @@ interface FinancialDao {
             "customer.name AS customerName, customer.id AS customerId, " +
             "sale.totalCents - COALESCE(SUM(CASE WHEN payment.canceledAtEpochMillis IS NULL THEN allocation.amountCents ELSE 0 END), 0) AS outstandingCents " +
             "FROM sales AS sale " +
+            // Both halves of this join are load-bearing. There are no @ForeignKey constraints
+            // anywhere in this schema — integrity is enforced by require(...) inside the FinancialDao
+            // transactions — so nothing at the database level stops a row from pointing at a customer
+            // that belongs to another business. Matching on businessId too means such a row produces
+            // no alert, instead of leaking another business's customer name onto this screen.
             "INNER JOIN customers AS customer ON customer.id = sale.customerId " +
+            "AND customer.businessId = sale.businessId " +
             "LEFT JOIN payment_allocations AS allocation ON allocation.saleId = sale.id " +
             "LEFT JOIN payments AS payment ON payment.id = allocation.paymentId " +
             "WHERE sale.businessId = :businessId AND sale.isCanceled = 0 AND sale.dueDateEpochDay IS NOT NULL " +
