@@ -95,13 +95,36 @@ Plan vigente: `C:\Users\pibed\.claude\plans\ok-amigo-mira-este-dynamic-ritchie.m
 **Decisiones vigentes:** se cierra todo antes de invitar a los 12 testers (yo recomendaba arrancar
 el reloj de 14 días en paralelo; Diego decidió lo contrario).
 
-**La sincronización básica es para Gratis y Pro.** ⚠️ Esto **revierte** una decisión anterior del
-mismo día: al preguntárselo de forma explícita, Diego había respondido *"No: la nube sigue siendo de
-Pro"*, y así quedó registrado. Más tarde, el 2026-07-27, instruyó lo contrario. Se deja constancia
-de ambas para que el cambio sea visible y no parezca un error de registro. **Consecuencia comercial
-pendiente de resolver:** `PaidFeature.CLOUD_BACKUP` era el gancho principal de los $199; si la nube
-va en Gratis, hay que revisar qué justifica el precio de Pro (límites, fotos, Excel, equipo).
-Ningún código se ha cambiado todavía por esta decisión.
+### La nube es EXCLUSIVA de Pro — decisión definitiva (2026-07-27)
+
+`PaidFeature.CLOUD_BACKUP` y toda la sincronización con Firestore son beneficio de Pro. **Cualquier
+anotación anterior que dijera que la sincronización básica estaba disponible en Gratis queda
+anulada.** Hubo un ida y vuelta ese día; esta es la versión final y no hay ambigüedad.
+
+**Implementado y verificado**, sin reescribir la arquitectura de sync:
+
+- **`domain/SyncEntitlement.kt`** — lógica pura, 9 pruebas. `tierFor(storedUserId, storedTier,
+  currentUserId)` **falla cerrado en todas las direcciones**: sin sesión, sin nada guardado, plan
+  desconocido, o entitlement de **otro uid** → FREE. El riesgo que cubre no es "a alguien de Pro le
+  tardó la sync", es que el libro mayor de una persona viaje bajo el entitlement de otra.
+- **`billing/EntitlementStore.kt`** — persiste el plan en SharedPreferences `cuentivo.entitlement`
+  (`entitlementUserId`, `entitlementTier`) **junto al uid al que pertenece**. El plan vive en estado
+  Compose mientras la app está abierta, pero WorkManager puede correr en un proceso donde
+  `MainActivity` nunca arrancó; un tier en memoria es invisible justo cuando ocurre la sync.
+- **Dos compuertas, no una.** `SyncScheduler.enqueue` no programa nada para Gratis, y **`SyncWorker`
+  vuelve a preguntar dentro del `doWork`**, porque el trabajo programado mientras había Pro
+  sobrevive al fin de la suscripción y WorkManager lo correría días después.
+- **Nada se pierde.** Gratis sigue escribiendo sus filas en `sync_operations`; simplemente no se
+  envían. El Worker devuelve `success` sin borrar ni marcar nada, así que al recuperar Pro la cola
+  drena sola. `MainActivity` reprograma la sync en cuanto el tier vuelve a PRO.
+- **Eliminar la cuenta también olvida el entitlement**, para que quien se registre después en ese
+  teléfono no herede Pro.
+
+Verificado: **123 pruebas, 0 fallos**; `lintDebug` **0 errores**; `assembleRelease` y `bundleRelease`
+exit 0; AAB `jar verified`; APK reporta `versionCode='5' versionName='1.2'`.
+
+⚠️ **Sin verificar todavía:** la sincronización sigue sin confirmarse end-to-end contra Firestore o
+el emulador. Lo que se cerró es **quién puede** sincronizar, no que sincronizar funcione.
 
 **Sin probar todavía: la compra de Billing en el teléfono**, y el rediseño completo en dispositivo.
 

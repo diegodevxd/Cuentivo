@@ -4,11 +4,23 @@ import android.content.Context
 import androidx.room.Room
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.cuentivo.app.billing.EntitlementStore
 import com.cuentivo.app.data.local.CUENTIVO_MIGRATIONS
 import com.cuentivo.app.data.local.CuentivoDatabase
 
 class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
+        // Second gate, and the one that actually matters. SyncScheduler refuses to schedule for a
+        // free account, but work queued while Pro was active outlives the subscription, and
+        // WorkManager would happily run it days later. So it is asked again here, in the process
+        // that is about to touch the network, immediately before it does.
+        //
+        // Nothing is deleted and nothing is marked failed: the outbox rows stay exactly as they are,
+        // so resubscribing drains them. Returning success rather than retry is deliberate — this is
+        // not a transient failure, and retrying forever would burn battery on someone who has simply
+        // chosen the free plan.
+        if (!EntitlementStore(applicationContext).allowsCloudSync()) return Result.success()
+
         // WorkManager can run this in a process where MainActivity never started, so the emulator
         // wiring has to happen here too. The call is idempotent within a process.
         FirebaseEmulators.connectIfEnabled()

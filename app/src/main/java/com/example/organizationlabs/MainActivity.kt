@@ -60,6 +60,8 @@ import com.cuentivo.app.ui.dashboard.DashboardViewModel
 import com.cuentivo.app.auth.FirebaseAuthenticationGateway
 import com.cuentivo.app.auth.LocalSessionGuard
 import com.cuentivo.app.billing.BillingGateway
+import com.cuentivo.app.billing.EntitlementStore
+import com.cuentivo.app.sync.SyncScheduler
 import com.cuentivo.app.ui.auth.AuthenticationScreen
 import com.cuentivo.app.sync.FirebaseEmulators
 import com.cuentivo.app.sync.OwnerMembershipBootstrap
@@ -100,9 +102,19 @@ class MainActivity : ComponentActivity() {
         val authenticationGateway = FirebaseAuthenticationGateway()
         // Held as state rather than shown directly: Play answers whenever it wants, and the
         // composition that owns the Snackbar may not exist yet when it does.
+        val entitlementStore = EntitlementStore(applicationContext)
         val billing = BillingGateway(
             context = applicationContext,
-            onTierChanged = { tierState.value = it },
+            onTierChanged = { tier ->
+                tierState.value = tier
+                // Persisted against the uid so a Worker with no Activity alive can still tell
+                // whether this account may use the cloud — and so the next person to sign in on
+                // this phone does not inherit it.
+                entitlementStore.remember(authenticationGateway.currentUserId, tier)
+                // Getting Pro back drains whatever piled up while it was gone. Those rows were
+                // never deleted, only left unsent.
+                if (tier == SubscriptionTier.PRO) SyncScheduler.enqueue(applicationContext)
+            },
             onMessage = { billingMessageState.value = it },
         )
         billingGateway = billing
@@ -538,6 +550,9 @@ class MainActivity : ComponentActivity() {
                         // the moment the button was confirmed.
                         withContext(Dispatchers.IO) { database.clearAllTables() }
                         sessionGuard.forget()
+                        // The entitlement dies with the account it belonged to; leaving it behind
+                        // would hand Pro to whoever signs up next on this phone.
+                        entitlementStore.forget()
                         authenticationGateway.deleteAccount { result ->
                             result.onSuccess {
                                 authenticatedUserId = null
