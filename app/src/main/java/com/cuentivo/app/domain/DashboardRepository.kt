@@ -12,6 +12,7 @@ data class DashboardSnapshot(
     val collectedCents: Long,
     val overdueCents: Long,
     val customersWithDebt: Long,
+    val insights: List<Insight> = emptyList(),
 )
 
 class DashboardRepository(
@@ -28,14 +29,34 @@ class DashboardRepository(
     suspend fun load(userId: String): DashboardSnapshot? {
         val business = businessDao.firstOwnedBy(userId) ?: return null
         val today = todayProvider()
+
+        val monthStart = today.withDayOfMonth(1)
+        // Same stretch of the previous month, not the whole thing. On the 3rd, three days of
+        // collection compared against a full previous month would read as a catastrophic drop and
+        // the number would be a lie. minusMonths also clamps the day, so 31 March lands on 28 Feb.
+        val previousEnd = today.minusMonths(1)
+        val previousStart = previousEnd.withDayOfMonth(1)
+
+        val soldCents = financialDao.salesTotalCents(business.id, monthStart.toEpochDay(), today.toEpochDay())
+        val collectedCents = financialDao.collectedTotalCents(business.id, monthStart.toEpochDay(), today.toEpochDay())
+        val overdueCents = financialDao.overdueBalanceCents(business.id, today.toEpochDay())
+
+        val currentTotals = PeriodTotals(soldCents, collectedCents, overdueCents)
+        val previousTotals = PeriodTotals(
+            soldCents = financialDao.salesTotalCents(business.id, previousStart.toEpochDay(), previousEnd.toEpochDay()),
+            collectedCents = financialDao.collectedTotalCents(business.id, previousStart.toEpochDay(), previousEnd.toEpochDay()),
+            overdueCents = 0L,
+        )
+
         return DashboardSnapshot(
             businessId = business.id,
             businessName = business.name,
             receivableCents = financialDao.businessReceivableCents(business.id),
-            soldCents = financialDao.salesTotalCents(business.id, today.withDayOfMonth(1).toEpochDay(), today.toEpochDay()),
-            collectedCents = financialDao.collectedTotalCents(business.id, today.withDayOfMonth(1).toEpochDay(), today.toEpochDay()),
-            overdueCents = financialDao.overdueBalanceCents(business.id, today.toEpochDay()),
+            soldCents = soldCents,
+            collectedCents = collectedCents,
+            overdueCents = overdueCents,
             customersWithDebt = financialDao.customersWithDebtCount(business.id),
+            insights = BusinessInsights.compare(currentTotals, previousTotals),
         )
     }
 }

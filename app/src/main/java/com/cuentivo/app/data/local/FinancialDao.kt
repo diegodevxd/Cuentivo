@@ -19,6 +19,15 @@ data class OutstandingSaleRow(
     val saleDateEpochDay: Long,
 )
 
+/** A dated sale that still owes money, with whose sale it is. Feeds the alerts screen. */
+data class DueSaleRow(
+    val saleId: String,
+    val customerId: String,
+    val customerName: String,
+    val dueDateEpochDay: Long,
+    val outstandingCents: Long,
+)
+
 /** A sale as offered for correction on screen: what it was worth and what is still unpaid. */
 data class CancelableSaleRow(
     val id: String,
@@ -187,6 +196,28 @@ interface FinancialDao {
      */
     @Query("SELECT COUNT(*) FROM sales WHERE businessId = :businessId")
     suspend fun registeredSaleCount(businessId: String): Int
+
+    /**
+     * Every sale that still owes something and has a date attached, across the whole business.
+     *
+     * `overdueBalanceCents` answers "how much is late" with a single number; this answers "who, and
+     * when", which is what an alert has to say to be worth tapping. Read-only, no schema change.
+     *
+     * Cancelled payments are excluded from the allocated sum, so a refunded payment correctly makes
+     * its sale owe money again.
+     */
+    @Query(
+        "SELECT sale.id AS saleId, sale.dueDateEpochDay AS dueDateEpochDay, " +
+            "customer.name AS customerName, customer.id AS customerId, " +
+            "sale.totalCents - COALESCE(SUM(CASE WHEN payment.canceledAtEpochMillis IS NULL THEN allocation.amountCents ELSE 0 END), 0) AS outstandingCents " +
+            "FROM sales AS sale " +
+            "INNER JOIN customers AS customer ON customer.id = sale.customerId " +
+            "LEFT JOIN payment_allocations AS allocation ON allocation.saleId = sale.id " +
+            "LEFT JOIN payments AS payment ON payment.id = allocation.paymentId " +
+            "WHERE sale.businessId = :businessId AND sale.isCanceled = 0 AND sale.dueDateEpochDay IS NOT NULL " +
+            "GROUP BY sale.id HAVING outstandingCents > 0 ORDER BY sale.dueDateEpochDay"
+    )
+    suspend fun salesWithDueDate(businessId: String): List<DueSaleRow>
 
     @Query("SELECT COALESCE(SUM(allocation.amountCents), 0) FROM payment_allocations AS allocation INNER JOIN payments AS payment ON payment.id = allocation.paymentId WHERE allocation.saleId = :saleId AND payment.canceledAtEpochMillis IS NULL")
     suspend fun activeAllocatedPaymentCents(saleId: String): Long

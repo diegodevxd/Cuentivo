@@ -1,6 +1,56 @@
 # Memoria persistente — Cuentivo
 
-Actualizada: 2026-07-26 (America/Mexico_City)
+Actualizada: 2026-07-27 (America/Mexico_City)
+
+## PARA RETOMAR — 2026-07-27
+
+Plan vigente: `C:\Users\pibed\.claude\plans\ok-amigo-mira-este-dynamic-ritchie.md`
+("cerrar bloqueantes antes de los 12 testers"). Verificado: **BUILD SUCCESSFUL, 113 pruebas, 0 fallos.**
+
+### Rediseño — bloques 1 a 5 hechos
+
+1. **Tokens.** `Type.kt` era la plantilla del IDE (sólo `bodyLarge`); ahora escala completa,
+   `displaySmall` 40sp para el monto heroico. `Color.kt` con rampa neón y **la regla que evita
+   repetir los bugs de contraste: el neón es sólo para rellenos** (menta sobre blanco da 1.7:1);
+   cada tono tiene su versión "tinta" para texto, medidas 5.4–5.9:1. `Theme.kt` invertido a claro,
+   decidido porque la app se usa en la calle a plena luz.
+2. **Fondo vivo.** Degradado de 5 colores, ciclo de 20 s, dentro de `CuentivoTheme`. Respeta el
+   ajuste de "quitar animaciones" del sistema.
+3. **Barra ovalada + FAB.** Píldora flotante; cada pestaña con `weight(1f)` porque con 5 destinos
+   las etiquetas desbordan a 360 dp. FAB contextual, ausente en Vender y Abonos que ya son
+   formularios. ⚠️ **Bug hallado en dispositivo y corregido**: la barra del sistema tapaba la navbar
+   — Material la descontaba sola, un `Surface` propio no. Arreglado con `navigationBarsPadding()`.
+4. **`domain/BusinessInsights.kt`** (7 pruebas). Compara **el mismo tramo del mes anterior**, no el
+   mes completo: en día 3, comparar 3 días contra 30 daría una caída falsa. Primer mes → dice que no
+   hay con qué comparar en vez de dividir entre cero. Cambios <5% se llaman "parejo".
+5. **`domain/AppAlerts.kt`** (10 pruebas) + `ui/AlertsSheet.kt` + `FinancialDao.salesWithDueDate`
+   (sólo lectura, **sin migración**). Horizonte hoy/mañana/vencidos; el aviso de plan siempre va
+   después del dinero; tocar un aviso abre el estado de cuenta.
+
+**Bloque 6 (perfil con foto): aplazado**, no bloquea el test cerrado.
+
+### Bloqueante corregido hoy
+
+**Faltaba core-library desugaring.** `java.time` se usa en `DashboardRepository`, `CuentivoApp` y
+`MainActivity` con `minSdk 24`: en Android 7.0/7.1 la app **no abría**, tronaba con
+`NoClassDefFoundError`. Nadie lo notó porque siempre se probó en teléfono nuevo. Activado
+`isCoreLibraryDesugaringEnabled` + `desugar_jdk_libs:2.1.5`, conservando `minSdk 24`.
+
+### Lo que sigue, en orden
+
+1. **`lintDebug` — 30 errores reportados, todavía sin re-verificar** tras el desugaring. Es el
+   siguiente paso inmediato.
+2. Resto de Fase A: BOM del CSV a `"\uFEFF"`, apagar Auto Backup, `.kotlin/` a `.gitignore`.
+3. Fase B: **verificar la sync contra el emulador ANTES de reescribirla** — nunca se ha confirmado
+   una sola escritura remota. Luego atomicidad, `groupId` (migración 4→5), `WriteBatch`, y que el
+   Worker vacíe la cola en vez de rendirse tras 50.
+4. Fase C: borrado de cuenta remoto, política de privacidad, Data Safety.
+5. Fase D: precio localizado desde `ProductDetails`, quitar `firebase-analytics`, Crashlytics.
+
+**Decisiones vigentes:** se cierra todo antes de invitar a los 12 testers (yo recomendaba arrancar
+el reloj de 14 días en paralelo; Diego decidió lo contrario). **La nube sigue siendo de Pro.**
+
+**Sin probar todavía: la compra de Billing en el teléfono**, y el rediseño completo en dispositivo.
 
 ## Sesión 2026-07-26 — bugs de MVP tras probar el APK
 

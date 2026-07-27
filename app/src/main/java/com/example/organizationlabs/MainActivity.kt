@@ -41,6 +41,9 @@ import com.cuentivo.app.domain.Debtor
 import com.cuentivo.app.domain.DebtorShareText
 import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.Money
+import com.cuentivo.app.domain.Alert
+import com.cuentivo.app.domain.AppAlerts
+import com.cuentivo.app.domain.DueSale
 import com.cuentivo.app.domain.OutstandingSale
 import com.cuentivo.app.domain.PaidFeature
 import com.cuentivo.app.domain.PaymentAllocator
@@ -183,6 +186,20 @@ class MainActivity : ComponentActivity() {
                     value = (state as? DashboardUiState.Content)?.let { database.productDao().searchActive(it.businessId, "", "") } ?: emptyList()
                 }
                 val businessName = (state as? DashboardUiState.Content)?.businessName ?: "Mi negocio"
+
+                // Recomputed from the ledger on every refresh rather than stored: pay a sale and its
+                // alert simply stops existing, with no row left anywhere to go stale.
+                val alerts by produceState<List<Alert>>(initialValue = emptyList(), state, customers, tier, refreshKey) {
+                    val businessId = (state as? DashboardUiState.Content)?.businessId
+                    value = if (businessId == null) emptyList() else AppAlerts.from(
+                        sales = database.financialDao().salesWithDueDate(businessId).map { row ->
+                            DueSale(row.saleId, row.customerId, row.customerName, row.dueDateEpochDay, row.outstandingCents)
+                        },
+                        todayEpochDay = LocalDate.now().toEpochDay(),
+                        tier = tier,
+                        activeCustomers = customers.size,
+                    )
+                }
 
                 // Statement and correctable items load together so the sheet stays consistent: a
                 // canceled sale leaves the buttons in the same pass in which its compensating
@@ -496,6 +513,15 @@ class MainActivity : ComponentActivity() {
                 }, onShareDebtorList = {
                     val debtors = customers.map { Debtor(it.customer.name, it.balanceCents) }
                     share("Clientes por cobrar", DebtorShareText.forBusiness(businessName, debtors))
+                }, alerts = alerts, onOpenAlertCustomer = { customerId ->
+                    // The alert only knows who; the statement sheet needs the row with the balance,
+                    // which the screen already has loaded.
+                    val businessId = (state as? DashboardUiState.Content)?.businessId
+                    val row = customers.firstOrNull { it.customer.id == customerId }
+                    // loadStatement sets statementCustomer itself, so the sheet opens from here too.
+                    if (businessId != null && row != null) {
+                        lifecycleScope.launch { loadStatement(businessId, row) }
+                    }
                 }, blocked = blocked, onDismissBlocked = { blocked = null }, onUpgrade = {
                     blocked = null
                     // The real Activity, not applicationContext: Play needs somewhere to put its sheet.

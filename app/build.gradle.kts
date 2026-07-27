@@ -73,6 +73,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // java.time only exists from API 26, and this app ships to minSdk 24. Without desugaring it
+        // does not merely look wrong on Android 7.0/7.1 — LocalDate throws NoClassDefFoundError and
+        // the app fails to open at all. Every screen touches dates, so there is no partial failure.
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -81,6 +85,9 @@ android {
 }
 
 dependencies {
+    // Backports java.time to API 24. Paired with isCoreLibraryDesugaringEnabled above; neither one
+    // does anything without the other.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // Declares the com.android.vending.BILLING permission in the merged manifest, which Play Console
     // requires before it will let a subscription product be created for the app.
     implementation("com.android.billingclient:billing-ktx:8.0.0")

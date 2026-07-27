@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -39,11 +42,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -62,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -77,7 +81,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import com.cuentivo.app.domain.AccessDecision
+import com.cuentivo.app.domain.Alert
 import com.cuentivo.app.domain.FeatureAccessManager
+import com.cuentivo.app.domain.Insight
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.domain.SaleDraft
 import com.cuentivo.app.domain.SaleDraftLine
@@ -118,6 +124,64 @@ fun CuentivoLoadingScreen() {
 /** Enough rejected rows to act on; a dialog listing two hundred of them helps nobody. */
 private const val MAX_LISTED_REJECTIONS = 10
 
+/**
+ * A floating pill instead of a bar welded to the bottom edge.
+ *
+ * Every tab gets `weight(1f)`: with five destinations and labels as long as "Productos", letting
+ * them size themselves overflows a 360 dp screen. Equal shares can't.
+ *
+ * The selected tab sits on a neon fill with dark text on top — the one place the fluorescent colour
+ * is safe to use at full strength, because nothing has to be read *through* it.
+ */
+@Composable
+private fun OvalNavigationBar(current: AppDestination, onSelect: (AppDestination) -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(30.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        shadowElevation = 10.dp,
+        // The activity is edge-to-edge, so this sits under the system back/home/recents bar unless
+        // it subtracts that inset itself. Material's NavigationBar did this for us; a hand-rolled
+        // Surface does not, which is exactly how the two bars ended up on top of each other.
+        modifier = Modifier
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp)
+            .padding(bottom = 14.dp)
+            .fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppDestination.entries.forEach { item ->
+                val selected = item == current
+                val content = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurfaceVariant
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                        )
+                        // 48 dp of height total: the floor for something used one-handed, walking.
+                        .clickable { onSelect(item) }
+                        .padding(vertical = 7.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(item.icon, contentDescription = item.label, tint = content, modifier = Modifier.size(22.dp))
+                    Text(
+                        item.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = content,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
 private enum class AppDestination(val label: String, val icon: ImageVector) {
     HOME("Inicio", Icons.Filled.Home),
     CUSTOMERS("Clientes", Icons.Filled.Person),
@@ -155,6 +219,8 @@ fun CuentivoApp(
     onShareStatementCsv: () -> Unit = {},
     onShareStatementText: () -> Unit = {},
     onShareDebtorList: () -> Unit = {},
+    alerts: List<Alert> = emptyList(),
+    onOpenAlertCustomer: (String) -> Unit = {},
     blocked: AccessDecision.Blocked? = null,
     onDismissBlocked: () -> Unit = {},
     onUpgrade: () -> Unit = {},
@@ -165,6 +231,10 @@ fun CuentivoApp(
 ) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     var showPlans by remember { mutableStateOf(false) }
+    // Hoisted out of the screens so the floating button can open the same form the screen owns.
+    var showCustomerForm by remember { mutableStateOf(false) }
+    var showProductForm by remember { mutableStateOf(false) }
+    var showAlerts by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
         message?.let {
@@ -174,14 +244,30 @@ fun CuentivoApp(
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            NavigationBar {
-                AppDestination.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = destination == item,
-                        onClick = { destination = item },
-                        icon = { Icon(item.icon, contentDescription = item.label) },
-                        label = { Text(item.label) },
+        bottomBar = { OvalNavigationBar(destination) { destination = it } },
+        floatingActionButton = {
+            // Only where there is something to add. Vender and Abonos are already forms — a button
+            // that opens the screen you are standing on is noise.
+            val action: (() -> Unit)? = when (destination) {
+                AppDestination.HOME -> { { destination = AppDestination.NEW_SALE } }
+                AppDestination.CUSTOMERS -> { { showCustomerForm = true } }
+                AppDestination.PRODUCTS -> { { showProductForm = true } }
+                AppDestination.NEW_SALE, AppDestination.PAYMENTS -> null
+            }
+            action?.let {
+                FloatingActionButton(
+                    onClick = it,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = when (destination) {
+                            AppDestination.HOME -> "Nueva venta"
+                            AppDestination.CUSTOMERS -> "Agregar cliente"
+                            else -> "Agregar producto"
+                        },
                     )
                 }
             }
@@ -199,10 +285,12 @@ fun CuentivoApp(
                 onSignOut = onSignOut,
                 onDeleteAccount = onDeleteAccount,
                 onShowPlans = { showPlans = true },
+                onShowAlerts = { showAlerts = true },
+                alertCount = alerts.size,
                 tier = tier,
             )
-            AppDestination.CUSTOMERS -> CustomersScreen(customers, padding, onCreateCustomer, onEditCustomer, onArchiveCustomer, onShowStatement)
-            AppDestination.PRODUCTS -> ProductsScreen(products, padding, onCreateProduct, onEditProduct, onArchiveProduct, onImportProducts, onShareImportTemplate)
+            AppDestination.CUSTOMERS -> CustomersScreen(customers, padding, showCustomerForm, { showCustomerForm = it }, onCreateCustomer, onEditCustomer, onArchiveCustomer, onShowStatement)
+            AppDestination.PRODUCTS -> ProductsScreen(products, padding, showProductForm, { showProductForm = it }, onCreateProduct, onEditProduct, onArchiveProduct, onImportProducts, onShareImportTemplate)
             AppDestination.NEW_SALE -> NewSaleScreen(customers, products, padding, onCreateSale)
             AppDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment)
         }
@@ -228,6 +316,13 @@ fun CuentivoApp(
                 TextButton(onClick = { onDismissBlocked(); showPlans = true }) { Text("Ver Cuentivo Pro") }
             },
             dismissButton = { TextButton(onClick = onDismissBlocked) { Text("Ahora no") } },
+        )
+    }
+    if (showAlerts) {
+        AlertsSheet(
+            alerts = alerts,
+            onOpenCustomer = onOpenAlertCustomer,
+            onDismiss = { showAlerts = false },
         )
     }
     importReport?.let { report ->
@@ -904,6 +999,8 @@ private fun ProductPhotoPicker(
 private fun ProductsScreen(
     products: List<ProductEntity>,
     padding: PaddingValues,
+    showForm: Boolean,
+    onShowFormChange: (Boolean) -> Unit,
     onCreateProduct: (String, Long, String?) -> Unit,
     onEditProduct: (ProductEntity, String, Long, String?) -> Unit,
     onArchiveProduct: (ProductEntity) -> Unit,
@@ -911,7 +1008,6 @@ private fun ProductsScreen(
     onShareImportTemplate: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    var showForm by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ProductEntity?>(null) }
     var archiving by remember { mutableStateOf<ProductEntity?>(null) }
     val context = LocalContext.current
@@ -921,7 +1017,6 @@ private fun ProductsScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Productos", style = MaterialTheme.typography.headlineSmall)
-        FilledTonalButton(onClick = { showForm = true }, modifier = Modifier.fillMaxWidth()) { Text("+ Agregar producto") }
         // Wide-open MIME list: phones and cloud drives label .csv and .xlsx inconsistently, and a
         // strict filter greys out the very file the person came to pick.
         val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -976,10 +1071,10 @@ private fun ProductsScreen(
             onConfirm = {
                 if (name.isNotBlank() && cents != null) {
                     onCreateProduct(name.trim(), cents, photo)
-                    showForm = false
+                    onShowFormChange(false)
                 }
             },
-            onDismiss = { showForm = false },
+            onDismiss = { onShowFormChange(false) },
         ) {
             OutlinedTextField(name, { name = it }, label = { Text("Nombre del producto") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             MoneyField("Precio", priceText) { priceText = it }
@@ -1038,13 +1133,14 @@ private fun ProductsScreen(
 private fun CustomersScreen(
     customers: List<CustomerBalanceRow>,
     padding: PaddingValues,
+    showForm: Boolean,
+    onShowFormChange: (Boolean) -> Unit,
     onCreateCustomer: (String, String?) -> Unit,
     onEditCustomer: (CustomerBalanceRow, String, String?) -> Unit,
     onArchiveCustomer: (CustomerBalanceRow) -> Unit,
     onShowStatement: (CustomerBalanceRow) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    var showForm by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     var archiving by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     Column(
@@ -1052,7 +1148,6 @@ private fun CustomersScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Clientes", style = MaterialTheme.typography.headlineSmall)
-        FilledTonalButton(onClick = { showForm = true }, modifier = Modifier.fillMaxWidth()) { Text("+ Agregar cliente") }
         OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o teléfono") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         val filtered = customers.filter { it.customer.name.contains(query, true) || (it.customer.phone?.contains(query) == true) }
         if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes clientes registrados" else "No se encontraron clientes")
@@ -1090,10 +1185,10 @@ private fun CustomersScreen(
             onConfirm = {
                 if (name.isNotBlank()) {
                     onCreateCustomer(name.trim(), phone.trim().ifBlank { null })
-                    showForm = false
+                    onShowFormChange(false)
                 }
             },
-            onDismiss = { showForm = false },
+            onDismiss = { onShowFormChange(false) },
         ) {
             OutlinedTextField(name, { name = it }, label = { Text("Nombre del cliente") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(
@@ -1191,6 +1286,8 @@ private fun DashboardScreen(
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
     onShowPlans: () -> Unit,
+    onShowAlerts: () -> Unit,
+    alertCount: Int,
     tier: SubscriptionTier,
 ) {
     var filter by remember { mutableStateOf(DebtorFilter.OWING) }
@@ -1207,9 +1304,23 @@ private fun DashboardScreen(
                 FilledTonalButton(onClick = onCreateBusiness, modifier = Modifier.fillMaxWidth()) { Text("Crear mi negocio") }
             }
             is DashboardUiState.Content -> {
-                Text(state.businessName, style = MaterialTheme.typography.headlineSmall)
-                FilledTonalButton(onClick = onNewSale, modifier = Modifier.fillMaxWidth()) { Text("Nueva venta") }
+                // No "Nueva venta" button here any more: the floating button does it, and two ways
+                // to start the same thing on one screen is clutter.
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        state.businessName,
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    // The count is on the chip itself rather than a floating badge: a number nobody
+                    // can read is just a red dot, and this has to work at arm's length.
+                    AssistChip(
+                        onClick = onShowAlerts,
+                        label = { Text(if (alertCount > 0) "Avisos ($alertCount)" else "Avisos") },
+                    )
+                }
                 MetricCard("Por cobrar", state.receivableCents)
+                state.insights.forEach { InsightCard(it) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     Card(Modifier.weight(1f)) {
                         Column(Modifier.padding(16.dp)) {
@@ -1358,6 +1469,36 @@ private fun DashboardScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
         )
+    }
+}
+
+/**
+ * How the business is actually doing, in one sentence.
+ *
+ * The tone comes from the number, not from a wish to be encouraging: a bad month is tinted like bad
+ * news. And it never leans on colour alone — the accent bar on the left plus the wording carry the
+ * meaning, because at arm's length in the sun a coloured tint is the first thing to disappear.
+ */
+@Composable
+private fun InsightCard(insight: Insight) {
+    val accent = when (insight.tone) {
+        Insight.Tone.GOOD -> MaterialTheme.colorScheme.primary
+        Insight.Tone.BAD -> MaterialTheme.colorScheme.error
+        Insight.Tone.NEUTRAL -> MaterialTheme.colorScheme.secondary
+    }
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(5.dp).height(56.dp).background(accent))
+            Text(
+                insight.text,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            )
+        }
     }
 }
 
