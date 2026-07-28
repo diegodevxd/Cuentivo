@@ -36,10 +36,21 @@ import com.cuentivo.app.domain.SubscriptionTier
  */
 class BillingGateway(
     context: Context,
-    private val onTierChanged: (SubscriptionTier) -> Unit,
+    private val onTierChanged: (SubscriptionTier, String?) -> Unit,
     private val onMessage: (String) -> Unit,
 ) {
     private var proProduct: ProductDetails? = null
+
+    /**
+     * Who was signed in when the current query was started.
+     *
+     * Play answers whenever it feels like it, and Firebase Auth changes independently: a reply can
+     * land after a sign-out, or arrive on a cold start before anyone has signed in at all. Carrying
+     * the asking account back with the answer is what lets the caller discard a reply that no longer
+     * belongs to anybody — attributing it to whoever is signed in *now* is how one person's
+     * subscription would end up unlocking another person's data.
+     */
+    @Volatile private var sessionUserId: String? = null
 
     private val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
         when (result.responseCode) {
@@ -56,10 +67,15 @@ class BillingGateway(
         .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
         .build()
 
-    /** Connects and reconciles what this device already owns. Safe to call more than once. */
-    fun start() {
+    /**
+     * Connects and reconciles what this device already owns. Safe to call more than once.
+     *
+     * @param userId the account this query is being made on behalf of; comes back with the answer.
+     */
+    fun start(userId: String?) {
+        sessionUserId = userId
         if (client.isReady) {
-            refresh()
+            refresh(userId)
             return
         }
         client.startConnection(object : BillingClientStateListener {
@@ -76,8 +92,12 @@ class BillingGateway(
         })
     }
 
-    /** Re-reads what Play believes this account owns. The startup source of truth for the tier. */
-    fun refresh() {
+    /**
+     * Re-reads what Play believes this account owns. The startup source of truth for the tier, and
+     * what must run again after a sign-in so the answer can finally be attributed to somebody.
+     */
+    fun refresh(userId: String? = sessionUserId) {
+        sessionUserId = userId
         if (!client.isReady) return
         val params = QueryPurchasesParams.newBuilder()
             .setProductType(BillingClient.ProductType.SUBS)
@@ -143,7 +163,8 @@ class BillingGateway(
                 isAcknowledged = purchase.isAcknowledged,
             )
         }
-        onTierChanged(SubscriptionStatus.tierFrom(reported))
+        // The session that asked travels with the answer; the caller decides whether it still counts.
+        onTierChanged(SubscriptionStatus.tierFrom(reported), sessionUserId)
 
         val pending = SubscriptionStatus.needsAcknowledgement(reported).toSet()
         purchases.forEachIndexed { index, purchase ->

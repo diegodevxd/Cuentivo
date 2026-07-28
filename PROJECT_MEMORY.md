@@ -123,8 +123,38 @@ anulada.** Hubo un ida y vuelta ese día; esta es la versión final y no hay amb
 Verificado: **123 pruebas, 0 fallos**; `lintDebug` **0 errores**; `assembleRelease` y `bundleRelease`
 exit 0; AAB `jar verified`; APK reporta `versionCode='5' versionName='1.2'`.
 
-⚠️ **Sin verificar todavía:** la sincronización sigue sin confirmarse end-to-end contra Firestore o
-el emulador. Lo que se cerró es **quién puede** sincronizar, no que sincronizar funcione.
+### Estabilización 2026-07-27 (tarde)
+
+- **Carrera Firebase Auth ↔ Play Billing, cerrada.** Billing podía responder PRO con
+  `currentUser == null`: `remember(null, PRO)` no guardaba nada pero la UI quedaba en Pro mientras la
+  compuerta de sync decía FREE. Ahora `BillingGateway` **arrastra el uid de la sesión que preguntó**
+  y `domain/EntitlementReconciler.kt` (puro, 7 pruebas) decide: sin uid actual, o si el uid de la
+  sesión no es el actual → publica FREE y no persiste. Cubre el callback tardío de otra cuenta.
+  Al cambiar de uid, `MainActivity` **primero baja `tierState` a FREE** y luego vuelve a preguntar a
+  Play; ese mismo camino es el de después de iniciar sesión.
+- **Entitlement con caducidad de 24 h.** Se persiste `entitlementVerifiedAt` (epoch millis). La nube
+  exige uid coincidente **+** PRO **+** confirmación reciente. Una confirmación con fecha futura se
+  rechaza: aceptarla haría de atrasar el reloj una forma de conservar Pro para siempre. `onResume`
+  reconfirma, así que un suscriptor que abra la app nunca lo nota. Nunca se borra cola ni datos.
+- **`CuentivoAppTest` corregida**: el rediseño quitó el botón duplicado a propósito; ahora exige
+  **exactamente una** acción accesible "Nueva venta" (por `contentDescription`, que es lo que
+  anuncia un lector de pantalla), y sigue verificando `$125.00`.
+
+**Verificado, todo exit 0:** `testDebugUnitTest --rerun-tasks` **137 pruebas, 0 fallos**;
+`connectedDebugAndroidTest` en el AVD `Medium_Phone` **17/17, 0 fallos**; `lintDebug` **0 errores**
+(32 advertencias, 1 sugerencia, sin baseline); `assembleRelease` y `bundleRelease`; AAB
+`jar verified`; APK `versionCode='5' versionName='1.2'`, firmado por `CN=Diego Fernando Mancera
+Gomez, O=Capilabs`.
+
+⚠️ **La sincronización sigue SIN verificarse end-to-end.** Lo cerrado es **quién puede** sincronizar,
+no que sincronizar funcione. Corrección importante: **el Emulator Suite sí arranca en esta máquina**
+— `npx firebase-tools@15.24.0 emulators:start --only auth,firestore` descargó el jar y llegó a
+"All emulators ready" (auth 9099, firestore 8080). Ya no es un bloqueante de infraestructura.
+Lo que falta para el E2E de la nube: instalar con `-Pcuentivo.useEmulators=true`, conducir la app en
+el AVD hasta crear negocio/cliente/venta, **forzar el entitlement sin Play** (Billing no tiene
+emulador; habría que escribir `cuentivo.entitlement` por `adb shell run-as`), y comprobar en
+Firestore los cinco escenarios: Gratis no sube, Pro sube y drena, downgrade retiene, upgrade reanuda,
+y ningún dato cruza entre negocios. Es trabajo de una sesión propia.
 
 **Sin probar todavía: la compra de Billing en el teléfono**, y el rediseño completo en dispositivo.
 

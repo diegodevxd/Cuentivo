@@ -44,6 +44,7 @@ import com.cuentivo.app.domain.Money
 import com.cuentivo.app.domain.Alert
 import com.cuentivo.app.domain.AppAlerts
 import com.cuentivo.app.domain.DueSale
+import com.cuentivo.app.domain.EntitlementReconciler
 import com.cuentivo.app.domain.OutstandingSale
 import com.cuentivo.app.domain.PaidFeature
 import com.cuentivo.app.domain.PaymentAllocator
@@ -76,10 +77,15 @@ class MainActivity : ComponentActivity() {
     private val billingMessageState = mutableStateOf<String?>(null)
     private var billingGateway: BillingGateway? = null
 
-    /** Play can confirm a purchase while the app is in the background, so re-read it on return. */
+    /**
+     * Play can confirm a purchase while the app is in the background, so re-read it on return.
+     *
+     * This is also what keeps a Pro subscriber's stored confirmation from going stale: it expires
+     * after a day, and every visit to the app renews it.
+     */
     override fun onResume() {
         super.onResume()
-        billingGateway?.refresh()
+        billingGateway?.refresh(FirebaseAuthenticationGateway().currentUserId)
     }
 
     override fun onDestroy() {
@@ -105,20 +111,31 @@ class MainActivity : ComponentActivity() {
         val entitlementStore = EntitlementStore(applicationContext)
         val billing = BillingGateway(
             context = applicationContext,
-            onTierChanged = { tier ->
-                tierState.value = tier
-                // Persisted against the uid so a Worker with no Activity alive can still tell
-                // whether this account may use the cloud — and so the next person to sign in on
-                // this phone does not inherit it.
-                entitlementStore.remember(authenticationGateway.currentUserId, tier)
-                // Getting Pro back drains whatever piled up while it was gone. Those rows were
-                // never deleted, only left unsent.
-                if (tier == SubscriptionTier.PRO) SyncScheduler.enqueue(applicationContext)
+            onTierChanged = { tier, sessionUserId ->
+                // Play and Firebase Auth move independently, so an answer can arrive before anyone
+                // has signed in, or after the account changed. The reconciler decides whether this
+                // reply still belongs to somebody; anything else is published as FREE and dropped.
+                val decision = EntitlementReconciler.resolve(
+                    reported = tier,
+                    sessionUserId = sessionUserId,
+                    currentUserId = authenticationGateway.currentUserId,
+                )
+                tierState.value = decision.publish
+                if (decision.persist) {
+                    // Stored against the uid, with the time Play confirmed it, so a Worker with no
+                    // Activity alive can tell both whose entitlement it is and how old it is.
+                    entitlementStore.remember(decision.userId, decision.publish)
+                    // Getting Pro back drains whatever piled up while it was gone. Those rows were
+                    // never deleted, only left unsent.
+                    if (decision.publish == SubscriptionTier.PRO) SyncScheduler.enqueue(applicationContext)
+                }
             },
             onMessage = { billingMessageState.value = it },
         )
         billingGateway = billing
-        billing.start()
+        // Started for whoever is signed in right now — usually nobody on a cold start, in which case
+        // the answer is deliberately discarded and asked again once somebody signs in.
+        billing.start(authenticationGateway.currentUserId)
         setContent {
             CuentivoTheme {
                 var authenticatedUserId by remember { mutableStateOf(authenticationGateway.currentUserId) }
@@ -175,6 +192,14 @@ class MainActivity : ComponentActivity() {
                 // instant before it gets wiped, which is the two-accounts-one-ledger bug.
                 var sessionReady by remember(currentUserId) { mutableStateOf(false) }
                 LaunchedEffect(currentUserId) {
+                    // The effective session drops to FREE the instant the account changes, before
+                    // anything else runs. Whatever Play said about the previous account stops
+                    // applying immediately; then Play is asked again, now attributable to this uid.
+                    // This is also the sign-in path, where the first answer arrived with no uid at
+                    // all and was therefore discarded.
+                    tierState.value = SubscriptionTier.FREE
+                    billing.refresh(currentUserId)
+
                     if (sessionGuard.adopt(currentUserId)) {
                         uiMessage = "Este teléfono tenía datos de otra cuenta y se borraron"
                     }

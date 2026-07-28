@@ -29,6 +29,48 @@ object SyncEntitlement {
         else -> SubscriptionTier.fromStoredValue(storedTier)
     }
 
-    /** The single question every sync path asks. */
+    /** Whether a plan, on its own, includes the cloud. Used by the UI, which has no staleness. */
     fun allowsCloudSync(tier: SubscriptionTier): Boolean = tier == SubscriptionTier.PRO
+
+    /**
+     * How long a confirmation from Play is trusted before the app insists on hearing it again.
+     *
+     * A subscription can lapse while the app sits closed for weeks. Without an expiry the stored
+     * PRO would be believed forever and a background Worker would keep syncing for someone who
+     * stopped paying. A day bounds that, and is long enough that a paying customer who opens the
+     * app even occasionally never notices — every launch re-confirms.
+     */
+    const val MAX_CONFIRMATION_AGE_MILLIS = 24L * 60 * 60 * 1000
+
+    /**
+     * Whether Play's answer is recent enough to act on.
+     *
+     * A confirmation dated in the future is rejected rather than trusted: it means the clock is
+     * inconsistent, and accepting it would make winding the clock back a way to keep Pro forever.
+     * Being strict costs little, because opening the app re-confirms.
+     */
+    fun isConfirmationFresh(
+        verifiedAtEpochMillis: Long,
+        nowEpochMillis: Long,
+        maxAgeMillis: Long = MAX_CONFIRMATION_AGE_MILLIS,
+    ): Boolean {
+        val age = nowEpochMillis - verifiedAtEpochMillis
+        return age in 0..maxAgeMillis
+    }
+
+    /**
+     * The full question the sync paths ask: right account, paid plan, **and** recently confirmed.
+     *
+     * All three must hold. Failing any of them means no upload and no download — but never deleting
+     * the outbox, so everything drains once Play confirms again.
+     */
+    fun allowsCloudSync(
+        storedUserId: String?,
+        storedTier: String?,
+        verifiedAtEpochMillis: Long,
+        currentUserId: String?,
+        nowEpochMillis: Long,
+        maxAgeMillis: Long = MAX_CONFIRMATION_AGE_MILLIS,
+    ): Boolean = allowsCloudSync(tierFor(storedUserId, storedTier, currentUserId)) &&
+        isConfirmationFresh(verifiedAtEpochMillis, nowEpochMillis, maxAgeMillis)
 }

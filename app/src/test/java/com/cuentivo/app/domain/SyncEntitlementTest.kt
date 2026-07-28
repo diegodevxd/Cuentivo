@@ -85,4 +85,59 @@ class SyncEntitlementTest {
         assertTrue(SyncEntitlement.allowsCloudSync(SubscriptionTier.PRO))
         assertFalse(SyncEntitlement.allowsCloudSync(SubscriptionTier.FREE))
     }
+
+    // ── Staleness ────────────────────────────────────────────────────────────
+    // A subscription can lapse while the app sits closed for weeks. Time is passed in rather than
+    // read from a clock, so these run instantly and deterministically — no sleeps.
+
+    /** An arbitrary fixed instant; only the differences from it matter. */
+    private val now = 1_785_200_000_000L
+    private val day = SyncEntitlement.MAX_CONFIRMATION_AGE_MILLIS
+
+    @Test
+    fun `pro confirmed within the last day may sync`() {
+        val verifiedAt = now - (23L * 60 * 60 * 1000)
+
+        assertTrue(SyncEntitlement.allowsCloudSync(ana, "PRO", verifiedAt, ana, now))
+    }
+
+    @Test
+    fun `pro confirmed just now may sync`() {
+        assertTrue(SyncEntitlement.allowsCloudSync(ana, "PRO", now, ana, now))
+    }
+
+    @Test
+    fun `pro whose confirmation expired may not sync`() {
+        // The Worker case: the app has been closed for two days, the subscription may well be gone,
+        // and nothing has re-confirmed it. Fail closed until Play says otherwise.
+        val verifiedAt = now - (2 * day)
+
+        assertFalse(SyncEntitlement.allowsCloudSync(ana, "PRO", verifiedAt, ana, now))
+    }
+
+    @Test
+    fun `the boundary itself is still trusted, one millisecond past it is not`() {
+        assertTrue(SyncEntitlement.allowsCloudSync(ana, "PRO", now - day, ana, now))
+        assertFalse(SyncEntitlement.allowsCloudSync(ana, "PRO", now - day - 1, ana, now))
+    }
+
+    @Test
+    fun `a confirmation dated in the future is refused`() {
+        // Otherwise winding the clock back would be a way to keep Pro forever. Being strict costs
+        // little: opening the app re-confirms.
+        assertFalse(SyncEntitlement.allowsCloudSync(ana, "PRO", now + 60_000, ana, now))
+    }
+
+    @Test
+    fun `a device that never stored a confirmation is stale by default`() {
+        // Epoch 0 is decades old, which is exactly the answer wanted for "never confirmed".
+        assertFalse(SyncEntitlement.allowsCloudSync(ana, "PRO", 0L, ana, now))
+    }
+
+    @Test
+    fun `freshness never rescues a free plan or the wrong account`() {
+        assertFalse(SyncEntitlement.allowsCloudSync(ana, "FREE", now, ana, now))
+        assertFalse(SyncEntitlement.allowsCloudSync(ana, "PRO", now, beto, now))
+        assertFalse(SyncEntitlement.allowsCloudSync(ana, "PRO", now, null, now))
+    }
 }

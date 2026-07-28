@@ -21,12 +21,23 @@ class EntitlementStore(context: Context) {
     private val preferences =
         context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    /** Records what Play said about [userId]. Called on every tier change, downgrades included. */
-    fun remember(userId: String?, tier: SubscriptionTier) {
+    /**
+     * Records what Play said about [userId], and **when** it said it.
+     *
+     * The timestamp is the whole point of storing anything: without it a PRO written months ago
+     * would be believed forever by a Worker running while the app is closed, long after the
+     * subscription lapsed. Every confirmation refreshes it, so an app that gets opened stays valid.
+     */
+    fun remember(
+        userId: String?,
+        tier: SubscriptionTier,
+        verifiedAtEpochMillis: Long = System.currentTimeMillis(),
+    ) {
         if (userId.isNullOrBlank()) return
         preferences.edit()
             .putString(USER_ID, userId)
             .putString(TIER, tier.name)
+            .putLong(VERIFIED_AT, verifiedAtEpochMillis)
             .apply()
     }
 
@@ -44,12 +55,21 @@ class EntitlementStore(context: Context) {
      * [SyncEntitlement] treats as FREE. Auth initialises itself in any process of the app, so this
      * answers correctly from a Worker with no Activity alive.
      */
-    fun allowsCloudSync(userId: String? = FirebaseAuth.getInstance().currentUser?.uid): Boolean =
-        SyncEntitlement.allowsCloudSync(currentTier(userId))
+    fun allowsCloudSync(
+        userId: String? = FirebaseAuth.getInstance().currentUser?.uid,
+        nowEpochMillis: Long = System.currentTimeMillis(),
+    ): Boolean = SyncEntitlement.allowsCloudSync(
+        storedUserId = preferences.getString(USER_ID, null),
+        storedTier = preferences.getString(TIER, null),
+        // Never confirmed reads as epoch 0, which is stale by decades — exactly the answer wanted.
+        verifiedAtEpochMillis = preferences.getLong(VERIFIED_AT, 0L),
+        currentUserId = userId,
+        nowEpochMillis = nowEpochMillis,
+    )
 
     /** Drops the record. Used when the account itself is deleted. */
     fun forget() {
-        preferences.edit().remove(USER_ID).remove(TIER).apply()
+        preferences.edit().remove(USER_ID).remove(TIER).remove(VERIFIED_AT).apply()
     }
 
     private companion object {
@@ -58,5 +78,8 @@ class EntitlementStore(context: Context) {
         /** A Firebase uid — opaque, never the email or anything else identifying. */
         const val USER_ID = "entitlementUserId"
         const val TIER = "entitlementTier"
+
+        /** Epoch millis of the last successful confirmation from Play. */
+        const val VERIFIED_AT = "entitlementVerifiedAt"
     }
 }
