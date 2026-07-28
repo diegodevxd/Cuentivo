@@ -146,6 +146,31 @@ exit 0; AAB `jar verified`; APK reporta `versionCode='5' versionName='1.2'`.
 `jar verified`; APK `versionCode='5' versionName='1.2'`, firmado por `CN=Diego Fernando Mancera
 Gomez, O=Capilabs`.
 
+### Cierre técnico de sync 2026-07-28
+
+Dos defectos que las pruebas anteriores no cubrían, ambos confirmados y corregidos:
+
+1. **La correlación de peticiones a Play seguía rota.** `EntitlementReconciler` estaba bien, pero
+   `BillingGateway` guardaba el uid solicitante en un campo mutable que la siguiente consulta
+   pisaba: consulta de Ana → consulta de Beto → responde Ana → `applyPurchases` leía Beto y el
+   reconciler recibía Beto/Beto, que acepta. Ahora `domain/BillingRequest.kt` es un valor inmutable
+   creado al iniciar cada consulta y capturado por su propio closure; `applyPurchases` **recibe la
+   petición como parámetro** en vez de leer estado compartido. `launchPurchase(activity, userId)`
+   ata la compra a quien abrió la hoja, porque el callback de compras de Play es global.
+   `BillingRequestTest` (6 pruebas) simula respuestas fuera de orden.
+2. **La cola no se vaciaba pasando de 50.** `push` leía una sola página y devolvía éxito, dejando
+   filas atrás — contradiciendo la promesa de que al recuperar Pro la cola drena sola.
+   `sync/SyncDrainer.kt` itera por lotes hasta agotar lo procesable. Los permanentes se aparcan (y
+   salen de `pending`, que es lo que evita que uno envenenado bloquee a los de atrás), un transitorio
+   conserva la fila y pide retry, y **nada se borra antes de confirmar la subida**. La terminación
+   está garantizada porque el conjunto pendiente se reduce en cada pasada; `MAX_BATCHES = 200` es
+   sólo una red de seguridad. `SyncDrainerTest` (8 pruebas) cubre 51 y 230 operaciones, un permanente
+   entre válidas, y fallo transitorio.
+
+**Verificado 2026-07-28, todo exit 0:** `testDebugUnitTest --rerun-tasks` **151 pruebas, 0 fallos**;
+`connectedDebugAndroidTest` en `Medium_Phone` **17/17, 0 fallos**; `lintDebug` **0 errores**;
+`assembleRelease` + `bundleRelease`; AAB `jar verified`; APK `versionCode='5' versionName='1.2'`.
+
 ⚠️ **La sincronización sigue SIN verificarse end-to-end.** Lo cerrado es **quién puede** sincronizar,
 no que sincronizar funcione. Corrección importante: **el Emulator Suite sí arranca en esta máquina**
 — `npx firebase-tools@15.24.0 emulators:start --only auth,firestore` descargó el jar y llegó a

@@ -561,8 +561,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }, blocked = blocked, onDismissBlocked = { blocked = null }, onUpgrade = {
                     blocked = null
-                    // The real Activity, not applicationContext: Play needs somewhere to put its sheet.
-                    billing.launchPurchase(this@MainActivity)
+                    // The real Activity, not applicationContext: Play needs somewhere to put its
+                    // sheet. The uid travels with it so the purchase is credited to whoever opened
+                    // the flow, even if the session changes before Play calls back.
+                    billing.launchPurchase(this@MainActivity, currentUserId)
                 }, onSignOut = {
                     authenticationGateway.signOut()
                     authenticatedUserId = null

@@ -43,19 +43,30 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
         }
     }
 
+    /**
+     * Drains the outbox rather than uploading a single page of it.
+     *
+     * This used to read one batch of 50 and return success, so a queue of 60 quietly left ten rows
+     * behind until something unrelated scheduled another run. The loop itself lives in [SyncDrainer]
+     * so it can be tested with fakes; this method only wires it to Room and the coordinator.
+     */
     private suspend fun push(database: CuentivoDatabase, gateway: SyncRemoteGateway): Boolean {
         val dao = database.syncOperationDao()
-        val operations = dao.pending(BATCH_SIZE)
-        if (operations.isEmpty()) return false
-
-        val outcome = SyncCoordinator(gateway).process(
-            operations.map { PendingSyncOperation(it.id, it.businessId, it.entityType, it.entityId, it.payload) }
-        )
-        outcome.completedIds.forEach { operationId -> dao.remove(operationId) }
-        outcome.permanentFailures.forEach { (id, error) -> dao.markFailure(id, "PERMANENT:$error") }
-        outcome.retryIds.forEach { id -> dao.markFailure(id, "Retry requested") }
-        dao.parkExhausted(MAX_ATTEMPTS)
-        return outcome.retryIds.isNotEmpty()
+        val coordinator = SyncCoordinator(gateway)
+        return SyncDrainer(
+            batchSize = BATCH_SIZE,
+            maxBatches = MAX_BATCHES,
+            pending = { limit ->
+                dao.pending(limit).map {
+                    PendingSyncOperation(it.id, it.businessId, it.entityType, it.entityId, it.payload)
+                }
+            },
+            process = { coordinator.process(it) },
+            onCompleted = { dao.remove(it) },
+            onPermanentFailure = { id, error -> dao.markFailure(id, "PERMANENT:$error") },
+            onTransientFailure = { dao.markFailure(it, "Retry requested") },
+            parkExhausted = { dao.parkExhausted(MAX_ATTEMPTS) },
+        ).drain()
     }
 
     private suspend fun pull(database: CuentivoDatabase, gateway: SyncRemotePullGateway): Boolean {
@@ -74,5 +85,12 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
     private companion object {
         const val BATCH_SIZE = 50
         const val MAX_ATTEMPTS = 10
+
+        /**
+         * Safety cap, not the termination guarantee — that comes from the pending set shrinking on
+         * every pass. At 50 a batch this is 10,000 operations in one run, far more than a phone
+         * accumulates offline, and anything beyond it simply continues on the next run.
+         */
+        const val MAX_BATCHES = 200
     }
 }
