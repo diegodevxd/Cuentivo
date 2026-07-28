@@ -423,6 +423,58 @@ Falta para cerrar Fase 4:
 3. **Flujo de invitación.** No existe: crear miembro con `status = INVITED` y aceptar desde el otro dispositivo. Requiere también el bootstrap de negocio secundario que sigue pendiente de Fase 3.
 4. **Desplegar las reglas endurecidas** y probarlas con dos usuarios en el emulador.
 
+## Cierre E2E de sincronización — 2026-07-28
+
+La afirmación histórica de que la nube nunca había tocado Firestore queda superada. Se añadió
+`SyncEmulatorE2ETest`, que ejecuta el `SyncWorker` real contra Auth Emulator y Firestore Emulator,
+con su base `cuentivo.db`, entitlement, outbox, `SyncDrainer`, reglas, gateway, pull y
+`RemoteMerger`. Las lecturas normales usan `Source.SERVER`; la única lectura administrativa se hace
+contra el endpoint local del emulador para distinguir documento ausente de acceso denegado, sin
+relajar `firestore.rules`.
+
+Se verificaron seis escenarios, todos en verde:
+
+1. **FREE:** el Worker devuelve éxito normal, no crea el negocio remoto y conserva la cola.
+2. **PRO:** publica negocio, membresía OWNER, cliente, venta y movimiento CHARGE; valida campos y
+   vacía la cola únicamente después de confirmar cada escritura.
+3. **Downgrade/upgrade:** FREE retiene; recuperar PRO publica y drena.
+4. **Más de un lote:** 51 clientes (53 operaciones contando negocio y miembro) llegan a Firestore
+   en una sola ejecución lógica y no queda ninguna fila procesable.
+5. **Aislamiento:** el usuario A recibe `PERMISSION_DENIED` al leer o escribir el negocio de B,
+   mientras conserva acceso a su propio negocio.
+6. **Pull idempotente:** un cliente y un CHARGE remotos llegan a Room; repetir el pull conserva un
+   único movimiento y el saldo exacto de 750 centavos, sin mezclar negocios.
+
+El primer rojo real fue Android bloqueando HTTP hacia `10.0.2.2`; se resolvió con
+`app/src/debug/AndroidManifest.xml`, que permite cleartext **sólo en debug**. El manifest fusionado
+de release no contiene `usesCleartextTraffic` y mantiene `allowBackup="false"`.
+
+Comando canónico de reproducción (con Java en `PATH`):
+
+```powershell
+$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
+$env:PATH="$env:JAVA_HOME\bin;$env:PATH"
+npx -y firebase-tools@15.24.0 emulators:exec --project organitazionlabs --only auth,firestore ".\gradlew.bat connectedDebugAndroidTest -Pcuentivo.useEmulators=true -Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.sync.SyncEmulatorE2ETest -Pandroid.testInstrumentationRunnerArguments.cuentivoRequireEmulators=true --no-daemon --no-configuration-cache --no-watch-fs --console=plain"
+```
+
+En esta máquina `npx` quedó bloqueado resolviendo el registro pese a tener la versión en caché; la
+ejecución verificada usó directamente `firebase-tools` **15.24.0** de su caché local. Esto no cambia
+el binario ni el comportamiento del Emulator Suite.
+
+Verificación fresca:
+
+- `testDebugUnitTest --rerun-tasks`: **151**, 0 fallos.
+- Instrumentación normal: **23 registradas, 17 ejecutadas, 6 E2E omitidas**, 0 fallos.
+- E2E explícito: **6/6**, 0 fallos; Auth y Firestore se apagaron al terminar.
+- `lintDebug`: **0 errores, 33 advertencias**.
+- `assembleRelease` y `bundleRelease`: exit 0.
+- AAB: `app/build/outputs/bundle/release/app-release.aab`, **8,633,453 bytes**,
+  `versionCode=5`, `versionName=1.2`, firmado con el certificado Capilabs.
+
+Riesgos conocidos que este cierre no cambia: entitlement verificable sólo en cliente/root,
+encolado local todavía no atómico, escrituras financieras remotas todavía individuales y permisos
+AD_ID pendientes para Fase D.
+
 ## TLS / Norton
 
 El error original `PKIX path building failed / certificate_unknown` quedó resuelto de forma reversible. Norton inspecciona HTTPS con `Norton Web/Mail Shield Root`; se exportó desde el almacén de Windows y se importó únicamente en una copia temporal:

@@ -110,6 +110,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
+    // androidTest only: lets the E2E build a real SyncWorker without WorkManager scheduling it.
+    // Deliberately not `implementation` — none of this reaches the release APK.
+    androidTestImplementation("androidx.work:work-testing:2.11.2")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
