@@ -21,6 +21,8 @@ local.properties
 # Firebase Emulator Suite scratch, written into the repo root every time it runs.
 *-debug.log
 .firebase/
+__pycache__/
+*.py[cod]
 app/google-services.json
 # Release signing. Losing the keystore means never being able to update the app on Play again:
 # keep a backup somewhere safe, just never in git.

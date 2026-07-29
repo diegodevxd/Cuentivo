@@ -484,6 +484,28 @@ El error original `PKIX path building failed / certificate_unknown` quedó resue
 
 No se desactivó TLS, Norton ni se modificó el JDK instalado de Android Studio. Para ejecutar Gradle en esta máquina, usar `JAVA_TOOL_OPTIONS` como en el comando anterior. Si se limpia `C:\tmp`, habrá que recrear la copia/importación.
 
+## Icono launcher y AAB para Play Console — 2026-07-29
+
+Se reemplazó el icono genérico de Android por la identidad visual de Cuentivo: fondo azul marino
+`#001D26`, una C tipo libro contable en menta `#08DDA5` y un check integrado. La fuente aprobada
+queda en `design/icon/cuentivo-launcher-source.png`; `tools/generate_launcher_assets.py` genera y
+valida los recursos legacy, redondos y adaptativos de las cinco densidades. El icono se instaló y
+se revisó visualmente en el launcher del AVD `Medium_Phone`, sin recortes.
+
+La versión para la siguiente subida a Play pasó a `versionCode=6`, conservando
+`versionName=1.2`. Verificación fresca posterior al último cambio:
+
+- Generador: 3 pruebas, 0 fallos.
+- `testDebugUnitTest --rerun-tasks`: 151 pruebas, 0 fallos.
+- `lintDebug`: 0 errores, 33 advertencias; no se añadió baseline ni supresiones.
+- `assembleRelease` y `bundleRelease`: exit 0.
+- AAB: `app/build/outputs/bundle/release/app-release.aab`, 8,661,168 bytes.
+- APK/AAB firmados con el certificado Capilabs; SHA-256 del AAB:
+  `D172B0FEEAB63E1CA4610957397ED997CCD7D3706CF77A511058EC242FAA3E8E`.
+
+Este AAB 6 es el que debe subirse a la prueba interna y luego promoverse a la prueba cerrada; no
+se reutiliza el AAB 5 que ya está cargado en Play Console.
+
 ## Reglas de continuidad
 
 - No usar `Double` ni `Float` para dinero.
