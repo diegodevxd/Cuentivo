@@ -18,6 +18,9 @@ local.properties
 /.superpowers/
 # Kotlin compiler scratch: error logs and session files, regenerated on every build.
 .kotlin/
+
+# Independent legal websites, each with its own Git repository.
+/web/
 # Firebase Emulator Suite scratch, written into the repo root every time it runs.
 *-debug.log
 .firebase/
