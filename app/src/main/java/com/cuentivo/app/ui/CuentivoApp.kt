@@ -136,33 +136,34 @@ private const val MAX_LISTED_REJECTIONS = 10
 @Composable
 private fun OvalNavigationBar(current: AppDestination, onSelect: (AppDestination) -> Unit) {
     Surface(
-        shape = RoundedCornerShape(30.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        shadowElevation = 10.dp,
+        shape = RoundedCornerShape(26.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 16.dp,
         // The activity is edge-to-edge, so this sits under the system back/home/recents bar unless
         // it subtracts that inset itself. Material's NavigationBar did this for us; a hand-rolled
         // Surface does not, which is exactly how the two bars ended up on top of each other.
         modifier = Modifier
             .navigationBarsPadding()
-            .padding(horizontal = 14.dp)
-            .padding(bottom = 14.dp)
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 10.dp)
             .fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(6.dp),
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AppDestination.entries.forEach { item ->
                 val selected = item == current
-                val content = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                val content = if (selected) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(24.dp))
                         .background(
-                            if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                            else Color.Transparent
                         )
                         // 48 dp of height total: the floor for something used one-handed, walking.
                         .clickable { onSelect(item) }
@@ -186,8 +187,8 @@ private enum class AppDestination(val label: String, val icon: ImageVector) {
     HOME("Inicio", Icons.Filled.Home),
     CUSTOMERS("Clientes", Icons.Filled.Person),
     NEW_SALE("Vender", Icons.Filled.ShoppingCart),
-    PAYMENTS("Abonos", Icons.Filled.CheckCircle),
     PRODUCTS("Productos", Icons.Filled.Star),
+    PAYMENTS("Abonos", Icons.Filled.CheckCircle),
 }
 
 @Composable
@@ -257,9 +258,9 @@ fun CuentivoApp(
             action?.let {
                 FloatingActionButton(
                     onClick = it,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    shape = RoundedCornerShape(20.dp),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(18.dp),
                 ) {
                     Icon(
                         Icons.Filled.Add,
@@ -486,8 +487,12 @@ private fun StatementSheet(
             modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Estado de cuenta", style = MaterialTheme.typography.headlineSmall)
-            Text(customerName, style = MaterialTheme.typography.titleMedium)
+            NeoSectionTitle(customerName, eyebrow = "Estado de cuenta")
+            Text(
+                "Historial financiero",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (entries.isEmpty()) Text("Este cliente aún no tiene movimientos")
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()).weight(1f, fill = false),
@@ -510,15 +515,18 @@ private fun StatementSheet(
                             Text(
                                 (if (entry.direction == "DEBIT") "+" else "−") + formatMoney(entry.amountCents),
                                 style = MaterialTheme.typography.titleMedium,
+                                color = if (entry.direction == "DEBIT") {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.secondary
+                                },
                             )
                         }
                     }
                 }
             }
             if (entries.isNotEmpty()) {
-                FilledTonalButton(onClick = onShareText, modifier = Modifier.fillMaxWidth()) {
-                    Text("Enviar por WhatsApp")
-                }
+                NeoPrimaryButton("Compartir resumen", onShareText, Modifier.fillMaxWidth())
                 OutlinedButton(onClick = onShareCsv, modifier = Modifier.fillMaxWidth()) {
                     Text("Compartir como archivo CSV")
                 }
@@ -721,11 +729,12 @@ private fun NewSaleScreen(
     var discountText by remember { mutableStateOf("") }
     var dueInDays by remember { mutableStateOf<Long?>(null) }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
+    NeoResponsiveColumn(
+        modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Nueva venta", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(8.dp))
+        NeoSectionTitle("Nueva venta", eyebrow = "Operación")
         SelectorField(
             label = "Cliente",
             selected = customer,
@@ -756,7 +765,8 @@ private fun NewSaleScreen(
         )
         val quantity = quantityText.toIntOrNull() ?: 0
         val chosenProduct = picked
-        FilledTonalButton(
+        NeoPrimaryButton(
+            label = "Agregar al carrito",
             enabled = chosenProduct != null && quantity > 0,
             onClick = {
                 if (chosenProduct != null && quantity > 0) {
@@ -773,7 +783,7 @@ private fun NewSaleScreen(
                 }
             },
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Agregar al carrito") }
+        )
 
         if (draft.isEmpty) {
             Text("El carrito está vacío. Elige un producto y agrégalo.")
@@ -803,14 +813,19 @@ private fun NewSaleScreen(
             draft = draft.copy(discountCents = discountCents)
 
             Text("¿Cuándo debe pagar?", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf<Pair<String, Long?>>("Sin fecha" to null, "7 días" to 7L, "15 días" to 15L, "30 días" to 30L)
-                    .forEach { (label, days) ->
-                        FilterChip(
-                            selected = dueInDays == days,
-                            onClick = { dueInDays = days },
-                            label = { Text(label) },
-                        )
+                    .chunked(2)
+                    .forEach { options ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            options.forEach { (label, days) ->
+                                FilterChip(
+                                    selected = dueInDays == days,
+                                    onClick = { dueInDays = days },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
                     }
             }
 
@@ -832,7 +847,8 @@ private fun NewSaleScreen(
         val chosenCustomer = customer
         val error = draft.validationError()
         if (chosenCustomer == null && !draft.isEmpty) Text("Falta elegir al cliente")
-        FilledTonalButton(
+        NeoPrimaryButton(
+            label = "Registrar venta",
             enabled = chosenCustomer != null && error == null,
             onClick = {
                 if (chosenCustomer != null && error == null) {
@@ -845,7 +861,8 @@ private fun NewSaleScreen(
                 }
             },
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Registrar venta") }
+        )
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -1143,11 +1160,12 @@ private fun CustomersScreen(
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     var archiving by remember { mutableStateOf<CustomerBalanceRow?>(null) }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
+    NeoResponsiveColumn(
+        modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text("Clientes", style = MaterialTheme.typography.headlineSmall)
+    ) { layout ->
+        Spacer(Modifier.height(8.dp))
+        NeoSectionTitle("Clientes", eyebrow = "Directorio")
         OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o teléfono") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         val filtered = customers.filter { it.customer.name.contains(query, true) || (it.customer.phone?.contains(query) == true) }
         if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes clientes registrados" else "No se encontraron clientes")
@@ -1159,22 +1177,37 @@ private fun CustomersScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(row.customer.name)
-                        Text(formatMoney(row.balanceCents))
+                if (layout.stackPrimaryActions) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        Text(row.customer.name, style = MaterialTheme.typography.titleMedium)
+                        Text(formatMoney(row.balanceCents), color = MaterialTheme.colorScheme.primary)
                         row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { editing = row }) { Text("Editar") }
+                            TextButton(onClick = { archiving = row }) {
+                                Text("Eliminar", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
-                    TextButton(onClick = { editing = row }) { Text("Editar") }
-                    TextButton(onClick = { archiving = row }) {
-                        Text("Eliminar", color = MaterialTheme.colorScheme.error)
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(row.customer.name, style = MaterialTheme.typography.titleMedium)
+                            Text(formatMoney(row.balanceCents), color = MaterialTheme.colorScheme.primary)
+                            row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
+                        }
+                        TextButton(onClick = { editing = row }) { Text("Editar") }
+                        TextButton(onClick = { archiving = row }) {
+                            Text("Eliminar", color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
         }
+        Spacer(Modifier.height(12.dp))
     }
     if (showForm) {
         var name by remember { mutableStateOf("") }
@@ -1293,10 +1326,10 @@ private fun DashboardScreen(
     var filter by remember { mutableStateOf(DebtorFilter.OWING) }
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    NeoResponsiveColumn(
+        modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+    ) { layout ->
+        Spacer(Modifier.height(8.dp))
         when (state) {
             DashboardUiState.NoBusiness -> {
                 Text("Bienvenido a Cuentivo", style = MaterialTheme.typography.headlineSmall)
@@ -1319,20 +1352,25 @@ private fun DashboardScreen(
                         label = { Text(if (alertCount > 0) "Avisos ($alertCount)" else "Avisos") },
                     )
                 }
-                MetricCard("Por cobrar", state.receivableCents)
+                NeoBalanceHero(
+                    label = "Por cobrar",
+                    amountCents = state.receivableCents,
+                    supportingText = if (state.overdueCents > 0) {
+                        "${formatMoney(state.overdueCents)} requieren atención"
+                    } else {
+                        "Tu cartera está al día"
+                    },
+                )
                 state.insights.forEach { InsightCard(it) }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    Card(Modifier.weight(1f)) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("Vendido este mes", style = MaterialTheme.typography.labelLarge)
-                            Text(formatMoney(state.soldCents), style = MaterialTheme.typography.titleMedium)
-                        }
+                if (layout.stackPrimaryActions) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        NeoMoneyPill("Vendido este mes", state.soldCents, MaterialTheme.colorScheme.primary, Modifier.fillMaxWidth())
+                        NeoMoneyPill("Cobrado este mes", state.collectedCents, MaterialTheme.colorScheme.secondary, Modifier.fillMaxWidth())
                     }
-                    Card(Modifier.weight(1f)) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("Cobrado este mes", style = MaterialTheme.typography.labelLarge)
-                            Text(formatMoney(state.collectedCents), style = MaterialTheme.typography.titleMedium)
-                        }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        NeoMoneyPill("Vendido este mes", state.soldCents, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                        NeoMoneyPill("Cobrado este mes", state.collectedCents, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
                     }
                 }
                 if (state.overdueCents > 0) {
@@ -1352,13 +1390,13 @@ private fun DashboardScreen(
                     }
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Quién me debe", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    AssistChip(onClick = onShareDebtorList, label = { Text("Compartir lista") })
-                }
+                NeoSectionTitle(
+                    title = "Quién me debe",
+                    eyebrow = "Cartera",
+                    trailing = {
+                        AssistChip(onClick = onShareDebtorList, label = { Text("Compartir") })
+                    },
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DebtorFilter.entries.forEach { option ->
                         FilterChip(
@@ -1385,25 +1423,34 @@ private fun DashboardScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
+                        if (layout.stackLedgerAmounts) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp)) {
                                 Text(row.customer.name, style = MaterialTheme.typography.titleMedium)
                                 row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
+                                Spacer(Modifier.height(8.dp))
+                                Text(formatMoney(row.balanceCents), style = MaterialTheme.typography.titleMedium)
                             }
-                            Text(
-                                formatMoney(row.balanceCents),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (row.balanceCents > 0) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(row.customer.name, style = MaterialTheme.typography.titleMedium)
+                                    row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
+                                }
+                                Text(
+                                    formatMoney(row.balanceCents),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (row.balanceCents > 0) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
 
-                Text("Tu cuenta", style = MaterialTheme.typography.titleMedium)
+                NeoSectionTitle("Tu cuenta", eyebrow = "Plan")
                 Card(
                     onClick = onShowPlans,
                     shape = RoundedCornerShape(20.dp),
@@ -1434,6 +1481,7 @@ private fun DashboardScreen(
                 }
             }
         }
+        Spacer(Modifier.height(12.dp))
     }
     if (confirmSignOut) {
         AlertDialog(

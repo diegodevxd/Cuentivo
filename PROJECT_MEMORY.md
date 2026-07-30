@@ -506,6 +506,42 @@ La versión para la siguiente subida a Play pasó a `versionCode=6`, conservando
 Este AAB 6 es el que debe subirse a la prueba interna y luego promoverse a la prueba cerrada; no
 se reutiliza el AAB 5 que ya está cargado en Play Console.
 
+## Rediseño Neo-Fintech para prueba local — 2026-07-29
+
+El rediseño aprobado se implementó de forma aislada en la rama `codex/neo-fintech`, partiendo del
+commit `3f3c930`. No se modificó billing, sincronización, autenticación, Room, cálculos monetarios ni
+callbacks de dominio.
+
+La presentación ahora usa una base grafito siempre oscura y colores con función estable: cian para
+acciones y cargos, verde ácido para cobros/éxito, violeta sólo como aura secundaria y rojo para
+vencidos. Las auroras se dibujan con gradientes acelerados por GPU compatibles con `minSdk 24`; no
+se introdujo una dependencia de `RuntimeShader` que pudiera romper Android 7. Los botones principales
+animan la presión a 0.97 durante 190 ms y respetan la escala global de animaciones del sistema.
+
+Se añadió `NeoFintechLayoutPolicy`, con pruebas puras para los límites 320, 360, 411 y 412 dp. Los
+gutters son 16/20/24 dp y, en menos de 360 dp, las métricas, montos y acciones densas se apilan para
+evitar recortes. Se migraron Inicio, Clientes, Estado de cuenta y Nueva venta conservando el flujo
+y las validaciones originales. La barra inferior mantiene cinco destinos y un objetivo táctil
+mínimo de 48 dp.
+
+Verificación fresca:
+
+- `testDebugUnitTest --rerun-tasks`: **156 pruebas, 0 fallos, 0 errores**.
+- `connectedDebugAndroidTest` en `Medium_Phone`: **29 registradas, 23 ejecutadas, 6 E2E omitidas,
+  0 fallos**. Se repitió con una ventana de **320 dp** y volvió a pasar.
+- `lintDebug`: **0 errores, 25 advertencias, 1 sugerencia**, sin baseline nuevo.
+- `assembleDebug` y `assembleRelease`: exit 0.
+- APK de prueba: `Cuentivo-NeoFintech-v6-prueba.apk`, 4,011,399 bytes, SHA-256
+  `4AD775AE0BF165AF5B0F58CAD607988308EAD42F43029D0C2E9B287CB0995ACA`.
+- El APK verifica con firma v2 y certificado Capilabs
+  (`7845ec3ed115a8da5a86fce4b6fae6231fa2672df4a10316d84bddc4e6a0613d`).
+- Instalado y abierto correctamente en el AVD con `versionCode=6`, `versionName=1.2`, primero en
+  tamaño normal y después a 320 dp, sin recorte en el acceso.
+
+Este APK es sólo para validar el diseño; no debe subirse a Play Console. El `versionCode 6` ya está
+usado en la prueba cerrada. Si este rediseño se aprueba para Play, el siguiente AAB debe pasar a
+`versionCode 7` y volver a ejecutar toda la verificación de release.
+
 ## Reglas de continuidad
 
 - No usar `Double` ni `Float` para dinero.

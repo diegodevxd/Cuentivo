@@ -8,7 +8,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.LocalContentColor
@@ -72,38 +71,38 @@ private val LightColorScheme = lightColorScheme(
 
 /** The alternative. Here the neon can carry text, because the ground is dark enough. */
 private val DarkColorScheme = darkColorScheme(
-    primary = NeonMint,
-    onPrimary = DeepNavy,
-    primaryContainer = MintInk,
-    onPrimaryContainer = Color.White,
-    secondary = NeonCyan,
-    onSecondary = DeepNavy,
-    secondaryContainer = CyanInk,
-    onSecondaryContainer = Color.White,
-    tertiary = NeonMagenta,
-    onTertiary = DeepNavy,
-    tertiaryContainer = MagentaInk,
-    onTertiaryContainer = Color.White,
+    primary = NeoCyan,
+    onPrimary = NeoGraphite,
+    primaryContainer = NeoCyan,
+    onPrimaryContainer = NeoGraphite,
+    secondary = NeoAcid,
+    onSecondary = NeoGraphite,
+    secondaryContainer = NeoGraphiteHigh,
+    onSecondaryContainer = NeoAcid,
+    tertiary = NeoViolet,
+    onTertiary = NeoGraphite,
+    tertiaryContainer = NeoGraphiteHigh,
+    onTertiaryContainer = NeoViolet,
     background = Color.Transparent,
-    onBackground = PaleMist,
-    surface = GlassDark,
-    onSurface = PaleMist,
-    surfaceVariant = GlassDark,
-    onSurfaceVariant = Color(0xFFA9BDC6),
-    surfaceContainer = GlassDark,
-    surfaceContainerLow = OverlayDark,
-    surfaceContainerLowest = GlassDark,
-    surfaceContainerHigh = OverlayDark,
-    surfaceContainerHighest = GlassDarkRaised,
-    outline = GlassDarkBorder,
-    outlineVariant = GlassDarkBorder,
-    error = Color(0xFFFF8A80),
-    onError = DeepNavy,
+    onBackground = NeoText,
+    surface = NeoGraphiteRaised,
+    onSurface = NeoText,
+    surfaceVariant = NeoGraphiteHigh,
+    onSurfaceVariant = NeoMuted,
+    surfaceContainer = NeoGraphiteRaised,
+    surfaceContainerLow = NeoGraphite,
+    surfaceContainerLowest = NeoGraphite,
+    surfaceContainerHigh = NeoGraphiteHigh,
+    surfaceContainerHighest = NeoGraphiteHigh,
+    outline = NeoHairline,
+    outlineVariant = NeoHairline,
+    error = NeoOverdue,
+    onError = NeoGraphite,
 )
 
 @Composable
 fun CuentivoTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
@@ -133,7 +132,7 @@ fun CuentivoTheme(
 @Composable
 private fun animatedBackdrop(darkTheme: Boolean): Brush {
     val colors = remember(darkTheme) {
-        if (darkTheme) listOf(DeepNavy, DeepTeal, DeepPlum, DeepNavy)
+        if (darkTheme) listOf(NeoGraphite, Color(0xFF07161A), Color(0xFF100C1B), NeoGraphite)
         else listOf(CloudWhite, MistBlue, MintHaze, BlushHaze, CloudWhite)
     }
 
