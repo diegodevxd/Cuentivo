@@ -168,9 +168,11 @@ internal fun NeoSectionHeader(
     eyebrow: String? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    // Centred, not bottom-aligned: a trailing TextButton carries its own vertical padding, so
+    // bottom alignment pushed the action visibly above the title's baseline.
     Row(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Bottom,
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
     ) {
         Column(Modifier.weight(1f)) {
@@ -182,7 +184,7 @@ internal fun NeoSectionHeader(
                 )
                 Spacer(Modifier.height(NeoSpacing.xs))
             }
-            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(title, style = MaterialTheme.typography.titleMedium)
         }
         trailing?.invoke()
     }

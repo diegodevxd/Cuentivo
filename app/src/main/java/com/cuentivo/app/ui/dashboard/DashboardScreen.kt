@@ -119,16 +119,7 @@ private fun LazyListScope.dashboardContent(
     onSeeAllCustomers: () -> Unit,
 ) {
     item {
-        DashboardHero(state.receivableCents)
-    }
-    item {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(NeoSpacing.lg),
-        ) {
-            DashboardMetric("Vence hoy", state.dueTodayCents, Modifier.weight(1f))
-            DashboardMetric("Vencido", state.overdueCents, Modifier.weight(1f), isOverdue = true)
-        }
+        DashboardHero(state)
     }
     item {
         Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
@@ -142,7 +133,17 @@ private fun LazyListScope.dashboardContent(
     item {
         NeoSectionHeader(
             title = "Clientes críticos",
-            trailing = { TextButton(onClick = onSeeAllCustomers) { Text("Ver todos") } },
+            trailing = {
+                TextButton(
+                    onClick = onSeeAllCustomers,
+                    // Material's 24 dp horizontal padding pushes the action off the reference's
+                    // right gutter. The 48 dp touch target is preserved by the button's own
+                    // minimum height.
+                    contentPadding = PaddingValues(horizontal = NeoSpacing.sm),
+                ) {
+                    Text("Ver todos", style = MaterialTheme.typography.labelLarge)
+                }
+            },
         )
     }
     if (critical.isEmpty()) {
@@ -181,12 +182,17 @@ private fun DashboardMetric(label: String, amountCents: Long, modifier: Modifier
     }
 }
 
+/**
+ * The reference keeps `Vence hoy` and `Vencido` inside the receivable card rather than as a
+ * separate strip below it, and carries no supporting sentence under the amount. Both details matter
+ * for density: together they were costing about 55 dp and pushing recent activity off the screen.
+ */
 @Composable
-private fun DashboardHero(amountCents: Long) {
+private fun DashboardHero(state: DashboardUiState.Content) {
     NeoPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 126.dp, max = 142.dp),
+            .heightIn(max = 142.dp),
         accent = MaterialTheme.colorScheme.primary,
     ) {
         Text(
@@ -196,15 +202,17 @@ private fun DashboardHero(amountCents: Long) {
         )
         Spacer(Modifier.height(NeoSpacing.xs))
         NeoMoney(
-            amountCents = amountCents,
+            amountCents = state.receivableCents,
             style = MaterialTheme.typography.displaySmall,
         )
-        Spacer(Modifier.height(NeoSpacing.sm))
-        Text(
-            text = "En cuentas por cobrar",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Spacer(Modifier.height(NeoSpacing.md))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(NeoSpacing.lg),
+        ) {
+            DashboardMetric("Vence hoy", state.dueTodayCents, Modifier.weight(1f))
+            DashboardMetric("Vencido", state.overdueCents, Modifier.weight(1f), isOverdue = true)
+        }
     }
 }
 

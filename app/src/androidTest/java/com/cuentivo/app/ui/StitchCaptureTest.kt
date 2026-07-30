@@ -1,0 +1,254 @@
+package com.cuentivo.app.ui
+
+import android.graphics.Bitmap
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.dp
+import androidx.test.platform.app.InstrumentationRegistry
+import com.cuentivo.app.data.local.CustomerBalanceRow
+import com.cuentivo.app.data.local.CustomerEntity
+import com.cuentivo.app.data.local.ProductEntity
+import com.cuentivo.app.domain.Alert
+import com.cuentivo.app.domain.DashboardActivity
+import com.cuentivo.app.domain.DueSale
+import com.cuentivo.app.domain.StatementEntry
+import com.cuentivo.app.ui.dashboard.DashboardUiState
+import com.cuentivo.app.ui.theme.CuentivoTheme
+import java.io.File
+import java.io.FileOutputStream
+import java.time.LocalDate
+import org.junit.Rule
+import org.junit.Test
+
+/**
+ * Renders each redesigned screen at the supported widths and writes a PNG the reviewer can hold
+ * next to the approved references in `design/stitch`.
+ *
+ * This exists because the screens behind Firebase Auth cannot be reached by an automated visual
+ * pass without signing in. Driving `CuentivoApp` directly needs no account, no network, and no
+ * Firestore, so the composition itself can still be inspected pixel by pixel.
+ *
+ * The fixtures below are test data for a test surface. They never reach the app: production
+ * activity, balances, and customers all come from Room.
+ */
+class StitchCaptureTest {
+    @get:Rule val composeRule = createComposeRule()
+
+    @Test fun capture_dashboard_at_every_supported_width() {
+        captureScreen("dashboard-320dp", 320) { CuentivoApp(populatedState(), CUSTOMERS) }
+    }
+
+    @Test fun capture_dashboard_360() {
+        captureScreen("dashboard-360dp", 360) { CuentivoApp(populatedState(), CUSTOMERS) }
+    }
+
+    @Test fun capture_dashboard_412() {
+        captureScreen("dashboard-412dp", 412) { CuentivoApp(populatedState(), CUSTOMERS) }
+    }
+
+    @Test fun capture_dashboard_480() {
+        captureScreen("dashboard-480dp", 480) { CuentivoApp(populatedState(), CUSTOMERS) }
+    }
+
+    @Test fun capture_dashboard_empty_sections() {
+        captureScreen("dashboard-empty-360dp", 360) {
+            CuentivoApp(
+                DashboardUiState.Content(
+                    businessId = "business-1",
+                    businessName = "Mi negocio",
+                    receivableCents = 0,
+                    soldCents = 0,
+                    collectedCents = 0,
+                    overdueCents = 0,
+                    customersWithDebt = 0,
+                ),
+            )
+        }
+    }
+
+    @Test fun capture_no_business_state() {
+        captureScreen("no-business-360dp", 360) { CuentivoApp(DashboardUiState.NoBusiness) }
+    }
+
+    @Test fun capture_customer_detail_360() {
+        captureScreen("customer-detail-360dp", 360) {
+            CuentivoApp(
+                state = populatedState(),
+                customers = CUSTOMERS,
+                statementCustomer = "Distribuidora Ramírez",
+                statement = STATEMENT,
+                cancelables = CANCELABLES,
+            )
+        }
+    }
+
+    @Test fun capture_customer_detail_320() {
+        captureScreen("customer-detail-320dp", 320) {
+            CuentivoApp(
+                state = populatedState(),
+                customers = CUSTOMERS,
+                statementCustomer = "Distribuidora Ramírez",
+                statement = STATEMENT,
+                cancelables = CANCELABLES,
+            )
+        }
+    }
+
+    @Test fun capture_alerts() {
+        captureScreen("alerts-360dp", 360) {
+            CuentivoApp(state = populatedState(), customers = CUSTOMERS, alerts = ALERTS)
+        }
+    }
+
+    private companion object {
+        const val CAPTURE_TAG = "capture-root"
+        // A real 360 dp phone is about 800 dp tall and the Medium_Phone AVD is 914 dp. Capturing
+        // shorter than that clips content the device would actually show and makes the comparison
+        // against the reference dishonest.
+        const val CAPTURE_HEIGHT_DP = 900
+
+        val CUSTOMERS = listOf(
+            balance("ramirez", "Distribuidora Ramírez", 150_000),
+            balance("todotexto", "Librería Todo Texto", 98_000),
+            balance("martinez", "Minimarket Martínez", 75_000),
+            balance("centro", "Farmacia del Centro", 24_000),
+        )
+
+        val PRODUCTS = listOf(
+            product("p1", "Café molido 500 g", 12_500, "CAF-500", "Abarrotes"),
+            product("p2", "Aceite vegetal 1 L", 4_800, "ACE-1L", "Abarrotes"),
+        )
+
+        val STATEMENT = listOf(
+            StatementEntry("2026-07-14", "CHARGE", "DEBIT", 150_000, "Pedido semanal"),
+            StatementEntry("2026-07-21", "PAYMENT", "CREDIT", 25_000, null),
+        )
+
+        val CANCELABLES = listOf(
+            CancelableItem("s1", CancelableItem.Kind.SALE, "Venta del 14 jul", "Pedido semanal", 150_000),
+            CancelableItem("p1", CancelableItem.Kind.PAYMENT, "Abono del 21 jul", "Efectivo", 25_000),
+        )
+
+        val ALERTS = listOf(
+            Alert("Distribuidora Ramírez", "15 días vencido", Alert.Severity.OVERDUE, "ramirez"),
+            Alert("Librería Todo Texto", "Vence hoy", Alert.Severity.DUE_SOON, "todotexto"),
+        )
+
+        fun balance(id: String, name: String, cents: Long) = CustomerBalanceRow(
+            customer = CustomerEntity(
+                id = id,
+                businessId = "business-1",
+                name = name,
+                normalizedName = name.lowercase(),
+                phone = "55 0000 0000",
+                email = null,
+                address = null,
+                notes = null,
+                creditLimitCents = null,
+                isActive = true,
+                createdAtEpochMillis = 1,
+                updatedAtEpochMillis = 1,
+                deletedAtEpochMillis = null,
+            ),
+            balanceCents = cents,
+        )
+
+        fun product(id: String, name: String, cents: Long, sku: String, category: String) = ProductEntity(
+            id = id,
+            businessId = "business-1",
+            name = name,
+            description = null,
+            sku = sku,
+            category = category,
+            salePriceCents = cents,
+            costPriceCents = null,
+            stock = null,
+            imageUri = null,
+            isActive = true,
+            createdAtEpochMillis = 1,
+            updatedAtEpochMillis = 1,
+            deletedAtEpochMillis = null,
+        )
+    }
+
+    private fun populatedState(): DashboardUiState.Content {
+        val today = LocalDate.now().toEpochDay()
+        return DashboardUiState.Content(
+            businessId = "business-1",
+            businessName = "Mi negocio",
+            receivableCents = 4_250_000,
+            soldCents = 6_100_000,
+            collectedCents = 1_850_000,
+            overdueCents = 345_000,
+            customersWithDebt = 4,
+            dueTodayCents = 128_000,
+            dueSales = listOf(
+                DueSale("s1", "ramirez", "Distribuidora Ramírez", today - 15, 150_000),
+                DueSale("s2", "todotexto", "Librería Todo Texto", today, 98_000),
+                DueSale("s3", "martinez", "Minimarket Martínez", today, 75_000),
+            ),
+            recentActivity = listOf(
+                activity("a1", "centro", "Farmacia del Centro", "PAYMENT", "CREDIT", 25_000, 1),
+                activity("a2", "alpes", "Bodega Los Alpes", "CHARGE", "DEBIT", 42_000, 26),
+                activity("a3", "martinez", "Minimarket Martínez", "PAYMENT", "CREDIT", 18_000, 30),
+                activity("a4", "ramirez", "Distribuidora Ramírez", "REFUND", "DEBIT", 6_000, 40),
+                activity("a5", "todotexto", "Librería Todo Texto", "CANCELLATION", "CREDIT", 9_000, 50),
+            ),
+        )
+    }
+
+    private fun activity(
+        id: String,
+        customerId: String,
+        customerName: String,
+        type: String,
+        direction: String,
+        cents: Long,
+        hoursAgo: Long,
+    ) = DashboardActivity(
+        id = id,
+        customerId = customerId,
+        customerName = customerName,
+        type = type,
+        direction = direction,
+        amountCents = cents,
+        occurredAtEpochMillis = System.currentTimeMillis() - hoursAgo * 3_600_000L,
+    )
+
+    /** Renders at an exact dp width so the capture matches the reference's phone proportions. */
+    private fun captureScreen(name: String, widthDp: Int, content: @Composable () -> Unit) {
+        composeRule.setContent {
+            Box(
+                Modifier
+                    .testTag(CAPTURE_TAG)
+                    .requiredWidth(widthDp.dp)
+                    .requiredHeight(CAPTURE_HEIGHT_DP.dp),
+            ) {
+                CuentivoTheme { content() }
+            }
+        }
+        composeRule.waitForIdle()
+        val bitmap = composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap()
+        write(name, bitmap)
+    }
+
+    private fun write(name: String, bitmap: Bitmap) {
+        // Internal storage on purpose: since Android 11 the shell user cannot read another
+        // package's /sdcard/Android/data, so an external capture is invisible to `adb pull`.
+        // `adb exec-out run-as com.cuentivo.app cat files/stitch-captures/<name>.png` reads these.
+        val dir = File(
+            InstrumentationRegistry.getInstrumentation().targetContext.filesDir,
+            "stitch-captures",
+        )
+        dir.mkdirs()
+        FileOutputStream(File(dir, "$name.png")).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+}
