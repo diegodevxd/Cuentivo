@@ -1,21 +1,32 @@
 package com.cuentivo.app.ui.dashboard
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -25,12 +36,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.domain.DashboardActivity
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.ui.NeoAction
-import com.cuentivo.app.ui.NeoDirectoryRow
 import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoMoney
@@ -38,10 +49,16 @@ import com.cuentivo.app.ui.NeoPanel
 import com.cuentivo.app.ui.NeoSectionHeader
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
+import java.text.DateFormat
 import java.time.LocalDate
 import java.util.Date
-import java.text.DateFormat
 import java.util.Locale
+
+/**
+ * The compact rows the reference uses inside a section. Kept well under the generic panel height so
+ * the three critical customers and five activity rows all stay above the fold at 320 dp.
+ */
+private val SECTION_ROW_HEIGHT = 60.dp
 
 /** Compact, action-first home screen. All figures and rows come from DashboardUiState. */
 @Composable
@@ -93,7 +110,7 @@ fun DashboardScreen(
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.dashboardContent(
+private fun LazyListScope.dashboardContent(
     state: DashboardUiState.Content,
     customers: List<CustomerBalanceRow>,
     onNewSale: () -> Unit,
@@ -129,21 +146,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboardContent(
         )
     }
     if (critical.isEmpty()) {
-        item {
-            NeoEmptyState(
-                title = "Sin cobros urgentes",
-                detail = "Los saldos vencidos aparecerán aquí.",
-            )
-        }
+        item { CompactEmptyRow("Sin cobros urgentes por ahora") }
     } else {
         items(critical, key = { it.customer.customer.id }) { criticalCustomer ->
-            val status = criticalCustomerStatus(criticalCustomer.customer, state, today, criticalCustomer.overdueCents)
-            NeoDirectoryRow(
-                title = criticalCustomer.customer.customer.name,
-                subtitle = status,
-                amountCents = criticalCustomer.customer.balanceCents,
-                status = if (criticalCustomer.overdueCents > 0) "Requiere atención" else null,
-                accent = if (criticalCustomer.overdueCents > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            CriticalCustomerRow(
+                critical = criticalCustomer,
+                status = criticalCustomerStatus(criticalCustomer, state, today),
                 onClick = { onCustomer(criticalCustomer.customer) },
             )
         }
@@ -151,12 +159,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboardContent(
 
     item { NeoSectionHeader(title = "Actividad reciente") }
     if (state.recentActivity.isEmpty()) {
-        item {
-            NeoEmptyState(
-                title = "Aún no hay movimientos",
-                detail = "Tus ventas y abonos aparecerán aquí.",
-            )
-        }
+        item { CompactEmptyRow("Aún no hay movimientos") }
     } else {
         items(state.recentActivity.take(5), key = { it.id }) { activity -> ActivityRow(activity) }
     }
@@ -205,58 +208,199 @@ private fun DashboardHero(amountCents: Long) {
     }
 }
 
-private fun criticalCustomerStatus(
-    customer: CustomerBalanceRow,
-    state: DashboardUiState.Content,
-    today: Long,
-    overdueCents: Long,
-): String = when {
-    overdueCents > 0 -> "Saldo vencido"
-    state.dueSales.any { it.customerId == customer.customer.id && it.dueDateEpochDay == today } -> "Vence hoy"
-    else -> "Saldo pendiente"
-}
-
+/**
+ * One compact row instead of a full section state. The reference never devotes a padded card with a
+ * title and an explanation to an empty section, and doing so pushes recent activity off a 320 dp
+ * screen.
+ */
 @Composable
-private fun ActivityRow(activity: DashboardActivity) {
-    val isPayment = activity.type == "PAYMENT"
-    val amountColor = if (isPayment) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-    val sign = if (isPayment) "+" else ""
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Spacer(
-            Modifier
-                .width(6.dp)
-                .height(6.dp)
-                .background(if (isPayment) MaterialTheme.colorScheme.primary else Color(0xFF9B7BFF), NeoShapes.row),
-        )
-        Column(Modifier.weight(1f).padding(start = NeoSpacing.sm)) {
-            Text(activityTitle(activity), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
-            Text(
-                "${activity.customerName} · ${activityTime(activity)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
+private fun CompactEmptyRow(text: String) {
+    SectionRowSurface(border = MaterialTheme.colorScheme.outlineVariant) {
         Text(
-            text = sign + Money.format(activity.amountCents),
-            style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold),
-            color = amountColor,
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
-private fun activityTitle(activity: DashboardActivity): String = when (activity.type) {
-    "PAYMENT" -> "Abono recibido"
-    "SALE" -> "Nueva venta"
-    "ADJUSTMENT" -> "Ajuste registrado"
-    "CANCELLATION" -> "Movimiento cancelado"
-    else -> "Movimiento registrado"
+/**
+ * The reference critical row: a leading urgency affordance, a one-line name, a one-line reason, and
+ * the balance in the neutral money colour. The urgency is carried by the icon tile and the reason
+ * line, not by recolouring the amount.
+ */
+@Composable
+private fun CriticalCustomerRow(
+    critical: CriticalCustomer,
+    status: CriticalStatus,
+    onClick: () -> Unit,
+) {
+    val overdue = critical.overdueCents > 0
+    val accent = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    SectionRowSurface(
+        border = if (overdue) accent.copy(alpha = 0.38f) else MaterialTheme.colorScheme.outlineVariant,
+        onClick = onClick,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .background(
+                    color = if (overdue) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = NeoShapes.row,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (overdue) {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(17.dp),
+                )
+            } else {
+                Text(
+                    text = initialOf(critical.customer.customer.name),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = NeoSpacing.sm),
+        ) {
+            Text(
+                text = critical.customer.customer.name,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = status.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (status.urgent) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        NeoMoney(
+            amountCents = critical.customer.balanceCents,
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
 }
 
+@Composable
+private fun ActivityRow(activity: DashboardActivity) {
+    val visual = DashboardActivityPresentation.from(activity.type, activity.direction)
+    val accent = when (visual.accent) {
+        DashboardActivityAccent.PAYMENT -> MaterialTheme.colorScheme.secondary
+        DashboardActivityAccent.REFUND -> MaterialTheme.colorScheme.error
+        DashboardActivityAccent.SALE, DashboardActivityAccent.NEUTRAL ->
+            MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    // Only real cash movement is tinted; a sale keeps the neutral money colour of the reference.
+    val amountColor = if (visual.sign.isEmpty()) MaterialTheme.colorScheme.onSurface else accent
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(SECTION_ROW_HEIGHT),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Spacer(
+            Modifier
+                .size(7.dp)
+                .background(accent, CircleShape),
+        )
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(horizontal = NeoSpacing.md),
+        ) {
+            Text(
+                text = visual.label,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${activity.customerName} · ${activityTime(activity)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = visual.sign + Money.format(activity.amountCents),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+            ),
+            color = amountColor,
+            maxLines = 1,
+        )
+    }
+}
+
+/** The shared graphite row shell, fixed at the reference density for every section row. */
+@Composable
+private fun SectionRowSurface(
+    border: Color,
+    onClick: (() -> Unit)? = null,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val base = Modifier
+        .fillMaxWidth()
+        .height(SECTION_ROW_HEIGHT)
+    Card(
+        modifier = if (onClick == null) base else base.clickable(onClick = onClick),
+        shape = NeoShapes.row,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, border),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = NeoSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+    }
+}
+
+private data class CriticalStatus(val label: String, val urgent: Boolean)
+
+/**
+ * The reason a customer is critical, worded like the reference ("15 días vencido"). The day count
+ * comes from the oldest unpaid due date actually present in `dueSales`; nothing is invented.
+ */
+private fun criticalCustomerStatus(
+    critical: CriticalCustomer,
+    state: DashboardUiState.Content,
+    today: Long,
+): CriticalStatus {
+    val customerId = critical.customer.customer.id
+    if (critical.overdueCents > 0) {
+        val oldestDue = state.dueSales
+            .filter { it.customerId == customerId && it.dueDateEpochDay < today }
+            .minOfOrNull { it.dueDateEpochDay }
+        val days = oldestDue?.let { today - it } ?: 0L
+        return CriticalStatus(
+            label = if (days >= 1L) "$days ${if (days == 1L) "día" else "días"} vencido" else "Saldo vencido",
+            urgent = true,
+        )
+    }
+    val dueToday = state.dueSales.any { it.customerId == customerId && it.dueDateEpochDay == today }
+    return CriticalStatus(if (dueToday) "Vence hoy" else "Saldo pendiente", urgent = false)
+}
+
+private fun initialOf(name: String): String =
+    name.trim().firstOrNull()?.uppercase() ?: "?"
+
 private fun activityTime(activity: DashboardActivity): String =
-    DateFormat.getTimeInstance(DateFormat.SHORT, Locale.forLanguageTag("es-MX")).format(Date(activity.occurredAtEpochMillis))
+    DateFormat.getTimeInstance(DateFormat.SHORT, Locale.forLanguageTag("es-MX"))
+        .format(Date(activity.occurredAtEpochMillis))
