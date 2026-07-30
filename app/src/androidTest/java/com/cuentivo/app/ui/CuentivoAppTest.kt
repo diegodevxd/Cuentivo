@@ -34,6 +34,22 @@ class CuentivoAppTest {
         composeRule.onNodeWithText("$125.00").assertIsDisplayed()
     }
 
+    @Test fun dashboard_follows_stitch_payment_first_hierarchy() {
+        composeRule.setContent {
+            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+        }
+
+        composeRule.onNodeWithText("Saldo total por cobrar").assertIsDisplayed()
+        composeRule.onNodeWithText("Vence hoy").assertIsDisplayed()
+        composeRule.onNodeWithText("Vencido").assertIsDisplayed()
+        composeRule.onNodeWithText("Registrar abono").assertIsDisplayed()
+        composeRule.onNodeWithText("Clientes críticos").assertIsDisplayed()
+        composeRule.onNodeWithText("Actividad reciente").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Tu cuenta").assertCountEquals(0)
+        composeRule.onNodeWithText("Registrar abono").performClick()
+        composeRule.onNodeWithTag("main-destination-payments").assertIsSelected()
+    }
+
     @Test fun compact_shell_has_four_destinations_sale_action_and_account_entry() {
         composeRule.setContent {
             CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))

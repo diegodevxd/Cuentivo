@@ -83,6 +83,7 @@ import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.account.AccountSheet
+import com.cuentivo.app.ui.dashboard.DashboardScreen
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 
 /**
@@ -192,11 +193,15 @@ fun CuentivoApp(
             MainDestination.HOME -> DashboardScreen(
                 state = state,
                 customers = customers,
-                padding = padding,
+                modifier = Modifier.padding(padding),
                 onCreateBusiness = onCreateBusiness,
-                onNewSale = { showNewSale = true },
-                onShowStatement = onShowStatement,
-                onShareDebtorList = onShareDebtorList,
+                onNewSale = {
+                    destination = MainNavigationPolicy.destinationAfterNewSale(destination)
+                    showNewSale = true
+                },
+                onRegisterPayment = { destination = MainDestination.PAYMENTS },
+                onCustomer = onShowStatement,
+                onSeeAllCustomers = { destination = MainDestination.CUSTOMERS },
             )
             MainDestination.CUSTOMERS -> CustomersScreen(customers, padding, showCustomerForm, { showCustomerForm = it }, onCreateCustomer, onEditCustomer, onArchiveCustomer, onShowStatement)
             MainDestination.PRODUCTS -> ProductsScreen(products, padding, showProductForm, { showProductForm = it }, onCreateProduct, onEditProduct, onArchiveProduct, onImportProducts, onShareImportTemplate)
@@ -1117,7 +1122,7 @@ private enum class DebtorFilter(val label: String) {
  * today.
  */
 @Composable
-private fun DashboardScreen(
+private fun LegacyDashboardScreen(
     state: DashboardUiState,
     customers: List<CustomerBalanceRow>,
     padding: PaddingValues,
