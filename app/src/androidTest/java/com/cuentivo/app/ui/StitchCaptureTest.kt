@@ -11,12 +11,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
-import com.cuentivo.app.domain.Alert
 import com.cuentivo.app.domain.DashboardActivity
 import com.cuentivo.app.domain.DueSale
 import com.cuentivo.app.domain.StatementEntry
@@ -78,34 +79,57 @@ class StitchCaptureTest {
         captureScreen("no-business-360dp", 360) { CuentivoApp(DashboardUiState.NoBusiness) }
     }
 
-    @Test fun capture_customer_detail_360() {
-        captureScreen("customer-detail-360dp", 360) {
+    @Test fun capture_customers_320() = captureCustomers(320)
+
+    @Test fun capture_customers_360() = captureCustomers(360)
+
+    @Test fun capture_customers_412() = captureCustomers(412)
+
+    @Test fun capture_customers_480() = captureCustomers(480)
+
+    @Test fun capture_customers_empty() {
+        captureScreen("customers-empty-360dp", 360) {
+            CuentivoApp(state = populatedState(), customers = emptyList())
+        }
+        openCustomers()
+        shoot("customers-empty-360dp")
+    }
+
+    @Test fun capture_customer_detail_320() = captureDetail(320)
+
+    @Test fun capture_customer_detail_360() = captureDetail(360)
+
+    @Test fun capture_customer_detail_412() = captureDetail(412)
+
+    @Test fun capture_customer_detail_480() = captureDetail(480)
+
+    private fun captureCustomers(widthDp: Int) {
+        captureScreen("customers-${widthDp}dp", widthDp) {
+            CuentivoApp(state = populatedState(), customers = CUSTOMERS)
+        }
+        openCustomers()
+        shoot("customers-${widthDp}dp")
+    }
+
+    /**
+     * The detail is driven by the host, so the capture supplies it the same way production does
+     * rather than trying to click through to it.
+     */
+    private fun captureDetail(widthDp: Int) {
+        captureScreen("customer-detail-${widthDp}dp", widthDp) {
             CuentivoApp(
                 state = populatedState(),
                 customers = CUSTOMERS,
-                statementCustomer = "Distribuidora Ramírez",
+                statementCustomer = CUSTOMERS[0],
                 statement = STATEMENT,
                 cancelables = CANCELABLES,
             )
         }
     }
 
-    @Test fun capture_customer_detail_320() {
-        captureScreen("customer-detail-320dp", 320) {
-            CuentivoApp(
-                state = populatedState(),
-                customers = CUSTOMERS,
-                statementCustomer = "Distribuidora Ramírez",
-                statement = STATEMENT,
-                cancelables = CANCELABLES,
-            )
-        }
-    }
-
-    @Test fun capture_alerts() {
-        captureScreen("alerts-360dp", 360) {
-            CuentivoApp(state = populatedState(), customers = CUSTOMERS, alerts = ALERTS)
-        }
+    private fun openCustomers() {
+        composeRule.onNodeWithText("Clientes").performClick()
+        composeRule.waitForIdle()
     }
 
     private companion object {
@@ -135,11 +159,6 @@ class StitchCaptureTest {
         val CANCELABLES = listOf(
             CancelableItem("s1", CancelableItem.Kind.SALE, "Venta del 14 jul", "Pedido semanal", 150_000),
             CancelableItem("p1", CancelableItem.Kind.PAYMENT, "Abono del 21 jul", "Efectivo", 25_000),
-        )
-
-        val ALERTS = listOf(
-            Alert("Distribuidora Ramírez", "15 días vencido", Alert.Severity.OVERDUE, "ramirez"),
-            Alert("Librería Todo Texto", "Vence hoy", Alert.Severity.DUE_SOON, "todotexto"),
         )
 
         fun balance(id: String, name: String, cents: Long) = CustomerBalanceRow(
@@ -238,6 +257,12 @@ class StitchCaptureTest {
         composeRule.waitForIdle()
         val bitmap = composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap()
         write(name, bitmap)
+    }
+
+    /** Re-captures the current composition, e.g. after navigating into a destination. */
+    private fun shoot(name: String) {
+        composeRule.waitForIdle()
+        write(name, composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap())
     }
 
     private fun write(name: String, bitmap: Bitmap) {

@@ -71,10 +71,17 @@ fun NeoFintechShell(
     onOpenAccount: () -> Unit,
     onOpenAlerts: () -> Unit,
     snackbarHost: @Composable () -> Unit = {},
+    /**
+     * A dedicated task that owns the whole viewport — customer detail, for instance — brings its
+     * own back arrow and title. Leaving the brand row above it would stack two headers and steal
+     * 52 dp the reference does not spend. The bottom bar deliberately stays.
+     */
+    showBrandHeader: Boolean = true,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
         topBar = {
+            if (!showBrandHeader) return@Scaffold
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

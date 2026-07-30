@@ -83,25 +83,10 @@ import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.account.AccountSheet
+import com.cuentivo.app.ui.customer.CustomerDetailSheet
 import com.cuentivo.app.ui.customer.CustomersScreen
 import com.cuentivo.app.ui.dashboard.DashboardScreen
 import com.cuentivo.app.ui.dashboard.DashboardUiState
-
-/**
- * A sale or payment the screen may offer to correct.
- *
- * Cancelling never deletes anything: it writes a compensating movement. The screen says so out
- * loud before confirming, because "cancelar" reads like "borrar" to the person using the app.
- */
-data class CancelableItem(
-    val id: String,
-    val kind: Kind,
-    val title: String,
-    val detail: String,
-    val amountCents: Long,
-) {
-    enum class Kind { SALE, PAYMENT }
-}
 
 /**
  * Shown while the device is being claimed for the account that just signed in.
@@ -139,7 +124,7 @@ fun CuentivoApp(
     onShareImportTemplate: () -> Unit = {},
     onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit = { _, _ -> },
     onCreatePayment: (CustomerBalanceRow, Long) -> Unit = { _, _ -> },
-    statementCustomer: String? = null,
+    statementCustomer: CustomerBalanceRow? = null,
     statement: List<StatementEntry> = emptyList(),
     cancelables: List<CancelableItem> = emptyList(),
     onCancelSale: (CancelableItem) -> Unit = {},
@@ -166,6 +151,10 @@ fun CuentivoApp(
     var showCustomerForm by remember { mutableStateOf(false) }
     var showProductForm by remember { mutableStateOf(false) }
     var showAlerts by remember { mutableStateOf(false) }
+    // Which customer a directly-launched sale or payment should start on. Held here because the
+    // shell owns navigation; the task screens stay free of routing state.
+    var saleCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
+    var paymentCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
         message?.let {
@@ -179,17 +168,54 @@ fun CuentivoApp(
         onDestination = { selected ->
             destination = selected
             showNewSale = false
+            // Reaching Abonos from the bar is a fresh decision, not a continuation of whoever was
+            // open in the detail a minute ago.
+            paymentCustomer = null
         },
         onNewSale = {
             destination = MainNavigationPolicy.destinationAfterNewSale(destination)
+            saleCustomer = null
             showNewSale = true
         },
         onOpenAccount = { showAccount = true },
         onOpenAlerts = { showAlerts = true },
         snackbarHost = { SnackbarHost(snackbar) },
+        showBrandHeader = statementCustomer == null,
     ) { padding ->
-        if (showNewSale) {
-            NewSaleScreen(customers, products, padding, onCreateSale, onExit = { showNewSale = false })
+        if (statementCustomer != null) {
+            // The detail is a task that owns the viewport, so it outranks the selected destination
+            // while it is open. The bottom bar stays visible underneath it.
+            CustomerDetailSheet(
+                customer = statementCustomer,
+                entries = statement,
+                cancelables = cancelables,
+                modifier = Modifier.padding(padding),
+                dueSales = (state as? DashboardUiState.Content)?.dueSales.orEmpty(),
+                onNewSale = {
+                    onDismissStatement()
+                    saleCustomer = statementCustomer
+                    showNewSale = true
+                },
+                onRegisterPayment = {
+                    onDismissStatement()
+                    paymentCustomer = statementCustomer
+                    destination = MainDestination.PAYMENTS
+                },
+                onCancelSale = onCancelSale,
+                onCancelPayment = onCancelPayment,
+                onShareCsv = onShareStatementCsv,
+                onShareText = onShareStatementText,
+                onDismiss = onDismissStatement,
+            )
+        } else if (showNewSale) {
+            NewSaleScreen(
+                customers = customers,
+                products = products,
+                padding = padding,
+                onCreateSale = onCreateSale,
+                onExit = { showNewSale = false; saleCustomer = null },
+                initialCustomer = saleCustomer,
+            )
         } else when (destination) {
             MainDestination.HOME -> DashboardScreen(
                 state = state,
@@ -218,20 +244,8 @@ fun CuentivoApp(
                 onOpen = onShowStatement,
             )
             MainDestination.PRODUCTS -> ProductsScreen(products, padding, showProductForm, { showProductForm = it }, onCreateProduct, onEditProduct, onArchiveProduct, onImportProducts, onShareImportTemplate)
-            MainDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment)
+            MainDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment, paymentCustomer)
         }
-    }
-    if (statementCustomer != null) {
-        StatementSheet(
-            customerName = statementCustomer,
-            entries = statement,
-            cancelables = cancelables,
-            onCancelSale = onCancelSale,
-            onCancelPayment = onCancelPayment,
-            onShareCsv = onShareStatementCsv,
-            onShareText = onShareStatementText,
-            onDismiss = onDismissStatement,
-        )
     }
     blocked?.let { limit ->
         AlertDialog(
@@ -284,132 +298,6 @@ fun CuentivoApp(
             onDismiss = { showAccount = false },
         )
     }
-}
-
-/** A customer's ledger, most recent last, with one-tap sharing. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun StatementSheet(
-    customerName: String,
-    entries: List<StatementEntry>,
-    cancelables: List<CancelableItem>,
-    onCancelSale: (CancelableItem) -> Unit,
-    onCancelPayment: (CancelableItem) -> Unit,
-    onShareCsv: () -> Unit,
-    onShareText: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var pendingCancel by remember { mutableStateOf<CancelableItem?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            NeoSectionTitle(customerName, eyebrow = "Estado de cuenta")
-            Text(
-                "Historial financiero",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (entries.isEmpty()) Text("Este cliente aún no tiene movimientos")
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()).weight(1f, fill = false),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                entries.forEach { entry ->
-                    Card(
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(statementTypeLabel(entry.type))
-                                Text(entry.dateIso, style = MaterialTheme.typography.labelLarge)
-                            }
-                            Text(
-                                (if (entry.direction == "DEBIT") "+" else "−") + formatMoney(entry.amountCents),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (entry.direction == "DEBIT") {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.secondary
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-            if (entries.isNotEmpty()) {
-                NeoPrimaryButton("Compartir resumen", onShareText, Modifier.fillMaxWidth())
-                OutlinedButton(onClick = onShareCsv, modifier = Modifier.fillMaxWidth()) {
-                    Text("Compartir como archivo CSV")
-                }
-            }
-            if (cancelables.isNotEmpty()) {
-                Text("Corregir", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Nada se borra: se registra un movimiento que compensa el error y queda en el historial.",
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                cancelables.forEach { item ->
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(item.title)
-                                Text(item.detail, style = MaterialTheme.typography.labelLarge)
-                            }
-                            TextButton(onClick = { pendingCancel = item }) { Text("Cancelar") }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    pendingCancel?.let { item ->
-        val isSale = item.kind == CancelableItem.Kind.SALE
-        AlertDialog(
-            onDismissRequest = { pendingCancel = null },
-            title = { Text(if (isSale) "¿Cancelar esta venta?" else "¿Cancelar este abono?") },
-            text = {
-                Text(
-                    if (isSale) {
-                        "${item.title} — se le quitarán ${formatMoney(item.amountCents)} de deuda a $customerName. " +
-                            "La venta no se borra: queda cancelada y con su movimiento de corrección."
-                    } else {
-                        "${item.title} — la deuda de $customerName subirá ${formatMoney(item.amountCents)}, " +
-                            "porque el abono deja de contar. El cobro original queda registrado."
-                    }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (isSale) onCancelSale(item) else onCancelPayment(item)
-                    pendingCancel = null
-                }) { Text("Sí, cancelar") }
-            },
-            dismissButton = { TextButton(onClick = { pendingCancel = null }) { Text("No") } },
-        )
-    }
-}
-
-private fun statementTypeLabel(type: String): String = when (type) {
-    "CHARGE" -> "Cargo"
-    "PAYMENT" -> "Abono"
-    "ADJUSTMENT" -> "Ajuste"
-    "REFUND" -> "Devolución"
-    "CANCELLATION" -> "Cancelación"
-    else -> type
 }
 
 /**
@@ -481,6 +369,17 @@ private fun <T> SelectorField(
  */
 internal fun pesosToCents(text: String): Long? = Money.positiveCentsFromPesos(text)
 
+/**
+ * Resolves a preselected customer against the list actually on screen. Matching by id rather than
+ * trusting the passed row keeps a stale balance from being shown after the ledger moved, and an
+ * archived customer simply falls back to the empty selector instead of vanishing mid-form.
+ */
+private fun preselected(
+    candidate: CustomerBalanceRow?,
+    customers: List<CustomerBalanceRow>,
+): CustomerBalanceRow? =
+    candidate?.let { pre -> customers.firstOrNull { it.customer.id == pre.customer.id } }
+
 @Composable
 private fun MoneyField(label: String, text: String, onTextChange: (String) -> Unit) {
     OutlinedTextField(
@@ -540,8 +439,11 @@ private fun NewSaleScreen(
     padding: PaddingValues,
     onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit,
     onExit: () -> Unit,
+    initialCustomer: CustomerBalanceRow? = null,
 ) {
-    var customer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
+    var customer by remember(initialCustomer?.customer?.id) {
+        mutableStateOf(preselected(initialCustomer, customers))
+    }
     var draft by remember { mutableStateOf(SaleDraft()) }
     var picked by remember { mutableStateOf<ProductEntity?>(null) }
     var quantityText by remember { mutableStateOf("1") }
@@ -698,8 +600,11 @@ private fun PaymentScreen(
     customers: List<CustomerBalanceRow>,
     padding: PaddingValues,
     onCreatePayment: (CustomerBalanceRow, Long) -> Unit,
+    initialCustomer: CustomerBalanceRow? = null,
 ) {
-    var customer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
+    var customer by remember(initialCustomer?.customer?.id) {
+        mutableStateOf(preselected(initialCustomer, customers))
+    }
     var amountText by remember { mutableStateOf("") }
     Column(
         modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),

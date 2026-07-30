@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -50,6 +51,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -156,12 +162,26 @@ fun CustomersScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = layout.horizontalPaddingDp.dp, bottom = NeoSpacing.lg)
-                .size(48.dp),
+                .size(48.dp)
+                .semantics { contentDescription = "Nuevo cliente" },
             shape = NeoShapes.card,
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
         ) {
-            Icon(Icons.Filled.Add, contentDescription = "Nuevo cliente")
+            // material-icons-extended is deliberately not a dependency, so the "add person" glyph
+            // is composed from the two core icons instead of pulling in the whole extended set.
+            Box(modifier = Modifier.size(24.dp)) {
+                Icon(
+                    Icons.Filled.Person,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp).align(Alignment.BottomStart),
+                )
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp).align(Alignment.TopEnd),
+                )
+            }
         }
     }
 
@@ -271,32 +291,47 @@ private fun CustomerFormDialog(
     }
 }
 
+/**
+ * The reference draws a ~30 dp chip, which is below the 48 dp Android minimum. Rather than inflate
+ * the visible pill, the clickable area is an invisible 48 dp box wrapped around it: the drawing
+ * stays compact and the finger target is honest.
+ */
 @Composable
 private fun FilterChipRow(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .heightIn(min = 30.dp)
-            .background(
-                color = if (selected) {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                } else {
-                    Color.Transparent
-                },
-                shape = RoundedCornerShape(8.dp),
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = NeoSpacing.md, vertical = NeoSpacing.sm),
+            .heightIn(min = 48.dp)
+            .semantics(mergeDescendants = true) {
+                this.selected = selected
+                role = Role.Tab
+            }
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        )
+        Box(
+            modifier = Modifier
+                .height(30.dp)
+                .background(
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    } else {
+                        Color.Transparent
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                )
+                .padding(horizontal = NeoSpacing.md),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
     }
 }
 

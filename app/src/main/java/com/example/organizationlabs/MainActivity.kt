@@ -481,7 +481,7 @@ class MainActivity : ComponentActivity() {
                             else -> "Abono aplicado a ${allocations.size} venta(s)"
                         }
                     }
-                }, statementCustomer = statementCustomer?.customer?.name, statement = statementEntries, cancelables = cancelables, onCancelSale = { item ->
+                }, statementCustomer = statementCustomer, statement = statementEntries, cancelables = cancelables, onCancelSale = { item ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     val row = statementCustomer ?: return@CuentivoApp
                     lifecycleScope.launch {
