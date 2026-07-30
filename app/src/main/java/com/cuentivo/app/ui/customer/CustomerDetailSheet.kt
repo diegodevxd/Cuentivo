@@ -65,6 +65,13 @@ import java.time.LocalDate
 private val MOVEMENT_ROW_HEIGHT = 60.dp
 
 /**
+ * The scrollable itself needs a handle: on a short screen the corrections live below the fold and
+ * a lazy list has not composed them yet, so a test has to scroll the list rather than reach for a
+ * node that does not exist.
+ */
+const val DETAIL_LIST_TAG = "customer-detail-list"
+
+/**
  * The customer's account, faithful to `design/stitch/cuentivo-customer-detail.png`.
  *
  * It is called a sheet for continuity with the callbacks it replaces, but it renders as a full
@@ -82,8 +89,8 @@ fun CustomerDetailSheet(
     cancelables: List<CancelableItem>,
     modifier: Modifier = Modifier,
     dueSales: List<DueSale> = emptyList(),
-    onNewSale: () -> Unit = {},
     onRegisterPayment: () -> Unit = {},
+    onCallCustomer: (String) -> Unit = {},
     onCancelSale: (CancelableItem) -> Unit = {},
     onCancelPayment: (CancelableItem) -> Unit = {},
     onShareCsv: () -> Unit = {},
@@ -103,7 +110,8 @@ fun CustomerDetailSheet(
             modifier = Modifier
                 .widthIn(max = layout.contentMaxWidthDp.dp)
                 .fillMaxWidth()
-                .align(Alignment.TopCenter),
+                .align(Alignment.TopCenter)
+                .testTag(DETAIL_LIST_TAG),
             contentPadding = PaddingValues(
                 start = layout.horizontalPaddingDp.dp,
                 end = layout.horizontalPaddingDp.dp,
@@ -113,7 +121,7 @@ fun CustomerDetailSheet(
         ) {
             item { DetailTopBar(onDismiss) }
             item { BalanceHero(customer.balanceCents, status) }
-            item { IdentityCard(customer) }
+            item { IdentityCard(customer, onCallCustomer) }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
                     NeoAction("Registrar abono", onRegisterPayment, Modifier.weight(1f))
@@ -139,16 +147,6 @@ fun CustomerDetailSheet(
                         }
                     }
                 }
-            }
-            item {
-                // Tagged because the bottom bar's central action carries the same words; without a
-                // stable handle a test can end up driving the wrong one.
-                NeoAction(
-                    label = "Nueva venta",
-                    onClick = onNewSale,
-                    modifier = Modifier.fillMaxWidth().testTag("detail-new-sale"),
-                    primary = false,
-                )
             }
             item { NeoSectionHeader(title = "Historial de Movimientos") }
 
@@ -279,7 +277,7 @@ private fun StatusPill(status: CustomerStatus) {
 }
 
 @Composable
-private fun IdentityCard(customer: CustomerBalanceRow) {
+private fun IdentityCard(customer: CustomerBalanceRow, onCall: (String) -> Unit) {
     val phone = customer.customer.phone
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -320,15 +318,15 @@ private fun IdentityCard(customer: CustomerBalanceRow) {
             }
             // Offering a call button without a number would be a dead control.
             if (phone != null) {
-                Box(
+                IconButton(
+                    onClick = { onCall(phone) },
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(48.dp)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh, NeoShapes.row),
-                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         Icons.Filled.Phone,
-                        contentDescription = "Teléfono de ${customer.customer.name}",
+                        contentDescription = "Llamar a ${customer.customer.name}",
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(18.dp),
                     )

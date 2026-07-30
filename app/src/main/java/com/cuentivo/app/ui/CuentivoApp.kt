@@ -130,6 +130,7 @@ fun CuentivoApp(
     onCancelSale: (CancelableItem) -> Unit = {},
     onCancelPayment: (CancelableItem) -> Unit = {},
     onShowStatement: (CustomerBalanceRow) -> Unit = {},
+    onCallCustomer: (String) -> Unit = {},
     onDismissStatement: () -> Unit = {},
     onShareStatementCsv: () -> Unit = {},
     onShareStatementText: () -> Unit = {},
@@ -174,7 +175,10 @@ fun CuentivoApp(
         },
         onNewSale = {
             destination = MainNavigationPolicy.destinationAfterNewSale(destination)
-            saleCustomer = null
+            // With a customer's detail open the central action continues that thread; anywhere
+            // else it is a fresh sale and must not inherit a stale preselection.
+            saleCustomer = statementCustomer
+            if (statementCustomer != null) onDismissStatement()
             showNewSale = true
         },
         onOpenAccount = { showAccount = true },
@@ -191,16 +195,12 @@ fun CuentivoApp(
                 cancelables = cancelables,
                 modifier = Modifier.padding(padding),
                 dueSales = (state as? DashboardUiState.Content)?.dueSales.orEmpty(),
-                onNewSale = {
-                    onDismissStatement()
-                    saleCustomer = statementCustomer
-                    showNewSale = true
-                },
                 onRegisterPayment = {
                     onDismissStatement()
                     paymentCustomer = statementCustomer
                     destination = MainDestination.PAYMENTS
                 },
+                onCallCustomer = onCallCustomer,
                 onCancelSale = onCancelSale,
                 onCancelPayment = onCancelPayment,
                 onShareCsv = onShareStatementCsv,

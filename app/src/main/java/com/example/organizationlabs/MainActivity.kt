@@ -1,6 +1,7 @@
 package com.cuentivo.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -532,7 +533,7 @@ class MainActivity : ComponentActivity() {
                             uiMessage = it.message ?: "No fue posible cancelar el abono"
                         }
                     }
-                }, onShowStatement = { row ->
+                }, onCallCustomer = { phone -> dial(phone) }, onShowStatement = { row ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     lifecycleScope.launch { loadStatement(businessId, row) }
                 }, onDismissStatement = { statementCustomer = null; cancelables = emptyList() }, onShareStatementCsv = {
@@ -594,6 +595,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Opens the dialer with the number filled in. Deliberately ACTION_DIAL, not ACTION_CALL: the
+     * latter needs the CALL_PHONE permission and would place the call without the owner seeing it.
+     */
+    private fun dial(phone: String) {
+        startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")))
     }
 
     /** Hands text to the Android Sharesheet, where WhatsApp shows up on its own. */

@@ -12,16 +12,20 @@ import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
+import androidx.test.espresso.Espresso
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.domain.StatementEntry
+import com.cuentivo.app.ui.customer.DETAIL_LIST_TAG
 import com.cuentivo.app.ui.dashboard.DashboardUiState
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
@@ -122,13 +126,15 @@ class CustomerFlowTest {
         openCustomers()
         composeRule.onNodeWithText("Juan Pérez").performClick()
 
-        composeRule.onNodeWithText("Corregir").performScrollTo().assertIsDisplayed()
+        scrollDetailTo("Corregir")
+        composeRule.onNodeWithText("Corregir").assertIsDisplayed()
         composeRule
             .onNodeWithText(
                 "Nada se borra: se registra un movimiento que compensa el error y queda en el historial."
             )
             .assertIsDisplayed()
-        composeRule.onNodeWithText("Venta del 14 jul").performScrollTo().assertIsDisplayed()
+        scrollDetailTo("Venta del 14 jul")
+        composeRule.onNodeWithText("Venta del 14 jul").assertIsDisplayed()
     }
 
     @Test fun registrar_abono_from_the_detail_preselects_that_customer() {
@@ -143,15 +149,83 @@ class CustomerFlowTest {
         composeRule.onAllNodesWithText("Detalle de Cliente").assertCountEquals(0)
     }
 
-    @Test fun nueva_venta_from_the_detail_preselects_that_customer() {
+    @Test fun the_central_action_continues_the_open_customers_thread() {
         composeRule.setContent { Harness() }
         openCustomers()
         composeRule.onNodeWithText("Juan Pérez").performClick()
 
-        composeRule.onNodeWithTag("detail-new-sale").performScrollTo().performClick()
+        composeRule.onNodeWithContentDescription("Nueva venta").performClick()
 
         composeRule.onNodeWithContentDescription("Cerrar nueva venta").assertIsDisplayed()
         composeRule.onNodeWithText("Juan Pérez").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Detalle de Cliente").assertCountEquals(0)
+    }
+
+    @Test fun the_central_action_starts_clean_when_no_detail_is_open() {
+        composeRule.setContent { Harness() }
+        openCustomers()
+        // Open and leave a customer, then start a sale the global way.
+        composeRule.onNodeWithText("Juan Pérez").performClick()
+        composeRule.onNodeWithContentDescription("Volver").performClick()
+
+        composeRule.onNodeWithContentDescription("Nueva venta").performClick()
+
+        composeRule.onNodeWithContentDescription("Cerrar nueva venta").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Juan Pérez").assertCountEquals(0)
+    }
+
+    @Test fun system_back_closes_the_detail() {
+        composeRule.setContent { Harness() }
+        openCustomers()
+        composeRule.onNodeWithText("Juan Pérez").performClick()
+        composeRule.onNodeWithText("Detalle de Cliente").assertIsDisplayed()
+
+        Espresso.pressBack()
+
+        composeRule.onNodeWithText("Cartera").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Detalle de Cliente").assertCountEquals(0)
+    }
+
+    @Test fun the_phone_action_hands_over_the_exact_number() {
+        composeRule.setContent { Harness() }
+        openCustomers()
+        composeRule.onNodeWithText("Juan Pérez").performClick()
+
+        composeRule.onNodeWithContentDescription("Llamar a Juan Pérez").performClick()
+
+        composeRule.runOnIdle { assertEquals(listOf("5512345678"), dialed) }
+    }
+
+    @Test fun each_share_option_calls_its_own_callback() {
+        composeRule.setContent { Harness() }
+        openCustomers()
+        composeRule.onNodeWithText("Juan Pérez").performClick()
+
+        composeRule.onNodeWithText("Compartir").performClick()
+        composeRule.onNodeWithText("Compartir resumen").performClick()
+        composeRule.onNodeWithText("Compartir").performClick()
+        composeRule.onNodeWithText("Compartir CSV").performClick()
+
+        composeRule.runOnIdle { assertEquals(listOf("text", "csv"), shared) }
+    }
+
+    @Test fun cancelling_only_fires_after_the_confirmation() {
+        composeRule.setContent { Harness() }
+        openCustomers()
+        composeRule.onNodeWithText("Juan Pérez").performClick()
+
+        scrollDetailTo("Venta del 14 jul")
+        composeRule.onAllNodesWithText("Cancelar")[0].performClick()
+        // The dialog is up but nothing has been written yet.
+        composeRule.runOnIdle { assertEquals(emptyList<String>(), canceled) }
+        composeRule.onNodeWithText("No").performClick()
+        composeRule.runOnIdle { assertEquals(emptyList<String>(), canceled) }
+
+        scrollDetailTo("Venta del 14 jul")
+        composeRule.onAllNodesWithText("Cancelar")[0].performClick()
+        composeRule.onNodeWithText("Sí, cancelar").performClick()
+
+        composeRule.runOnIdle { assertEquals(listOf("sale:s1"), canceled) }
     }
 
     @Test fun reaching_abonos_from_the_bar_does_not_inherit_an_old_preselection() {
@@ -180,9 +254,19 @@ class CustomerFlowTest {
         composeRule.onNodeWithText("Eliminar").assertIsDisplayed()
     }
 
+    /** Lazy lists only compose what is near the viewport, so the list itself must be scrolled. */
+    private fun scrollDetailTo(text: String) {
+        composeRule.onNodeWithTag(DETAIL_LIST_TAG).performScrollToNode(hasText(text))
+    }
+
     private fun openCustomers() {
         composeRule.onNodeWithText("Clientes").performClick()
     }
+
+    /** What production would have been asked to do, recorded instead of performed. */
+    private val dialed = mutableListOf<String>()
+    private val shared = mutableListOf<String>()
+    private val canceled = mutableListOf<String>()
 
     @Composable
     private fun Harness() {
@@ -195,6 +279,11 @@ class CustomerFlowTest {
             cancelables = CANCELABLES,
             onShowStatement = { open = it },
             onDismissStatement = { open = null },
+            onCallCustomer = { dialed += it },
+            onShareStatementText = { shared += "text" },
+            onShareStatementCsv = { shared += "csv" },
+            onCancelSale = { canceled += "sale:" + it.id },
+            onCancelPayment = { canceled += "payment:" + it.id },
         )
     }
 
