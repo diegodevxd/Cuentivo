@@ -279,7 +279,7 @@ class MainActivity : ComponentActivity() {
                     statementCustomer = row
                 }
 
-                CuentivoApp(state, customers, products, tier, onCreateBusiness = {
+                CuentivoApp(state, customers, products, tier, accountLabel = authenticationGateway.currentUserEmail, onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
                         val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)

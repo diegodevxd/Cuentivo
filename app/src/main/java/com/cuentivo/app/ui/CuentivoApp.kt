@@ -3,6 +3,7 @@ package com.cuentivo.app.ui
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -28,6 +29,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
@@ -38,6 +40,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -120,6 +123,7 @@ fun CuentivoApp(
     customers: List<CustomerBalanceRow> = emptyList(),
     products: List<ProductEntity> = emptyList(),
     tier: SubscriptionTier = SubscriptionTier.FREE,
+    accountLabel: String? = null,
     onCreateBusiness: () -> Unit = {},
     onCreateCustomer: (String, String?) -> Unit = { _, _ -> },
     onEditCustomer: (CustomerBalanceRow, String, String?) -> Unit = { _, _, _ -> },
@@ -167,6 +171,7 @@ fun CuentivoApp(
             onMessageShown()
         }
     }
+    BackHandler(enabled = showNewSale) { showNewSale = false }
     NeoFintechShell(
         destination = destination,
         onDestination = { selected ->
@@ -182,7 +187,7 @@ fun CuentivoApp(
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (showNewSale) {
-            NewSaleScreen(customers, products, padding, onCreateSale)
+            NewSaleScreen(customers, products, padding, onCreateSale, onExit = { showNewSale = false })
         } else when (destination) {
             MainDestination.HOME -> DashboardScreen(
                 state = state,
@@ -254,6 +259,7 @@ fun CuentivoApp(
     if (showAccount) {
         AccountSheet(
             tier = tier,
+            accountLabel = accountLabel,
             onUpgrade = { showAccount = false; onUpgrade() },
             onSignOut = onSignOut,
             onDeleteAccount = onDeleteAccount,
@@ -515,6 +521,7 @@ private fun NewSaleScreen(
     products: List<ProductEntity>,
     padding: PaddingValues,
     onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit,
+    onExit: () -> Unit,
 ) {
     var customer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     var draft by remember { mutableStateOf(SaleDraft()) }
@@ -528,7 +535,15 @@ private fun NewSaleScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spacer(Modifier.height(8.dp))
-        NeoSectionTitle("Nueva venta", eyebrow = "Operación")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onExit, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Cerrar nueva venta")
+            }
+            Column(Modifier.weight(1f)) {
+                Text("OPERACIÓN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text("Nueva venta", style = MaterialTheme.typography.titleLarge)
+            }
+        }
         SelectorField(
             label = "Cliente",
             selected = customer,

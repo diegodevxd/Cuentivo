@@ -35,6 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 /** The four places in the app. Nueva venta deliberately remains an action, not a destination. */
@@ -76,19 +82,35 @@ fun NeoFintechShell(
                     .padding(horizontal = NeoSpacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onOpenAccount, modifier = Modifier.size(48.dp)) {
-                    Icon(
-                        imageVector = Icons.Filled.Person,
-                        contentDescription = "Cuenta",
-                        tint = MaterialTheme.colorScheme.primary,
+                Row(
+                    modifier = Modifier
+                        .height(48.dp)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "Cuenta"
+                            role = Role.Button
+                        }
+                        .clickable(onClick = onOpenAccount)
+                        .padding(end = NeoSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        shape = NeoShapes.row,
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("C", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    Text(
+                        text = "Cuentivo",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = NeoSpacing.xs),
                     )
                 }
-                Text(
-                    text = "Cuentivo",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
+                Box(Modifier.weight(1f))
                 IconButton(onClick = onOpenAlerts, modifier = Modifier.size(48.dp)) {
                     Icon(
                         imageVector = Icons.Filled.Notifications,
@@ -157,24 +179,29 @@ private enum class ShellDestination(
         onDestination: (MainDestination) -> Unit,
         modifier: Modifier,
     ) {
-        val selected = selectedDestination == destination
+        val isSelected = selectedDestination == destination
         val markerColor by animateColorAsState(
-            targetValue = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+            targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
             animationSpec = tween(NeoMotion.STANDARD_MS),
             label = "navigation marker color",
         )
         val markerHeight by animateDpAsState(
-            targetValue = if (selected) 3.dp else 0.dp,
+            targetValue = if (isSelected) 3.dp else 0.dp,
             animationSpec = tween(NeoMotion.STANDARD_MS),
             label = "navigation marker height",
         )
         val contentColor by animateColorAsState(
-            targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             animationSpec = tween(NeoMotion.STANDARD_MS),
             label = "navigation content color",
         )
         Column(
             modifier = modifier
+                .testTag("main-destination-${destination.name.lowercase()}")
+                .semantics {
+                    selected = isSelected
+                    role = Role.Tab
+                }
                 .height(56.dp)
                 .clickable { onDestination(destination) },
             horizontalAlignment = Alignment.CenterHorizontally,

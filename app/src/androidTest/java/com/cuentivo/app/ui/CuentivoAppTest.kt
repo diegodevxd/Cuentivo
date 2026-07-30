@@ -2,10 +2,12 @@ package com.cuentivo.app.ui
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.cuentivo.app.ui.dashboard.DashboardUiState
@@ -44,5 +46,20 @@ class CuentivoAppTest {
         composeRule.onAllNodesWithText("Vender").assertCountEquals(0)
         composeRule.onNodeWithContentDescription("Cuenta").performClick()
         composeRule.onNodeWithText("Plan Gratis").assertIsDisplayed()
+    }
+
+    @Test fun central_sale_action_keeps_destination_selected_and_returns_to_it() {
+        composeRule.setContent {
+            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+        }
+
+        composeRule.onNodeWithTag("main-destination-customers").performClick()
+        composeRule.onNodeWithTag("main-destination-customers").assertIsSelected()
+        composeRule.onNodeWithContentDescription("Nueva venta").performClick()
+        composeRule.onNodeWithContentDescription("Cerrar nueva venta").assertIsDisplayed()
+        composeRule.onNodeWithTag("main-destination-customers").assertIsSelected()
+        composeRule.onNodeWithContentDescription("Cerrar nueva venta").performClick()
+        composeRule.onAllNodesWithContentDescription("Cerrar nueva venta").assertCountEquals(0)
+        composeRule.onNodeWithTag("main-destination-customers").assertIsSelected()
     }
 }

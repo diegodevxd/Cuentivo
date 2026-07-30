@@ -32,6 +32,7 @@ import com.cuentivo.app.ui.NeoSpacing
 @Composable
 fun AccountSheet(
     tier: SubscriptionTier,
+    accountLabel: String?,
     onUpgrade: () -> Unit,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
@@ -51,8 +52,13 @@ fun AccountSheet(
         ) {
             Text("Cuenta", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Administra el plan y la sesión de esta cuenta.",
+                accountLabel?.let { "Sesión iniciada como $it" } ?: "Sesión iniciada.",
                 style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "Administra el plan y la sesión de esta cuenta.",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 

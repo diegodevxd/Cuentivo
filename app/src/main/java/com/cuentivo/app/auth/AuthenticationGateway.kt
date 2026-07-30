@@ -4,6 +4,7 @@ import com.google.firebase.auth.FirebaseAuth
 
 interface AuthenticationGateway {
     val currentUserId: String?
+    val currentUserEmail: String?
 
     fun signIn(email: String, password: String, onComplete: (Result<String>) -> Unit)
 
@@ -26,6 +27,9 @@ class FirebaseAuthenticationGateway(
 ) : AuthenticationGateway {
     override val currentUserId: String?
         get() = auth.currentUser?.uid
+
+    override val currentUserEmail: String?
+        get() = auth.currentUser?.email?.trim()?.takeIf { it.isNotEmpty() }
 
     override fun signIn(email: String, password: String, onComplete: (Result<String>) -> Unit) {
         auth.signInWithEmailAndPassword(email.trim(), password).addOnCompleteListener { task ->
