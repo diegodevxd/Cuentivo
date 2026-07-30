@@ -83,6 +83,7 @@ import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.account.AccountSheet
+import com.cuentivo.app.ui.customer.CustomersScreen
 import com.cuentivo.app.ui.dashboard.DashboardScreen
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 
@@ -203,7 +204,19 @@ fun CuentivoApp(
                 onCustomer = onShowStatement,
                 onSeeAllCustomers = { destination = MainDestination.CUSTOMERS },
             )
-            MainDestination.CUSTOMERS -> CustomersScreen(customers, padding, showCustomerForm, { showCustomerForm = it }, onCreateCustomer, onEditCustomer, onArchiveCustomer, onShowStatement)
+            MainDestination.CUSTOMERS -> CustomersScreen(
+                customers = customers,
+                // The same dated sales Inicio uses, so a row can say why it is late without a
+                // second query.
+                dueSales = (state as? DashboardUiState.Content)?.dueSales.orEmpty(),
+                modifier = Modifier.padding(padding),
+                showForm = showCustomerForm,
+                onShowFormChange = { showCustomerForm = it },
+                onCreateCustomer = onCreateCustomer,
+                onEditCustomer = onEditCustomer,
+                onArchiveCustomer = onArchiveCustomer,
+                onOpen = onShowStatement,
+            )
             MainDestination.PRODUCTS -> ProductsScreen(products, padding, showProductForm, { showProductForm = it }, onCreateProduct, onEditProduct, onArchiveProduct, onImportProducts, onShareImportTemplate)
             MainDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment)
         }
@@ -490,7 +503,7 @@ private fun MoneyField(label: String, text: String, onTextChange: (String) -> Un
 }
 
 @Composable
-private fun FormDialog(
+internal fun FormDialog(
     title: String,
     confirmEnabled: Boolean,
     onConfirm: () -> Unit,
@@ -953,156 +966,6 @@ private fun ProductsScreen(
             confirmButton = {
                 TextButton(onClick = { archiving = null; onArchiveProduct(product) }) {
                     Text("Sí, eliminar", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { archiving = null }) { Text("Cancelar") } },
-        )
-    }
-}
-
-@Composable
-private fun CustomersScreen(
-    customers: List<CustomerBalanceRow>,
-    padding: PaddingValues,
-    showForm: Boolean,
-    onShowFormChange: (Boolean) -> Unit,
-    onCreateCustomer: (String, String?) -> Unit,
-    onEditCustomer: (CustomerBalanceRow, String, String?) -> Unit,
-    onArchiveCustomer: (CustomerBalanceRow) -> Unit,
-    onShowStatement: (CustomerBalanceRow) -> Unit,
-) {
-    var query by remember { mutableStateOf("") }
-    var editing by remember { mutableStateOf<CustomerBalanceRow?>(null) }
-    var archiving by remember { mutableStateOf<CustomerBalanceRow?>(null) }
-    NeoResponsiveColumn(
-        modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) { layout ->
-        Spacer(Modifier.height(8.dp))
-        NeoSectionTitle("Clientes", eyebrow = "Directorio")
-        OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o teléfono") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        val filtered = customers.filter { it.customer.name.contains(query, true) || (it.customer.phone?.contains(query) == true) }
-        if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes clientes registrados" else "No se encontraron clientes")
-        else Text("Toca un cliente para ver su estado de cuenta", style = MaterialTheme.typography.labelLarge)
-        filtered.forEach { row ->
-            Card(
-                onClick = { onShowStatement(row) },
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                if (layout.stackPrimaryActions) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Text(row.customer.name, style = MaterialTheme.typography.titleMedium)
-                        Text(formatMoney(row.balanceCents), color = MaterialTheme.colorScheme.primary)
-                        row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { editing = row }) { Text("Editar") }
-                            TextButton(onClick = { archiving = row }) {
-                                Text("Eliminar", color = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(row.customer.name, style = MaterialTheme.typography.titleMedium)
-                            Text(formatMoney(row.balanceCents), color = MaterialTheme.colorScheme.primary)
-                            row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
-                        }
-                        TextButton(onClick = { editing = row }) { Text("Editar") }
-                        TextButton(onClick = { archiving = row }) {
-                            Text("Eliminar", color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-    }
-    if (showForm) {
-        var name by remember { mutableStateOf("") }
-        var phone by remember { mutableStateOf("") }
-        FormDialog(
-            title = "Nuevo cliente",
-            confirmEnabled = name.isNotBlank(),
-            onConfirm = {
-                if (name.isNotBlank()) {
-                    onCreateCustomer(name.trim(), phone.trim().ifBlank { null })
-                    onShowFormChange(false)
-                }
-            },
-            onDismiss = { onShowFormChange(false) },
-        ) {
-            OutlinedTextField(name, { name = it }, label = { Text("Nombre del cliente") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { raw -> phone = raw.filter { it.isDigit() || it == '+' }.take(15) },
-                label = { Text("Teléfono (opcional)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-    editing?.let { row ->
-        // Keyed on the customer so reopening for another row starts from that row's data.
-        var name by remember(row.customer.id) { mutableStateOf(row.customer.name) }
-        var phone by remember(row.customer.id) { mutableStateOf(row.customer.phone.orEmpty()) }
-        FormDialog(
-            title = "Editar cliente",
-            confirmEnabled = name.isNotBlank(),
-            onConfirm = {
-                if (name.isNotBlank()) {
-                    onEditCustomer(row, name.trim(), phone.trim().ifBlank { null })
-                    editing = null
-                }
-            },
-            onDismiss = { editing = null },
-        ) {
-            OutlinedTextField(name, { name = it }, label = { Text("Nombre del cliente") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { raw -> phone = raw.filter { it.isDigit() || it == '+' }.take(15) },
-                label = { Text("Teléfono (opcional)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                "Corregir el nombre no cambia sus ventas ni su saldo.",
-                style = MaterialTheme.typography.labelLarge,
-            )
-        }
-    }
-    archiving?.let { row ->
-        // Balance comes from the ledger, so this is the same number the Inicio screen adds up.
-        // Archiving someone who still owes would quietly shrink "Por cobrar" with nobody paying.
-        val settled = row.balanceCents == 0L
-        AlertDialog(
-            onDismissRequest = { archiving = null },
-            title = { Text(if (settled) "¿Eliminar a ${row.customer.name}?" else "${row.customer.name} tiene saldo") },
-            text = {
-                Text(
-                    if (settled) {
-                        "Dejará de aparecer en tus listas. Su historial de ventas y abonos se conserva."
-                    } else {
-                        "No se puede eliminar mientras su saldo no esté en cero: hoy es " +
-                            "${formatMoney(row.balanceCents)}. Cobra lo que falta o cancela sus " +
-                            "ventas desde su estado de cuenta, y vuelve a intentarlo."
-                    }
-                )
-            },
-            confirmButton = {
-                if (settled) {
-                    TextButton(onClick = { archiving = null; onArchiveCustomer(row) }) {
-                        Text("Sí, eliminar", color = MaterialTheme.colorScheme.error)
-                    }
-                } else {
-                    TextButton(onClick = { archiving = null; onShowStatement(row) }) { Text("Ver estado de cuenta") }
                 }
             },
             dismissButton = { TextButton(onClick = { archiving = null }) { Text("Cancelar") } },
