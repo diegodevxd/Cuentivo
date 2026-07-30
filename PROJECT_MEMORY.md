@@ -538,6 +538,31 @@ Verificación fresca:
 - Instalado y abierto correctamente en el AVD con `versionCode=6`, `versionName=1.2`, primero en
   tamaño normal y después a 320 dp, sin recorte en el acceso.
 
+### TLS del emulador bajo Norton
+
+Al intentar registrar una cuenta en el AVD, Firebase Auth devolvió
+`CertPathValidatorException: Trust anchor for certification path not found`. Logcat confirmó que no
+era un error del formulario: Firebase Auth, Google Play Services y otros procesos fallaban a la vez.
+Una inspección de `identitytoolkit.googleapis.com` desde la máquina mostró que Norton reemplaza el
+certificado de Google por uno emitido por `Norton Web/Mail Shield Root`.
+
+La solución quedó confinada a `app/src/debug`: el manifest debug usa
+`debug_network_security_config.xml`, que conserva las raíces del sistema y añade explícitamente la
+raíz local de Norton. No se instaló una CA en Android, no se desactivó Norton y ningún archivo de
+`src/main` o `src/release` confía en esa raíz.
+
+La reproducción instrumentada primero falló con el mismo error TLS. Después del cambio, la conexión
+directa a Identity Toolkit pasó y una segunda prueba creó y eliminó correctamente una cuenta
+temporal real en Firebase Auth. Esa prueba con efectos externos se retiró después de verificar; la
+cuenta temporal también quedó eliminada.
+
+La suite completa posterior volvió a quedar verde: 156 unitarias, instrumentación normal sin fallos,
+`lintDebug` sin errores, `assembleDebug` y `assembleRelease` exitosos. El manifest fusionado y el APK
+de release no contienen `networkSecurityConfig`, `usesCleartextTraffic` ni recursos Norton. Para
+probar el registro en este AVD debe usarse `Cuentivo-NeoFintech-debug-emulador.apk`
+(SHA-256 `A4ED958FE4677189A443021103CB71CB72AF25944A0A46CD7F10F9882DD930F2`), que quedó
+instalado y abierto en `Medium_Phone`.
+
 Este APK es sólo para validar el diseño; no debe subirse a Play Console. El `versionCode 6` ya está
 usado en la prueba cerrada. Si este rediseño se aprueba para Play, el siguiente AAB debe pasar a
 `versionCode 7` y volver a ejecutar toda la verificación de release.

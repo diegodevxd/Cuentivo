@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      Norton transparently replaces TLS certificates on this development PC. The AVD cannot use
+      the Windows trust store, so debug builds trust that one local root explicitly. This resource
+      does not exist in release and must never be moved to main.
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/norton_web_mail_shield_root" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

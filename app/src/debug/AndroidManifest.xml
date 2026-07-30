@@ -4,5 +4,7 @@
       Firebase Emulator Suite is HTTP-only on 10.0.2.2. This manifest is merged into debug builds
       only; release keeps Android's cleartext traffic protection unchanged.
     -->
-    <application android:usesCleartextTraffic="true" />
+    <application
+        android:networkSecurityConfig="@xml/debug_network_security_config"
+        android:usesCleartextTraffic="true" />
 </manifest>
