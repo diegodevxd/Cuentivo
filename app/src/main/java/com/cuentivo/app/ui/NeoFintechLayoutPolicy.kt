@@ -9,6 +9,7 @@ internal enum class NeoPhoneWidth {
 internal data class NeoFintechLayout(
     val widthClass: NeoPhoneWidth,
     val horizontalPaddingDp: Int,
+    val contentMaxWidthDp: Int,
     val stackPrimaryActions: Boolean,
     val stackLedgerAmounts: Boolean,
 )
@@ -26,21 +27,24 @@ internal object NeoFintechLayoutPolicy {
     fun forWidth(widthDp: Int): NeoFintechLayout = when {
         widthDp >= LARGE_MIN_DP -> NeoFintechLayout(
             widthClass = NeoPhoneWidth.LARGE,
-            horizontalPaddingDp = 24,
+            horizontalPaddingDp = 20,
+            contentMaxWidthDp = 480,
             stackPrimaryActions = false,
             stackLedgerAmounts = false,
         )
 
         widthDp >= STANDARD_MIN_DP -> NeoFintechLayout(
             widthClass = NeoPhoneWidth.STANDARD,
-            horizontalPaddingDp = 20,
+            horizontalPaddingDp = 16,
+            contentMaxWidthDp = 480,
             stackPrimaryActions = false,
             stackLedgerAmounts = false,
         )
 
         else -> NeoFintechLayout(
             widthClass = NeoPhoneWidth.COMPACT,
-            horizontalPaddingDp = 16,
+            horizontalPaddingDp = 14,
+            contentMaxWidthDp = 480,
             stackPrimaryActions = true,
             stackLedgerAmounts = true,
         )

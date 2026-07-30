@@ -8,11 +8,11 @@ import org.junit.Test
 class NeoFintechLayoutPolicyTest {
 
     @Test
-    fun `320 dp uses compact spacing and stacks dense content`() {
+    fun `320 dp uses the Stitch compact gutter and stacks dense content`() {
         val layout = NeoFintechLayoutPolicy.forWidth(320)
 
         assertEquals(NeoPhoneWidth.COMPACT, layout.widthClass)
-        assertEquals(16, layout.horizontalPaddingDp)
+        assertEquals(14, layout.horizontalPaddingDp)
         assertTrue(layout.stackPrimaryActions)
         assertTrue(layout.stackLedgerAmounts)
     }
@@ -22,7 +22,7 @@ class NeoFintechLayoutPolicyTest {
         val layout = NeoFintechLayoutPolicy.forWidth(360)
 
         assertEquals(NeoPhoneWidth.STANDARD, layout.widthClass)
-        assertEquals(20, layout.horizontalPaddingDp)
+        assertEquals(16, layout.horizontalPaddingDp)
         assertFalse(layout.stackPrimaryActions)
         assertFalse(layout.stackLedgerAmounts)
     }
@@ -40,9 +40,19 @@ class NeoFintechLayoutPolicyTest {
         val layout = NeoFintechLayoutPolicy.forWidth(412)
 
         assertEquals(NeoPhoneWidth.LARGE, layout.widthClass)
-        assertEquals(24, layout.horizontalPaddingDp)
+        assertEquals(20, layout.horizontalPaddingDp)
         assertFalse(layout.stackPrimaryActions)
         assertFalse(layout.stackLedgerAmounts)
+    }
+
+    @Test
+    fun `480 dp retains the reference wide-phone gutter`() {
+        assertEquals(20, NeoFintechLayoutPolicy.forWidth(480).horizontalPaddingDp)
+    }
+
+    @Test
+    fun `wide layouts constrain content to the supported phone width`() {
+        assertEquals(480, NeoFintechLayoutPolicy.forWidth(600).contentMaxWidthDp)
     }
 
     @Test
