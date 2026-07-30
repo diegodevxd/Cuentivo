@@ -121,6 +121,20 @@ class OperationDaoTest {
         assertEquals(1, database.financialDao().customersWithDebtCount("business-1"))
     }
 
+    @Test fun recent_activity_is_newest_first_and_business_scoped() = runBlocking {
+        val dao = database.financialDao()
+        database.customerDao().insert(customer("ana", "business-1", "Ana"))
+        database.customerDao().insert(customer("beto", "business-2", "Beto"))
+        dao.insertMovement(movement("old", "business-1", "ana", 100, 10))
+        dao.insertMovement(movement("new", "business-1", "ana", 200, 20))
+        dao.insertMovement(movement("foreign", "business-2", "beto", 999, 30))
+
+        val result = dao.recentDashboardActivity("business-1", 5)
+
+        assertEquals(listOf("new", "old"), result.map { it.id })
+        assertEquals(listOf("Ana", "Ana"), result.map { it.customerName })
+    }
+
     @Test fun payment_allocation_cannot_exceed_sale_outstanding_balance() = runBlocking {
         val dao = database.financialDao()
         val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)
@@ -171,4 +185,20 @@ class OperationDaoTest {
         assertEquals(800, database.financialDao().customerBalanceCents("business-1", "legacy-customer-10"))
         assertEquals("MIGRATION_EXECUTED", database.auditDao().forBusiness("business-1").single().action)
     }
+
+    private fun customer(id: String, businessId: String, name: String) = CustomerEntity(
+        id, businessId, name, name.lowercase(), null, null, null, null, null,
+        true, 1, 1, null,
+    )
+
+    private fun movement(
+        id: String,
+        businessId: String,
+        customerId: String,
+        cents: Long,
+        occurredAt: Long,
+    ) = AccountMovementEntity(
+        id, businessId, customerId, null, null, "CHARGE", cents, "DEBIT",
+        occurredAt, "owner", null, null,
+    )
 }

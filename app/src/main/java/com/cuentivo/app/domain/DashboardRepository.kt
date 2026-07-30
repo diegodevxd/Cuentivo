@@ -4,6 +4,16 @@ import com.cuentivo.app.data.local.BusinessDao
 import com.cuentivo.app.data.local.FinancialDao
 import java.time.LocalDate
 
+data class DashboardActivity(
+    val id: String,
+    val customerId: String,
+    val customerName: String,
+    val type: String,
+    val direction: String,
+    val amountCents: Long,
+    val occurredAtEpochMillis: Long,
+)
+
 data class DashboardSnapshot(
     val businessId: String,
     val businessName: String,
@@ -13,6 +23,9 @@ data class DashboardSnapshot(
     val overdueCents: Long,
     val customersWithDebt: Long,
     val insights: List<Insight> = emptyList(),
+    val dueTodayCents: Long = 0L,
+    val dueSales: List<DueSale> = emptyList(),
+    val recentActivity: List<DashboardActivity> = emptyList(),
 )
 
 class DashboardRepository(
@@ -40,6 +53,30 @@ class DashboardRepository(
         val soldCents = financialDao.salesTotalCents(business.id, monthStart.toEpochDay(), today.toEpochDay())
         val collectedCents = financialDao.collectedTotalCents(business.id, monthStart.toEpochDay(), today.toEpochDay())
         val overdueCents = financialDao.overdueBalanceCents(business.id, today.toEpochDay())
+        val dueRows = financialDao.salesWithDueDate(business.id)
+        val dueSales = dueRows.map {
+            DueSale(
+                saleId = it.saleId,
+                customerId = it.customerId,
+                customerName = it.customerName,
+                dueDateEpochDay = it.dueDateEpochDay,
+                outstandingCents = it.outstandingCents,
+            )
+        }
+        val dueTodayCents = dueSales
+            .filter { it.dueDateEpochDay == today.toEpochDay() }
+            .sumOf { it.outstandingCents }
+        val recentActivity = financialDao.recentDashboardActivity(business.id, 5).map {
+            DashboardActivity(
+                id = it.id,
+                customerId = it.customerId,
+                customerName = it.customerName,
+                type = it.type,
+                direction = it.direction,
+                amountCents = it.amountCents,
+                occurredAtEpochMillis = it.occurredAtEpochMillis,
+            )
+        }
 
         val currentTotals = PeriodTotals(soldCents, collectedCents, overdueCents)
         val previousTotals = PeriodTotals(
@@ -57,6 +94,9 @@ class DashboardRepository(
             overdueCents = overdueCents,
             customersWithDebt = financialDao.customersWithDebtCount(business.id),
             insights = BusinessInsights.compare(currentTotals, previousTotals),
+            dueTodayCents = dueTodayCents,
+            dueSales = dueSales,
+            recentActivity = recentActivity,
         )
     }
 }

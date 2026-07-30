@@ -28,6 +28,17 @@ data class DueSaleRow(
     val outstandingCents: Long,
 )
 
+/** An immutable ledger entry with the local customer's name for the dashboard feed. */
+data class DashboardActivityRow(
+    val id: String,
+    val customerId: String,
+    val customerName: String,
+    val type: String,
+    val direction: String,
+    val amountCents: Long,
+    val occurredAtEpochMillis: Long,
+)
+
 /** A sale as offered for correction on screen: what it was worth and what is still unpaid. */
 data class CancelableSaleRow(
     val id: String,
@@ -128,6 +139,22 @@ interface FinancialDao {
 
     @Query("SELECT * FROM account_movements WHERE businessId = :businessId AND customerId = :customerId ORDER BY occurredAtEpochMillis DESC")
     suspend fun customerMovements(businessId: String, customerId: String): List<AccountMovementEntity>
+
+    @Query(
+        "SELECT movement.id AS id, movement.customerId AS customerId, " +
+            "customer.name AS customerName, movement.type AS type, " +
+            "movement.direction AS direction, movement.amountCents AS amountCents, " +
+            "movement.occurredAtEpochMillis AS occurredAtEpochMillis " +
+            "FROM account_movements AS movement " +
+            "INNER JOIN customers AS customer ON customer.id = movement.customerId " +
+            "AND customer.businessId = movement.businessId " +
+            "WHERE movement.businessId = :businessId " +
+            "ORDER BY movement.occurredAtEpochMillis DESC, movement.id DESC LIMIT :limit"
+    )
+    suspend fun recentDashboardActivity(
+        businessId: String,
+        limit: Int,
+    ): List<DashboardActivityRow>
 
     @Query("SELECT COALESCE(SUM(CASE WHEN balanceCents > 0 THEN balanceCents ELSE 0 END), 0) FROM (SELECT customerId, SUM(CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END) AS balanceCents FROM account_movements WHERE businessId = :businessId GROUP BY customerId)")
     suspend fun businessReceivableCents(businessId: String): Long

@@ -1,6 +1,8 @@
 package com.cuentivo.app.ui.dashboard
 
+import com.cuentivo.app.domain.DashboardActivity
 import com.cuentivo.app.domain.DashboardSnapshot
+import com.cuentivo.app.domain.DueSale
 import com.cuentivo.app.domain.Insight
 
 sealed interface DashboardUiState {
@@ -15,6 +17,9 @@ sealed interface DashboardUiState {
         val overdueCents: Long,
         val customersWithDebt: Long,
         val insights: List<Insight> = emptyList(),
+        val dueTodayCents: Long = 0L,
+        val dueSales: List<DueSale> = emptyList(),
+        val recentActivity: List<DashboardActivity> = emptyList(),
     ) : DashboardUiState
 }
 
@@ -29,6 +34,9 @@ class DashboardViewModel(private val loadDashboard: suspend () -> DashboardSnaps
             overdueCents = snapshot.overdueCents,
             customersWithDebt = snapshot.customersWithDebt,
             insights = snapshot.insights,
+            dueTodayCents = snapshot.dueTodayCents,
+            dueSales = snapshot.dueSales,
+            recentActivity = snapshot.recentActivity,
         )
     } ?: DashboardUiState.NoBusiness
 }
