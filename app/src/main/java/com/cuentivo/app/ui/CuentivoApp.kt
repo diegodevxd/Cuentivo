@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -29,11 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -42,14 +37,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -65,9 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -82,7 +72,6 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 import com.cuentivo.app.domain.AccessDecision
 import com.cuentivo.app.domain.Alert
-import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.Insight
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.domain.SaleDraft
@@ -90,6 +79,7 @@ import com.cuentivo.app.domain.SaleDraftLine
 import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
+import com.cuentivo.app.ui.account.AccountSheet
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 
 /**
@@ -123,73 +113,6 @@ fun CuentivoLoadingScreen() {
 
 /** Enough rejected rows to act on; a dialog listing two hundred of them helps nobody. */
 private const val MAX_LISTED_REJECTIONS = 10
-
-/**
- * A floating pill instead of a bar welded to the bottom edge.
- *
- * Every tab gets `weight(1f)`: with five destinations and labels as long as "Productos", letting
- * them size themselves overflows a 360 dp screen. Equal shares can't.
- *
- * The selected tab sits on a neon fill with dark text on top — the one place the fluorescent colour
- * is safe to use at full strength, because nothing has to be read *through* it.
- */
-@Composable
-private fun OvalNavigationBar(current: AppDestination, onSelect: (AppDestination) -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shadowElevation = 16.dp,
-        // The activity is edge-to-edge, so this sits under the system back/home/recents bar unless
-        // it subtracts that inset itself. Material's NavigationBar did this for us; a hand-rolled
-        // Surface does not, which is exactly how the two bars ended up on top of each other.
-        modifier = Modifier
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp)
-            .padding(bottom = 10.dp)
-            .fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AppDestination.entries.forEach { item ->
-                val selected = item == current
-                val content = if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(
-                            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                            else Color.Transparent
-                        )
-                        // 48 dp of height total: the floor for something used one-handed, walking.
-                        .clickable { onSelect(item) }
-                        .padding(vertical = 7.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(item.icon, contentDescription = item.label, tint = content, modifier = Modifier.size(22.dp))
-                    Text(
-                        item.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = content,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
-}
-
-private enum class AppDestination(val label: String, val icon: ImageVector) {
-    HOME("Inicio", Icons.Filled.Home),
-    CUSTOMERS("Clientes", Icons.Filled.Person),
-    NEW_SALE("Vender", Icons.Filled.ShoppingCart),
-    PRODUCTS("Productos", Icons.Filled.Star),
-    PAYMENTS("Abonos", Icons.Filled.CheckCircle),
-}
 
 @Composable
 fun CuentivoApp(
@@ -230,8 +153,9 @@ fun CuentivoApp(
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
-    var destination by remember { mutableStateOf(AppDestination.HOME) }
-    var showPlans by remember { mutableStateOf(false) }
+    var destination by remember { mutableStateOf(MainDestination.HOME) }
+    var showNewSale by remember { mutableStateOf(false) }
+    var showAccount by remember { mutableStateOf(false) }
     // Hoisted out of the screens so the floating button can open the same form the screen owns.
     var showCustomerForm by remember { mutableStateOf(false) }
     var showProductForm by remember { mutableStateOf(false) }
@@ -243,57 +167,35 @@ fun CuentivoApp(
             onMessageShown()
         }
     }
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = { OvalNavigationBar(destination) { destination = it } },
-        floatingActionButton = {
-            // Only where there is something to add. Vender and Abonos are already forms — a button
-            // that opens the screen you are standing on is noise.
-            val action: (() -> Unit)? = when (destination) {
-                AppDestination.HOME -> { { destination = AppDestination.NEW_SALE } }
-                AppDestination.CUSTOMERS -> { { showCustomerForm = true } }
-                AppDestination.PRODUCTS -> { { showProductForm = true } }
-                AppDestination.NEW_SALE, AppDestination.PAYMENTS -> null
-            }
-            action?.let {
-                FloatingActionButton(
-                    onClick = it,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.Add,
-                        contentDescription = when (destination) {
-                            AppDestination.HOME -> "Nueva venta"
-                            AppDestination.CUSTOMERS -> "Agregar cliente"
-                            else -> "Agregar producto"
-                        },
-                    )
-                }
-            }
+    NeoFintechShell(
+        destination = destination,
+        onDestination = { selected ->
+            destination = selected
+            showNewSale = false
         },
+        onNewSale = {
+            destination = MainNavigationPolicy.destinationAfterNewSale(destination)
+            showNewSale = true
+        },
+        onOpenAccount = { showAccount = true },
+        onOpenAlerts = { showAlerts = true },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        when (destination) {
-            AppDestination.HOME -> DashboardScreen(
+        if (showNewSale) {
+            NewSaleScreen(customers, products, padding, onCreateSale)
+        } else when (destination) {
+            MainDestination.HOME -> DashboardScreen(
                 state = state,
                 customers = customers,
                 padding = padding,
                 onCreateBusiness = onCreateBusiness,
-                onNewSale = { destination = AppDestination.NEW_SALE },
+                onNewSale = { showNewSale = true },
                 onShowStatement = onShowStatement,
                 onShareDebtorList = onShareDebtorList,
-                onSignOut = onSignOut,
-                onDeleteAccount = onDeleteAccount,
-                onShowPlans = { showPlans = true },
-                onShowAlerts = { showAlerts = true },
-                alertCount = alerts.size,
-                tier = tier,
             )
-            AppDestination.CUSTOMERS -> CustomersScreen(customers, padding, showCustomerForm, { showCustomerForm = it }, onCreateCustomer, onEditCustomer, onArchiveCustomer, onShowStatement)
-            AppDestination.PRODUCTS -> ProductsScreen(products, padding, showProductForm, { showProductForm = it }, onCreateProduct, onEditProduct, onArchiveProduct, onImportProducts, onShareImportTemplate)
-            AppDestination.NEW_SALE -> NewSaleScreen(customers, products, padding, onCreateSale)
-            AppDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment)
+            MainDestination.CUSTOMERS -> CustomersScreen(customers, padding, showCustomerForm, { showCustomerForm = it }, onCreateCustomer, onEditCustomer, onArchiveCustomer, onShowStatement)
+            MainDestination.PRODUCTS -> ProductsScreen(products, padding, showProductForm, { showProductForm = it }, onCreateProduct, onEditProduct, onArchiveProduct, onImportProducts, onShareImportTemplate)
+            MainDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment)
         }
     }
     if (statementCustomer != null) {
@@ -314,7 +216,7 @@ fun CuentivoApp(
             title = { Text(limit.title) },
             text = { Text(limit.detail) },
             confirmButton = {
-                TextButton(onClick = { onDismissBlocked(); showPlans = true }) { Text("Ver Cuentivo Pro") }
+                TextButton(onClick = { onDismissBlocked(); showAccount = true }) { Text("Ver Cuentivo Pro") }
             },
             dismissButton = { TextButton(onClick = onDismissBlocked) { Text("Ahora no") } },
         )
@@ -349,122 +251,14 @@ fun CuentivoApp(
             confirmButton = { TextButton(onClick = onDismissImportReport) { Text("Entendido") } },
         )
     }
-    if (showPlans) {
-        SubscriptionSheet(
+    if (showAccount) {
+        AccountSheet(
             tier = tier,
-            onSubscribe = { showPlans = false; onUpgrade() },
-            onDismiss = { showPlans = false },
+            onUpgrade = { showAccount = false; onUpgrade() },
+            onSignOut = onSignOut,
+            onDeleteAccount = onDeleteAccount,
+            onDismiss = { showAccount = false },
         )
-    }
-}
-
-/**
- * The two plans, side by side, with the current one marked.
- *
- * Reads its limits from FeatureAccessManager rather than repeating them, so the screen can never
- * promise something different from what the app actually enforces.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SubscriptionSheet(
-    tier: SubscriptionTier,
-    onSubscribe: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Planes de Cuentivo", style = MaterialTheme.typography.headlineSmall)
-
-            PlanCard(
-                name = "Gratis",
-                price = "Sin costo",
-                isCurrent = tier == SubscriptionTier.FREE,
-                features = listOf(
-                    "Hasta ${FeatureAccessManager.FREE_CUSTOMER_LIMIT} clientes",
-                    "Hasta ${FeatureAccessManager.FREE_SALE_LIMIT} ventas registradas",
-                    "Ventas, abonos y estados de cuenta",
-                    "Compartir la cuenta de un cliente",
-                ),
-                missing = listOf(
-                    "Sin respaldo en la nube",
-                    "Sin fotos de productos ni comprobantes",
-                    "Sin importar/exportar Excel",
-                    "Sin equipo ni roles",
-                ),
-            )
-
-            PlanCard(
-                name = "Cuentivo Pro",
-                price = "$199 al mes",
-                isCurrent = tier == SubscriptionTier.PRO,
-                features = listOf(
-                    "Clientes y ventas ilimitados",
-                    "Respaldo y sincronización en la nube",
-                    "Fotos de productos y comprobantes de pago",
-                    "Importar y exportar productos en Excel",
-                    "Compartir la lista completa de deudores",
-                    "Hasta 5 integrantes con roles",
-                    "Historial y auditoría completos",
-                ),
-                missing = emptyList(),
-            )
-
-            if (tier == SubscriptionTier.FREE) {
-                FilledTonalButton(onClick = onSubscribe, modifier = Modifier.fillMaxWidth()) {
-                    Text("Suscribirme a Pro")
-                }
-                Text(
-                    "El cobro se hace por Google Play y puedes cancelarlo cuando quieras desde la " +
-                        "tienda. Tus datos no se borran si cancelas.",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                Text(
-                    "Tu suscripción se administra desde Google Play.",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlanCard(
-    name: String,
-    price: String,
-    isCurrent: Boolean,
-    features: List<String>,
-    missing: List<String>,
-) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(
-            if (isCurrent) 2.dp else 1.dp,
-            if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                if (isCurrent) {
-                    AssistChip(onClick = {}, enabled = false, label = { Text("Tu plan") })
-                }
-            }
-            Text(price, style = MaterialTheme.typography.headlineSmall)
-            features.forEach { Text("✓  $it") }
-            missing.forEach {
-                Text("·  $it", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
     }
 }
 
@@ -1316,16 +1110,8 @@ private fun DashboardScreen(
     onNewSale: () -> Unit,
     onShowStatement: (CustomerBalanceRow) -> Unit,
     onShareDebtorList: () -> Unit,
-    onSignOut: () -> Unit,
-    onDeleteAccount: () -> Unit,
-    onShowPlans: () -> Unit,
-    onShowAlerts: () -> Unit,
-    alertCount: Int,
-    tier: SubscriptionTier,
 ) {
     var filter by remember { mutableStateOf(DebtorFilter.OWING) }
-    var confirmDelete by remember { mutableStateOf(false) }
-    var confirmSignOut by remember { mutableStateOf(false) }
     NeoResponsiveColumn(
         modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
     ) { layout ->
@@ -1339,19 +1125,7 @@ private fun DashboardScreen(
             is DashboardUiState.Content -> {
                 // No "Nueva venta" button here any more: the floating button does it, and two ways
                 // to start the same thing on one screen is clutter.
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        state.businessName,
-                        style = MaterialTheme.typography.headlineSmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    // The count is on the chip itself rather than a floating badge: a number nobody
-                    // can read is just a red dot, and this has to work at arm's length.
-                    AssistChip(
-                        onClick = onShowAlerts,
-                        label = { Text(if (alertCount > 0) "Avisos ($alertCount)" else "Avisos") },
-                    )
-                }
+                Text(state.businessName, style = MaterialTheme.typography.headlineSmall)
                 NeoBalanceHero(
                     label = "Por cobrar",
                     amountCents = state.receivableCents,
@@ -1450,73 +1224,9 @@ private fun DashboardScreen(
                     }
                 }
 
-                NeoSectionTitle("Tu cuenta", eyebrow = "Plan")
-                Card(
-                    onClick = onShowPlans,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(
-                            if (tier == SubscriptionTier.PRO) "Cuentivo Pro" else "Plan Gratis",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            if (tier == SubscriptionTier.PRO) {
-                                "Clientes y ventas ilimitados. Toca para ver tu plan."
-                            } else {
-                                "Hasta ${FeatureAccessManager.FREE_CUSTOMER_LIMIT} clientes y " +
-                                    "${FeatureAccessManager.FREE_SALE_LIMIT} ventas. Toca para ver Pro."
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) { Text("Cerrar sesión") }
-                // Google Play requires account deletion to be reachable from inside the app.
-                TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Eliminar mi cuenta", color = MaterialTheme.colorScheme.error)
-                }
             }
         }
         Spacer(Modifier.height(12.dp))
-    }
-    if (confirmSignOut) {
-        AlertDialog(
-            onDismissRequest = { confirmSignOut = false },
-            title = { Text("¿Cerrar sesión?") },
-            text = {
-                // Said plainly because it is true: the database belongs to one account at a time, so
-                // the next person to sign in on this phone clears whatever has not reached the cloud.
-                Text(
-                    "Tu información seguirá aquí si vuelves a entrar con esta misma cuenta. Pero si " +
-                        "alguien más inicia sesión en este teléfono, lo que todavía no se haya " +
-                        "sincronizado se borrará."
-                )
-            },
-            confirmButton = { TextButton(onClick = { confirmSignOut = false; onSignOut() }) { Text("Cerrar sesión") } },
-            dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Cancelar") } },
-        )
-    }
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("¿Eliminar tu cuenta?") },
-            text = {
-                Text(
-                    "Se borrará tu cuenta y toda la información guardada en este teléfono: clientes, " +
-                        "ventas y abonos. Esta acción no se puede deshacer."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { confirmDelete = false; onDeleteAccount() }) {
-                    Text("Sí, eliminar todo", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
-        )
     }
 }
 

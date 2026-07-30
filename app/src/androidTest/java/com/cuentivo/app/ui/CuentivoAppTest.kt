@@ -1,11 +1,13 @@
 package com.cuentivo.app.ui
 
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import org.junit.Rule
 import org.junit.Test
@@ -25,14 +27,22 @@ class CuentivoAppTest {
             CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
-        // Exactly one, on purpose. The redesign removed a full-width "Nueva venta" button that did
-        // the same thing as the floating action button; two ways to start one task is clutter, and
-        // this assertion is what stops the second one coming back.
-        //
-        // Matched by content description rather than text: the FAB is an icon, and its description
-        // is what a screen reader announces — so this checks the action is reachable, not just drawn.
         composeRule.onAllNodesWithContentDescription("Nueva venta").assertCountEquals(1)
         composeRule.onNodeWithContentDescription("Nueva venta").assertIsDisplayed()
         composeRule.onNodeWithText("$125.00").assertIsDisplayed()
+    }
+
+    @Test fun compact_shell_has_four_destinations_sale_action_and_account_entry() {
+        composeRule.setContent {
+            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+        }
+
+        listOf("Inicio", "Clientes", "Productos", "Abonos").forEach { label ->
+            composeRule.onNodeWithText(label).assertIsDisplayed()
+        }
+        composeRule.onAllNodesWithContentDescription("Nueva venta").assertCountEquals(1)
+        composeRule.onAllNodesWithText("Vender").assertCountEquals(0)
+        composeRule.onNodeWithContentDescription("Cuenta").performClick()
+        composeRule.onNodeWithText("Plan Gratis").assertIsDisplayed()
     }
 }
