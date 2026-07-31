@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
@@ -58,7 +59,10 @@ internal fun ProductPhoto(
     Box(
         modifier = modifier
             .size(size)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, NeoShapes.row),
+            // clip before background: background(shape=) paints a rounded fill but does not clip
+            // children, so a real photo drew square corners over it.
+            .clip(NeoShapes.row)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
     ) {
         bitmap?.let { image ->
@@ -77,14 +81,20 @@ internal fun ProductPhoto(
     }
 }
 
-/** The tappable photo box inside the new/edit product dialogs. */
+/**
+ * The tappable photo box inside the new/edit product dialogs.
+ *
+ * It edits a [PhotoDraft] and never deletes a photo a product row still points at. The only files
+ * it removes are ones it created itself in this same dialog and then replaced.
+ */
 @Composable
 internal fun ProductPhotoPicker(
-    fileName: String?,
+    draft: PhotoDraft,
     store: ProductImageStore,
     targetId: String,
-    onPicked: (String?) -> Unit,
+    onDraftChange: (PhotoDraft) -> Unit,
 ) {
+    val fileName = draft.current
     val scope = rememberCoroutineScope()
     var working by remember { mutableStateOf(false) }
     // PickVisualMedia opens the system photo picker, which needs no storage permission at all.
@@ -94,11 +104,13 @@ internal fun ProductPhotoPicker(
         scope.launch {
             // A camera photo is several megapixels; decoding it on the main thread freezes the
             // dialog long enough to look broken.
-            val saved = withContext(Dispatchers.IO) {
-                store.save(uri, targetId)?.also { fileName?.let(store::delete) }
-            }
+            val saved = withContext(Dispatchers.IO) { store.save(uri, targetId) }
             working = false
-            if (saved != null) onPicked(saved)
+            if (saved != null) {
+                val update = ProductPhotoDraftPolicy.picked(draft, saved)
+                update.deleteNow.forEach(store::delete)
+                onDraftChange(update.draft)
+            }
         }
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -131,7 +143,11 @@ internal fun ProductPhotoPicker(
                 )
             }
             if (fileName != null) {
-                TextButton(onClick = { store.delete(fileName); onPicked(null) }) {
+                TextButton(onClick = {
+                    val update = ProductPhotoDraftPolicy.cleared(draft)
+                    update.deleteNow.forEach(store::delete)
+                    onDraftChange(update.draft)
+                }) {
                     Text("Quitar foto", color = MaterialTheme.colorScheme.error)
                 }
             }

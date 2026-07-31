@@ -123,6 +123,7 @@ fun CuentivoApp(
     importReport: SheetImport? = null,
     onDismissImportReport: () -> Unit = {},
     onShareImportTemplate: () -> Unit = {},
+    isImportingProducts: Boolean = false,
     onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit = { _, _ -> },
     onCreatePayment: (CustomerBalanceRow, Long) -> Unit = { _, _ -> },
     statementCustomer: CustomerBalanceRow? = null,
@@ -254,8 +255,7 @@ fun CuentivoApp(
                 onArchiveProduct = onArchiveProduct,
                 onImportProducts = onImportProducts,
                 onShareImportTemplate = onShareImportTemplate,
-                // Only so the screen knows the import finished; the report dialog stays here.
-                importReport = importReport,
+                isImportingProducts = isImportingProducts,
             )
             MainDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment, paymentCustomer)
         }

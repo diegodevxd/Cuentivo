@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -72,12 +73,31 @@ class ProductFlowTest {
         composeRule.runOnIdle { assertEquals(1, templateShared) }
     }
 
-    @Test fun an_import_in_flight_reports_itself_and_blocks_a_second_start() {
-        composeRule.setContent { Harness(importReport = REPORT) }
+    @Test fun the_import_action_is_idle_by_default() {
+        composeRule.setContent { Harness() }
         openProducts()
 
-        // With a report already present the screen is idle again, so the action is usable.
-        composeRule.onNodeWithText("Importar").assertIsDisplayed()
+        composeRule.onNodeWithText("Importar").assertIsEnabled()
+        composeRule.onAllNodesWithText("Importando…").assertCountEquals(0)
+    }
+
+    @Test fun an_import_in_flight_says_so_and_cannot_be_started_twice() {
+        composeRule.setContent { Harness(isImporting = true) }
+        openProducts()
+
+        composeRule.onNodeWithText("Importando…").assertIsDisplayed().assertIsNotEnabled()
+        composeRule.onAllNodesWithText("Importar").assertCountEquals(0)
+    }
+
+    /**
+     * The screen must not infer progress from a report. A blocked plan and an unreadable file both
+     * finish without one, and inferring it there is exactly what stuck the button before.
+     */
+    @Test fun a_report_alone_does_not_drive_the_button() {
+        composeRule.setContent { Harness(isImporting = true, importReport = REPORT) }
+        openProducts()
+
+        composeRule.onNodeWithText("Importando…").assertIsDisplayed()
     }
 
     @Test fun search_matches_name_and_sku() {
@@ -225,11 +245,13 @@ class ProductFlowTest {
     private fun Harness(
         products: List<ProductEntity> = CATALOG,
         importReport: SheetImport? = null,
+        isImporting: Boolean = false,
     ) {
         CuentivoApp(
             state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
             products = products,
             importReport = importReport,
+            isImportingProducts = isImporting,
             onCreateProduct = { name, cents, _ -> created += "$name=$cents" },
             onEditProduct = { product, _, cents, _ -> edited += "${product.id}=$cents" },
             onArchiveProduct = { archived += it.id },

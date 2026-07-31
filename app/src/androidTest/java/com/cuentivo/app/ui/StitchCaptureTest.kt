@@ -1,6 +1,8 @@
 package com.cuentivo.app.ui
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
@@ -120,11 +122,32 @@ class StitchCaptureTest {
     }
 
     private fun captureProducts(widthDp: Int) {
+        // A real photo, not the placeholder: the rounded corners are only wrong when something is
+        // actually drawn inside the thumbnail, which is how the missing clip went unnoticed.
+        val photo = writeSolidPhoto()
         captureScreen("products-${widthDp}dp", widthDp) {
-            CuentivoApp(state = populatedState(), products = PRODUCTS)
+            CuentivoApp(
+                state = populatedState(),
+                products = listOf(PRODUCTS[0].copy(imageUri = photo)) + PRODUCTS.drop(1),
+            )
         }
         openDestination("Productos")
         shoot("products-${widthDp}dp")
+    }
+
+    /**
+     * Fills a bitmap edge to edge with one bright colour. If the thumbnail clips, the corners of
+     * the capture stay graphite; if it does not, they come out bright.
+     */
+    private fun writeSolidPhoto(): String {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = File(context.filesDir, "product-images").apply { mkdirs() }
+        val name = "capture-thumbnail.jpg"
+        val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        Canvas(bitmap).drawColor(Color.rgb(0, 229, 255))
+        FileOutputStream(File(dir, name)).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        bitmap.recycle()
+        return name
     }
 
     private fun captureCustomers(widthDp: Int) {

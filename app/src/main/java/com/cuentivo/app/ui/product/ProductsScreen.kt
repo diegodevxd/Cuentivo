@@ -36,7 +36,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.domain.Money
-import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.ui.FormDialog
 import com.cuentivo.app.ui.MoneyField
 import com.cuentivo.app.ui.NeoAction
@@ -87,24 +85,24 @@ fun ProductsScreen(
     onArchiveProduct: (ProductEntity) -> Unit = {},
     onImportProducts: (Uri) -> Unit = {},
     onShareImportTemplate: () -> Unit = {},
-    importReport: SheetImport? = null,
+    /**
+     * Owned by whoever actually launches the import, so it also falls back to false when the plan
+     * blocks it, there is no business, or the file cannot be read — none of which produce a report.
+     */
+    isImportingProducts: Boolean = false,
 ) {
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<ProductEntity?>(null) }
     var archiving by remember { mutableStateOf<ProductEntity?>(null) }
-    var importing by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val imageStore = remember(context) { ProductImageStore(context) }
-
-    // The report arriving is the only signal the import finished, success or not.
-    LaunchedEffect(importReport) { if (importReport != null) importing = false }
 
     // Wide-open MIME list: phones and cloud drives label .csv and .xlsx inconsistently, and a
     // strict filter greys out the very file the person came to pick.
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let { importing = true; onImportProducts(it) }
+        uri?.let(onImportProducts)
     }
 
     val visible = products.filter {
@@ -156,10 +154,10 @@ fun ProductsScreen(
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
                     NeoAction(
-                        label = if (importing) "Importando…" else "Importar",
+                        label = if (isImportingProducts) "Importando…" else "Importar",
                         onClick = { importLauncher.launch(arrayOf("*/*")) },
                         modifier = Modifier.weight(1f),
-                        enabled = !importing,
+                        enabled = !isImportingProducts,
                         primary = false,
                     )
                     NeoAction(
@@ -280,13 +278,20 @@ private fun ProductFormDialog(
     // Keyed on the product so reopening the dialog for another row starts from that row's data.
     var name by remember(formKey) { mutableStateOf(initialName) }
     var priceText by remember(formKey) { mutableStateOf(initialPrice) }
-    var photo by remember(formKey) { mutableStateOf(initialPhoto) }
+    var photo by remember(formKey) { mutableStateOf(ProductPhotoDraftPolicy.start(initialPhoto)) }
     val cents = pesosToCents(priceText)
+    // Backing out must leave the saved product untouched, so only files this dialog created go.
+    val dismissAndDiscard = {
+        ProductPhotoDraftPolicy.onCancel(photo).forEach(store::delete)
+        onDismiss()
+    }
     FormDialog(
         title = title,
         confirmEnabled = name.isNotBlank() && cents != null,
-        onConfirm = { if (name.isNotBlank() && cents != null) onConfirm(name.trim(), cents, photo) },
-        onDismiss = onDismiss,
+        onConfirm = {
+            if (name.isNotBlank() && cents != null) onConfirm(name.trim(), cents, photo.current)
+        },
+        onDismiss = dismissAndDiscard,
     ) {
         OutlinedTextField(
             value = name,

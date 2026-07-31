@@ -30,6 +30,7 @@ import com.cuentivo.app.data.local.OperationEntity
 import com.cuentivo.app.data.local.PaymentAllocationEntity
 import com.cuentivo.app.data.local.PaymentEntity
 import com.cuentivo.app.data.local.ProductEntity
+import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
 import com.cuentivo.app.ui.theme.CuentivoTheme
@@ -55,6 +56,8 @@ import com.cuentivo.app.domain.XlsxReader
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.CancelableItem
+import com.cuentivo.app.ui.product.ImportStart
+import com.cuentivo.app.ui.product.ProductImportPolicy
 import com.cuentivo.app.ui.CuentivoApp
 import com.cuentivo.app.ui.CuentivoLoadingScreen
 import com.cuentivo.app.ui.dashboard.DashboardUiState
@@ -178,6 +181,10 @@ class MainActivity : ComponentActivity() {
                 // Kept after the import so the rejected rows can be listed: a snackbar saying "13 con
                 // problemas" without saying which ones leaves the person with nothing to fix.
                 var importReport by remember { mutableStateOf<SheetImport?>(null) }
+                // Progress belongs here, not to the screen: three routes below never produce a
+                // SheetImport, and a screen that waits for one stays stuck on "Importando…".
+                var isImportingProducts by remember { mutableStateOf(false) }
+                val productImages = remember { ProductImageStore(this@MainActivity) }
                 // The real plan, straight from Google Play. Was pinned to FREE until Billing existed.
                 val tier by tierState
                 val billingMessage by billingMessageState
@@ -364,6 +371,9 @@ class MainActivity : ComponentActivity() {
                         // only changes what future sales will offer.
                         val updated = product.copy(name = name, salePriceCents = priceCents, imageUri = imageFileName, updatedAtEpochMillis = now)
                         database.productDao().update(updated)
+                        // Only now, and only if the row no longer references it: deleting earlier
+                        // left imageUri pointing at a file that was already gone.
+                        product.imageUri?.takeIf { it != imageFileName }?.let(productImages::delete)
                         syncQueue.enqueue(businessId, "PRODUCT", updated.id, now, mapOf("businessId" to businessId, "name" to updated.name, "description" to updated.description, "sku" to updated.sku, "category" to updated.category, "salePriceCents" to updated.salePriceCents, "costPriceCents" to updated.costPriceCents, "stock" to updated.stock, "imageUri" to updated.imageUri, "isActive" to updated.isActive, "createdAtEpochMillis" to updated.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to updated.deletedAtEpochMillis))
                         refreshKey++
                         uiMessage = "Producto actualizado"
@@ -381,48 +391,57 @@ class MainActivity : ComponentActivity() {
                         uiMessage = "${product.name} eliminado"
                     }
                 }, onImportProducts = { uri ->
-                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     // Announced as part of Pro, so it is gated like every other paid feature. Until
                     // Billing exists `tier` is pinned to FREE above, so flip that one line to test it.
-                    when (val decision = FeatureAccessManager.canUse(tier, PaidFeature.SPREADSHEET)) {
-                        is AccessDecision.Blocked -> blocked = decision
-                        AccessDecision.Allowed -> lifecycleScope.launch {
-                            val outcome = runCatching {
-                                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                                    ?: error("No se pudo abrir el archivo")
-                                val existing = database.productDao().searchActive(businessId, "", "")
-                                val existingNames = existing.map { CustomerNameNormalizer.key(it.name) }.toSet()
-                                // Excel keeps its cells in a zip of XML; a CSV is just text. The
-                                // zip signature decides, because a file picked from a cloud drive
-                                // often arrives without a usable name or MIME type.
-                                val isXlsx = bytes.size > 1 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()
-                                if (isXlsx) {
-                                    ProductSheetParser.parse(XlsxReader.read(bytes), existingNames)
-                                } else {
-                                    ProductSheetParser.parseCsv(bytes.toString(Charsets.UTF_8), existingNames)
+                    val businessId = (state as? DashboardUiState.Content)?.businessId
+                    when (val start = ProductImportPolicy.start(businessId, FeatureAccessManager.canUse(tier, PaidFeature.SPREADSHEET))) {
+                        ImportStart.NoBusiness -> Unit
+                        is ImportStart.Denied -> blocked = start.decision
+                        is ImportStart.Begin -> {
+                            isImportingProducts = true
+                            lifecycleScope.launch {
+                                try {
+                                    val outcome = runCatching {
+                                        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                            ?: error("No se pudo abrir el archivo")
+                                        val existing = database.productDao().searchActive(start.businessId, "", "")
+                                        val existingNames = existing.map { CustomerNameNormalizer.key(it.name) }.toSet()
+                                        // Excel keeps its cells in a zip of XML; a CSV is just text. The
+                                        // zip signature decides, because a file picked from a cloud drive
+                                        // often arrives without a usable name or MIME type.
+                                        val isXlsx = bytes.size > 1 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()
+                                        if (isXlsx) {
+                                            ProductSheetParser.parse(XlsxReader.read(bytes), existingNames)
+                                        } else {
+                                            ProductSheetParser.parseCsv(bytes.toString(Charsets.UTF_8), existingNames)
+                                        }
+                                    }
+                                    outcome.onSuccess { result ->
+                                        result.accepted.forEach { parsed ->
+                                            val now = System.currentTimeMillis()
+                                            val product = ProductEntity(UUID.randomUUID().toString(), start.businessId, parsed.name, parsed.description, parsed.sku, parsed.category, parsed.priceCents, null, null, null, true, now, now, null)
+                                            database.productDao().insert(product)
+                                            syncQueue.enqueue(start.businessId, "PRODUCT", product.id, now, mapOf("businessId" to start.businessId, "name" to product.name, "description" to product.description, "sku" to product.sku, "category" to product.category, "salePriceCents" to product.salePriceCents, "costPriceCents" to null, "stock" to null, "imageUri" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                        }
+                                        refreshKey++
+                                        importReport = result
+                                        uiMessage = when {
+                                            result.accepted.isEmpty() && result.rejected.isEmpty() ->
+                                                "No se encontraron productos en ese archivo"
+                                            result.rejected.isEmpty() -> "Se importaron ${result.accepted.size} productos"
+                                            else -> "Se importaron ${result.accepted.size}; ${result.rejected.size} con problemas"
+                                        }
+                                    }.onFailure {
+                                        uiMessage = "No fue posible leer ese archivo"
+                                    }
+                                } finally {
+                                    // Every termination, success or not, hands the button back.
+                                    isImportingProducts = false
                                 }
-                            }
-                            outcome.onSuccess { result ->
-                                result.accepted.forEach { parsed ->
-                                    val now = System.currentTimeMillis()
-                                    val product = ProductEntity(UUID.randomUUID().toString(), businessId, parsed.name, parsed.description, parsed.sku, parsed.category, parsed.priceCents, null, null, null, true, now, now, null)
-                                    database.productDao().insert(product)
-                                    syncQueue.enqueue(businessId, "PRODUCT", product.id, now, mapOf("businessId" to businessId, "name" to product.name, "description" to product.description, "sku" to product.sku, "category" to product.category, "salePriceCents" to product.salePriceCents, "costPriceCents" to null, "stock" to null, "imageUri" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
-                                }
-                                refreshKey++
-                                importReport = result
-                                uiMessage = when {
-                                    result.accepted.isEmpty() && result.rejected.isEmpty() ->
-                                        "No se encontraron productos en ese archivo"
-                                    result.rejected.isEmpty() -> "Se importaron ${result.accepted.size} productos"
-                                    else -> "Se importaron ${result.accepted.size}; ${result.rejected.size} con problemas"
-                                }
-                            }.onFailure {
-                                uiMessage = "No fue posible leer ese archivo"
                             }
                         }
                     }
-                }, importReport = importReport, onDismissImportReport = { importReport = null }, onShareImportTemplate = {
+                }, isImportingProducts = isImportingProducts, importReport = importReport, onDismissImportReport = { importReport = null }, onShareImportTemplate = {
                     share("Plantilla de productos - Cuentivo", ProductSheetParser.TEMPLATE_CSV)
                 }, onCreateSale = { customer, draft ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
