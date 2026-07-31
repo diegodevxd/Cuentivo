@@ -103,6 +103,30 @@ class StitchCaptureTest {
 
     @Test fun capture_customer_detail_480() = captureDetail(480)
 
+    @Test fun capture_products_320() = captureProducts(320)
+
+    @Test fun capture_products_360() = captureProducts(360)
+
+    @Test fun capture_products_412() = captureProducts(412)
+
+    @Test fun capture_products_480() = captureProducts(480)
+
+    @Test fun capture_products_empty() {
+        captureScreen("products-empty-360dp", 360) {
+            CuentivoApp(state = populatedState(), products = emptyList())
+        }
+        openDestination("Productos")
+        shoot("products-empty-360dp")
+    }
+
+    private fun captureProducts(widthDp: Int) {
+        captureScreen("products-${widthDp}dp", widthDp) {
+            CuentivoApp(state = populatedState(), products = PRODUCTS)
+        }
+        openDestination("Productos")
+        shoot("products-${widthDp}dp")
+    }
+
     private fun captureCustomers(widthDp: Int) {
         captureScreen("customers-${widthDp}dp", widthDp) {
             CuentivoApp(state = populatedState(), customers = CUSTOMERS)
@@ -127,8 +151,10 @@ class StitchCaptureTest {
         }
     }
 
-    private fun openCustomers() {
-        composeRule.onNodeWithText("Clientes").performClick()
+    private fun openCustomers() = openDestination("Clientes")
+
+    private fun openDestination(label: String) {
+        composeRule.onNodeWithText(label).performClick()
         composeRule.waitForIdle()
     }
 

@@ -86,6 +86,7 @@ import com.cuentivo.app.ui.account.AccountSheet
 import com.cuentivo.app.ui.customer.CustomerDetailSheet
 import com.cuentivo.app.ui.customer.CustomersScreen
 import com.cuentivo.app.ui.dashboard.DashboardScreen
+import com.cuentivo.app.ui.product.ProductsScreen
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 
 /**
@@ -243,7 +244,19 @@ fun CuentivoApp(
                 onArchiveCustomer = onArchiveCustomer,
                 onOpen = onShowStatement,
             )
-            MainDestination.PRODUCTS -> ProductsScreen(products, padding, showProductForm, { showProductForm = it }, onCreateProduct, onEditProduct, onArchiveProduct, onImportProducts, onShareImportTemplate)
+            MainDestination.PRODUCTS -> ProductsScreen(
+                products = products,
+                modifier = Modifier.padding(padding),
+                showForm = showProductForm,
+                onShowFormChange = { showProductForm = it },
+                onCreateProduct = onCreateProduct,
+                onEditProduct = onEditProduct,
+                onArchiveProduct = onArchiveProduct,
+                onImportProducts = onImportProducts,
+                onShareImportTemplate = onShareImportTemplate,
+                // Only so the screen knows the import finished; the report dialog stays here.
+                importReport = importReport,
+            )
             MainDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment, paymentCustomer)
         }
     }
@@ -381,7 +394,7 @@ private fun preselected(
     candidate?.let { pre -> customers.firstOrNull { it.customer.id == pre.customer.id } }
 
 @Composable
-private fun MoneyField(label: String, text: String, onTextChange: (String) -> Unit) {
+internal fun MoneyField(label: String, text: String, onTextChange: (String) -> Unit) {
     OutlinedTextField(
         value = text,
         onValueChange = { raw -> onTextChange(raw.filter { it.isDigit() || it == '.' }) },
@@ -663,221 +676,6 @@ private fun PaymentScreen(
  * A product adopted from another device carries a file name only its author's phone has, so a
  * missing file is expected, not an error worth shouting about.
  */
-@Composable
-private fun ProductPhoto(
-    fileName: String?,
-    store: ProductImageStore,
-    size: Dp,
-    modifier: Modifier = Modifier,
-) {
-    // Decoding off the main thread: a list of products would otherwise stutter on a cheap phone.
-    val bitmap by produceState<Bitmap?>(initialValue = null, fileName) {
-        value = fileName?.let { name -> withContext(Dispatchers.IO) { store.load(name) } }
-    }
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center,
-    ) {
-        bitmap?.let { image ->
-            Image(
-                bitmap = image.asImageBitmap(),
-                contentDescription = "Foto del producto",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } ?: Icon(
-            Icons.Filled.Star,
-            contentDescription = "Sin foto",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/** The tappable photo box inside the new/edit product dialogs. */
-@Composable
-private fun ProductPhotoPicker(
-    fileName: String?,
-    store: ProductImageStore,
-    targetId: String,
-    onPicked: (String?) -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    var working by remember { mutableStateOf(false) }
-    // PickVisualMedia opens the system photo picker, which needs no storage permission at all.
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        working = true
-        scope.launch {
-            // A camera photo is several megapixels; decoding it on the main thread freezes the
-            // dialog long enough to look broken.
-            val saved = withContext(Dispatchers.IO) {
-                store.save(uri, targetId)?.also { fileName?.let(store::delete) }
-            }
-            working = false
-            if (saved != null) onPicked(saved)
-        }
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        ProductPhoto(
-            fileName = fileName,
-            store = store,
-            size = 96.dp,
-            modifier = Modifier.clickable {
-                launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            },
-        )
-        Spacer(Modifier.width(12.dp))
-        Column {
-            TextButton(
-                onClick = { launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                enabled = !working,
-            ) { Text(if (working) "Guardando…" else if (fileName == null) "Agregar foto" else "Cambiar foto") }
-            if (fileName != null) {
-                TextButton(onClick = { store.delete(fileName); onPicked(null) }) {
-                    Text("Quitar foto", color = MaterialTheme.colorScheme.error)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProductsScreen(
-    products: List<ProductEntity>,
-    padding: PaddingValues,
-    showForm: Boolean,
-    onShowFormChange: (Boolean) -> Unit,
-    onCreateProduct: (String, Long, String?) -> Unit,
-    onEditProduct: (ProductEntity, String, Long, String?) -> Unit,
-    onArchiveProduct: (ProductEntity) -> Unit,
-    onImportProducts: (Uri) -> Unit,
-    onShareImportTemplate: () -> Unit,
-) {
-    var query by remember { mutableStateOf("") }
-    var editing by remember { mutableStateOf<ProductEntity?>(null) }
-    var archiving by remember { mutableStateOf<ProductEntity?>(null) }
-    val context = LocalContext.current
-    val imageStore = remember(context) { ProductImageStore(context) }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text("Productos", style = MaterialTheme.typography.headlineSmall)
-        // Wide-open MIME list: phones and cloud drives label .csv and .xlsx inconsistently, and a
-        // strict filter greys out the very file the person came to pick.
-        val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let(onImportProducts)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = { importLauncher.launch(arrayOf("*/*")) },
-                modifier = Modifier.weight(1f),
-            ) { Text("Importar de Excel") }
-            OutlinedButton(onClick = onShareImportTemplate, modifier = Modifier.weight(1f)) { Text("Plantilla") }
-        }
-        OutlinedTextField(query, { query = it }, label = { Text("Buscar por nombre o SKU") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        val filtered = products.filter { it.name.contains(query, true) || (it.sku?.contains(query, true) == true) }
-        if (filtered.isEmpty()) Text(if (query.isBlank()) "Aún no tienes productos registrados" else "No se encontraron productos")
-        filtered.forEach { product ->
-            Card(
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ProductPhoto(product.imageUri, imageStore, 56.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(product.name)
-                        Text(formatMoney(product.salePriceCents))
-                        product.category?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
-                    }
-                    TextButton(onClick = { editing = product }) { Text("Editar") }
-                    TextButton(onClick = { archiving = product }) {
-                        Text("Eliminar", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-        }
-    }
-    if (showForm) {
-        var name by remember { mutableStateOf("") }
-        var priceText by remember { mutableStateOf("") }
-        var photo by remember { mutableStateOf<String?>(null) }
-        // The photo is picked before the product exists, so it is filed under an id minted here.
-        // ProductEntity.imageUri stores the file name, not the id, so the two never have to match.
-        val draftId = remember { UUID.randomUUID().toString() }
-        val cents = pesosToCents(priceText)
-        FormDialog(
-            title = "Nuevo producto",
-            confirmEnabled = name.isNotBlank() && cents != null,
-            onConfirm = {
-                if (name.isNotBlank() && cents != null) {
-                    onCreateProduct(name.trim(), cents, photo)
-                    onShowFormChange(false)
-                }
-            },
-            onDismiss = { onShowFormChange(false) },
-        ) {
-            OutlinedTextField(name, { name = it }, label = { Text("Nombre del producto") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            MoneyField("Precio", priceText) { priceText = it }
-            ProductPhotoPicker(photo, imageStore, draftId) { photo = it }
-        }
-    }
-    editing?.let { product ->
-        // Keyed on the product so reopening the dialog for another row starts from that row's data.
-        var name by remember(product.id) { mutableStateOf(product.name) }
-        var priceText by remember(product.id) { mutableStateOf(Money.pesosText(product.salePriceCents)) }
-        var photo by remember(product.id) { mutableStateOf(product.imageUri) }
-        val cents = pesosToCents(priceText)
-        FormDialog(
-            title = "Editar producto",
-            confirmEnabled = name.isNotBlank() && cents != null,
-            onConfirm = {
-                if (name.isNotBlank() && cents != null) {
-                    onEditProduct(product, name.trim(), cents, photo)
-                    editing = null
-                }
-            },
-            onDismiss = { editing = null },
-        ) {
-            OutlinedTextField(name, { name = it }, label = { Text("Nombre del producto") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            MoneyField("Precio", priceText) { priceText = it }
-            ProductPhotoPicker(photo, imageStore, product.id) { photo = it }
-            Text(
-                "El precio nuevo solo aplica a ventas futuras: cada venta guarda el precio que se cobró ese día.",
-                style = MaterialTheme.typography.labelLarge,
-            )
-        }
-    }
-    archiving?.let { product ->
-        AlertDialog(
-            onDismissRequest = { archiving = null },
-            title = { Text("¿Eliminar ${product.name}?") },
-            text = {
-                // True because sale_items keeps the name and price charged that day, so removing the
-                // product from the catalog cannot rewrite what anyone was charged.
-                Text(
-                    "Dejará de aparecer al registrar ventas. Tus ventas anteriores no cambian: cada " +
-                        "una guarda el nombre y el precio que cobraste ese día."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { archiving = null; onArchiveProduct(product) }) {
-                    Text("Sí, eliminar", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { archiving = null }) { Text("Cancelar") } },
-        )
-    }
-}
-
 private enum class DebtorFilter(val label: String) {
     OWING("Con deuda"),
     ALL("Todos"),
