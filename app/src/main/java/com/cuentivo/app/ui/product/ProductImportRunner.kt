@@ -1,5 +1,7 @@
 package com.cuentivo.app.ui.product
 
+import kotlin.coroutines.cancellation.CancellationException
+
 /**
  * Owns the progress flag for the duration of an import.
  *
@@ -21,8 +23,19 @@ internal object ProductImportRunner {
         if (start !is ImportStart.Begin) return null
         setProgress(true)
         return try {
-            runCatching { block(start.businessId) }
+            Result.success(block(start.businessId))
+        } catch (cancellation: CancellationException) {
+            // Deliberately not folded into the failure branch. `runCatching` would have swallowed
+            // this, turning a cancelled scope into an ordinary error result: the screen would show
+            // "No fue posible leer ese archivo" for a coroutine nobody wanted to finish, and the
+            // cancellation would never reach the parent job.
+            throw cancellation
+        } catch (error: Exception) {
+            // Ordinary failures only — an unreadable file, a malformed sheet. `Error` keeps
+            // travelling, since swallowing an OutOfMemoryError helps no one.
+            Result.failure(error)
         } finally {
+            // Runs on every exit, cancellation included, so the button always comes back.
             setProgress(false)
         }
     }

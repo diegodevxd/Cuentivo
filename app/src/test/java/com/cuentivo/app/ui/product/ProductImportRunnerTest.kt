@@ -1,10 +1,13 @@
 package com.cuentivo.app.ui.product
 
 import com.cuentivo.app.domain.AccessDecision
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 /**
@@ -52,6 +55,24 @@ class ProductImportRunnerTest {
         assertEquals(1, inserted)
         assertEquals(listOf(true, false), transitions)
         assertTrue(outcome!!.isFailure)
+    }
+
+    @Test
+    fun a_cancellation_propagates_instead_of_becoming_a_failed_result() = runBlocking {
+        val cancellation = CancellationException("the scope went away")
+        var caught: Throwable? = null
+
+        try {
+            ProductImportRunner.runIfStarted(BEGIN, ::record) { throw cancellation }
+            fail("a cancellation must not be swallowed into a Result")
+        } catch (thrown: CancellationException) {
+            caught = thrown
+        }
+
+        // The flag still comes back down, because the finally runs on the way out.
+        assertEquals(listOf(true, false), transitions)
+        // And it is the very same exception, so the parent job still learns it was cancelled.
+        assertSame(cancellation, caught)
     }
 
     @Test
