@@ -287,12 +287,6 @@ class StitchCaptureTest {
         // against the reference dishonest.
         const val CAPTURE_HEIGHT_DP = 900
 
-        /**
-         * Comfortably longer than a Material ripple's enter plus fade-out. Virtual milliseconds, so
-         * a generous bound costs frames, not seconds.
-         */
-        const val PRESS_SETTLE_MS = 1_000L
-
         val CUSTOMERS = listOf(
             balance("ramirez", "Distribuidora Ramírez", 150_000),
             balance("todotexto", "Librería Todo Texto", 98_000),
@@ -417,49 +411,29 @@ class StitchCaptureTest {
                 CuentivoTheme { content() }
             }
         }
-        settle()
+        composeRule.waitForIdle()
         val bitmap = composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap()
         write(name, bitmap)
     }
 
     /** Re-captures the current composition, e.g. after navigating into a destination. */
     private fun shoot(name: String) {
-        settle()
+        composeRule.waitForIdle()
         write(name, composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap())
-    }
-
-    /**
-     * Waits for the composition *and* for the press indication a tap leaves behind.
-     *
-     * `waitForIdle` returns once composition, layout and draw have settled, but a ripple's fade-out
-     * runs as its own frame loop inside the indication node and is not work the idling check knows
-     * about. A capture taken straight after a tap can therefore keep a half-faded rectangle behind
-     * whichever destination was clicked — a transient the app never rests in, and exactly what
-     * showed up behind "Abonos" in `payment-empty-360dp`.
-     *
-     * Advancing the virtual clock is the deterministic cure: a fixed number of frames rather than a
-     * sleep, so it neither races a fast machine nor pads out a slow one. The second `waitForIdle`
-     * guarantees the settled frame has actually been drawn before the pixels are read.
-     */
-    private fun settle() {
-        composeRule.waitForIdle()
-        composeRule.mainClock.advanceTimeBy(PRESS_SETTLE_MS)
-        composeRule.waitForIdle()
     }
 
     /**
      * Invokes a control's own click action instead of touching it.
      *
-     * A tap emits a press interaction, and the ripple that follows is driven by real frames rather
-     * than by the test clock — so advancing the virtual clock does not finish it, and a control
-     * clicked immediately before a shot keeps its indication in the picture. That is how the
-     * rectangle ended up behind "Abonos", and why the 48 dp box behind the "15 días" chip printed a
-     * square patch larger than the rounded pill it paints.
+     * A tap emits a press interaction, and the ripple that follows is driven by real frames — not
+     * by composition work and not by the test clock. So neither `waitForIdle` nor advancing the
+     * virtual clock ends it, and a control clicked immediately before a shot keeps its indication
+     * in the picture: that is the rectangle that sat behind "Abonos" in `payment-empty-360dp`, and
+     * the square patch the "15 días" chip's 48 dp box printed around the rounded pill it paints.
      *
-     * Going through the semantics action makes the wait trivially deterministic: there is no press
-     * to fade, so the very next frame is already the stable state. The state change is the same one
-     * the tap would have produced — and real tap handling stays covered by the flow suites, which
-     * is where it belongs.
+     * There is nothing to wait for once the press never happens. The semantics action performs the
+     * same state change the tap would have, so the next frame is already the stable state. Real tap
+     * handling is covered by the flow suites, which is where it belongs.
      */
     private fun SemanticsNodeInteraction.invokeClick(): SemanticsNodeInteraction =
         performSemanticsAction(SemanticsActions.OnClick)
