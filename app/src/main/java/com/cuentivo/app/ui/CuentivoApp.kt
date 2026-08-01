@@ -87,6 +87,8 @@ import com.cuentivo.app.ui.customer.CustomerDetailSheet
 import com.cuentivo.app.ui.customer.CustomersScreen
 import com.cuentivo.app.ui.dashboard.DashboardScreen
 import com.cuentivo.app.ui.product.ProductsScreen
+import com.cuentivo.app.ui.transaction.NewSaleScreen
+import com.cuentivo.app.ui.transaction.PaymentScreen
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 
 /**
@@ -165,7 +167,9 @@ fun CuentivoApp(
             onMessageShown()
         }
     }
-    BackHandler(enabled = showNewSale) { showNewSale = false }
+    // System Back closes the sale task and nothing else — and it must drop the preselection with
+    // it, or the next sale would silently inherit a customer nobody chose for it.
+    BackHandler(enabled = showNewSale) { showNewSale = false; saleCustomer = null }
     NeoFintechShell(
         destination = destination,
         onDestination = { selected ->
@@ -213,10 +217,10 @@ fun CuentivoApp(
             NewSaleScreen(
                 customers = customers,
                 products = products,
-                padding = padding,
+                modifier = Modifier.padding(padding),
+                initialCustomer = saleCustomer,
                 onCreateSale = onCreateSale,
                 onExit = { showNewSale = false; saleCustomer = null },
-                initialCustomer = saleCustomer,
             )
         } else when (destination) {
             MainDestination.HOME -> DashboardScreen(
@@ -257,7 +261,12 @@ fun CuentivoApp(
                 onShareImportTemplate = onShareImportTemplate,
                 isImportingProducts = isImportingProducts,
             )
-            MainDestination.PAYMENTS -> PaymentScreen(customers, padding, onCreatePayment, paymentCustomer)
+            MainDestination.PAYMENTS -> PaymentScreen(
+                customers = customers,
+                modifier = Modifier.padding(padding),
+                initialCustomer = paymentCustomer,
+                onCreatePayment = onCreatePayment,
+            )
         }
     }
     blocked?.let { limit ->
@@ -310,363 +319,6 @@ fun CuentivoApp(
             onDeleteAccount = onDeleteAccount,
             onDismiss = { showAccount = false },
         )
-    }
-}
-
-/**
- * A tappable field that opens a searchable bottom sheet to pick one option.
- * This is the piece that lets the user actually choose a customer or product,
- * instead of being stuck with the first row of the list.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun <T> SelectorField(
-    label: String,
-    selected: T?,
-    placeholder: String,
-    options: List<T>,
-    optionTitle: (T) -> String,
-    optionDetail: (T) -> String?,
-    emptyText: String,
-    onSelect: (T) -> Unit,
-) {
-    var open by remember { mutableStateOf(false) }
-    Card(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelLarge)
-                Text(
-                    selected?.let(optionTitle) ?: placeholder,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (selected == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Elegir $label")
-        }
-    }
-    if (open) {
-        var query by remember { mutableStateOf("") }
-        ModalBottomSheet(onDismissRequest = { open = false }) {
-            Column(
-                modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text(label, style = MaterialTheme.typography.headlineSmall)
-                OutlinedTextField(query, { query = it }, label = { Text("Buscar") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                val filtered = options.filter { optionTitle(it).contains(query, ignoreCase = true) }
-                if (filtered.isEmpty()) Text(if (options.isEmpty()) emptyText else "No se encontró nada con ese nombre")
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    filtered.forEach { option ->
-                        Card(onClick = { onSelect(option); open = false }, modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp)) {
-                                Text(optionTitle(option))
-                                optionDetail(option)?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Amount entry in pesos ("150.50"), converted to integer cents only at submit time.
- * Delegates to Money so the screens, the share texts and the CSV all agree. No Double anywhere.
- */
-internal fun pesosToCents(text: String): Long? = Money.positiveCentsFromPesos(text)
-
-/**
- * Resolves a preselected customer against the list actually on screen. Matching by id rather than
- * trusting the passed row keeps a stale balance from being shown after the ledger moved, and an
- * archived customer simply falls back to the empty selector instead of vanishing mid-form.
- */
-private fun preselected(
-    candidate: CustomerBalanceRow?,
-    customers: List<CustomerBalanceRow>,
-): CustomerBalanceRow? =
-    candidate?.let { pre -> customers.firstOrNull { it.customer.id == pre.customer.id } }
-
-@Composable
-internal fun MoneyField(label: String, text: String, onTextChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = text,
-        onValueChange = { raw -> onTextChange(raw.filter { it.isDigit() || it == '.' }) },
-        label = { Text(label) },
-        prefix = { Text("$ ") },
-        supportingText = {
-            val cents = pesosToCents(text)
-            when {
-                text.isBlank() -> Text("Escribe el monto en pesos, por ejemplo 150.50")
-                cents == null -> Text("Monto no válido", color = MaterialTheme.colorScheme.error)
-                else -> Text("Se registrará ${formatMoney(cents)}")
-            }
-        },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-internal fun FormDialog(
-    title: String,
-    confirmEnabled: Boolean,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        // Scrollable since the product form grew a photo box: an AlertDialog clips its text slot
-        // instead of scrolling it, so the last field simply became unreachable on a short screen.
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                content = content,
-            )
-        },
-        confirmButton = { TextButton(onClick = onConfirm, enabled = confirmEnabled) { Text("Guardar") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
-    )
-}
-
-/**
- * Sale composition: pick a customer, add as many products as needed, then save.
- *
- * The cart is a domain SaleDraft rather than loose state, so the totals shown here are the same
- * integers that get written to the ledger.
- */
-@Composable
-private fun NewSaleScreen(
-    customers: List<CustomerBalanceRow>,
-    products: List<ProductEntity>,
-    padding: PaddingValues,
-    onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit,
-    onExit: () -> Unit,
-    initialCustomer: CustomerBalanceRow? = null,
-) {
-    var customer by remember(initialCustomer?.customer?.id) {
-        mutableStateOf(preselected(initialCustomer, customers))
-    }
-    var draft by remember { mutableStateOf(SaleDraft()) }
-    var picked by remember { mutableStateOf<ProductEntity?>(null) }
-    var quantityText by remember { mutableStateOf("1") }
-    var discountText by remember { mutableStateOf("") }
-    var dueInDays by remember { mutableStateOf<Long?>(null) }
-
-    NeoResponsiveColumn(
-        modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onExit, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Cerrar nueva venta")
-            }
-            Column(Modifier.weight(1f)) {
-                Text("OPERACIÓN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Text("Nueva venta", style = MaterialTheme.typography.titleLarge)
-            }
-        }
-        SelectorField(
-            label = "Cliente",
-            selected = customer,
-            placeholder = "Toca para elegir al cliente",
-            options = customers,
-            optionTitle = { it.customer.name },
-            optionDetail = { "Saldo: ${formatMoney(it.balanceCents)}" },
-            emptyText = "Primero agrega un cliente en la pestaña Clientes",
-            onSelect = { customer = it },
-        )
-        SelectorField(
-            label = "Producto",
-            selected = picked,
-            placeholder = "Toca para elegir el producto",
-            options = products,
-            optionTitle = { it.name },
-            optionDetail = { formatMoney(it.salePriceCents) },
-            emptyText = "Primero agrega un producto en la pestaña Productos",
-            onSelect = { picked = it },
-        )
-        OutlinedTextField(
-            value = quantityText,
-            onValueChange = { raw -> quantityText = raw.filter { it.isDigit() }.take(4) },
-            label = { Text("Cantidad") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        val quantity = quantityText.toIntOrNull() ?: 0
-        val chosenProduct = picked
-        NeoPrimaryButton(
-            label = "Agregar al carrito",
-            enabled = chosenProduct != null && quantity > 0,
-            onClick = {
-                if (chosenProduct != null && quantity > 0) {
-                    draft = draft.withLine(
-                        SaleDraftLine(
-                            productId = chosenProduct.id,
-                            productName = chosenProduct.name,
-                            quantity = quantity,
-                            unitPriceCents = chosenProduct.salePriceCents,
-                        )
-                    )
-                    picked = null
-                    quantityText = "1"
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        if (draft.isEmpty) {
-            Text("El carrito está vacío. Elige un producto y agrégalo.")
-        } else {
-            Text("Productos de esta venta", style = MaterialTheme.typography.titleMedium)
-            draft.lines.forEach { line ->
-                Card(
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("${line.quantity} × ${line.productName}")
-                            Text(formatMoney(line.unitPriceCents) + " c/u", style = MaterialTheme.typography.labelLarge)
-                        }
-                        Text(formatMoney(line.subtotalCents), style = MaterialTheme.typography.titleMedium)
-                        TextButton(onClick = { draft = draft.withoutProduct(line.productId) }) { Text("Quitar") }
-                    }
-                }
-            }
-            MoneyField("Descuento de la venta (opcional)", discountText) { discountText = it }
-            val discountCents = if (discountText.isBlank()) 0L else (Money.centsFromPesos(discountText) ?: 0L)
-            draft = draft.copy(discountCents = discountCents)
-
-            Text("¿Cuándo debe pagar?", style = MaterialTheme.typography.titleMedium)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf<Pair<String, Long?>>("Sin fecha" to null, "7 días" to 7L, "15 días" to 15L, "30 días" to 30L)
-                    .chunked(2)
-                    .forEach { options ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            options.forEach { (label, days) ->
-                                FilterChip(
-                                    selected = dueInDays == days,
-                                    onClick = { dueInDays = days },
-                                    label = { Text(label) },
-                                )
-                            }
-                        }
-                    }
-            }
-
-            Card(
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Total de la venta", style = MaterialTheme.typography.labelLarge)
-                    Text(formatMoney(draft.totalCents), style = MaterialTheme.typography.headlineSmall)
-                    if (discountCents > 0) {
-                        Text("Antes del descuento: ${formatMoney(draft.subtotalCents)}")
-                    }
-                }
-            }
-        }
-
-        val chosenCustomer = customer
-        val error = draft.validationError()
-        if (chosenCustomer == null && !draft.isEmpty) Text("Falta elegir al cliente")
-        NeoPrimaryButton(
-            label = "Registrar venta",
-            enabled = chosenCustomer != null && error == null,
-            onClick = {
-                if (chosenCustomer != null && error == null) {
-                    val due = dueInDays?.let { java.time.LocalDate.now().plusDays(it).toEpochDay() }
-                    onCreateSale(chosenCustomer, draft.copy(dueDateEpochDay = due))
-                    customer = null
-                    draft = SaleDraft()
-                    discountText = ""
-                    dueInDays = null
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(12.dp))
-    }
-}
-
-@Composable
-private fun PaymentScreen(
-    customers: List<CustomerBalanceRow>,
-    padding: PaddingValues,
-    onCreatePayment: (CustomerBalanceRow, Long) -> Unit,
-    initialCustomer: CustomerBalanceRow? = null,
-) {
-    var customer by remember(initialCustomer?.customer?.id) {
-        mutableStateOf(preselected(initialCustomer, customers))
-    }
-    var amountText by remember { mutableStateOf("") }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("Registrar abono", style = MaterialTheme.typography.headlineSmall)
-        SelectorField(
-            label = "Cliente",
-            selected = customer,
-            placeholder = "Toca para elegir al cliente",
-            // Customers who owe something first, so the common case is one tap away.
-            options = customers.sortedByDescending { it.balanceCents },
-            optionTitle = { it.customer.name },
-            optionDetail = { "Saldo: ${formatMoney(it.balanceCents)}" },
-            emptyText = "Primero agrega un cliente en la pestaña Clientes",
-            onSelect = { customer = it },
-        )
-        val cents = pesosToCents(amountText)
-        customer?.let { chosen ->
-            Card(
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Saldo actual: ${formatMoney(chosen.balanceCents)}", style = MaterialTheme.typography.titleMedium)
-                    if (cents != null) {
-                        Text("Quedará: ${formatMoney(chosen.balanceCents - cents)}")
-                    }
-                }
-            }
-        }
-        MoneyField("Monto del abono", amountText) { amountText = it }
-        Text(
-            "El abono se aplica primero a la venta más antigua por vencer.",
-            style = MaterialTheme.typography.labelLarge,
-        )
-        FilledTonalButton(
-            enabled = customer != null && cents != null,
-            onClick = {
-                val chosen = customer
-                if (chosen != null && cents != null) {
-                    onCreatePayment(chosen, cents)
-                    customer = null
-                    amountText = ""
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Guardar abono") }
     }
 }
 

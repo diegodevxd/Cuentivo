@@ -11,11 +11,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
+import com.cuentivo.app.ui.transaction.NEW_SALE_LIST_TAG
+import com.cuentivo.app.ui.transaction.PAYMENT_LIST_TAG
+import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
@@ -121,6 +128,95 @@ class StitchCaptureTest {
         shoot("products-empty-360dp")
     }
 
+    @Test fun capture_new_sale_320() = captureNewSale(320)
+
+    @Test fun capture_new_sale_360() = captureNewSale(360)
+
+    @Test fun capture_new_sale_412() = captureNewSale(412)
+
+    @Test fun capture_new_sale_480() = captureNewSale(480)
+
+    /** The invalid state: the task just opened, nothing chosen, and registering is refused. */
+    @Test fun capture_new_sale_empty() {
+        captureScreen("new-sale-empty-360dp", 360) {
+            CuentivoApp(state = populatedState(), customers = CUSTOMERS, products = SALE_PRODUCTS)
+        }
+        composeRule.onNodeWithContentDescription("Nueva venta").performClick()
+        shoot("new-sale-empty-360dp")
+    }
+
+    @Test fun capture_payment_320() = capturePayment(320)
+
+    @Test fun capture_payment_360() = capturePayment(360)
+
+    @Test fun capture_payment_412() = capturePayment(412)
+
+    @Test fun capture_payment_480() = capturePayment(480)
+
+    /** The empty state: Abonos reached from the bar with nobody chosen and no balance to show. */
+    @Test fun capture_payment_empty() {
+        captureScreen("payment-empty-360dp", 360) {
+            CuentivoApp(state = populatedState(), customers = CUSTOMERS)
+        }
+        openDestination("Abonos")
+        shoot("payment-empty-360dp")
+    }
+
+    /**
+     * A sale worth looking at: a customer chosen, two lines in the cart, a discount, and a due
+     * date. One product name is deliberately long, because a cart that only ever holds short names
+     * cannot show whether the amount survives at 320 dp.
+     */
+    private fun captureNewSale(widthDp: Int) {
+        captureScreen("new-sale-${widthDp}dp", widthDp) {
+            CuentivoApp(state = populatedState(), customers = CUSTOMERS, products = SALE_PRODUCTS)
+        }
+        composeRule.onNodeWithContentDescription("Nueva venta").performClick()
+        chooseInSelector("selector-cliente", CUSTOMERS[0].customer.name)
+        addToCart(SALE_PRODUCTS[0].name)
+        addToCart(SALE_PRODUCTS[1].name)
+        scrollSaleTo("Descuento de la venta (opcional)")
+        composeRule.onNodeWithText("Descuento de la venta (opcional)").performTextInput("120")
+        scrollSaleTo("15 días")
+        composeRule.onNodeWithText("15 días").performClick()
+        // Typing raised the soft keyboard, and `imePadding` correctly shrinks the task to sit above
+        // it — which is right for the app and useless for a capture, because the half of the screen
+        // the IME owns comes out blank. Dismiss it so the reference shows the whole composition.
+        Espresso.closeSoftKeyboard()
+        scrollSaleTo("CAPTURA GUIADA")
+        shoot("new-sale-${widthDp}dp")
+    }
+
+    /** Abonos with the largest debtor chosen and an amount typed, so both figures are on screen. */
+    private fun capturePayment(widthDp: Int) {
+        captureScreen("payment-${widthDp}dp", widthDp) {
+            CuentivoApp(state = populatedState(), customers = CUSTOMERS)
+        }
+        openDestination("Abonos")
+        chooseInSelector("selector-cliente", CUSTOMERS[0].customer.name)
+        composeRule.onNodeWithText("Monto del abono").performTextInput("450")
+        Espresso.closeSoftKeyboard()
+        composeRule.onNodeWithTag(PAYMENT_LIST_TAG).performScrollToNode(hasText("MOVIMIENTO ENTRANTE"))
+        shoot("payment-${widthDp}dp")
+    }
+
+    private fun chooseInSelector(tag: String, option: String) {
+        composeRule.onNodeWithTag(tag).performClick()
+        composeRule.onNodeWithText(option).performClick()
+        composeRule.waitForIdle()
+    }
+
+    private fun addToCart(productName: String) {
+        chooseInSelector("selector-producto", productName)
+        scrollSaleTo("Agregar al carrito")
+        composeRule.onNodeWithText("Agregar al carrito").performClick()
+        composeRule.waitForIdle()
+    }
+
+    private fun scrollSaleTo(text: String) {
+        composeRule.onNodeWithTag(NEW_SALE_LIST_TAG).performScrollToNode(hasText(text))
+    }
+
     private fun captureProducts(widthDp: Int) {
         // A real photo, not the placeholder: the rounded corners are only wrong when something is
         // actually drawn inside the thumbnail, which is how the missing clip went unnoticed.
@@ -198,6 +294,15 @@ class StitchCaptureTest {
         val PRODUCTS = listOf(
             product("p1", "Café molido 500 g", 12_500, "CAF-500", "Abarrotes"),
             product("p2", "Aceite vegetal 1 L", 4_800, "ACE-1L", "Abarrotes"),
+        )
+
+        /**
+         * The first name is long on purpose: the cart row has to prove that the amount still fits
+         * beside it at 320 dp, and a catalog of tidy short names would never show that.
+         */
+        val SALE_PRODUCTS = listOf(
+            product("s1", "Café molido premium de altura 500 g", 12_500, "CAF-500", "Abarrotes"),
+            product("s2", "Aceite vegetal 1 L", 4_800, "ACE-1L", "Abarrotes"),
         )
 
         val STATEMENT = listOf(
