@@ -16,8 +16,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.ui.transaction.NEW_SALE_LIST_TAG
@@ -141,7 +143,7 @@ class StitchCaptureTest {
         captureScreen("new-sale-empty-360dp", 360) {
             CuentivoApp(state = populatedState(), customers = CUSTOMERS, products = SALE_PRODUCTS)
         }
-        composeRule.onNodeWithContentDescription("Nueva venta").performClick()
+        composeRule.onNodeWithContentDescription("Nueva venta").invokeClick()
         shoot("new-sale-empty-360dp")
     }
 
@@ -171,18 +173,19 @@ class StitchCaptureTest {
         captureScreen("new-sale-${widthDp}dp", widthDp) {
             CuentivoApp(state = populatedState(), customers = CUSTOMERS, products = SALE_PRODUCTS)
         }
-        composeRule.onNodeWithContentDescription("Nueva venta").performClick()
+        composeRule.onNodeWithContentDescription("Nueva venta").invokeClick()
         chooseInSelector("selector-cliente", CUSTOMERS[0].customer.name)
         addToCart(SALE_PRODUCTS[0].name)
         addToCart(SALE_PRODUCTS[1].name)
         scrollSaleTo("Descuento de la venta (opcional)")
         composeRule.onNodeWithText("Descuento de la venta (opcional)").performTextInput("120")
-        scrollSaleTo("15 días")
-        composeRule.onNodeWithText("15 días").performClick()
-        // Typing raised the soft keyboard, and `imePadding` correctly shrinks the task to sit above
-        // it — which is right for the app and useless for a capture, because the half of the screen
-        // the IME owns comes out blank. Dismiss it so the reference shows the whole composition.
+        // Dismissed before the chip, not after: typing raises the soft keyboard, `imePadding`
+        // correctly shrinks the task to sit above it, and a chip left underneath the keyboard
+        // cannot be tapped at all. Getting the keyboard out of the way first also gives the
+        // capture the whole composition instead of a screen half-owned by the IME.
         Espresso.closeSoftKeyboard()
+        scrollSaleTo("15 días")
+        composeRule.onNodeWithText("15 días").invokeClick()
         scrollSaleTo("CAPTURA GUIADA")
         shoot("new-sale-${widthDp}dp")
     }
@@ -201,15 +204,15 @@ class StitchCaptureTest {
     }
 
     private fun chooseInSelector(tag: String, option: String) {
-        composeRule.onNodeWithTag(tag).performClick()
-        composeRule.onNodeWithText(option).performClick()
+        composeRule.onNodeWithTag(tag).invokeClick()
+        composeRule.onNodeWithText(option).invokeClick()
         composeRule.waitForIdle()
     }
 
     private fun addToCart(productName: String) {
         chooseInSelector("selector-producto", productName)
         scrollSaleTo("Agregar al carrito")
-        composeRule.onNodeWithText("Agregar al carrito").performClick()
+        composeRule.onNodeWithText("Agregar al carrito").invokeClick()
         composeRule.waitForIdle()
     }
 
@@ -273,7 +276,7 @@ class StitchCaptureTest {
     private fun openCustomers() = openDestination("Clientes")
 
     private fun openDestination(label: String) {
-        composeRule.onNodeWithText(label).performClick()
+        composeRule.onNodeWithText(label).invokeClick()
         composeRule.waitForIdle()
     }
 
@@ -283,6 +286,12 @@ class StitchCaptureTest {
         // shorter than that clips content the device would actually show and makes the comparison
         // against the reference dishonest.
         const val CAPTURE_HEIGHT_DP = 900
+
+        /**
+         * Comfortably longer than a Material ripple's enter plus fade-out. Virtual milliseconds, so
+         * a generous bound costs frames, not seconds.
+         */
+        const val PRESS_SETTLE_MS = 1_000L
 
         val CUSTOMERS = listOf(
             balance("ramirez", "Distribuidora Ramírez", 150_000),
@@ -408,16 +417,52 @@ class StitchCaptureTest {
                 CuentivoTheme { content() }
             }
         }
-        composeRule.waitForIdle()
+        settle()
         val bitmap = composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap()
         write(name, bitmap)
     }
 
     /** Re-captures the current composition, e.g. after navigating into a destination. */
     private fun shoot(name: String) {
-        composeRule.waitForIdle()
+        settle()
         write(name, composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap())
     }
+
+    /**
+     * Waits for the composition *and* for the press indication a tap leaves behind.
+     *
+     * `waitForIdle` returns once composition, layout and draw have settled, but a ripple's fade-out
+     * runs as its own frame loop inside the indication node and is not work the idling check knows
+     * about. A capture taken straight after a tap can therefore keep a half-faded rectangle behind
+     * whichever destination was clicked — a transient the app never rests in, and exactly what
+     * showed up behind "Abonos" in `payment-empty-360dp`.
+     *
+     * Advancing the virtual clock is the deterministic cure: a fixed number of frames rather than a
+     * sleep, so it neither races a fast machine nor pads out a slow one. The second `waitForIdle`
+     * guarantees the settled frame has actually been drawn before the pixels are read.
+     */
+    private fun settle() {
+        composeRule.waitForIdle()
+        composeRule.mainClock.advanceTimeBy(PRESS_SETTLE_MS)
+        composeRule.waitForIdle()
+    }
+
+    /**
+     * Invokes a control's own click action instead of touching it.
+     *
+     * A tap emits a press interaction, and the ripple that follows is driven by real frames rather
+     * than by the test clock — so advancing the virtual clock does not finish it, and a control
+     * clicked immediately before a shot keeps its indication in the picture. That is how the
+     * rectangle ended up behind "Abonos", and why the 48 dp box behind the "15 días" chip printed a
+     * square patch larger than the rounded pill it paints.
+     *
+     * Going through the semantics action makes the wait trivially deterministic: there is no press
+     * to fade, so the very next frame is already the stable state. The state change is the same one
+     * the tap would have produced — and real tap handling stays covered by the flow suites, which
+     * is where it belongs.
+     */
+    private fun SemanticsNodeInteraction.invokeClick(): SemanticsNodeInteraction =
+        performSemanticsAction(SemanticsActions.OnClick)
 
     private fun write(name: String, bitmap: Bitmap) {
         // Internal storage on purpose: since Android 11 the shell user cannot read another
