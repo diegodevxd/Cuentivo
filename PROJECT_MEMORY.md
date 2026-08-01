@@ -567,6 +567,36 @@ Este APK es sólo para validar el diseño; no debe subirse a Play Console. El `v
 usado en la prueba cerrada. Si este rediseño se aprueba para Play, el siguiente AAB debe pasar a
 `versionCode 7` y volver a ejecutar toda la verificación de release.
 
+## Verificación Task 9 — 2026-08-01 (parcial, con evidencia fresca)
+
+Base verificada antes de ejecutar: rama `codex/neo-fintech`, commit `563b846`
+(`feat: finish Stitch redesign across supporting screens`). No se cambió `versionCode=6` ni
+`versionName=1.2`; no se generó AAB ni se hizo push.
+
+- `testDebugUnitTest --rerun-tasks`: **197 pruebas, 0 fallos, 0 errores** (33 clases; build exitoso).
+- `lintDebug assembleDebug assembleRelease`: build exitoso. `lintDebug`: **0 errores, 36 advertencias**.
+- Aislamiento release: inspeccionados el manifest fusionado
+  `app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml`
+  y `app-release.apk` con `aapt2 dump xmltree/resources`; sin coincidencias de
+  `debug_network_security_config`, `usesCleartextTraffic`, `networkSecurityConfig` ni
+  `norton_web_mail_shield_root`.
+- Instrumentación normal: **no certificada**. `connectedDebugAndroidTest` se colgó sin salida
+  terminal; el AndroidJUnitRunner directo también se quedó en una transición de actividad del AVD.
+  Logcat muestra al menos 116 pruebas finalizadas antes del bloqueo. El APK test requiere
+  `adb install -t`; sin `-t` el paquete no se registra. No inferir un pase de esta ejecución.
+- Capturas regeneradas a 320/360/412/480 dp para Dashboard, Clientes, Detalle del cliente y Nueva
+  venta. Los 16 PNG existen en el almacenamiento interno del AVD y se extrajeron temporalmente;
+  la inspección visual píxel a píxel quedó **NO EJECUTADA** porque el visor del sandbox no puede
+  abrir PNG fuera de sus raíces. El arnés tuvo además un timeout de redraw en
+  `capture_payment_empty`; no se cambió código de producción. AVD restaurado y comprobado en
+  **1080x2400 @ 420**.
+- Flujo manual con Firebase Emulator Suite: **NO EJECUTADO** en esta pasada. Smoke Firebase/TLS
+  real continúa **NO EJECUTADO** por no existir cuenta desechable autorizada.
+- APK final debug: `Cuentivo-Stitch-Fiel-debug-emulador.apk`, **21,184,789 bytes**,
+  2026-08-01 14:02:33 local, SHA-256
+  `52AA38AA6AFDB92351F2994C47555C323DE30E90FE1A9D602F7D2AE12EAAE8E6`.
+  El manifest del APK declara `android:debuggable=true` y `USE_FIREBASE_EMULATORS=false`;
+  es sólo para emulador/local y no sirve para Play Console.
 ## Reglas de continuidad
 
 - No usar `Double` ni `Float` para dinero.
