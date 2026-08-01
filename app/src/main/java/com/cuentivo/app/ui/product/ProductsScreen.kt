@@ -53,6 +53,7 @@ import com.cuentivo.app.ui.FormDialog
 import com.cuentivo.app.ui.MoneyField
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
+import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
@@ -190,7 +191,19 @@ fun ProductsScreen(
                 )
             }
             if (visible.isEmpty()) {
-                item { EmptyCatalogRow(pristine = query.isBlank()) }
+                item {
+                    val pristine = query.isBlank()
+                    NeoEmptyState(
+                        title = if (pristine) "Aún no tienes productos" else "No encontramos ese producto",
+                        detail = if (pristine) {
+                            "Agrégalos uno por uno o importa tu catálogo."
+                        } else {
+                            "Prueba con otro nombre o importa tu catálogo."
+                        },
+                        actionLabel = if (pristine) "Agregar producto" else null,
+                        onAction = if (pristine) ({ onShowFormChange(true) }) else null,
+                    )
+                }
             } else {
                 items(visible, key = { it.id }) { product ->
                     ProductRow(
@@ -303,33 +316,6 @@ private fun ProductFormDialog(
         MoneyField("Precio", priceText) { priceText = it }
         ProductPhotoPicker(photo, store, photoTargetId) { photo = it }
         note?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
-    }
-}
-
-@Composable
-private fun EmptyCatalogRow(pristine: Boolean) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = NeoShapes.row,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(NeoSpacing.md)) {
-            Text(
-                text = if (pristine) "Aún no tienes productos" else "No encontramos ese producto",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.height(NeoSpacing.xs))
-            Text(
-                text = if (pristine) {
-                    "Agrégalos uno por uno o importa tu catálogo."
-                } else {
-                    "Prueba con otro nombre o importa tu catálogo."
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 

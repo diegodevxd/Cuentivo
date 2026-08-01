@@ -6,6 +6,9 @@ import android.graphics.Color
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -31,6 +34,10 @@ import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.domain.DashboardActivity
 import com.cuentivo.app.domain.DueSale
+import com.cuentivo.app.domain.Alert
+import com.cuentivo.app.domain.SubscriptionTier
+import com.cuentivo.app.ui.account.SubscriptionContent
+import com.cuentivo.app.ui.auth.AuthenticationScreen
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.theme.CuentivoTheme
@@ -220,6 +227,80 @@ class StitchCaptureTest {
         composeRule.onNodeWithTag(NEW_SALE_LIST_TAG).performScrollToNode(hasText(text))
     }
 
+    @Test fun capture_authentication_sign_in_320() = captureSignIn(320)
+
+    @Test fun capture_authentication_sign_in_360() = captureSignIn(360)
+
+    @Test fun capture_authentication_sign_in_412() = captureSignIn(412)
+
+    @Test fun capture_authentication_sign_in_480() = captureSignIn(480)
+
+    /** The other mode, with the confirmation field and a mismatch showing its inline error. */
+    @Test fun capture_authentication_create() {
+        captureScreen("authentication-create-360dp", 360) { SignInScreen() }
+        composeRule.onNodeWithText("¿No tienes cuenta? Crear una").invokeClick()
+        composeRule.onNodeWithText("Correo electrónico").performTextInput("ana@ejemplo.mx")
+        composeRule.onNodeWithText("Contraseña").performTextInput("claveSegura8")
+        composeRule.onNodeWithText("Confirma tu contraseña").performTextInput("otraClave")
+        Espresso.closeSoftKeyboard()
+        shoot("authentication-create-360dp")
+    }
+
+    /**
+     * The alert list, rendered on its own rather than inside the sheet.
+     *
+     * `AlertsSheet` is a `ModalBottomSheet` and therefore lives in a window of its own, so a
+     * capture keyed on [CAPTURE_TAG] would come back showing the screen underneath with no sheet in
+     * it. What this validates is the shared content the sheet actually renders — the rows, the
+     * severity eyebrows and the accents — not the modal window around it.
+     */
+    @Test fun capture_alerts_content() {
+        captureScreen("alerts-content-360dp", 360) {
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                AlertsContent(alerts = ALERTS, onOpenAlert = {})
+            }
+        }
+    }
+
+    /** Same shared content, with nothing to report. */
+    @Test fun capture_alerts_empty_content() {
+        captureScreen("alerts-empty-content-360dp", 360) {
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                AlertsContent(alerts = emptyList(), onOpenAlert = {})
+            }
+        }
+    }
+
+    /** The plan section, captured directly for the same reason: Cuenta is itself a modal sheet. */
+    @Test fun capture_subscription_content() {
+        captureScreen("subscription-content-360dp", 360) {
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Box(Modifier.padding(NeoSpacing.lg)) {
+                    SubscriptionContent(tier = SubscriptionTier.FREE, onUpgrade = {})
+                }
+            }
+        }
+    }
+
+    private fun captureSignIn(widthDp: Int) {
+        captureScreen("authentication-sign-in-${widthDp}dp", widthDp) { SignInScreen() }
+        composeRule.onNodeWithText("Correo electrónico").performTextInput("ana@ejemplo.mx")
+        composeRule.onNodeWithText("Contraseña").performTextInput("claveSegura8")
+        Espresso.closeSoftKeyboard()
+        shoot("authentication-sign-in-${widthDp}dp")
+    }
+
+    /** The real screen; only the two callbacks are inert, since no capture may reach Firebase. */
+    @Composable
+    private fun SignInScreen() {
+        AuthenticationScreen(
+            isWorking = false,
+            message = null,
+            onSignIn = { _, _ -> },
+            onSignUp = { _, _ -> },
+        )
+    }
+
     private fun captureProducts(widthDp: Int) {
         // A real photo, not the placeholder: the rounded corners are only wrong when something is
         // actually drawn inside the thumbnail, which is how the missing clip went unnoticed.
@@ -303,6 +384,26 @@ class StitchCaptureTest {
          * The first name is long on purpose: the cart row has to prove that the amount still fits
          * beside it at 320 dp, and a catalog of tidy short names would never show that.
          */
+        val ALERTS = listOf(
+            Alert(
+                title = "Distribuidora Ramírez",
+                detail = "Debe \$1,500.00 desde hace 15 días.",
+                severity = Alert.Severity.OVERDUE,
+                customerId = "ramirez",
+            ),
+            Alert(
+                title = "Librería Todo Texto",
+                detail = "Le toca pagar hoy: \$980.00.",
+                severity = Alert.Severity.DUE_SOON,
+                customerId = "todotexto",
+            ),
+            Alert(
+                title = "Te queda 1 cliente",
+                detail = "El plan gratis permite 5 clientes.",
+                severity = Alert.Severity.INFO,
+            ),
+        )
+
         val SALE_PRODUCTS = listOf(
             product("s1", "Café molido premium de altura 500 g", 12_500, "CAF-500", "Abarrotes"),
             product("s2", "Aceite vegetal 1 L", 4_800, "ACE-1L", "Abarrotes"),

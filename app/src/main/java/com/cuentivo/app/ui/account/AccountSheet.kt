@@ -1,6 +1,5 @@
 package com.cuentivo.app.ui.account
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,7 +11,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,11 +19,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.SubscriptionTier
-import com.cuentivo.app.ui.NeoAction
-import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,7 +43,8 @@ fun AccountSheet(
                 .fillMaxWidth()
                 .padding(horizontal = NeoSpacing.lg)
                 .padding(bottom = 32.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .testTag("account-sheet-scroll"),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
         ) {
             Text("Cuenta", style = MaterialTheme.typography.titleLarge)
@@ -62,7 +59,7 @@ fun AccountSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            AccountPlanSummary(tier = tier, onUpgrade = onUpgrade)
+            SubscriptionContent(tier = tier, onUpgrade = onUpgrade)
 
             OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("Cerrar sesión")
@@ -108,66 +105,4 @@ fun AccountSheet(
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
         )
     }
-}
-
-@Composable
-private fun AccountPlanSummary(tier: SubscriptionTier, onUpgrade: () -> Unit) {
-    val free = tier == SubscriptionTier.FREE
-    Surface(
-        shape = NeoShapes.card,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(NeoSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
-        ) {
-            Text(if (free) "Plan Gratis" else "Cuentivo Pro", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (free) {
-                    "Hasta ${FeatureAccessManager.FREE_CUSTOMER_LIMIT} clientes y " +
-                        "${FeatureAccessManager.FREE_SALE_LIMIT} ventas registradas."
-                } else {
-                    "Clientes y ventas ilimitados, respaldo y sincronización en la nube."
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (free) {
-                PlanDetail(
-                    "Incluye ventas, abonos, estados de cuenta y compartir la cuenta de un cliente. " +
-                        "No incluye respaldo en la nube, fotos de productos o comprobantes, " +
-                        "importar/exportar Excel, ni equipo con roles.",
-                )
-                NeoAction("Suscribirme a Pro", onUpgrade, Modifier.fillMaxWidth())
-                Text(
-                    "El cobro se hace por Google Play y puedes cancelarlo cuando quieras desde la tienda. " +
-                        "Tus datos no se borran si cancelas.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                PlanDetail(
-                    "Incluye clientes y ventas ilimitados, fotos de productos y comprobantes, " +
-                        "importar y exportar productos en Excel, compartir la lista completa de deudores, " +
-                        "hasta 5 integrantes con roles e historial y auditoría completos.",
-                )
-                Text(
-                    "Tu suscripción se administra desde Google Play.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlanDetail(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }

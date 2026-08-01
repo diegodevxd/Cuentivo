@@ -2,18 +2,20 @@ package com.cuentivo.app.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -21,8 +23,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.domain.Alert
+
+/** Two lines plus a severity word, matching the density of the other compact rows. */
+private val ALERT_ROW_HEIGHT = 64.dp
 
 /**
  * What needs attention today, worst trouble first.
@@ -41,47 +48,115 @@ fun AlertsSheet(
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text("Avisos", style = MaterialTheme.typography.headlineSmall)
+        AlertsContent(
+            alerts = alerts,
+            // Routing away closes the sheet first, so you land on the customer rather than on a
+            // sheet still covering them.
+            onOpenAlert = { customerId -> onDismiss(); onOpenCustomer(customerId) },
+        )
+    }
+}
 
-            if (alerts.isEmpty()) {
-                // Worth saying out loud: "nothing is late" is genuinely good news in this app.
-                Text("Nada pendiente por ahora. Nadie se te ha atrasado.")
-                return@Column
-            }
+/**
+ * The alert list itself, free of the window it happens to be shown in.
+ *
+ * Extracted because a `ModalBottomSheet` lives in its own window: a capture of the app's
+ * composition would come out showing the screen underneath with no sheet on it at all. Rendering
+ * this directly lets a reference image show the real rows, while [AlertsSheet] stays the thing
+ * production uses and the behaviour suites drive.
+ */
+@Composable
+internal fun AlertsContent(
+    alerts: List<Alert>,
+    onOpenAlert: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = NeoSpacing.lg)
+            .padding(bottom = 28.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
+    ) {
+        Text("Avisos", style = MaterialTheme.typography.titleLarge)
 
-            alerts.forEach { alert ->
-                val accent = when (alert.severity) {
-                    Alert.Severity.OVERDUE -> MaterialTheme.colorScheme.error
-                    Alert.Severity.DUE_SOON -> MaterialTheme.colorScheme.tertiary
-                    Alert.Severity.INFO -> MaterialTheme.colorScheme.secondary
-                }
-                val open = alert.customerId?.let { id -> { onDismiss(); onOpenCustomer(id) } }
-                val shape = RoundedCornerShape(18.dp)
-                val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                val body: @Composable () -> Unit = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Severity is carried by position and wording too, not colour alone: a tint
-                        // is the first thing to vanish on a cheap screen in the sun.
-                        Box(Modifier.width(5.dp).height(58.dp).background(accent))
-                        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                            Text(alert.title, style = MaterialTheme.typography.titleMedium)
-                            Text(alert.detail, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                }
-                if (open == null) {
-                    Card(shape = shape, border = border, modifier = Modifier.fillMaxWidth()) { body() }
-                } else {
-                    Card(onClick = open, shape = shape, border = border, modifier = Modifier.fillMaxWidth()) { body() }
-                }
+        if (alerts.isEmpty()) {
+            // Worth saying out loud: "nothing is late" is genuinely good news in this app, and
+            // there is no action to offer for it.
+            NeoEmptyState(
+                title = "Nada pendiente",
+                detail = "Nadie se te ha atrasado.",
+            )
+            return@Column
+        }
+
+        alerts.forEach { alert -> AlertRow(alert = alert, onOpenAlert = onOpenAlert) }
+    }
+}
+
+@Composable
+private fun AlertRow(alert: Alert, onOpenAlert: (String) -> Unit) {
+    val tone = alert.severity.tone()
+    val open = alert.customerId?.let { id -> { onOpenAlert(id) } }
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .defaultMinSize(minHeight = ALERT_ROW_HEIGHT)
+        .let { base -> if (open == null) base else base.clickable(onClick = open) }
+
+    Card(
+        modifier = rowModifier,
+        shape = NeoShapes.row,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Severity is carried by the word as much as by the bar: a tint is the first thing to
+            // vanish on a cheap screen in the sun, and the one thing a screen reader never gets.
+            Box(Modifier.width(4.dp).height(ALERT_ROW_HEIGHT).background(tone.accent))
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = NeoSpacing.md, vertical = NeoSpacing.sm)
+                    .fillMaxWidth(),
+            ) {
+                Text(
+                    text = tone.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tone.accent,
+                    maxLines = 1,
+                )
+                Text(
+                    text = alert.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = alert.detail,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
+}
+
+private data class AlertTone(val label: String, val accent: Color)
+
+/**
+ * Red for late, cyan for debt that wants attention, neutral for everything else.
+ *
+ * The words are uppercase because they are eyebrows, the same as every other label of this kind in
+ * the app — and because "Vencido" in sentence case is already the dashboard's overdue metric.
+ *
+ * Green is deliberately absent here: it is reserved for money actually collected, and a plan-limit
+ * notice is not good news. Painting it green would spend the one colour that means "paid".
+ */
+@Composable
+private fun Alert.Severity.tone(): AlertTone = when (this) {
+    Alert.Severity.OVERDUE -> AlertTone("VENCIDO", MaterialTheme.colorScheme.error)
+    Alert.Severity.DUE_SOON -> AlertTone("POR VENCER", MaterialTheme.colorScheme.primary)
+    Alert.Severity.INFO -> AlertTone("AVISO", MaterialTheme.colorScheme.onSurfaceVariant)
 }

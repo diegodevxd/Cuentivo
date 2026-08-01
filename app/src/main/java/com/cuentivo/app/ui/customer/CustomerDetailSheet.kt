@@ -56,6 +56,7 @@ import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.ui.CancelableItem
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
+import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoSectionHeader
 import com.cuentivo.app.ui.NeoShapes
@@ -151,7 +152,12 @@ fun CustomerDetailSheet(
             item { NeoSectionHeader(title = "Historial de Movimientos") }
 
             if (entries.isEmpty()) {
-                item { CompactRow("Este cliente aún no tiene movimientos") }
+                item {
+                    NeoEmptyState(
+                        title = "Sin movimientos",
+                        detail = "Las ventas y los abonos de este cliente aparecerán aquí.",
+                    )
+                }
             } else {
                 // MainActivity keeps entries chronological so the CSV and the running balance stay
                 // correct. Only the display is reversed, so the newest movement reads first.

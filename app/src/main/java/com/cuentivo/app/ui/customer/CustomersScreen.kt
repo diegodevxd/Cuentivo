@@ -64,6 +64,7 @@ import com.cuentivo.app.domain.DueSale
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.ui.FormDialog
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
+import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
@@ -144,7 +145,21 @@ fun CustomersScreen(
                 }
             }
             if (visible.isEmpty()) {
-                item { EmptyDirectoryRow(query.isBlank() && chip == CustomerFilter.ALL) }
+                item {
+                    // A search that matches nobody is not an invitation to create somebody: the
+                    // fix is to change the search, so only the pristine state offers an action.
+                    val pristine = query.isBlank() && chip == CustomerFilter.ALL
+                    NeoEmptyState(
+                        title = if (pristine) "Aún no tienes clientes" else "Ningún cliente coincide",
+                        detail = if (pristine) {
+                            "Agrega al primero para empezar a venderle fiado."
+                        } else {
+                            "Prueba con otro nombre o cambia el filtro."
+                        },
+                        actionLabel = if (pristine) "Agregar cliente" else null,
+                        onAction = if (pristine) ({ onShowFormChange(true) }) else null,
+                    )
+                }
             } else {
                 items(visible, key = { it.customer.id }) { row ->
                     CustomerRow(
@@ -330,33 +345,6 @@ private fun FilterChipRow(label: String, selected: Boolean, onClick: () -> Unit)
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
-            )
-        }
-    }
-}
-
-@Composable
-private fun EmptyDirectoryRow(pristine: Boolean) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(60.dp),
-        shape = NeoShapes.row,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = NeoSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = if (pristine) "Aún no tienes clientes" else "Ningún cliente coincide",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }

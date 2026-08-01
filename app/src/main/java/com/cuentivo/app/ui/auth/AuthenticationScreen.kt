@@ -1,20 +1,21 @@
 package com.cuentivo.app.ui.auth
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -28,18 +29,34 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.cuentivo.app.R
 import com.cuentivo.app.auth.CredentialsValidation
 import com.cuentivo.app.auth.CredentialsValidator
+import com.cuentivo.app.ui.NeoAction
+import com.cuentivo.app.ui.NeoFintechLayoutPolicy
+import com.cuentivo.app.ui.NeoPanel
+import com.cuentivo.app.ui.NeoShapes
+import com.cuentivo.app.ui.NeoSpacing
+
+/** The launcher icon's own backdrop, so the mark here is the one on the home screen. */
+private val BrandInk = Color(0xFF001D26)
 
 /**
- * Sign-in and sign-up as two distinct views with a link between them, instead of two stacked
- * buttons on one form. Same public signature as before: the mode is purely internal state.
+ * Sign-in and sign-up as one compact panel with a link between the two modes.
  *
- * The form sits on a translucent card over the theme's gradient, so the first screen of the app
- * already shows its own identity rather than a bare white column.
+ * The public signature is unchanged: the mode is internal state, and both callbacks reach Firebase
+ * exactly as before. `CredentialsValidator` remains the only judge of what counts as valid — this
+ * screen asks it on every keystroke so the action can refuse to light up, rather than letting
+ * someone press a button that was always going to fail.
+ *
+ * The mark is the real launcher foreground rather than a lettered stand-in, drawn over the same ink
+ * the adaptive icon uses. Whoever installed the app recognises it.
  */
 @Composable
 fun AuthenticationScreen(
@@ -52,140 +69,144 @@ fun AuthenticationScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var validation by remember { mutableStateOf<CredentialsValidation?>(null) }
-    var confirmMismatch by remember { mutableStateOf(false) }
 
-    val submit: () -> Unit = {
-        validation = CredentialsValidator.validate(email, password)
-        confirmMismatch = isSignUp && password != confirmPassword
-        if (validation == CredentialsValidation.Valid && !confirmMismatch) {
-            if (isSignUp) onSignUp(email.trim(), password) else onSignIn(email.trim(), password)
-        }
-    }
+    // Derived every pass, never stored: the validator is the single source of truth for validity.
+    val validation = CredentialsValidator.validate(email, password)
+    val passwordsMatch = !isSignUp || (confirmPassword.isNotEmpty() && confirmPassword == password)
+    val canSubmit = !isWorking && validation == CredentialsValidation.Valid && passwordsMatch
 
-    Box(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().imePadding()) {
+        val layout = NeoFintechLayoutPolicy.forWidth(maxWidth.value.toInt())
+        val horizontalGutter = maxOf(16, layout.horizontalPaddingDp)
         Column(
-            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier
+                .widthIn(max = layout.contentMaxWidthDp.dp)
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = horizontalGutter.dp)
+                .padding(vertical = NeoSpacing.xl),
+            verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
         ) {
-            // Stand-in mark until the real icon exists: a mint disc with the initial.
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(64.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        "C",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
+            BrandHeader(isSignUp = isSignUp)
+
+            NeoPanel(modifier = Modifier.fillMaxWidth().testTag("authentication-panel")) {
+                Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.md)) {
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Correo electrónico") },
+                singleLine = true,
+                isError = email.isNotBlank() && validation == CredentialsValidation.InvalidEmail,
+                shape = NeoShapes.row,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            // Beside the field it belongs to, and only once there is something to judge: an error
+            // shown before the first character is typed is just noise.
+            if (email.isNotBlank() && validation == CredentialsValidation.InvalidEmail) {
+                FieldError("Escribe un correo válido.")
+            }
+
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Contraseña") },
+                singleLine = true,
+                isError = password.isNotBlank() && validation == CredentialsValidation.PasswordTooShort,
+                visualTransformation = PasswordVisualTransformation(),
+                shape = NeoShapes.row,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (password.isNotBlank() && validation == CredentialsValidation.PasswordTooShort) {
+                FieldError("La contraseña debe tener al menos 8 caracteres.")
+            }
+
+            if (isSignUp) {
+                OutlinedTextField(
+                    value = confirmPassword,
+                    onValueChange = { confirmPassword = it },
+                    label = { Text("Confirma tu contraseña") },
+                    singleLine = true,
+                    isError = confirmPassword.isNotEmpty() && confirmPassword != password,
+                    visualTransformation = PasswordVisualTransformation(),
+                    shape = NeoShapes.row,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (confirmPassword.isNotEmpty() && confirmPassword != password) {
+                    FieldError("Las contraseñas no coinciden.")
                 }
             }
-            Text(
-                "Cuentivo",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "Lleva las cuentas de tu negocio, aunque vendas fiado.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
 
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            // Whatever Firebase said, in the one place the person is already looking.
+            message?.let { FieldError(it) }
+
+            NeoAction(
+                label = "Continuar",
+                onClick = {
+                    if (canSubmit) {
+                        if (isSignUp) onSignUp(email.trim(), password) else onSignIn(email.trim(), password)
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
+                enabled = canSubmit,
+            )
+            if (isWorking) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                }
+            }
+
+            TextButton(
+                onClick = {
+                    isSignUp = !isSignUp
+                    confirmPassword = ""
+                },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        if (isSignUp) "Crear cuenta" else "Iniciar sesión",
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    Text(
-                        if (isSignUp) {
-                            "Crea tu cuenta para proteger y sincronizar la información de tu negocio."
-                        } else {
-                            "Inicia sesión para proteger y sincronizar la información de tu negocio."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it; validation = null },
-                        label = { Text("Correo electrónico") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it; validation = null; confirmMismatch = false },
-                        label = { Text("Contraseña") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (isSignUp) {
-                        OutlinedTextField(
-                            value = confirmPassword,
-                            onValueChange = { confirmPassword = it; confirmMismatch = false },
-                            label = { Text("Confirma tu contraseña") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(14.dp),
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    when (validation) {
-                        CredentialsValidation.InvalidEmail -> Text("Escribe un correo válido.", color = MaterialTheme.colorScheme.error)
-                        CredentialsValidation.PasswordTooShort -> Text("La contraseña debe tener al menos 8 caracteres.", color = MaterialTheme.colorScheme.error)
-                        else -> Unit
-                    }
-                    if (confirmMismatch) Text("Las contraseñas no coinciden.", color = MaterialTheme.colorScheme.error)
-                    message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Button(
-                        onClick = submit,
-                        enabled = !isWorking,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        if (isWorking) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        } else {
-                            Text(if (isSignUp) "Crear cuenta" else "Entrar")
-                        }
-                    }
-                    TextButton(
-                        onClick = {
-                            isSignUp = !isSignUp
-                            validation = null
-                            confirmMismatch = false
-                            confirmPassword = ""
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(if (isSignUp) "Ya tengo cuenta, iniciar sesión" else "¿No tienes cuenta? Crear una")
-                    }
+                Text(if (isSignUp) "Ya tengo cuenta, iniciar sesión" else "¿No tienes cuenta? Crear una")
+            }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun BrandHeader(isSignUp: Boolean) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Surface(
+            shape = NeoShapes.card,
+            color = BrandInk,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)),
+            modifier = Modifier.size(56.dp),
+        ) {
+            // The adaptive foreground carries the icon's safe-zone padding, so it is scaled up to
+            // fill this tile the way the launcher's own mask crops it.
+            Image(
+                painter = painterResource(R.mipmap.ic_launcher_foreground),
+                contentDescription = "Cuentivo",
+                modifier = Modifier.fillMaxSize().scale(1.5f),
+            )
+        }
+        Spacer(Modifier.height(NeoSpacing.md))
+        Text(
+            text = if (isSignUp) "Crear cuenta" else "Iniciar sesión",
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Spacer(Modifier.height(NeoSpacing.xs))
+        Text(
+            text = "Protege y sincroniza la información de tu negocio.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun FieldError(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.error,
+    )
 }

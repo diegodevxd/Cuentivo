@@ -147,7 +147,13 @@ private fun LazyListScope.dashboardContent(
         )
     }
     if (critical.isEmpty()) {
-        item { CompactEmptyRow("Sin cobros urgentes por ahora") }
+        // No action: "nobody is late" is the good outcome, and there is nothing to do about it.
+        item {
+            NeoEmptyState(
+                title = "Sin cobros urgentes",
+                detail = "Nadie tiene un pago vencido hoy.",
+            )
+        }
     } else {
         items(critical, key = { it.customer.customer.id }) { criticalCustomer ->
             CriticalCustomerRow(
@@ -160,7 +166,12 @@ private fun LazyListScope.dashboardContent(
 
     item { NeoSectionHeader(title = "Actividad reciente") }
     if (state.recentActivity.isEmpty()) {
-        item { CompactEmptyRow("Aún no hay movimientos") }
+        item {
+            NeoEmptyState(
+                title = "Aún no hay movimientos",
+                detail = "Aquí aparecerán tus ventas y abonos.",
+            )
+        }
     } else {
         items(state.recentActivity.take(5), key = { it.id }) { activity -> ActivityRow(activity) }
     }
@@ -221,18 +232,6 @@ private fun DashboardHero(state: DashboardUiState.Content) {
  * title and an explanation to an empty section, and doing so pushes recent activity off a 320 dp
  * screen.
  */
-@Composable
-private fun CompactEmptyRow(text: String) {
-    SectionRowSurface(border = MaterialTheme.colorScheme.outlineVariant) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
 
 /**
  * The reference critical row: a leading urgency affordance, a one-line name, a one-line reason, and
