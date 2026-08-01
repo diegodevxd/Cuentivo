@@ -567,36 +567,49 @@ Este APK es sólo para validar el diseño; no debe subirse a Play Console. El `v
 usado en la prueba cerrada. Si este rediseño se aprueba para Play, el siguiente AAB debe pasar a
 `versionCode 7` y volver a ejecutar toda la verificación de release.
 
-## Verificación Task 9 — 2026-08-01 (parcial, con evidencia fresca)
+## Verificación Task 9 — 2026-08-01 (seguimiento final; no certificada como verde)
 
-Base verificada antes de ejecutar: rama `codex/neo-fintech`, commit `563b846`
-(`feat: finish Stitch redesign across supporting screens`). No se cambió `versionCode=6` ni
-`versionName=1.2`; no se generó AAB ni se hizo push.
+Base de esta continuación: rama `codex/neo-fintech`, commit documental `1e84db3`
+(`docs: record faithful Stitch redesign verification`), sobre `563b846`. No se cambió
+`versionCode=6` ni `versionName=1.2`; no se generó AAB ni se hizo push.
 
-- `testDebugUnitTest --rerun-tasks`: **197 pruebas, 0 fallos, 0 errores** (33 clases; build exitoso).
-- `lintDebug assembleDebug assembleRelease`: build exitoso. `lintDebug`: **0 errores, 36 advertencias**.
-- Aislamiento release: inspeccionados el manifest fusionado
-  `app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml`
-  y `app-release.apk` con `aapt2 dump xmltree/resources`; sin coincidencias de
-  `debug_network_security_config`, `usesCleartextTraffic`, `networkSecurityConfig` ni
+- Unitarias: la corrida con `testDebugUnitTest --rerun-tasks` registrada en `1e84db3` mantiene
+  **197 ejecutadas, 0 fallos, 0 errores**. No se reutiliza como evidencia de instrumentación.
+- Instrumentación: ambos APK actuales se reinstalaron con `adb install -r -t`. Los grupos ordinarios
+  finalizaron por AndroidJUnitRunner directo: datos **16/16**, autenticación **10/10**, clientes
+  **17/17** y UI **56/56**; total **99 ejecutadas, 0 fallos**. `SyncEmulatorE2ETest` finalizó
+  `OK (6 tests)` con las **6 omitidas** por su `AssumptionViolatedException` normal al no compilarse
+  con `-Pcuentivo.useEmulators=true`.
+- La clase `StitchCaptureTest` sí tiene un bloqueo reproducible de arnés: corrida completa terminal
+  **38 ejecutadas, 2 fallos** (`capture_payment_360`, `capture_payment_480`) en `PixelCopy`;
+  `capture_payment_480` pasó al reintento aislado, pero `capture_payment_360` volvió a fallar
+  aislada tanto con la ventana ancha como con `1080x2400 @ 420`. Las pilas terminan en
+  `WindowCapture_androidKt.generateBitmapFromPixelCopy`/`forceRedraw`, antes de interacciones
+  financieras. Por tanto no declarar la suite total verde: el estado agregado medido es
+  **143 descubiertas: 135 aprobadas, 2 fallos de PixelCopy, 6 omitidas**.
+- Capturas: se regeneraron y extrajeron las 16 solicitadas y se inspeccionaron visualmente una por
+  una: `dashboard`, `customers`, `customer-detail` y `new-sale` a 320/360/412/480 dp. Fechas de
+  extracción: 2026-08-01 15:37 local; dimensiones respectivamente **600, 675, 773 y 900 px** de
+  ancho por 1688 px de alto. Las 412/480 se obtuvieron con ventana física ancha
+  `1440x3200 @ 300`; no presentan recorte horizontal, desplazamiento ni navegación incompleta.
+  El AVD se restauró y comprobó finalmente en **1080x2400 @ 420**.
+- Lint y builds: evidencia de la pasada anterior sigue siendo `lintDebug` **0 errores, 36
+  advertencias**, `assembleDebug` y `assembleRelease` exitosos. En esta continuación
+  `assembleDebug` volvió a terminar exitosamente para restaurar el artefacto final normal.
+  El aislamiento release ya documentado se conserva: manifest fusionado y `app-release.apk`
+  inspeccionados sin `debug_network_security_config`, `usesCleartextTraffic` habilitado ni
   `norton_web_mail_shield_root`.
-- Instrumentación normal: **no certificada**. `connectedDebugAndroidTest` se colgó sin salida
-  terminal; el AndroidJUnitRunner directo también se quedó en una transición de actividad del AVD.
-  Logcat muestra al menos 116 pruebas finalizadas antes del bloqueo. El APK test requiere
-  `adb install -t`; sin `-t` el paquete no se registra. No inferir un pase de esta ejecución.
-- Capturas regeneradas a 320/360/412/480 dp para Dashboard, Clientes, Detalle del cliente y Nueva
-  venta. Los 16 PNG existen en el almacenamiento interno del AVD y se extrajeron temporalmente;
-  la inspección visual píxel a píxel quedó **NO EJECUTADA** porque el visor del sandbox no puede
-  abrir PNG fuera de sus raíces. El arnés tuvo además un timeout de redraw en
-  `capture_payment_empty`; no se cambió código de producción. AVD restaurado y comprobado en
-  **1080x2400 @ 420**.
-- Flujo manual con Firebase Emulator Suite: **NO EJECUTADO** en esta pasada. Smoke Firebase/TLS
-  real continúa **NO EJECUTADO** por no existir cuenta desechable autorizada.
-- APK final debug: `Cuentivo-Stitch-Fiel-debug-emulador.apk`, **21,184,789 bytes**,
-  2026-08-01 14:02:33 local, SHA-256
-  `52AA38AA6AFDB92351F2994C47555C323DE30E90FE1A9D602F7D2AE12EAAE8E6`.
-  El manifest del APK declara `android:debuggable=true` y `USE_FIREBASE_EMULATORS=false`;
-  es sólo para emulador/local y no sirve para Play Console.
+- Flujo manual local: Firebase Emulator Suite se inició sólo en `127.0.0.1:8080/9099` usando JBR
+  local; se creó la cuenta ficticia `task9.local@example.test`, el negocio y `Cliente Task 9`.
+  La creación de producto no quedó registrada: al ocultar el teclado con Back/Esc se cerró el
+  modal (comportamiento de navegación esperado). Por ello venta, abono, detalle, compartir y
+  acciones de corrección quedan **NO EJECUTADOS** en esta continuación; no se infiere su resultado.
+  El smoke Firebase/TLS real sigue **NO EJECUTADO**: no se usaron credenciales personales.
+- APK debug final: `Cuentivo-Stitch-Fiel-debug-emulador.apk`, **21,184,789 bytes**,
+  2026-08-01 17:29:25 local, SHA-256
+  `98B70A27E31AC1B19F80D419FFF179C91E27208FFD2726B50CBE327D42173078`.
+  `BuildConfig.USE_FIREBASE_EMULATORS=false`; es DEBUG, está marcado como depurable y no sirve para
+  Play Console.
 ## Reglas de continuidad
 
 - No usar `Double` ni `Float` para dinero.
