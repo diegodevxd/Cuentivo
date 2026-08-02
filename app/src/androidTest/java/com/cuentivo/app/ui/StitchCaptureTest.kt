@@ -513,14 +513,32 @@ class StitchCaptureTest {
             }
         }
         composeRule.waitForIdle()
-        val bitmap = composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap()
+        val bitmap = captureStableImage()
         write(name, bitmap)
     }
 
     /** Re-captures the current composition, e.g. after navigating into a destination. */
     private fun shoot(name: String) {
         composeRule.waitForIdle()
-        write(name, composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap())
+        write(name, captureStableImage())
+    }
+
+    /**
+     * PixelCopy is an external compositor request. On this AVD it can reject an otherwise idle
+     * frame while the IME finishes hiding; retry only after Compose reports idle again. A PNG is
+     * still written only after PixelCopy returns a real bitmap.
+     */
+    private fun captureStableImage(): Bitmap {
+        var lastFailure: AssertionError? = null
+        repeat(3) {
+            composeRule.waitForIdle()
+            try {
+                return composeRule.onNodeWithTag(CAPTURE_TAG).captureToImage().asAndroidBitmap()
+            } catch (failure: AssertionError) {
+                lastFailure = failure
+            }
+        }
+        throw checkNotNull(lastFailure)
     }
 
     /**
@@ -548,6 +566,12 @@ class StitchCaptureTest {
             "stitch-captures",
         )
         dir.mkdirs()
-        FileOutputStream(File(dir, "$name.png")).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        try {
+            FileOutputStream(File(dir, "$name.png")).use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+        } finally {
+            bitmap.recycle()
+        }
     }
 }
