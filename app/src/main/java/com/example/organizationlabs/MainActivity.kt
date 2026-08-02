@@ -3,6 +3,7 @@ package com.cuentivo.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -15,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -72,6 +74,8 @@ import com.cuentivo.app.ui.auth.AuthenticationScreen
 import com.cuentivo.app.sync.FirebaseEmulators
 import com.cuentivo.app.sync.OwnerMembershipBootstrap
 import com.cuentivo.app.sync.SyncQueue
+
+private const val TAG = "MainActivity"
 
 class MainActivity : ComponentActivity() {
     /**
@@ -307,10 +311,35 @@ class MainActivity : ComponentActivity() {
                         AccessDecision.Allowed -> lifecycleScope.launch {
                             val now = System.currentTimeMillis()
                             val customer = CustomerEntity(UUID.randomUUID().toString(), businessId, name, CustomerNameNormalizer.key(name), phone, null, null, null, null, true, now, now, null)
-                            database.customerDao().insert(customer)
-                            syncQueue.enqueue(businessId, "CUSTOMER", customer.id, now, mapOf("businessId" to businessId, "name" to customer.name, "normalizedName" to customer.normalizedName, "phone" to phone, "email" to null, "address" to null, "notes" to null, "creditLimitCents" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
-                            refreshKey++
-                            uiMessage = "Cliente agregado"
+                            // The insert is the step that may legitimately refuse: the unique index
+                            // on (businessId, normalizedName) rejects a name that already exists
+                            // once accents and case are folded away. Editing already reported that;
+                            // creating used to let the exception kill the coroutine, so the screen
+                            // neither refreshed nor said anything.
+                            val saved = try {
+                                database.customerDao().insert(customer)
+                                true
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (error: Exception) {
+                                Log.w(TAG, "No se pudo guardar el cliente.", error)
+                                uiMessage = "Ya tienes otro cliente con ese nombre"
+                                false
+                            }
+                            if (saved) {
+                                // Past here the customer exists on this device, so nothing after it
+                                // may hide it. The outbox write is best effort relative to a row
+                                // that is already saved.
+                                try {
+                                    syncQueue.enqueue(businessId, "CUSTOMER", customer.id, now, mapOf("businessId" to businessId, "name" to customer.name, "normalizedName" to customer.normalizedName, "phone" to phone, "email" to null, "address" to null, "notes" to null, "creditLimitCents" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                } catch (cancellation: CancellationException) {
+                                    throw cancellation
+                                } catch (error: Exception) {
+                                    Log.w(TAG, "El cliente quedó guardado pero no se pudo encolar para sincronizar.", error)
+                                }
+                                refreshKey++
+                                uiMessage = "Cliente agregado"
+                            }
                         }
                     }
                 }, onEditCustomer = { row, name, phone ->
@@ -359,10 +388,29 @@ class MainActivity : ComponentActivity() {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
                         val product = ProductEntity(UUID.randomUUID().toString(), businessId, name, null, null, null, priceCents, null, null, imageFileName, true, now, now, null)
-                        database.productDao().insert(product)
-                        syncQueue.enqueue(businessId, "PRODUCT", product.id, now, mapOf("businessId" to businessId, "name" to name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to priceCents, "costPriceCents" to null, "stock" to null, "imageUri" to imageFileName, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
-                        refreshKey++
-                        uiMessage = "Producto agregado"
+                        // Same shape as creating a customer, and it had the same hole: a scheduling
+                        // failure after the insert used to skip the refresh and the message.
+                        val saved = try {
+                            database.productDao().insert(product)
+                            true
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (error: Exception) {
+                            Log.w(TAG, "No se pudo guardar el producto.", error)
+                            uiMessage = "No fue posible guardar el producto"
+                            false
+                        }
+                        if (saved) {
+                            try {
+                                syncQueue.enqueue(businessId, "PRODUCT", product.id, now, mapOf("businessId" to businessId, "name" to name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to priceCents, "costPriceCents" to null, "stock" to null, "imageUri" to imageFileName, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (error: Exception) {
+                                Log.w(TAG, "El producto quedó guardado pero no se pudo encolar para sincronizar.", error)
+                            }
+                            refreshKey++
+                            uiMessage = "Producto agregado"
+                        }
                     }
                 }, onEditProduct = { product, name, priceCents, imageFileName ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
