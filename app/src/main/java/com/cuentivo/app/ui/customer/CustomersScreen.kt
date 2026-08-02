@@ -92,6 +92,13 @@ fun CustomersScreen(
     onEditCustomer: (CustomerBalanceRow, String, String?) -> Unit = { _, _, _ -> },
     onArchiveCustomer: (CustomerBalanceRow) -> Unit = {},
     onOpen: (CustomerBalanceRow) -> Unit = {},
+    /**
+     * Whether a create is in flight. The host closes the form itself once the write actually
+     * succeeds — see `CuentivoApp`'s `customerSavedToken` — so this screen's only job with it is to
+     * disable Guardar for as long as it is true, which is what stops a double tap from firing the
+     * callback twice.
+     */
+    isSaving: Boolean = false,
 ) {
     var query by remember { mutableStateOf("") }
     var chip by remember { mutableStateOf(CustomerFilter.ALL) }
@@ -205,11 +212,13 @@ fun CustomersScreen(
             title = "Nuevo cliente",
             initialName = "",
             initialPhone = "",
-            onConfirm = { name, phone ->
-                onCreateCustomer(name, phone)
-                onShowFormChange(false)
-            },
+            // No eager close here: the previous version closed on tap, before Room even ran, so a
+            // duplicate name or a missing business failed in total silence — the dialog was already
+            // gone by the time anything went wrong. Closing is now the host's job, done only once
+            // `onCreateCustomer` actually succeeds.
+            onConfirm = { name, phone -> onCreateCustomer(name, phone) },
             onDismiss = { onShowFormChange(false) },
+            isSaving = isSaving,
         )
     }
     editing?.let { row ->
@@ -277,14 +286,15 @@ private fun CustomerFormDialog(
     onDismiss: () -> Unit,
     formKey: Any? = Unit,
     note: String? = null,
+    isSaving: Boolean = false,
 ) {
     // Keyed on the customer so reopening for another row starts from that row's data.
     var name by remember(formKey) { mutableStateOf(initialName) }
     var phone by remember(formKey) { mutableStateOf(initialPhone) }
     FormDialog(
         title = title,
-        confirmEnabled = name.isNotBlank(),
-        onConfirm = { if (name.isNotBlank()) onConfirm(name.trim(), phone.trim().ifBlank { null }) },
+        confirmEnabled = name.isNotBlank() && !isSaving,
+        onConfirm = { if (name.isNotBlank() && !isSaving) onConfirm(name.trim(), phone.trim().ifBlank { null }) },
         onDismiss = onDismiss,
     ) {
         OutlinedTextField(

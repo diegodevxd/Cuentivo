@@ -91,6 +91,12 @@ fun ProductsScreen(
      * blocks it, there is no business, or the file cannot be read — none of which produce a report.
      */
     isImportingProducts: Boolean = false,
+    /**
+     * Whether a create is in flight. The host closes the form itself once the write succeeds — see
+     * `CuentivoApp`'s `productSavedToken` — so this screen only disables Guardar while it is true,
+     * which is the double-tap guard.
+     */
+    isSaving: Boolean = false,
 ) {
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<ProductEntity?>(null) }
@@ -228,11 +234,11 @@ fun ProductsScreen(
             initialPhoto = null,
             photoTargetId = draftId,
             store = imageStore,
-            onConfirm = { name, cents, photo ->
-                onCreateProduct(name, cents, photo)
-                onShowFormChange(false)
-            },
+            // No eager close: it used to hide a failed insert as thoroughly as the customer form
+            // did. The host closes this once onCreateProduct actually succeeds.
+            onConfirm = { name, cents, photo -> onCreateProduct(name, cents, photo) },
             onDismiss = { onShowFormChange(false) },
+            isSaving = isSaving,
         )
     }
     editing?.let { product ->
@@ -287,6 +293,7 @@ private fun ProductFormDialog(
     onDismiss: () -> Unit,
     formKey: Any? = Unit,
     note: String? = null,
+    isSaving: Boolean = false,
 ) {
     // Keyed on the product so reopening the dialog for another row starts from that row's data.
     var name by remember(formKey) { mutableStateOf(initialName) }
@@ -300,9 +307,9 @@ private fun ProductFormDialog(
     }
     FormDialog(
         title = title,
-        confirmEnabled = name.isNotBlank() && cents != null,
+        confirmEnabled = name.isNotBlank() && cents != null && !isSaving,
         onConfirm = {
-            if (name.isNotBlank() && cents != null) onConfirm(name.trim(), cents, photo.current)
+            if (name.isNotBlank() && cents != null && !isSaving) onConfirm(name.trim(), cents, photo.current)
         },
         onDismiss = dismissAndDiscard,
     ) {

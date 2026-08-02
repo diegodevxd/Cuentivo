@@ -11,6 +11,7 @@ import androidx.room.Room
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -189,6 +190,14 @@ class MainActivity : ComponentActivity() {
                 // Progress belongs here, not to the screen: three routes below never produce a
                 // SheetImport, and a screen that waits for one stays stuck on "Importando…".
                 var isImportingProducts by remember { mutableStateOf(false) }
+                // Own the create dialogs' open/close-on-success and their double-tap guard here,
+                // not in the screen: the screen cannot tell a real failure from a tap that simply
+                // has not finished yet, and closing on the tap is exactly what let a save fail in
+                // total silence.
+                var isSavingCustomer by remember { mutableStateOf(false) }
+                var customerSavedToken by remember { mutableIntStateOf(0) }
+                var isSavingProduct by remember { mutableStateOf(false) }
+                var productSavedToken by remember { mutableIntStateOf(0) }
                 val productImages = remember { ProductImageStore(this@MainActivity) }
                 // The real plan, straight from Google Play. Was pinned to FREE until Billing existed.
                 val tier by tierState
@@ -292,7 +301,7 @@ class MainActivity : ComponentActivity() {
                     statementCustomer = row
                 }
 
-                CuentivoApp(state, customers, products, tier, accountLabel = authenticationGateway.currentUserEmail, onCreateBusiness = {
+                CuentivoApp(state, customers, products, tier, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
                         val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)
@@ -303,42 +312,56 @@ class MainActivity : ComponentActivity() {
                         uiMessage = "Negocio creado"
                     }
                 }, onCreateCustomer = { name, phone ->
-                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    val businessId = (state as? DashboardUiState.Content)?.businessId
+                    if (businessId == null) {
+                        // The old return@CuentivoApp here was silent: the form had already closed
+                        // on the tap, and nothing told the person why nothing happened.
+                        uiMessage = "Primero crea tu negocio en Inicio"
+                        return@CuentivoApp
+                    }
                     // Plan limit checked before writing: refusing after the insert would leave a
                     // customer the app then pretends does not exist.
                     when (val decision = FeatureAccessManager.canAddCustomer(tier, customers.size)) {
                         is AccessDecision.Blocked -> blocked = decision
                         AccessDecision.Allowed -> lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            val customer = CustomerEntity(UUID.randomUUID().toString(), businessId, name, CustomerNameNormalizer.key(name), phone, null, null, null, null, true, now, now, null)
-                            // The insert is the step that may legitimately refuse: the unique index
-                            // on (businessId, normalizedName) rejects a name that already exists
-                            // once accents and case are folded away. Editing already reported that;
-                            // creating used to let the exception kill the coroutine, so the screen
-                            // neither refreshed nor said anything.
-                            val saved = try {
-                                database.customerDao().insert(customer)
-                                true
-                            } catch (cancellation: CancellationException) {
-                                throw cancellation
-                            } catch (error: Exception) {
-                                Log.w(TAG, "No se pudo guardar el cliente.", error)
-                                uiMessage = "Ya tienes otro cliente con ese nombre"
-                                false
-                            }
-                            if (saved) {
-                                // Past here the customer exists on this device, so nothing after it
-                                // may hide it. The outbox write is best effort relative to a row
-                                // that is already saved.
-                                try {
-                                    syncQueue.enqueue(businessId, "CUSTOMER", customer.id, now, mapOf("businessId" to businessId, "name" to customer.name, "normalizedName" to customer.normalizedName, "phone" to phone, "email" to null, "address" to null, "notes" to null, "creditLimitCents" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                            isSavingCustomer = true
+                            try {
+                                val now = System.currentTimeMillis()
+                                val customer = CustomerEntity(UUID.randomUUID().toString(), businessId, name, CustomerNameNormalizer.key(name), phone, null, null, null, null, true, now, now, null)
+                                // The insert is the step that may legitimately refuse: the unique
+                                // index on (businessId, normalizedName) rejects a name that already
+                                // exists once accents and case are folded away. Editing already
+                                // reported that; creating used to let the exception kill the
+                                // coroutine, so the screen neither refreshed nor said anything.
+                                val saved = try {
+                                    database.customerDao().insert(customer)
+                                    true
                                 } catch (cancellation: CancellationException) {
                                     throw cancellation
                                 } catch (error: Exception) {
-                                    Log.w(TAG, "El cliente quedó guardado pero no se pudo encolar para sincronizar.", error)
+                                    Log.w(TAG, "No se pudo guardar el cliente.", error)
+                                    uiMessage = "Ya tienes otro cliente con ese nombre"
+                                    false
                                 }
-                                refreshKey++
-                                uiMessage = "Cliente agregado"
+                                if (saved) {
+                                    // Past here the customer exists on this device, so nothing after
+                                    // it may hide it. The outbox write is best effort relative to a
+                                    // row that is already saved.
+                                    try {
+                                        syncQueue.enqueue(businessId, "CUSTOMER", customer.id, now, mapOf("businessId" to businessId, "name" to customer.name, "normalizedName" to customer.normalizedName, "phone" to phone, "email" to null, "address" to null, "notes" to null, "creditLimitCents" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                    } catch (cancellation: CancellationException) {
+                                        throw cancellation
+                                    } catch (error: Exception) {
+                                        Log.w(TAG, "El cliente quedó guardado pero no se pudo encolar para sincronizar.", error)
+                                    }
+                                    refreshKey++
+                                    uiMessage = "Cliente agregado"
+                                    // The only signal that closes the form. It advances only here,
+                                    // so a failure above leaves it untouched and the dialog stays up.
+                                    customerSavedToken++
+                                }
+                            } finally {
+                                isSavingCustomer = false
                             }
                         }
                     }
@@ -384,32 +407,43 @@ class MainActivity : ComponentActivity() {
                         uiMessage = "${row.customer.name} eliminado"
                     }
                 }, onCreateProduct = { name, priceCents, imageFileName ->
-                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    val businessId = (state as? DashboardUiState.Content)?.businessId
+                    if (businessId == null) {
+                        uiMessage = "Primero crea tu negocio en Inicio"
+                        return@CuentivoApp
+                    }
                     lifecycleScope.launch {
-                        val now = System.currentTimeMillis()
-                        val product = ProductEntity(UUID.randomUUID().toString(), businessId, name, null, null, null, priceCents, null, null, imageFileName, true, now, now, null)
-                        // Same shape as creating a customer, and it had the same hole: a scheduling
-                        // failure after the insert used to skip the refresh and the message.
-                        val saved = try {
-                            database.productDao().insert(product)
-                            true
-                        } catch (cancellation: CancellationException) {
-                            throw cancellation
-                        } catch (error: Exception) {
-                            Log.w(TAG, "No se pudo guardar el producto.", error)
-                            uiMessage = "No fue posible guardar el producto"
-                            false
-                        }
-                        if (saved) {
-                            try {
-                                syncQueue.enqueue(businessId, "PRODUCT", product.id, now, mapOf("businessId" to businessId, "name" to name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to priceCents, "costPriceCents" to null, "stock" to null, "imageUri" to imageFileName, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                        isSavingProduct = true
+                        try {
+                            val now = System.currentTimeMillis()
+                            val product = ProductEntity(UUID.randomUUID().toString(), businessId, name, null, null, null, priceCents, null, null, imageFileName, true, now, now, null)
+                            // Same shape as creating a customer, and it had the same hole: a
+                            // scheduling failure after the insert used to skip the refresh and the
+                            // message.
+                            val saved = try {
+                                database.productDao().insert(product)
+                                true
                             } catch (cancellation: CancellationException) {
                                 throw cancellation
                             } catch (error: Exception) {
-                                Log.w(TAG, "El producto quedó guardado pero no se pudo encolar para sincronizar.", error)
+                                Log.w(TAG, "No se pudo guardar el producto.", error)
+                                uiMessage = "No fue posible guardar el producto"
+                                false
                             }
-                            refreshKey++
-                            uiMessage = "Producto agregado"
+                            if (saved) {
+                                try {
+                                    syncQueue.enqueue(businessId, "PRODUCT", product.id, now, mapOf("businessId" to businessId, "name" to name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to priceCents, "costPriceCents" to null, "stock" to null, "imageUri" to imageFileName, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                } catch (cancellation: CancellationException) {
+                                    throw cancellation
+                                } catch (error: Exception) {
+                                    Log.w(TAG, "El producto quedó guardado pero no se pudo encolar para sincronizar.", error)
+                                }
+                                refreshKey++
+                                uiMessage = "Producto agregado"
+                                productSavedToken++
+                            }
+                        } finally {
+                            isSavingProduct = false
                         }
                     }
                 }, onEditProduct = { product, name, priceCents, imageFileName ->

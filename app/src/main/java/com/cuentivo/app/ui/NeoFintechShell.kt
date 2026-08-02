@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -85,6 +86,9 @@ fun NeoFintechShell(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // The app draws edge-to-edge, so without this the logo and the bell sit under
+                    // the status bar's clock and icons instead of below them.
+                    .statusBarsPadding()
                     .height(52.dp)
                     .padding(horizontal = NeoSpacing.sm),
                 verticalAlignment = Alignment.CenterVertically,

@@ -118,9 +118,21 @@ fun CuentivoApp(
     onCreateCustomer: (String, String?) -> Unit = { _, _ -> },
     onEditCustomer: (CustomerBalanceRow, String, String?) -> Unit = { _, _, _ -> },
     onArchiveCustomer: (CustomerBalanceRow) -> Unit = {},
+    /** True while a create is being written. Disables Guardar; does not by itself close anything. */
+    isSavingCustomer: Boolean = false,
+    /**
+     * Bumped by the host only once a create actually reaches Room. The dialog closes on this, not
+     * on the tap — a duplicate name or a missing business leaves the token untouched, so the form
+     * stays open and the person sees why instead of watching it vanish.
+     */
+    customerSavedToken: Int = 0,
     onCreateProduct: (String, Long, String?) -> Unit = { _, _, _ -> },
     onEditProduct: (ProductEntity, String, Long, String?) -> Unit = { _, _, _, _ -> },
     onArchiveProduct: (ProductEntity) -> Unit = {},
+    /** Same shape as [isSavingCustomer], for the product create form. */
+    isSavingProduct: Boolean = false,
+    /** Same shape as [customerSavedToken], for the product create form. */
+    productSavedToken: Int = 0,
     onImportProducts: (Uri) -> Unit = {},
     importReport: SheetImport? = null,
     onDismissImportReport: () -> Unit = {},
@@ -166,6 +178,15 @@ fun CuentivoApp(
             snackbar.showSnackbar(it)
             onMessageShown()
         }
+    }
+    // Closes the form on a successful save, and only on that: the token only advances once the
+    // host's write actually reached Room, so a duplicate name or a missing business — which leave
+    // the token untouched — leave the dialog open with its message instead of closing it blind.
+    LaunchedEffect(customerSavedToken) {
+        if (customerSavedToken > 0) showCustomerForm = false
+    }
+    LaunchedEffect(productSavedToken) {
+        if (productSavedToken > 0) showProductForm = false
     }
     // System Back closes the sale task and nothing else — and it must drop the preselection with
     // it, or the next sale would silently inherit a customer nobody chose for it.
@@ -248,6 +269,7 @@ fun CuentivoApp(
                 onEditCustomer = onEditCustomer,
                 onArchiveCustomer = onArchiveCustomer,
                 onOpen = onShowStatement,
+                isSaving = isSavingCustomer,
             )
             MainDestination.PRODUCTS -> ProductsScreen(
                 products = products,
@@ -260,6 +282,7 @@ fun CuentivoApp(
                 onImportProducts = onImportProducts,
                 onShareImportTemplate = onShareImportTemplate,
                 isImportingProducts = isImportingProducts,
+                isSaving = isSavingProduct,
             )
             MainDestination.PAYMENTS -> PaymentScreen(
                 customers = customers,

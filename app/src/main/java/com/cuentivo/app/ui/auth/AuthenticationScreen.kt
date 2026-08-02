@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -75,18 +76,23 @@ fun AuthenticationScreen(
     val passwordsMatch = !isSignUp || (confirmPassword.isNotEmpty() && confirmPassword == password)
     val canSubmit = !isWorking && validation == CredentialsValidation.Valid && passwordsMatch
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().imePadding()) {
+    // safeDrawingPadding first: the app draws edge-to-edge, and without it this screen — which
+    // renders outside the shell's Scaffold — drew its brand mark and fields under the status bar.
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
         val layout = NeoFintechLayoutPolicy.forWidth(maxWidth.value.toInt())
         val horizontalGutter = maxOf(16, layout.horizontalPaddingDp)
         Column(
+            // fillMaxSize before the scroll fixes the column's minimum height to the viewport, so
+            // Arrangement.Center centres the form when it fits and still scrolls once the keyboard
+            // shrinks the space below it — a fixed Center without the scroll would just clip.
             modifier = Modifier
                 .widthIn(max = layout.contentMaxWidthDp.dp)
-                .fillMaxWidth()
+                .fillMaxSize()
                 .align(Alignment.TopCenter)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = horizontalGutter.dp)
                 .padding(vertical = NeoSpacing.xl),
-            verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
+            verticalArrangement = Arrangement.Center,
         ) {
             BrandHeader(isSignUp = isSignUp)
 
