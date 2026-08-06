@@ -78,8 +78,17 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
      segundos de abrir. Diego lo tocó antes de que Play confirmara Pro y acuñó el cuarto negocio.
      Ahora `entitlementResolvedState` separa ambos casos y un dispositivo vacío espera a Play hasta
      `ENTITLEMENT_WAIT_MILLIS` (8 s) antes de ofrecer nada.
-  **Sigue faltando la evidencia en dispositivo**: instalar la 1.8 desde Play, desinstalar,
-  reinstalar, iniciar sesión y ver volver los clientes. Hasta verlo, esto no está cerrado.
+  **Probado en la 1.8 el 2026-08-06 y SIGUE FALLANDO.** Diego, con Pro reconocida por la app e
+  internet bien, recibe "No se pudo recuperar tu información de la nube" — o sea
+  `CloudRestoreResult.Failed`. Se desplegó además un tercer arreglo (reordenar `isOwner` antes que
+  `canReadBusiness` en `allow read` de `/businesses`, porque `canReadBusiness` gasta 2 accesos por
+  negocio y el límite es 10 por consulta: con 6 negocios eran 12). **No bastó.**
+  Descartado ya: el documento de miembro está correcto (`status: ACTIVE`, `role: OWNER`).
+  **El problema de fondo es que la app oculta la causa**: el `SyncFailure.message` trae el código de
+  Firestore y se descarta al armar el texto de UI, y no hay un solo `Log` en el camino. Logcat no
+  sirve hoy — se capturó y no aparece ni una línea de la app ni del SDK. **Nada más se arregla a
+  ciegas**: el siguiente paso es una 1.9 que muestre y registre el error real, distinguiendo si
+  falló el descubrimiento o la descarga.
 - **No se pueden correr las pruebas instrumentadas contra el teléfono de Diego.** No hay
   `applicationIdSuffix` en debug, así que el APK de prueba comparte `applicationId` con el de Play
   pero lleva otra firma: instalarlo exige desinstalar la versión de Play y **borra justo el estado
