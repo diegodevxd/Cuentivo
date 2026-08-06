@@ -54,6 +54,15 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 - **El enforcement de App Check está APAGADO a propósito.** Los testers en versiones viejas no
   llevan App Check: activarlo antes de que actualicen les daría `PERMISSION_DENIED`.
+- **⚠️ PRIORIDAD: reinstalar la app con cuenta Pro dejó los clientes vacíos.** Reportado por Diego
+  el 2026-08-06: desinstaló, reinstaló, la suscripción Pro se conservó (correcto, vive en Play) pero
+  **los clientes no volvieron**. El respaldo en la nube es lo que Pro vende, así que esto es lo
+  primero a investigar. Tres hipótesis, sin verificar: (a) no volvió a iniciar sesión; (b) esos
+  clientes se crearon antes de ser Pro y `SyncWorker` nunca los subió (sale temprano si el plan no
+  permite nube, `SyncWorker.kt:22`); (c) **el bug real** — al reinstalar se crea un negocio con
+  `businessId` nuevo y, como toda consulta filtra por él, la descarga busca un negocio que no existe
+  en la nube. Empezar por confirmar con Diego si inició sesión, y luego mirar
+  `sync/OwnerMembershipBootstrap.kt` y el arranque de `MainActivity`.
 - **La caducidad de Pro nunca se ha visto ocurrir.** Que quien deja de pagar deje de tener nube es
   la mitad del ciclo de cobro que sigue sin evidencia.
 - ~~La SHA-256 podría ser la de la clave de carga~~ **RESUELTO el 2026-08-06**: el logcat del
