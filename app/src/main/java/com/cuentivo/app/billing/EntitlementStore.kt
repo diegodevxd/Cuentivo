@@ -58,6 +58,7 @@ class EntitlementStore(context: Context) {
     fun allowsCloudSync(
         userId: String? = FirebaseAuth.getInstance().currentUser?.uid,
         nowEpochMillis: Long = System.currentTimeMillis(),
+        isEmailVerified: Boolean = FirebaseAuth.getInstance().currentUser?.isEmailVerified == true,
     ): Boolean = SyncEntitlement.allowsCloudSync(
         storedUserId = preferences.getString(USER_ID, null),
         storedTier = preferences.getString(TIER, null),
@@ -65,6 +66,7 @@ class EntitlementStore(context: Context) {
         verifiedAtEpochMillis = preferences.getLong(VERIFIED_AT, 0L),
         currentUserId = userId,
         nowEpochMillis = nowEpochMillis,
+        isEmailVerified = isEmailVerified,
     )
 
     /** Drops the record. Used when the account itself is deleted. */

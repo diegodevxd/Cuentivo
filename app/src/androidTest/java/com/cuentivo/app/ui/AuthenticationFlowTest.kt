@@ -1,8 +1,11 @@
 package com.cuentivo.app.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -20,6 +23,8 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.cuentivo.app.ui.auth.AuthenticationScreen
 import com.cuentivo.app.ui.theme.CuentivoTheme
+import android.content.res.Configuration
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -158,8 +163,45 @@ class AuthenticationFlowTest {
         submitButton().assertIsDisplayed()
     }
 
-    private fun switchToCreate() {
-        composeRule.onNodeWithText("¿No tienes cuenta? Crear una").performScrollTo().performClick()
+    @Test fun invalid_email_uses_the_english_validation_resource() {
+        composeRule.setContent { Harness(localeTag = "en-US") }
+
+        type("Email", "not-an-email")
+
+        composeRule.onNodeWithText("Enter a valid email.").assertIsDisplayed()
+    }
+
+    @Test fun short_password_uses_the_english_validation_resource() {
+        composeRule.setContent { Harness(localeTag = "en-US") }
+
+        type("Email", "ana@example.com")
+        type("Password", "short")
+
+        composeRule.onNodeWithText("Password must be at least 8 characters.").assertIsDisplayed()
+    }
+
+    @Test fun mismatched_passwords_use_the_english_validation_resource() {
+        composeRule.setContent { Harness(localeTag = "en-US") }
+        switchToCreate("No account yet? Create one")
+
+        type("Email", "ana@example.com")
+        type("Password", "longEnough8")
+        type("Confirm your password", "different9")
+
+        composeRule.onNodeWithText("Passwords do not match.").assertIsDisplayed()
+    }
+
+    @Test fun sign_in_callback_failure_shows_the_fixed_english_message() {
+        composeRule.setContent { Harness(localeTag = "en-US", message = "Could not sign in.") }
+
+        composeRule.onNodeWithText("Could not sign in.").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Firebase: raw failure").assertCountEquals(0)
+        composeRule.onAllNodesWithText("No fue posible iniciar sesión").assertCountEquals(0)
+    }
+
+    private fun switchToCreate(label: String = "¿No tienes cuenta? Crear una") {
+        composeRule.onNodeWithText(label, useUnmergedTree = true)
+            .performScrollTo().performClick()
     }
 
     private fun type(label: String, text: String) {
@@ -173,7 +215,20 @@ class AuthenticationFlowTest {
     private val calls = mutableListOf<String>()
 
     @Composable
-    private fun Harness(isWorking: Boolean = false, message: String? = null) {
+    private fun Harness(
+        isWorking: Boolean = false,
+        message: String? = null,
+        localeTag: String = "es-MX",
+    ) {
+        val baseContext = LocalContext.current
+        val configuration = Configuration(LocalConfiguration.current).apply {
+            setLocale(Locale.forLanguageTag(localeTag))
+        }
+        val localizedContext = baseContext.createConfigurationContext(configuration)
+        CompositionLocalProvider(
+            LocalContext provides localizedContext,
+            LocalConfiguration provides configuration,
+        ) {
         CuentivoTheme {
             AuthenticationScreen(
                 isWorking = isWorking,
@@ -181,6 +236,7 @@ class AuthenticationFlowTest {
                 onSignIn = { email, password -> calls += "signIn:$email:$password" },
                 onSignUp = { email, password -> calls += "signUp:$email:$password" },
             )
+        }
         }
     }
 }

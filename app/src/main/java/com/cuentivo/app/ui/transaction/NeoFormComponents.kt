@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.ui.NeoMoney
+import com.cuentivo.app.R
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
 
@@ -183,7 +185,7 @@ internal fun <T> NeoSelectorField(
             }
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = "Elegir $label",
+                contentDescription = stringResource(R.string.form_choose_description, label),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
@@ -204,7 +206,7 @@ internal fun <T> NeoSelectorField(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("Buscar") },
+                    placeholder = { Text(stringResource(R.string.form_search)) },
                     leadingIcon = {
                         Icon(
                             Icons.Filled.Search,

@@ -42,10 +42,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cuentivo.app.R
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.domain.Money
@@ -85,7 +87,13 @@ fun ProductsScreen(
     onEditProduct: (ProductEntity, String, Long, String?) -> Unit = { _, _, _, _ -> },
     onArchiveProduct: (ProductEntity) -> Unit = {},
     onImportProducts: (Uri) -> Unit = {},
-    onShareImportTemplate: () -> Unit = {},
+    /**
+     * False when the plan does not include the spreadsheet feature. The check lives here, before
+     * the file picker, because deciding it afterwards made people choose a file and only then meet
+     * the paywall.
+     */
+    canImportProducts: Boolean = true,
+    onImportBlocked: () -> Unit = {},
     /**
      * Owned by whoever actually launches the import, so it also falls back to false when the plan
      * blocks it, there is no business, or the file cannot be read — none of which produce a report.
@@ -98,6 +106,7 @@ fun ProductsScreen(
      */
     isSaving: Boolean = false,
 ) {
+    val productsAddDescription = stringResource(R.string.products_add_description)
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<ProductEntity?>(null) }
     var archiving by remember { mutableStateOf<ProductEntity?>(null) }
@@ -138,11 +147,11 @@ fun ProductsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            text = "CATÁLOGO",
+                            text = stringResource(R.string.products_eyebrow),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        Text("Productos", style = MaterialTheme.typography.titleLarge)
+                        Text(stringResource(R.string.products_title), style = MaterialTheme.typography.titleLarge)
                     }
                     // The bottom bar's central + belongs to Nueva venta, so adding a product needs
                     // its own control rather than competing for that one.
@@ -152,28 +161,22 @@ fun ProductsScreen(
                     ) {
                         Icon(
                             Icons.Filled.Add,
-                            contentDescription = "Agregar producto",
+                            contentDescription = productsAddDescription,
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
             }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
-                    NeoAction(
-                        label = if (isImportingProducts) "Importando…" else "Importar",
-                        onClick = { importLauncher.launch(arrayOf("*/*")) },
-                        modifier = Modifier.weight(1f),
-                        enabled = !isImportingProducts,
-                        primary = false,
-                    )
-                    NeoAction(
-                        label = "Plantilla",
-                        onClick = onShareImportTemplate,
-                        modifier = Modifier.weight(1f),
-                        primary = false,
-                    )
-                }
+                NeoAction(
+                    label = if (isImportingProducts) stringResource(R.string.products_importing) else stringResource(R.string.products_import),
+                    onClick = {
+                        if (canImportProducts) importLauncher.launch(arrayOf("*/*")) else onImportBlocked()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isImportingProducts,
+                    primary = false,
+                )
             }
             item {
                 OutlinedTextField(
@@ -181,7 +184,7 @@ fun ProductsScreen(
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = {
-                        Text("Buscar por nombre o SKU", style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.products_search_placeholder), style = MaterialTheme.typography.bodyLarge)
                     },
                     leadingIcon = {
                         Icon(
@@ -200,13 +203,13 @@ fun ProductsScreen(
                 item {
                     val pristine = query.isBlank()
                     NeoEmptyState(
-                        title = if (pristine) "Aún no tienes productos" else "No encontramos ese producto",
+                        title = if (pristine) stringResource(R.string.products_empty_title) else stringResource(R.string.products_no_match_title),
                         detail = if (pristine) {
-                            "Agrégalos uno por uno o importa tu catálogo."
+                            stringResource(R.string.products_empty_detail)
                         } else {
-                            "Prueba con otro nombre o importa tu catálogo."
+                            stringResource(R.string.products_no_match_detail)
                         },
-                        actionLabel = if (pristine) "Agregar producto" else null,
+                        actionLabel = if (pristine) stringResource(R.string.products_add_description) else null,
                         onAction = if (pristine) ({ onShowFormChange(true) }) else null,
                     )
                 }
@@ -228,7 +231,7 @@ fun ProductsScreen(
         // ProductEntity.imageUri stores the file name, not the id, so the two never have to match.
         val draftId = remember { UUID.randomUUID().toString() }
         ProductFormDialog(
-            title = "Nuevo producto",
+            title = stringResource(R.string.products_form_new_title),
             initialName = "",
             initialPrice = "",
             initialPhoto = null,
@@ -243,15 +246,14 @@ fun ProductsScreen(
     }
     editing?.let { product ->
         ProductFormDialog(
-            title = "Editar producto",
+            title = stringResource(R.string.products_form_edit_title),
             initialName = product.name,
             initialPrice = Money.pesosText(product.salePriceCents),
             initialPhoto = product.imageUri,
             photoTargetId = product.id,
             store = imageStore,
             formKey = product.id,
-            note = "El precio nuevo solo aplica a ventas futuras: cada venta guarda el precio que " +
-                "se cobró ese día.",
+            note = stringResource(R.string.products_form_edit_note),
             onConfirm = { name, cents, photo ->
                 onEditProduct(product, name, cents, photo)
                 editing = null
@@ -262,21 +264,18 @@ fun ProductsScreen(
     archiving?.let { product ->
         AlertDialog(
             onDismissRequest = { archiving = null },
-            title = { Text("¿Eliminar ${product.name}?") },
+            title = { Text(stringResource(R.string.products_delete_title, product.name)) },
             text = {
                 // True because sale_items keeps the name and price charged that day, so removing the
                 // product from the catalog cannot rewrite what anyone was charged.
-                Text(
-                    "Dejará de aparecer al registrar ventas. Tus ventas anteriores no cambian: cada " +
-                        "una guarda el nombre y el precio que cobraste ese día."
-                )
+                Text(stringResource(R.string.products_delete_detail))
             },
             confirmButton = {
                 TextButton(onClick = { archiving = null; onArchiveProduct(product) }) {
-                    Text("Sí, eliminar", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.products_delete_confirm), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { archiving = null }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { archiving = null }) { Text(stringResource(R.string.form_cancel)) } },
         )
     }
 }
@@ -316,11 +315,11 @@ private fun ProductFormDialog(
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text("Nombre del producto") },
+            label = { Text(stringResource(R.string.products_form_name_label)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        MoneyField("Precio", priceText) { priceText = it }
+        MoneyField(stringResource(R.string.products_form_price_label), priceText) { priceText = it }
         ProductPhotoPicker(photo, store, photoTargetId) { photo = it }
         note?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
     }
@@ -375,18 +374,18 @@ private fun ProductRow(
                 IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = "Opciones de ${product.name}",
+                        contentDescription = stringResource(R.string.products_options_description, product.name),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
-                        text = { Text("Editar") },
+                        text = { Text(stringResource(R.string.products_edit)) },
                         onClick = { menuOpen = false; onEdit() },
                     )
                     DropdownMenuItem(
-                        text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
+                        text = { Text(stringResource(R.string.products_delete), color = MaterialTheme.colorScheme.error) },
                         onClick = { menuOpen = false; onArchive() },
                     )
                 }

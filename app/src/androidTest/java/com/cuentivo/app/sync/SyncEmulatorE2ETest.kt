@@ -108,8 +108,51 @@ class SyncEmulatorE2ETest {
     private fun signUpUnique(label: String): String {
         val email = "e2e-$runId-$label@cuentivo.test"
         val result = Tasks.await(auth.createUserWithEmailAndPassword(email, "Password123!"))
+        val uid = requireNotNull(result.user?.uid) { "El emulador de Auth no devolvió uid" }
+        markEmailVerified(uid)
+        return uid
+    }
+
+    /**
+     * Does what clicking the link in a real inbox would do.
+     *
+     * `firestore.rules` refuses anyone whose `email_verified` claim is false, and the Auth emulator
+     * creates accounts unverified. The flag is flipped through the emulator's admin endpoint and
+     * then the ID token is force-refreshed, because the claim Firestore reads is the one baked into
+     * the token, not whatever the client last decided to believe.
+     */
+    private fun signUpUniqueUnverified(label: String): String {
+        val email = "e2e-$runId-$label@cuentivo.test"
+        val result = Tasks.await(auth.createUserWithEmailAndPassword(email, "Password123!"))
         return requireNotNull(result.user?.uid) { "El emulador de Auth no devolvió uid" }
     }
+
+    private fun markEmailVerified(uid: String) {
+        val projectId = requireNotNull(FirebaseApp.getInstance().options.projectId)
+        val connection = (
+            URL("http://10.0.2.2:9099/identitytoolkit.googleapis.com/v1/projects/$projectId/accounts:update")
+                .openConnection() as HttpURLConnection
+            ).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Authorization", "Bearer owner")
+            setRequestProperty("Content-Type", "application/json")
+        }
+        connection.use {
+            it.outputStream.write("""{"localId":"$uid","emailVerified":true}""".toByteArray())
+            check(it.responseCode in 200..299) { "El emulador de Auth rechazó la verificación: ${it.responseCode}" }
+        }
+        val user = requireNotNull(auth.currentUser)
+        Tasks.await(user.reload())
+        Tasks.await(user.getIdToken(true))
+    }
+
+    private inline fun <T> HttpURLConnection.use(block: (HttpURLConnection) -> T): T =
+        try {
+            block(this)
+        } finally {
+            disconnect()
+        }
 
     /**
      * Opens the very database [SyncWorker] will open, and closes it again.
@@ -301,6 +344,33 @@ class SyncEmulatorE2ETest {
 
     private fun grantFree(uid: String) =
         entitlements.remember(uid, SubscriptionTier.FREE, System.currentTimeMillis())
+
+    /**
+     * The whole point of requiring a verified address, proven against the real rules.
+     *
+     * Everything else is identical to the Pro upload that succeeds in `b_`: same business, same
+     * plan, same queue. The only difference is that nobody ever opened the verification mail, and
+     * the server refuses the lot. The queue survives, because a refused write is not a lost one.
+     */
+    @Test
+    fun g_an_unverified_account_publishes_nothing_and_keeps_its_queue() {
+        val uid = signUpUniqueUnverified("g")
+        val now = System.currentTimeMillis()
+        val businessId = seedAuthorisedBusiness(uid, now)
+        grantPro(uid)
+
+        // Result.retry(), not failure: the Worker never gives up on a queue it could not drain.
+        runWorker()
+
+        // Not even the read gets through: `isAuthenticated()` sits under every rule, so an
+        // unverified account is refused in both directions rather than merely being unable to write.
+        val refusal = runCatching { serverDoc("businesses/$businessId") }.exceptionOrNull()
+        assertTrue(
+            "Firestore debe negar el acceso, no devolver el documento: $refusal",
+            refusal?.message?.contains("PERMISSION_DENIED") == true,
+        )
+        assertTrue("La cola debe conservarse para reintentar", pendingCount() > 0)
+    }
 
     private fun pendingCount(): Int = withDatabase { database ->
         runBlocking { database.syncOperationDao().pending(1_000).size }

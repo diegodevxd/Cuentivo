@@ -12,6 +12,19 @@ data class StatementEntry(
     val direction: String,
     val amountCents: Long,
     val notes: String?,
+    /**
+     * The linked payment, when this row came from `account_movements.paymentId`. Lets
+     * `CustomerStatementSummary.canceledPaymentIds` pair a `PAYMENT` row with the `REFUND` that
+     * reversed it, entirely from the ledger already loaded — no extra query.
+     */
+    val paymentId: String? = null,
+    /** The sale this movement came from, when it had one. Present on charges and cancellations. */
+    val saleId: String? = null,
+    /**
+     * What was sold, already phrased by [SaleLineSummary]. Kept on the entry instead of looked up
+     * per row: the statement is built once and read by the sheet, the CSV and the shared message.
+     */
+    val detail: String? = null,
 )
 
 /**

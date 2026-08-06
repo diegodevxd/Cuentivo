@@ -27,8 +27,8 @@ android {
         targetSdk = 36
         // Play refuses an AAB whose versionCode was already uploaded, so this goes up on every
         // upload even when versionName does not.
-        versionCode = 7
-        versionName = "1.3"
+        versionCode = 9
+        versionName = "1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -82,6 +82,14 @@ android {
         compose = true
         buildConfig = true
     }
+    // The app switches between Spanish and English at runtime. Both resource sets must be present
+    // in every Play-delivered install; otherwise a language split may leave the selected locale
+    // unavailable until Play downloads an additional split.
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
 }
 
 dependencies {
@@ -96,6 +104,14 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+    // App Check proves the request came from this app, not from a script holding the API key that
+    // ships inside every APK. The rules already prove *who* is calling; this proves *from where*.
+    implementation("com.google.firebase:firebase-appcheck-playintegrity")
+    // Debug only. Play Integrity attests a binary installed by Play, which an emulator is not, so
+    // the debug provider is what lets instrumented tests get a token at all. Deliberately NOT
+    // `implementation`: shipping a provider that hands out tokens on request would undo the whole
+    // protection. The variant-specific AppCheckProvider is what keeps the two apart.
+    debugImplementation("com.google.firebase:firebase-appcheck-debug")
     implementation(platform(libs.androidx.compose.bom))
     // Version managed by the Compose BOM. Core set only — material-icons-extended stays out.
     implementation("androidx.compose.material:material-icons-core")

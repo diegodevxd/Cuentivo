@@ -11,7 +11,7 @@ class CustomerLedgerPresentationTest {
     @Test
     fun a_credit_sale_is_debt_the_customer_owes() {
         assertEquals(
-            LedgerVisual("Compra", "−", "Deuda", LedgerTone.DEBT),
+            LedgerVisual("Venta", "−", "Deuda", LedgerTone.DEBT),
             CustomerLedgerPresentation.from("CHARGE", "DEBIT"),
         )
     }
@@ -25,9 +25,9 @@ class CustomerLedgerPresentationTest {
     }
 
     @Test
-    fun a_refund_puts_the_debt_back() {
+    fun a_refund_reads_as_a_canceled_abono_not_a_second_charge() {
         assertEquals(
-            LedgerVisual("Reembolso", "−", "Deuda", LedgerTone.DEBT),
+            LedgerVisual("Abono cancelado", "−", "Corrección", LedgerTone.DEBT),
             CustomerLedgerPresentation.from("REFUND", "DEBIT"),
         )
     }

@@ -4,6 +4,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -41,6 +43,69 @@ class OperationDaoTest {
         assertEquals(1_000, dao.businessReceivableCents("business-1"))
     }
 
+    @Test fun sale_creation_rejects_invalid_sale_and_charge_payloads() = runBlocking {
+        val dao = database.financialDao()
+        val baseSale = SaleEntity("sale-base", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)
+        val items = listOf(SaleItemEntity("item-base", baseSale.id, null, "Producto", 1, 1_000, 0, 1_000))
+
+        suspend fun attempt(sale: SaleEntity, charge: AccountMovementEntity, key: String) {
+            try {
+                dao.createSaleIdempotently(OperationEntity(key, "SALE", sale.id, 1), sale, items.map { it.copy(saleId = sale.id) }, charge)
+                throw AssertionError("Expected sale validation failure for $key")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+
+        attempt(baseSale.copy(id = "sale-zero", totalCents = 0), AccountMovementEntity("m-zero", "business-1", "customer-1", "sale-zero", null, "CHARGE", 0, "DEBIT", 1, "owner-1", null, null), "sale-zero-key")
+        attempt(baseSale.copy(id = "sale-negative", totalCents = -1), AccountMovementEntity("m-negative", "business-1", "customer-1", "sale-negative", null, "CHARGE", 1, "DEBIT", 1, "owner-1", null, null), "sale-negative-key")
+        attempt(baseSale.copy(id = "sale-type"), AccountMovementEntity("m-type", "business-1", "customer-1", "sale-type", null, "PAYMENT", 1_000, "DEBIT", 1, "owner-1", null, null), "sale-type-key")
+        attempt(baseSale.copy(id = "sale-direction"), AccountMovementEntity("m-direction", "business-1", "customer-1", "sale-direction", null, "CHARGE", 1_000, "CREDIT", 1, "owner-1", null, null), "sale-direction-key")
+        attempt(baseSale.copy(id = "sale-amount"), AccountMovementEntity("m-amount", "business-1", "customer-1", "sale-amount", null, "CHARGE", 999, "DEBIT", 1, "owner-1", null, null), "sale-amount-key")
+        attempt(baseSale.copy(id = "sale-business"), AccountMovementEntity("m-business", "business-2", "customer-1", "sale-business", null, "CHARGE", 1_000, "DEBIT", 1, "owner-1", null, null), "sale-business-key")
+        attempt(baseSale.copy(id = "sale-customer"), AccountMovementEntity("m-customer", "business-1", "customer-2", "sale-customer", null, "CHARGE", 1_000, "DEBIT", 1, "owner-1", null, null), "sale-customer-key")
+        attempt(baseSale.copy(id = "sale-id"), AccountMovementEntity("m-id", "business-1", "customer-1", "other-sale", null, "CHARGE", 1_000, "DEBIT", 1, "owner-1", null, null), "sale-id-key")
+    }
+
+    @Test fun payment_registration_rejects_invalid_payment_movement_payloads() = runBlocking {
+        val dao = database.financialDao()
+        val payment = PaymentEntity("payment-invalid", "business-1", "customer-1", 500, "CASH", 1, null, null, "owner-1", 1, null)
+
+        suspend fun attempt(movement: AccountMovementEntity, key: String) {
+            try {
+                dao.registerPaymentIdempotently(OperationEntity(key, "PAYMENT", payment.id, 1), payment, emptyList(), movement)
+                throw AssertionError("Expected payment validation failure for $key")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+
+        attempt(AccountMovementEntity("pm-type", "business-1", "customer-1", null, payment.id, "CHARGE", 500, "CREDIT", 1, "owner-1", null, null), "payment-type-key")
+        attempt(AccountMovementEntity("pm-direction", "business-1", "customer-1", null, payment.id, "PAYMENT", 500, "DEBIT", 1, "owner-1", null, null), "payment-direction-key")
+        attempt(AccountMovementEntity("pm-zero", "business-1", "customer-1", null, payment.id, "PAYMENT", 0, "CREDIT", 1, "owner-1", null, null), "payment-zero-key")
+        attempt(AccountMovementEntity("pm-negative", "business-1", "customer-1", null, payment.id, "PAYMENT", -1, "CREDIT", 1, "owner-1", null, null), "payment-negative-key")
+        attempt(AccountMovementEntity("pm-amount", "business-1", "customer-1", null, payment.id, "PAYMENT", 499, "CREDIT", 1, "owner-1", null, null), "payment-amount-key")
+        attempt(AccountMovementEntity("pm-business", "business-2", "customer-1", null, payment.id, "PAYMENT", 500, "CREDIT", 1, "owner-1", null, null), "payment-business-key")
+        attempt(AccountMovementEntity("pm-customer", "business-1", "customer-2", null, payment.id, "PAYMENT", 500, "CREDIT", 1, "owner-1", null, null), "payment-customer-key")
+        attempt(AccountMovementEntity("pm-id", "business-1", "customer-1", null, "other-payment", "PAYMENT", 500, "CREDIT", 1, "owner-1", null, null), "payment-id-key")
+    }
+
+    @Test fun reserved_sale_retry_returns_result_before_validating_new_payload() = runBlocking {
+        val dao = database.financialDao()
+        val sale = SaleEntity("sale-reserved", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)
+        val charge = AccountMovementEntity("charge-reserved", "business-1", "customer-1", sale.id, null, "CHARGE", 1_000, "DEBIT", 1, "owner-1", null, null)
+        dao.createSaleIdempotently(OperationEntity("reserved-key", "SALE", sale.id, 1), sale, emptyList(), charge)
+
+        val retry = dao.createSaleIdempotently(
+            OperationEntity("reserved-key", "SALE", "other-sale", 2),
+            sale.copy(id = "other-sale", totalCents = 0),
+            emptyList(),
+            charge.copy(id = "other-charge", saleId = "other-sale", amountCents = 0),
+        )
+
+        assertEquals(sale.id, retry)
+    }
+
     @Test fun cancellation_adds_a_compensating_movement_without_erasing_the_sale() = runBlocking {
         val dao = database.financialDao()
         val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)
@@ -54,6 +119,34 @@ class OperationDaoTest {
         assertEquals("sale-1", result)
         assertEquals(0, dao.customerBalanceCents(sale.businessId, sale.customerId))
         assertEquals(2, dao.movementCountForSale(sale.id))
+    }
+
+    @Test fun fully_paid_sale_cannot_be_canceled_with_a_zero_amount_movement() = runBlocking {
+        val dao = database.financialDao()
+        val sale = SaleEntity("sale-fully-paid", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)
+        val charge = AccountMovementEntity("charge-fully-paid", sale.businessId, sale.customerId, sale.id, null, "CHARGE", 1_000, "DEBIT", 1, sale.sellerUserId, null, null)
+        dao.createSaleIdempotently(
+            OperationEntity("sale-fully-paid-key", "SALE", sale.id, 1), sale,
+            listOf(SaleItemEntity("item-fully-paid", sale.id, null, "Producto", 1, 1_000, 0, 1_000)), charge,
+        )
+        val payment = PaymentEntity("payment-fully-paid", sale.businessId, sale.customerId, 1_000, "CASH", 2, null, null, sale.sellerUserId, 2, null)
+        dao.registerPaymentIdempotently(
+            OperationEntity("payment-fully-paid-key", "PAYMENT", payment.id, 2), payment,
+            listOf(PaymentAllocationEntity("allocation-fully-paid", payment.id, sale.id, 1_000)),
+            AccountMovementEntity("payment-movement-fully-paid", sale.businessId, sale.customerId, sale.id, payment.id, "PAYMENT", 1_000, "CREDIT", 2, sale.sellerUserId, null, null),
+        )
+
+        try {
+            dao.cancelSaleIdempotently(
+                OperationEntity("cancel-fully-paid-key", "SALE_CANCELLATION", sale.id, 3), sale.id,
+                AccountMovementEntity("zero-cancellation", sale.businessId, sale.customerId, sale.id, null, "CANCELLATION", 0, "CREDIT", 3, sale.sellerUserId, charge.id, null),
+            )
+            throw AssertionError("Expected cancellation of a fully paid sale to be rejected.")
+        } catch (_: IllegalArgumentException) {
+            assertEquals(false, dao.saleForId(sale.id)?.isCanceled)
+            assertEquals(2, dao.movementCountForSale(sale.id))
+            assertEquals(0, dao.customerBalanceCents(sale.businessId, sale.customerId))
+        }
     }
 
     @Test fun payment_reversal_restores_debt_without_erasing_the_payment() = runBlocking {
@@ -71,6 +164,135 @@ class OperationDaoTest {
         assertEquals(payment.id, result)
         assertEquals(1_000, dao.customerBalanceCents(sale.businessId, sale.customerId))
         assertEquals(2, dao.movementCountForPayment(payment.id))
+    }
+
+    @Test fun payment_reversal_is_rejected_after_its_sale_is_canceled() = runBlocking {
+        val dao = database.financialDao()
+        val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)
+        val charge = AccountMovementEntity("charge-1", sale.businessId, sale.customerId, sale.id, null, "CHARGE", 1_000, "DEBIT", 1, sale.sellerUserId, null, null)
+        dao.createSaleIdempotently(OperationEntity("sale-key", "SALE", sale.id, 1), sale, listOf(SaleItemEntity("item-1", sale.id, null, "Producto", 1, 1_000, 0, 1_000)), charge)
+        val payment = PaymentEntity("payment-1", sale.businessId, sale.customerId, 300, "CASH", 2, null, null, sale.sellerUserId, 2, null)
+        val paymentMovement = AccountMovementEntity("payment-movement-1", sale.businessId, sale.customerId, sale.id, payment.id, "PAYMENT", 300, "CREDIT", 2, sale.sellerUserId, null, null)
+        dao.registerPaymentIdempotently(
+            OperationEntity("payment-key", "PAYMENT", payment.id, 2), payment,
+            listOf(PaymentAllocationEntity("allocation-1", payment.id, sale.id, 300)), paymentMovement,
+        )
+        dao.cancelSaleIdempotently(
+            OperationEntity("cancel-key", "SALE_CANCELLATION", sale.id, 3), sale.id,
+            AccountMovementEntity("cancellation-1", sale.businessId, sale.customerId, sale.id, null, "CANCELLATION", 700, "CREDIT", 3, sale.sellerUserId, charge.id, null),
+        )
+        val refund = AccountMovementEntity("refund-1", sale.businessId, sale.customerId, sale.id, payment.id, "REFUND", 300, "DEBIT", 4, sale.sellerUserId, paymentMovement.id, null)
+
+        try {
+            dao.cancelPaymentIdempotently(OperationEntity("refund-key", "PAYMENT_REVERSAL", payment.id, 4), payment.id, refund)
+            throw AssertionError("Expected payment reversal to be rejected after sale cancellation.")
+        } catch (_: IllegalArgumentException) {
+            assertEquals(null, dao.paymentForId(payment.id)?.canceledAtEpochMillis)
+            assertEquals(1, dao.movementCountForPayment(payment.id))
+            assertEquals(0, dao.customerBalanceCents(sale.businessId, sale.customerId))
+        }
+    }
+
+    @Test fun correction_payments_include_canceled_sale_block_and_exclude_foreign_business() = runBlocking {
+        val dao = database.financialDao()
+        val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "S-1", 1, null, 1_000, 0, 1_000, false, null, 1, 1)
+        dao.createSaleIdempotently(
+            OperationEntity("sale-key", "SALE", sale.id, 1), sale,
+            listOf(SaleItemEntity("item-1", sale.id, null, "Producto", 1, 1_000, 0, 1_000)),
+            AccountMovementEntity("charge-1", sale.businessId, sale.customerId, sale.id, null, "CHARGE", 1_000, "DEBIT", 1, sale.sellerUserId, null, null),
+        )
+        val payment = PaymentEntity("payment-1", sale.businessId, sale.customerId, 300, "CASH", 2, "ref-1", null, sale.sellerUserId, 2, null)
+        dao.registerPaymentIdempotently(
+            OperationEntity("payment-key", "PAYMENT", payment.id, 2), payment,
+            listOf(PaymentAllocationEntity("allocation-1", payment.id, sale.id, 300)),
+            AccountMovementEntity("payment-movement-1", sale.businessId, sale.customerId, sale.id, payment.id, "PAYMENT", 300, "CREDIT", 2, sale.sellerUserId, null, null),
+        )
+        dao.cancelSaleIdempotently(
+            OperationEntity("cancel-key", "SALE_CANCELLATION", sale.id, 3), sale.id,
+            AccountMovementEntity("cancellation-1", sale.businessId, sale.customerId, sale.id, null, "CANCELLATION", 700, "CREDIT", 3, sale.sellerUserId, "charge-1", null),
+        )
+        val foreignPayment = PaymentEntity("payment-foreign", "business-2", "customer-1", 100, "CASH", 4, null, null, sale.sellerUserId, 4, null)
+        dao.registerPaymentIdempotently(
+            OperationEntity("foreign-payment-key", "PAYMENT", foreignPayment.id, 4), foreignPayment, emptyList(),
+            AccountMovementEntity("foreign-payment-movement", "business-2", "customer-1", null, foreignPayment.id, "PAYMENT", 100, "CREDIT", 4, sale.sellerUserId, null, null),
+        )
+
+        val rows = dao.correctionPaymentsForCustomer("business-1", "customer-1")
+
+        assertEquals(listOf("payment-1"), rows.map { it.id })
+        assertEquals(true, rows.single().blockedByCanceledSale)
+    }
+
+    @Test fun correction_payment_without_allocation_is_not_blocked() = runBlocking {
+        val dao = database.financialDao()
+        val payment = payment("payment-unallocated", "business-1", "customer-1", null)
+        dao.adoptPayment(payment)
+
+        val row = dao.correctionPaymentsForCustomer("business-1", "customer-1").single()
+
+        assertFalse(row.blockedByCanceledSale)
+    }
+
+    @Test fun correction_payment_allocated_to_active_sale_is_not_blocked() = runBlocking {
+        val dao = database.financialDao()
+        val sale = sale("sale-active", "business-1", "customer-1", false)
+        val payment = payment("payment-active-sale", "business-1", "customer-1", null)
+        dao.adoptSale(sale)
+        dao.adoptPayment(payment)
+        dao.adoptAllocation(PaymentAllocationEntity("allocation-active", payment.id, sale.id, 100))
+
+        val row = dao.correctionPaymentsForCustomer("business-1", "customer-1").single()
+
+        assertFalse(row.blockedByCanceledSale)
+    }
+
+    @Test fun correction_payment_allocated_to_active_and_canceled_sales_is_blocked() = runBlocking {
+        val dao = database.financialDao()
+        val activeSale = sale("sale-active", "business-1", "customer-1", false)
+        val canceledSale = sale("sale-canceled", "business-1", "customer-1", true)
+        val payment = payment("payment-mixed-sales", "business-1", "customer-1", null)
+        dao.adoptSale(activeSale)
+        dao.adoptSale(canceledSale)
+        dao.adoptPayment(payment)
+        dao.adoptAllocation(PaymentAllocationEntity("allocation-active", payment.id, activeSale.id, 100))
+        dao.adoptAllocation(PaymentAllocationEntity("allocation-canceled", payment.id, canceledSale.id, 100))
+
+        val row = dao.correctionPaymentsForCustomer("business-1", "customer-1").single()
+
+        assertTrue(row.blockedByCanceledSale)
+    }
+
+    @Test fun canceled_correction_payment_is_absent() = runBlocking {
+        val dao = database.financialDao()
+        dao.adoptPayment(payment("payment-canceled", "business-1", "customer-1", 99))
+
+        assertTrue(dao.correctionPaymentsForCustomer("business-1", "customer-1").isEmpty())
+    }
+
+    @Test fun correction_payment_linked_to_canceled_sale_of_another_customer_is_not_blocked() = runBlocking {
+        val dao = database.financialDao()
+        val sale = sale("sale-other-customer", "business-1", "customer-2", true)
+        val payment = payment("payment-other-customer", "business-1", "customer-1", null)
+        dao.adoptSale(sale)
+        dao.adoptPayment(payment)
+        dao.adoptAllocation(PaymentAllocationEntity("allocation-other-customer", payment.id, sale.id, 100))
+
+        val row = dao.correctionPaymentsForCustomer("business-1", "customer-1").single()
+
+        assertFalse(row.blockedByCanceledSale)
+    }
+
+    @Test fun correction_payment_linked_to_canceled_sale_of_another_business_is_not_blocked() = runBlocking {
+        val dao = database.financialDao()
+        val sale = sale("sale-other-business", "business-2", "customer-1", true)
+        val payment = payment("payment-artificial-link", "business-1", "customer-1", null)
+        dao.adoptSale(sale)
+        dao.adoptPayment(payment)
+        dao.adoptAllocation(PaymentAllocationEntity("allocation-artificial-link", payment.id, sale.id, 100))
+
+        val row = dao.correctionPaymentsForCustomer("business-1", "customer-1").single()
+
+        assertFalse(row.blockedByCanceledSale)
     }
 
     @Test fun repeated_adjustment_key_creates_only_one_auditable_movement() = runBlocking {
@@ -186,9 +408,125 @@ class OperationDaoTest {
         assertEquals("MIGRATION_EXECUTED", database.auditDao().forBusiness("business-1").single().action)
     }
 
+    /**
+     * The arithmetic that justifies crediting the previous total in full instead of the unpaid
+     * remainder: $400 sold, $200 collected, corrected to $500, so $300 is owed. Crediting only the
+     * $200 outstanding would leave the customer owing $500 for a sale they part-paid.
+     */
+    @Test fun replacing_a_partly_paid_sale_leaves_the_exact_balance() = runBlocking {
+        val dao = database.financialDao()
+        val previous = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "V-1", 1, null, 40_000, 0, 40_000, false, null, 1, 1)
+        dao.createSaleIdempotently(
+            OperationEntity("sale-1-key", "SALE", previous.id, 1),
+            previous,
+            listOf(SaleItemEntity("item-1", previous.id, "product-1", "Jabón", 1, 40_000, 0, 40_000)),
+            AccountMovementEntity("charge-1", "business-1", "customer-1", previous.id, null, "CHARGE", 40_000, "DEBIT", 1, "owner-1", null, null),
+        )
+        val paid = PaymentEntity("payment-1", "business-1", "customer-1", 20_000, "CASH", 1, null, null, "owner-1", 1, null)
+        dao.registerPaymentIdempotently(
+            OperationEntity("payment-1-key", "PAYMENT", paid.id, 1),
+            paid,
+            listOf(PaymentAllocationEntity("allocation-1", paid.id, previous.id, 20_000)),
+            AccountMovementEntity("movement-payment-1", "business-1", "customer-1", null, paid.id, "PAYMENT", 20_000, "CREDIT", 1, "owner-1", null, null),
+        )
+        assertEquals(20_000, dao.customerBalanceCents("business-1", "customer-1"))
+
+        val corrected = previous.copy(id = "sale-2", subtotalCents = 50_000, totalCents = 50_000)
+        val result = dao.replaceSaleIdempotently(
+            OperationEntity("replace-1-key", "SALE", corrected.id, 2),
+            previous.id,
+            AccountMovementEntity("cancel-1", "business-1", "customer-1", previous.id, null, "CANCELLATION", 40_000, "CREDIT", 2, "owner-1", null, "Venta corregida"),
+            corrected,
+            listOf(SaleItemEntity("item-2", corrected.id, "product-1", "Jabón", 1, 50_000, 0, 50_000)),
+            AccountMovementEntity("charge-2", "business-1", "customer-1", corrected.id, null, "CHARGE", 50_000, "DEBIT", 2, "owner-1", null, null),
+            listOf(PaymentAllocationEntity("allocation-2", paid.id, corrected.id, 20_000)),
+        )
+
+        assertEquals("sale-2", result)
+        assertEquals(30_000, dao.customerBalanceCents("business-1", "customer-1"))
+        assertTrue(requireNotNull(dao.saleForId(previous.id)).isCanceled)
+        // The collected money follows the corrected sale, so it does not look unpaid.
+        assertEquals(20_000, dao.activeAllocatedPaymentCents(corrected.id))
+    }
+
+    @Test fun replaying_a_correction_returns_the_same_sale_without_charging_twice() = runBlocking {
+        val dao = database.financialDao()
+        val previous = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "V-1", 1, null, 10_000, 0, 10_000, false, null, 1, 1)
+        dao.createSaleIdempotently(
+            OperationEntity("sale-1-key", "SALE", previous.id, 1),
+            previous,
+            listOf(SaleItemEntity("item-1", previous.id, "product-1", "Jabón", 1, 10_000, 0, 10_000)),
+            AccountMovementEntity("charge-1", "business-1", "customer-1", previous.id, null, "CHARGE", 10_000, "DEBIT", 1, "owner-1", null, null),
+        )
+
+        suspend fun correct(saleId: String, suffix: String): String {
+            val corrected = previous.copy(id = saleId, subtotalCents = 12_000, totalCents = 12_000)
+            return dao.replaceSaleIdempotently(
+                OperationEntity("replace-1-key", "SALE", saleId, 2),
+                previous.id,
+                AccountMovementEntity("cancel-$suffix", "business-1", "customer-1", previous.id, null, "CANCELLATION", 10_000, "CREDIT", 2, "owner-1", null, "Venta corregida"),
+                corrected,
+                listOf(SaleItemEntity("item-$suffix", saleId, "product-1", "Jabón", 1, 12_000, 0, 12_000)),
+                AccountMovementEntity("charge-$suffix", "business-1", "customer-1", saleId, null, "CHARGE", 12_000, "DEBIT", 2, "owner-1", null, null),
+                emptyList(),
+            )
+        }
+
+        assertEquals("sale-2", correct("sale-2", "a"))
+        assertEquals("sale-2", correct("sale-3", "b"))
+        assertEquals(12_000, dao.customerBalanceCents("business-1", "customer-1"))
+    }
+
+    @Test fun a_correction_refuses_a_canceled_sale_a_partial_credit_and_overcarried_payments() = runBlocking {
+        val dao = database.financialDao()
+        val previous = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "V-1", 1, null, 10_000, 0, 10_000, false, null, 1, 1)
+        dao.createSaleIdempotently(
+            OperationEntity("sale-1-key", "SALE", previous.id, 1),
+            previous,
+            listOf(SaleItemEntity("item-1", previous.id, "product-1", "Jabón", 1, 10_000, 0, 10_000)),
+            AccountMovementEntity("charge-1", "business-1", "customer-1", previous.id, null, "CHARGE", 10_000, "DEBIT", 1, "owner-1", null, null),
+        )
+        val corrected = previous.copy(id = "sale-2", subtotalCents = 12_000, totalCents = 12_000)
+        val items = listOf(SaleItemEntity("item-2", corrected.id, "product-1", "Jabón", 1, 12_000, 0, 12_000))
+        val charge = AccountMovementEntity("charge-2", "business-1", "customer-1", corrected.id, null, "CHARGE", 12_000, "DEBIT", 2, "owner-1", null, null)
+
+        suspend fun attempt(key: String, cancellationCents: Long, carried: List<PaymentAllocationEntity>) {
+            try {
+                dao.replaceSaleIdempotently(
+                    OperationEntity(key, "SALE", corrected.id, 2),
+                    previous.id,
+                    AccountMovementEntity("cancel-$key", "business-1", "customer-1", previous.id, null, "CANCELLATION", cancellationCents, "CREDIT", 2, "owner-1", null, "Venta corregida"),
+                    corrected,
+                    items,
+                    charge,
+                    carried,
+                )
+                throw AssertionError("Expected the correction to be refused for $key")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+
+        // Anything short of the full previous total would count the paid part twice.
+        attempt("partial-credit", 6_000, emptyList())
+        // Nothing was ever collected on this sale, so nothing can be carried onto its replacement.
+        attempt("overcarried", 10_000, listOf(PaymentAllocationEntity("allocation-x", "payment-x", corrected.id, 5_000)))
+        assertEquals(10_000, dao.customerBalanceCents("business-1", "customer-1"))
+        assertFalse(requireNotNull(dao.saleForId(previous.id)).isCanceled)
+    }
+
     private fun customer(id: String, businessId: String, name: String) = CustomerEntity(
         id, businessId, name, name.lowercase(), null, null, null, null, null,
         true, 1, 1, null,
+    )
+
+    private fun sale(id: String, businessId: String, customerId: String, isCanceled: Boolean) = SaleEntity(
+        id, businessId, customerId, "owner-1", id, 1, null, 1_000, 0, 1_000,
+        isCanceled, if (isCanceled) "canceled" else null, 1, 1,
+    )
+
+    private fun payment(id: String, businessId: String, customerId: String, canceledAt: Long?) = PaymentEntity(
+        id, businessId, customerId, 100, "CASH", 2, null, null, "owner-1", 2, canceledAt,
     )
 
     private fun movement(

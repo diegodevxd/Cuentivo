@@ -33,9 +33,14 @@ internal object CustomerLedgerPresentation {
     fun from(type: String, direction: String): LedgerVisual {
         val debit = direction != CREDIT
         return when (type) {
-            "CHARGE" -> LedgerVisual("Compra", "−", "Deuda", LedgerTone.DEBT)
+            // "Venta", not "Compra": it is the same word the owner uses everywhere else in the app
+            // and in the message their customer receives, and one vocabulary is easier to trust.
+            "CHARGE" -> LedgerVisual("Venta", "−", "Deuda", LedgerTone.DEBT)
             "PAYMENT" -> LedgerVisual("Abono a cuenta", "+", "Abono", LedgerTone.CREDIT)
-            "REFUND" -> LedgerVisual("Reembolso", "−", "Deuda", LedgerTone.DEBT)
+            // Testers read "Reembolso" as a second, unrelated charge. It is really the cancellation
+            // of an earlier abono, so it says that instead — the paired PAYMENT row gets struck
+            // through by the UI using CustomerStatementSummary.canceledPaymentIds.
+            "REFUND" -> LedgerVisual("Abono cancelado", "−", "Corrección", LedgerTone.DEBT)
             "CANCELLATION" -> LedgerVisual("Venta cancelada", "+", "Corrección", LedgerTone.CREDIT)
             "ADJUSTMENT" -> if (debit) {
                 LedgerVisual("Ajuste", "−", "Ajuste de deuda", LedgerTone.DEBT)

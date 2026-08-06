@@ -35,7 +35,7 @@ class ProductFlowTest {
     private val created = mutableListOf<String>()
     private val edited = mutableListOf<String>()
     private val archived = mutableListOf<String>()
-    private var templateShared = 0
+    private var importBlocked = 0
 
     @Test fun catalog_shows_image_name_price_and_secondary_data() {
         composeRule.setContent { Harness() }
@@ -49,28 +49,27 @@ class ProductFlowTest {
         composeRule.onNodeWithText("SKU CAF-500 · Abarrotes").assertIsDisplayed()
     }
 
-    @Test fun import_and_template_actions_stay_visible_with_48_dp_targets() {
+    @Test fun the_import_action_stays_visible_with_a_48_dp_target() {
         composeRule.setContent { Harness() }
         openProducts()
 
-        listOf("Importar", "Plantilla").forEach { label ->
-            composeRule.onNodeWithText(label)
-                .assertIsDisplayed()
-                .assertHeightIsAtLeast(48.dp)
-                .assertWidthIsAtLeast(48.dp)
-        }
+        composeRule.onNodeWithText("Importar")
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
         composeRule.onNodeWithContentDescription("Agregar producto")
             .assertHeightIsAtLeast(48.dp)
             .assertWidthIsAtLeast(48.dp)
     }
 
-    @Test fun sharing_the_template_calls_its_callback() {
-        composeRule.setContent { Harness() }
+    /** The paywall has to come before the file picker, not after the person picked a file. */
+    @Test fun a_blocked_import_asks_to_upgrade_instead_of_opening_the_picker() {
+        composeRule.setContent { Harness(canImport = false) }
         openProducts()
 
-        composeRule.onNodeWithText("Plantilla").performClick()
+        composeRule.onNodeWithText("Importar").performClick()
 
-        composeRule.runOnIdle { assertEquals(1, templateShared) }
+        composeRule.runOnIdle { assertEquals(1, importBlocked) }
     }
 
     @Test fun the_import_action_is_idle_by_default() {
@@ -246,6 +245,7 @@ class ProductFlowTest {
         products: List<ProductEntity> = CATALOG,
         importReport: SheetImport? = null,
         isImporting: Boolean = false,
+        canImport: Boolean = true,
     ) {
         CuentivoApp(
             state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
@@ -255,7 +255,8 @@ class ProductFlowTest {
             onCreateProduct = { name, cents, _ -> created += "$name=$cents" },
             onEditProduct = { product, _, cents, _ -> edited += "${product.id}=$cents" },
             onArchiveProduct = { archived += it.id },
-            onShareImportTemplate = { templateShared++ },
+            canImportProducts = canImport,
+            onImportBlocked = { importBlocked++ },
         )
     }
 

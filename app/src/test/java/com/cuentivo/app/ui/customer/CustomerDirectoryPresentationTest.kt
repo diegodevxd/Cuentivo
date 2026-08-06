@@ -2,11 +2,29 @@ package com.cuentivo.app.ui.customer
 
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
+import com.cuentivo.app.data.local.CancelablePaymentRow
 import com.cuentivo.app.domain.DueSale
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class CustomerDirectoryPresentationTest {
+    @Test
+    fun payment_mapping_groups_and_tiebreaks_deterministically() {
+        val rows = listOf(
+            CancelablePaymentRow("z", "b", "c", 100, "CASH", 20, "ref-z", 10, true),
+            CancelablePaymentRow("a", "b", "c", 100, "CASH", 20, "ref-a", 10, false),
+            CancelablePaymentRow("other", "b", "c", 200, "TRANSFER", 20, null, 1, false),
+        )
+
+        val result = CorrectionCandidatePresentation.paymentCandidates(rows)
+
+        assertEquals(listOf("other", "a", "z"), result.map { it.id })
+        assertEquals(listOf(1, 1, 2), result.map { it.ordinal })
+        assertEquals(listOf(1, 2, 2), result.map { it.groupSize })
+        assertEquals(true, result[2].blockedByCanceledSale)
+        assertEquals("ref-a", result[1].reference)
+        assertEquals("TRANSFER", result[0].paymentMethod)
+    }
     @Test
     fun a_settled_customer_is_never_reported_as_late() {
         // A stale due row must not outvote a zero balance: the ledger already says it is paid.
@@ -16,7 +34,8 @@ class CustomerDirectoryPresentationTest {
             todayEpochDay = 100,
         )
 
-        assertEquals(CustomerStatus("Al día", CustomerTone.SETTLED), status)
+        assertEquals(CustomerTone.SETTLED, status.tone)
+        assertEquals(null, status.overdueDays)
     }
 
     @Test
@@ -30,7 +49,8 @@ class CustomerDirectoryPresentationTest {
             todayEpochDay = 100,
         )
 
-        assertEquals(CustomerStatus("Vencido (5 días)", CustomerTone.OVERDUE), status)
+        assertEquals(CustomerTone.OVERDUE, status.tone)
+        assertEquals(5L, status.overdueDays)
     }
 
     @Test
@@ -41,7 +61,8 @@ class CustomerDirectoryPresentationTest {
             todayEpochDay = 100,
         )
 
-        assertEquals(CustomerStatus("Vencido (1 día)", CustomerTone.OVERDUE), status)
+        assertEquals(CustomerTone.OVERDUE, status.tone)
+        assertEquals(1L, status.overdueDays)
     }
 
     @Test
@@ -52,7 +73,8 @@ class CustomerDirectoryPresentationTest {
             todayEpochDay = 100,
         )
 
-        assertEquals(CustomerStatus("Vence en 15 días", CustomerTone.PENDING), status)
+        assertEquals(CustomerTone.PENDING, status.tone)
+        assertEquals(15L, status.daysUntilDue)
     }
 
     @Test
@@ -63,7 +85,8 @@ class CustomerDirectoryPresentationTest {
             todayEpochDay = 100,
         )
 
-        assertEquals(CustomerStatus("Saldo pendiente", CustomerTone.PENDING), status)
+        assertEquals(CustomerTone.PENDING, status.tone)
+        assertEquals(null, status.daysUntilDue)
     }
 
     @Test

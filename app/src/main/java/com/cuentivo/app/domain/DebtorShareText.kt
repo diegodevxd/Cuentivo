@@ -39,9 +39,12 @@ object DebtorShareText {
      */
     fun forCustomer(businessName: String, customerName: String, balanceCents: Long, entries: List<StatementEntry> = emptyList()): String {
         val header = "Hola $customerName, te comparto el estado de tu cuenta con $businessName."
+        // No column alignment: WhatsApp renders this in a proportional font, so padded columns
+        // arrive crooked. Separators and an indented second line survive any width.
         val detail = entries.takeIf { it.isNotEmpty() }?.joinToString("\n") { entry ->
             val sign = if (entry.direction == "DEBIT") "+" else "−"
-            "${entry.dateIso}  ${movementLabel(entry.type)}  $sign${Money.format(entry.amountCents)}"
+            val line = "${displayDate(entry.dateIso)} · ${movementLabel(entry.type)} · $sign${Money.format(entry.amountCents)}"
+            entry.detail?.takeIf { it.isNotBlank() }?.let { "$line\n   $it" } ?: line
         }
         return buildString {
             append(header).append('\n')
@@ -54,8 +57,14 @@ object DebtorShareText {
         }
     }
 
+    /** "2026-08-03" → "03/08/2026". Nobody outside a database reads ISO dates. */
+    private fun displayDate(dateIso: String): String {
+        val parts = dateIso.split('-')
+        return if (parts.size == 3 && parts[0].length == 4) "${parts[2]}/${parts[1]}/${parts[0]}" else dateIso
+    }
+
     private fun movementLabel(type: String): String = when (type) {
-        "CHARGE" -> "Compra"
+        "CHARGE" -> "Venta"
         "PAYMENT" -> "Abono"
         "ADJUSTMENT" -> "Ajuste"
         "REFUND" -> "Devolución"

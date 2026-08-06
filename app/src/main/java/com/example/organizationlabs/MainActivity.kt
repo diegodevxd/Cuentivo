@@ -1,13 +1,20 @@
 package com.cuentivo.app
 
+import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import android.os.LocaleList
+import android.app.LocaleManager
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.cuentivo.app.settings.LanguagePreference
+import java.util.Locale
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -15,6 +22,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -24,6 +32,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import com.cuentivo.app.customer.CreditLimitSuggestionStore
+import com.cuentivo.app.domain.CreditHistory
+import com.cuentivo.app.domain.CreditLimitAdvisor
 import com.cuentivo.app.domain.CustomerNameNormalizer
 import com.cuentivo.app.data.local.AccountMovementEntity
 import com.cuentivo.app.data.local.BusinessEntity
@@ -56,22 +67,41 @@ import com.cuentivo.app.domain.PaymentAllocator
 import com.cuentivo.app.domain.ProductSheetParser
 import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.XlsxReader
+import com.cuentivo.app.domain.QuickSale
+import com.cuentivo.app.domain.SaleLineSummary
+import com.cuentivo.app.domain.SoldLine
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
-import com.cuentivo.app.ui.CancelableItem
+import com.cuentivo.app.ui.CorrectionCandidate
+import com.cuentivo.app.ui.SaleCorrection
+import com.cuentivo.app.domain.SaleDraft
+import com.cuentivo.app.domain.SaleDraftLine
+import com.cuentivo.app.ui.customer.CorrectionCandidatePresentation
+import com.cuentivo.app.ui.customer.BalanceKind
+import com.cuentivo.app.ui.customer.BalancePresenter
 import com.cuentivo.app.ui.product.ImportStart
 import com.cuentivo.app.ui.product.ProductImportPolicy
 import com.cuentivo.app.ui.product.ProductImportRunner
 import com.cuentivo.app.ui.CuentivoApp
 import com.cuentivo.app.ui.CuentivoLoadingScreen
+import com.cuentivo.app.ui.PaymentRefundFactory
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.dashboard.DashboardViewModel
 import com.cuentivo.app.auth.FirebaseAuthenticationGateway
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.cuentivo.app.auth.LocalSessionGuard
+import com.cuentivo.app.backup.BackupException
+import com.cuentivo.app.backup.BackupFailure
+import com.cuentivo.app.backup.BackupSection
+import com.cuentivo.app.backup.DatabaseBackup
 import com.cuentivo.app.billing.BillingGateway
 import com.cuentivo.app.billing.EntitlementStore
 import com.cuentivo.app.sync.SyncScheduler
 import com.cuentivo.app.ui.auth.AuthenticationScreen
+import com.cuentivo.app.ui.auth.EmailVerificationScreen
+import com.cuentivo.app.domain.EmailVerificationAccess
+import com.cuentivo.app.domain.EmailVerificationPolicy
+import com.cuentivo.app.sync.AppCheckInstaller
 import com.cuentivo.app.sync.FirebaseEmulators
 import com.cuentivo.app.sync.OwnerMembershipBootstrap
 import com.cuentivo.app.sync.SyncQueue
@@ -79,6 +109,37 @@ import com.cuentivo.app.sync.SyncQueue
 private const val TAG = "MainActivity"
 
 class MainActivity : ComponentActivity() {
+    /**
+     * Below API 33, the private preference is applied before the Activity sees its resources. On
+     * API 33+, LocaleManager owns the selection and this context mirrors its application locales;
+     * the private preference is consulted only once for legacy migration when the platform choice
+     * is empty.
+     */
+    override fun attachBaseContext(newBase: Context) {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            LanguagePreference.migrateLegacyToPlatformIfNeeded(newBase)
+            val locales = newBase.getSystemService(LocaleManager::class.java)?.applicationLocales
+            val wrapped = if (locales != null && !locales.isEmpty) {
+                val configuration = Configuration(newBase.resources.configuration).apply { setLocales(locales) }
+                newBase.createConfigurationContext(configuration)
+            } else {
+                newBase
+            }
+            super.attachBaseContext(wrapped)
+            return
+        }
+
+        val tag = LanguagePreference.effectiveTag(newBase)
+        val wrapped = if (tag == null) {
+            newBase
+        } else {
+            val configuration = Configuration(newBase.resources.configuration)
+            configuration.setLocales(LocaleList(Locale.forLanguageTag(tag)))
+            newBase.createConfigurationContext(configuration)
+        }
+        super.attachBaseContext(wrapped)
+    }
+
     /**
      * The live plan, owned by the Activity because Play answers asynchronously and can change it at
      * any moment — a purchase made on another device shows up on the next refresh.
@@ -98,6 +159,21 @@ class MainActivity : ComponentActivity() {
         billingGateway?.refresh(FirebaseAuthenticationGateway().currentUserId)
     }
 
+    /**
+     * Relaunches the app after its database file was swapped underneath it.
+     *
+     * `exit(0)` rather than just recreating the Activity: a Worker or a Room connection created
+     * before the restore would still be holding the file that no longer exists, and there is no
+     * way to reach in and close them all from here.
+     */
+    private fun restartAfterRestore() {
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+            ?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (intent != null) startActivity(intent)
+        finish()
+        Runtime.getRuntime().exit(0)
+    }
+
     override fun onDestroy() {
         billingGateway?.close()
         super.onDestroy()
@@ -106,6 +182,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Before any Firestore or Auth call, so the first request already carries an attestation.
+        AppCheckInstaller.installOnce()
         // Before any Firestore or Auth call: useEmulator throws once the instance has been used.
         FirebaseEmulators.connectIfEnabled()
         val database = Room.databaseBuilder(applicationContext, CuentivoDatabase::class.java, "cuentivo.db")
@@ -119,6 +197,7 @@ class MainActivity : ComponentActivity() {
         // Held as state rather than shown directly: Play answers whenever it wants, and the
         // composition that owns the Snackbar may not exist yet when it does.
         val entitlementStore = EntitlementStore(applicationContext)
+        val creditLimitSuggestionStore = CreditLimitSuggestionStore(applicationContext)
         val billing = BillingGateway(
             context = applicationContext,
             onTierChanged = { tier, sessionUserId ->
@@ -151,7 +230,20 @@ class MainActivity : ComponentActivity() {
                 var authenticatedUserId by remember { mutableStateOf(authenticationGateway.currentUserId) }
                 var authenticationMessage by remember { mutableStateOf<String?>(null) }
                 var isAuthenticating by remember { mutableStateOf(false) }
+                // Bumped whenever the account is re-read, so the access decision below recomposes
+                // the moment somebody comes back from clicking the link in their inbox.
+                var verificationKey by remember { mutableIntStateOf(0) }
+                val emailAccess = remember(authenticatedUserId, verificationKey) {
+                    EmailVerificationPolicy.access(
+                        isSignedIn = authenticatedUserId != null,
+                        isEmailVerified = authenticationGateway.isEmailVerified,
+                        accountCreatedAtEpochMillis = authenticationGateway.accountCreatedAtEpochMillis,
+                    )
+                }
                 if (authenticatedUserId == null) {
+                    val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
+                    val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
+                    val emailInUseMessage = stringResource(R.string.auth_email_in_use)
                     AuthenticationScreen(
                         isWorking = isAuthenticating,
                         message = authenticationMessage,
@@ -161,7 +253,7 @@ class MainActivity : ComponentActivity() {
                             authenticationGateway.signIn(email, password) { result ->
                                 isAuthenticating = false
                                 result.onSuccess { authenticatedUserId = it }
-                                    .onFailure { authenticationMessage = it.message ?: "No fue posible iniciar sesión" }
+                                    .onFailure { authenticationMessage = signInFailedMessage }
                             }
                         },
                         onSignUp = { email, password ->
@@ -169,9 +261,63 @@ class MainActivity : ComponentActivity() {
                             authenticationMessage = null
                             authenticationGateway.signUp(email, password) { result ->
                                 isAuthenticating = false
-                                result.onSuccess { authenticatedUserId = it }
-                                    .onFailure { authenticationMessage = it.message ?: "No fue posible crear la cuenta" }
+                                result.onSuccess { userId ->
+                                    // Sent straight away: the verification screen this lands on is
+                                    // useless without the mail it tells people to go and open.
+                                    authenticationGateway.sendEmailVerification { }
+                                    authenticatedUserId = userId
+                                    verificationKey++
+                                }.onFailure { error ->
+                                    // The one failure worth naming: "that address already has an
+                                    // account, sign in instead" is actionable, and Firebase already
+                                    // discloses it. Everything else stays generic.
+                                    authenticationMessage =
+                                        if (error is FirebaseAuthUserCollisionException) emailInUseMessage
+                                        else signUpFailedMessage
+                                }
                             }
+                        },
+                        onModeChange = { authenticationMessage = null },
+                        onResetPassword = { email ->
+                            // The result is deliberately ignored. The screen says the same thing
+                            // either way, so a stranger cannot use this to discover who has an
+                            // account here.
+                            authenticationGateway.sendPasswordReset(email) { }
+                        },
+                    )
+                } else if (emailAccess == EmailVerificationAccess.MUST_VERIFY) {
+                    val stillPendingMessage = stringResource(R.string.verify_still_pending)
+                    val resentMessage = stringResource(R.string.verify_resent)
+                    val sendFailedMessage = stringResource(R.string.verify_send_failed)
+                    EmailVerificationScreen(
+                        email = authenticationGateway.currentUserEmail,
+                        isWorking = isAuthenticating,
+                        message = authenticationMessage,
+                        onCheck = {
+                            isAuthenticating = true
+                            authenticationMessage = null
+                            authenticationGateway.reloadUser { result ->
+                                isAuthenticating = false
+                                result.onSuccess { verified ->
+                                    // Recomposes the decision either way: verified lets them in,
+                                    // and not verified needs the message rather than silence.
+                                    if (!verified) authenticationMessage = stillPendingMessage
+                                    verificationKey++
+                                }.onFailure { authenticationMessage = stillPendingMessage }
+                            }
+                        },
+                        onResend = {
+                            isAuthenticating = true
+                            authenticationGateway.sendEmailVerification { result ->
+                                isAuthenticating = false
+                                authenticationMessage =
+                                    if (result.isSuccess) resentMessage else sendFailedMessage
+                            }
+                        },
+                        onUseAnotherAccount = {
+                            authenticationGateway.signOut()
+                            authenticationMessage = null
+                            authenticatedUserId = null
                         },
                     )
                 } else {
@@ -182,7 +328,10 @@ class MainActivity : ComponentActivity() {
                 var uiMessage by remember { mutableStateOf<String?>(null) }
                 var statementCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
                 var statementEntries by remember { mutableStateOf<List<StatementEntry>>(emptyList()) }
-                var cancelables by remember { mutableStateOf<List<CancelableItem>>(emptyList()) }
+                var saleCorrection by remember { mutableStateOf<SaleCorrection?>(null) }
+                var isBackupWorking by remember { mutableStateOf(false) }
+                var cancelables by remember { mutableStateOf<List<CorrectionCandidate>>(emptyList()) }
+                var suggestedCreditLimitCents by remember { mutableStateOf<Long?>(null) }
                 var blocked by remember { mutableStateOf<AccessDecision.Blocked?>(null) }
                 // Kept after the import so the rejected rows can be listed: a snackbar saying "13 con
                 // problemas" without saying which ones leaves the person with nothing to fix.
@@ -248,9 +397,19 @@ class MainActivity : ComponentActivity() {
 
                 // Recomputed from the ledger on every refresh rather than stored: pay a sale and its
                 // alert simply stops existing, with no row left anywhere to go stale.
-                val alerts by produceState<List<Alert>>(initialValue = emptyList(), state, customers, tier, refreshKey) {
+                val verifyAlertTitle = stringResource(R.string.verify_pending_alert_title)
+                val verifyAlertDetail = stringResource(R.string.verify_pending_alert_detail)
+                // Accounts that predate verification keep working, but they are told every time
+                // they open the alerts: an address nobody proved exists cannot be mailed a password
+                // reset, and their ledger lives on this phone alone.
+                val verificationAlert = if (emailAccess == EmailVerificationAccess.ALLOWED_WITH_WARNING) {
+                    Alert(verifyAlertTitle, verifyAlertDetail, Alert.Severity.INFO)
+                } else {
+                    null
+                }
+                val alerts by produceState<List<Alert>>(initialValue = emptyList(), state, customers, tier, refreshKey, verificationAlert) {
                     val businessId = (state as? DashboardUiState.Content)?.businessId
-                    value = if (businessId == null) emptyList() else AppAlerts.from(
+                    value = listOfNotNull(verificationAlert) + if (businessId == null) emptyList() else AppAlerts.from(
                         sales = database.financialDao().salesWithDueDate(businessId).map { row ->
                             DueSale(row.saleId, row.customerId, row.customerName, row.dueDateEpochDay, row.outstandingCents)
                         },
@@ -267,6 +426,13 @@ class MainActivity : ComponentActivity() {
                     val financialDao = database.financialDao()
                     // The DAO returns newest-first; the statement needs chronological order
                     // because the CSV builder derives the running balance from it.
+                    // One read for every line this customer was ever sold, then grouped in memory:
+                    // a charge that only says an amount is unreadable once it reaches WhatsApp.
+                    val soldLines = financialDao.soldLinesForCustomer(businessId, row.customer.id)
+                        .groupBy { it.saleId }
+                        .mapValues { (_, lines) ->
+                            SaleLineSummary.describe(lines.map { SoldLine(it.productNameSnapshot, it.quantity) })
+                        }
                     statementEntries = financialDao.customerMovements(businessId, row.customer.id)
                         .asReversed()
                         .map { movement ->
@@ -277,28 +443,40 @@ class MainActivity : ComponentActivity() {
                                 direction = movement.direction,
                                 amountCents = movement.amountCents,
                                 notes = movement.notes,
+                                paymentId = movement.paymentId,
+                                saleId = movement.saleId,
+                                detail = movement.saleId?.let(soldLines::get),
                             )
                         }
-                    cancelables = financialDao.cancelableSalesForCustomer(businessId, row.customer.id)
+                    val sales = financialDao.cancelableSalesForCustomer(businessId, row.customer.id)
                         .map { sale ->
-                            CancelableItem(
+                            CorrectionCandidate.Sale(
                                 id = sale.id,
-                                kind = CancelableItem.Kind.SALE,
-                                title = "Venta del ${LocalDate.ofEpochDay(sale.saleDateEpochDay)}",
-                                detail = "${Money.format(sale.totalCents)} · debe ${Money.format(sale.outstandingCents)}",
-                                amountCents = sale.outstandingCents,
-                            )
-                        } + financialDao.activePaymentsForCustomer(businessId, row.customer.id)
-                        .map { payment ->
-                            CancelableItem(
-                                id = payment.id,
-                                kind = CancelableItem.Kind.PAYMENT,
-                                title = "Abono de ${Money.format(payment.amountCents)}",
-                                detail = "Recibido el ${LocalDate.ofEpochDay(payment.paymentDateEpochDay)}",
-                                amountCents = payment.amountCents,
+                                saleNumber = sale.saleNumber,
+                                saleDateEpochDay = sale.saleDateEpochDay,
+                                totalCents = sale.totalCents,
+                                activePaidCents = sale.totalCents - sale.outstandingCents,
+                                outstandingCents = sale.outstandingCents,
                             )
                         }
+                    val payments = CorrectionCandidatePresentation.paymentCandidates(
+                        financialDao.correctionPaymentsForCustomer(businessId, row.customer.id),
+                    )
+                    cancelables = sales + payments
                     statementCustomer = row
+                    // "Cumplido en los últimos 6 meses", not "cumplido alguna vez": a payment that
+                    // was late a year ago should stop weighing against the customer eventually.
+                    val sinceEpochDay = LocalDate.now().minusMonths(6).toEpochDay()
+                    val history = CreditHistory(
+                        settledSaleCount = financialDao.settledSaleCount(businessId, row.customer.id),
+                        hasCanceledSale = financialDao.hasCanceledSale(businessId, row.customer.id),
+                        hasLatePayment = financialDao.hasLatePayment(businessId, row.customer.id, sinceEpochDay),
+                        largestSaleTotalCents = financialDao.largestSaleTotalCents(businessId, row.customer.id),
+                    )
+                    val suggestion = CreditLimitAdvisor.suggest(row.customer.creditLimitCents, history)
+                    suggestedCreditLimitCents = suggestion?.takeUnless {
+                        creditLimitSuggestionStore.isDismissed(row.customer.id, it)
+                    }
                 }
 
                 CuentivoApp(state, customers, products, tier, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, onCreateBusiness = {
@@ -311,7 +489,7 @@ class MainActivity : ComponentActivity() {
                         refreshKey++
                         uiMessage = "Negocio creado"
                     }
-                }, onCreateCustomer = { name, phone ->
+                }, onCreateCustomer = { name, phone, creditLimitCents, quickSale ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId
                     if (businessId == null) {
                         // The old return@CuentivoApp here was silent: the form had already closed
@@ -321,20 +499,69 @@ class MainActivity : ComponentActivity() {
                     }
                     // Plan limit checked before writing: refusing after the insert would leave a
                     // customer the app then pretends does not exist.
+                    // Both limits before writing anything. Checking the sale limit afterwards
+                    // would create the customer and then refuse their purchase, leaving the person
+                    // with half the job done and no way to tell which half.
                     when (val decision = FeatureAccessManager.canAddCustomer(tier, customers.size)) {
                         is AccessDecision.Blocked -> blocked = decision
                         AccessDecision.Allowed -> lifecycleScope.launch {
                             isSavingCustomer = true
                             try {
+                                // The sale limit too, and still before the first write: refusing
+                                // afterwards would create the customer and then reject what they
+                                // walked out with, leaving half the job done.
+                                if (quickSale != null) {
+                                    val salesSoFar = database.financialDao().registeredSaleCount(businessId)
+                                    val saleDecision = FeatureAccessManager.canRegisterSale(tier, salesSoFar)
+                                    if (saleDecision is AccessDecision.Blocked) {
+                                        blocked = saleDecision
+                                        return@launch
+                                    }
+                                }
                                 val now = System.currentTimeMillis()
-                                val customer = CustomerEntity(UUID.randomUUID().toString(), businessId, name, CustomerNameNormalizer.key(name), phone, null, null, null, null, true, now, now, null)
+                                val customer = CustomerEntity(UUID.randomUUID().toString(), businessId, name, CustomerNameNormalizer.key(name), phone, null, null, null, creditLimitCents, true, now, now, null)
                                 // The insert is the step that may legitimately refuse: the unique
                                 // index on (businessId, normalizedName) rejects a name that already
                                 // exists once accents and case are folded away. Editing already
                                 // reported that; creating used to let the exception kill the
                                 // coroutine, so the screen neither refreshed nor said anything.
+                                // The product this customer walked out with, if any. Reused from
+                                // the catalog when the name already exists there: `products` has no
+                                // unique index, so without this every new customer taking a "Jabón"
+                                // would mint another one.
+                                val existingProduct = quickSale?.let { sale ->
+                                    val key = CustomerNameNormalizer.key(sale.productName)
+                                    products.firstOrNull { CustomerNameNormalizer.key(it.name) == key }
+                                }
+                                val newProduct = quickSale?.takeIf { existingProduct == null }?.let { sale ->
+                                    ProductEntity(UUID.randomUUID().toString(), businessId, sale.productName, null, null, null, sale.unitPriceCents, null, null, sale.photoFileName, true, now, now, null)
+                                }
+                                val product = existingProduct ?: newProduct
+                                val saleId = UUID.randomUUID().toString()
+                                val saleItem = quickSale?.let { sale ->
+                                    SaleItemEntity(UUID.randomUUID().toString(), saleId, product?.id, sale.productName, sale.quantity.toLong(), sale.unitPriceCents, 0L, sale.totalCents)
+                                }
+                                val saleEntity = quickSale?.let { sale ->
+                                    SaleEntity(saleId, businessId, customer.id, currentUserId, "V-${now}", LocalDate.now().toEpochDay(), null, sale.totalCents, 0L, sale.totalCents, false, null, now, now)
+                                }
+                                val charge = quickSale?.let { sale ->
+                                    AccountMovementEntity(UUID.randomUUID().toString(), businessId, customer.id, saleId, null, "CHARGE", sale.totalCents, "DEBIT", now, currentUserId, null, null)
+                                }
                                 val saved = try {
-                                    database.customerDao().insert(customer)
+                                    // One transaction: a customer who exists without the sale they
+                                    // walked out with is worse than nothing happening at all.
+                                    database.withTransaction {
+                                        database.customerDao().insert(customer)
+                                        newProduct?.let { database.productDao().insert(it) }
+                                        if (saleEntity != null && charge != null && saleItem != null) {
+                                            database.financialDao().createSaleIdempotently(
+                                                OperationEntity("sale-$saleId", "SALE", saleId, now),
+                                                saleEntity,
+                                                listOf(saleItem),
+                                                charge,
+                                            )
+                                        }
+                                    }
                                     true
                                 } catch (cancellation: CancellationException) {
                                     throw cancellation
@@ -348,14 +575,32 @@ class MainActivity : ComponentActivity() {
                                     // it may hide it. The outbox write is best effort relative to a
                                     // row that is already saved.
                                     try {
-                                        syncQueue.enqueue(businessId, "CUSTOMER", customer.id, now, mapOf("businessId" to businessId, "name" to customer.name, "normalizedName" to customer.normalizedName, "phone" to phone, "email" to null, "address" to null, "notes" to null, "creditLimitCents" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                        syncQueue.enqueue(businessId, "CUSTOMER", customer.id, now, mapOf("businessId" to businessId, "name" to customer.name, "normalizedName" to customer.normalizedName, "phone" to phone, "email" to null, "address" to null, "notes" to null, "creditLimitCents" to creditLimitCents, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
                                     } catch (cancellation: CancellationException) {
                                         throw cancellation
                                     } catch (error: Exception) {
                                         Log.w(TAG, "El cliente quedó guardado pero no se pudo encolar para sincronizar.", error)
                                     }
+                                    // Best effort, like the customer row above: these are already
+                                    // committed locally and nothing here may hide them.
+                                    try {
+                                        newProduct?.let { created ->
+                                            syncQueue.enqueue(businessId, "PRODUCT", created.id, now, mapOf("businessId" to businessId, "name" to created.name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to created.salePriceCents, "costPriceCents" to null, "stock" to null, "imageUri" to created.imageUri, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                        }
+                                        if (saleEntity != null && charge != null && saleItem != null) {
+                                            syncQueue.enqueue(businessId, "SALE", saleEntity.id, now, mapOf("businessId" to businessId, "customerId" to customer.id, "sellerUserId" to currentUserId, "saleNumber" to saleEntity.saleNumber, "saleDateEpochDay" to saleEntity.saleDateEpochDay, "dueDateEpochDay" to null, "subtotalCents" to saleEntity.subtotalCents, "discountCents" to saleEntity.discountCents, "totalCents" to saleEntity.totalCents, "isCanceled" to false, "notes" to null, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now))
+                                            syncQueue.enqueue(businessId, "SALE_ITEM", saleItem.id, now, mapOf("saleId" to saleEntity.id, "productId" to saleItem.productId, "productNameSnapshot" to saleItem.productNameSnapshot, "quantity" to saleItem.quantity, "unitPriceCents" to saleItem.unitPriceCents, "discountCents" to saleItem.discountCents, "subtotalCents" to saleItem.subtotalCents))
+                                            syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, mapOf("businessId" to businessId, "customerId" to customer.id, "saleId" to saleEntity.id, "paymentId" to null, "type" to charge.type, "amountCents" to charge.amountCents, "direction" to charge.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
+                                        }
+                                    } catch (cancellation: CancellationException) {
+                                        throw cancellation
+                                    } catch (error: Exception) {
+                                        Log.w(TAG, "La venta rápida quedó guardada pero no se pudo encolar.", error)
+                                    }
                                     refreshKey++
-                                    uiMessage = "Cliente agregado"
+                                    uiMessage = quickSale?.let {
+                                        getString(R.string.message_quick_sale_created, Money.format(it.totalCents))
+                                    } ?: "Cliente agregado"
                                     // The only signal that closes the form. It advances only here,
                                     // so a failure above leaves it untouched and the dialog stays up.
                                     customerSavedToken++
@@ -365,7 +610,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                }, onEditCustomer = { row, name, phone ->
+                }, onEditCustomer = { row, name, phone, creditLimitCents ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
@@ -376,6 +621,7 @@ class MainActivity : ComponentActivity() {
                             name = name,
                             normalizedName = CustomerNameNormalizer.key(name),
                             phone = phone,
+                            creditLimitCents = creditLimitCents,
                             updatedAtEpochMillis = now,
                         )
                         runCatching { database.customerDao().update(updated) }.onSuccess {
@@ -394,7 +640,16 @@ class MainActivity : ComponentActivity() {
                         // archived out of the totals.
                         val balanceCents = database.financialDao().customerBalanceCents(businessId, row.customer.id)
                         if (balanceCents != 0L) {
-                            uiMessage = "${row.customer.name} tiene saldo de ${Money.format(balanceCents)}; no se puede eliminar"
+                            val presentation = BalancePresenter.from(balanceCents)
+                            uiMessage = getString(
+                                if (presentation.kind == BalanceKind.CUSTOMER_CREDIT) {
+                                    com.cuentivo.app.R.string.customers_archive_has_credit
+                                } else {
+                                    com.cuentivo.app.R.string.customers_archive_has_balance
+                                },
+                                row.customer.name,
+                                Money.format(presentation.amountCents),
+                            )
                             return@launch
                         }
                         val now = System.currentTimeMillis()
@@ -521,8 +776,12 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                }, isImportingProducts = isImportingProducts, importReport = importReport, onDismissImportReport = { importReport = null }, onShareImportTemplate = {
-                    share("Plantilla de productos - Cuentivo", ProductSheetParser.TEMPLATE_CSV)
+                }, isImportingProducts = isImportingProducts, importReport = importReport, onDismissImportReport = { importReport = null },
+                // Asked before the file picker opens, not after: the paywall used to appear once
+                // the person had already gone and found their spreadsheet.
+                canImportProducts = FeatureAccessManager.canUse(tier, PaidFeature.SPREADSHEET) is AccessDecision.Allowed,
+                onImportBlocked = {
+                    blocked = FeatureAccessManager.canUse(tier, PaidFeature.SPREADSHEET) as? AccessDecision.Blocked
                 }, onCreateSale = { customer, draft ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     lifecycleScope.launch {
@@ -547,7 +806,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, mapOf("businessId" to businessId, "customerId" to charge.customerId, "saleId" to sale.id, "paymentId" to null, "type" to charge.type, "amountCents" to charge.amountCents, "direction" to charge.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
                                 refreshKey++
-                                uiMessage = "Venta de ${Money.format(draft.totalCents)} registrada"
+                                uiMessage = getString(R.string.message_sale_registered, Money.format(draft.totalCents))
                             }
                         }
                     }
@@ -575,13 +834,16 @@ class MainActivity : ComponentActivity() {
                         syncQueue.enqueue(businessId, "MOVEMENT", movement.id, now, mapOf("businessId" to businessId, "customerId" to movement.customerId, "saleId" to null, "paymentId" to payment.id, "type" to movement.type, "amountCents" to movement.amountCents, "direction" to movement.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
                         refreshKey++
                         uiMessage = when {
-                            allocations.isEmpty() -> "Abono registrado como saldo a favor"
-                            allocationResult.creditCents > 0 ->
-                                "Abono aplicado a ${allocations.size} venta(s); ${Money.format(allocationResult.creditCents)} queda a favor"
-                            else -> "Abono aplicado a ${allocations.size} venta(s)"
-                        }
+                             allocations.isEmpty() -> getString(R.string.message_payment_registered_as_credit)
+                             allocationResult.creditCents > 0 -> getString(
+                                 R.string.message_payment_applied_with_credit,
+                                 allocations.size,
+                                 Money.format(allocationResult.creditCents),
+                             )
+                             else -> getString(R.string.message_payment_applied, allocations.size)
+                         }
                     }
-                }, statementCustomer = statementCustomer, statement = statementEntries, cancelables = cancelables, onCancelSale = { item ->
+                }, statementCustomer = statementCustomer, statement = statementEntries, cancelables = cancelables, suggestedCreditLimitCents = suggestedCreditLimitCents, onCancelSale = { item ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     val row = statementCustomer ?: return@CuentivoApp
                     lifecycleScope.launch {
@@ -591,7 +853,7 @@ class MainActivity : ComponentActivity() {
                         val sale = financialDao.saleForId(item.id)
                         val outstandingCents = sale?.let { it.totalCents - financialDao.activeAllocatedPaymentCents(it.id) }
                         if (sale == null || outstandingCents == null || outstandingCents <= 0) {
-                            uiMessage = "Esa venta ya no se puede cancelar"
+                            uiMessage = getString(R.string.message_sale_not_cancelable)
                             return@launch
                         }
                         val now = System.currentTimeMillis()
@@ -604,38 +866,233 @@ class MainActivity : ComponentActivity() {
                             syncQueue.enqueue(businessId, "MOVEMENT", cancellation.id, now, mapOf("businessId" to businessId, "customerId" to cancellation.customerId, "saleId" to sale.id, "paymentId" to null, "type" to cancellation.type, "amountCents" to cancellation.amountCents, "direction" to cancellation.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to cancellation.notes))
                             refreshKey++
                             loadStatement(businessId, row)
-                            uiMessage = "Venta cancelada; se descontaron ${Money.format(outstandingCents)}"
+                            uiMessage = getString(R.string.message_sale_canceled, Money.format(outstandingCents))
                         }.onFailure {
-                            uiMessage = it.message ?: "No fue posible cancelar la venta"
+                            uiMessage = getString(R.string.message_sale_cancel_failed)
                         }
+                    }
+                }, saleCorrection = saleCorrection, onDismissCorrection = { saleCorrection = null }, onEditSale = { item ->
+                    lifecycleScope.launch {
+                        val financialDao = database.financialDao()
+                        val sale = financialDao.saleForId(item.id)
+                        // Read again rather than trusting the row on screen: correcting a sale
+                        // cancels it, and the DAO refuses a cancellation with nothing left unpaid.
+                        val outstandingCents = sale?.let { it.totalCents - financialDao.activeAllocatedPaymentCents(it.id) }
+                        if (sale == null || sale.isCanceled || outstandingCents == null || outstandingCents <= 0) {
+                            uiMessage = getString(R.string.message_sale_not_editable)
+                            return@launch
+                        }
+                        val soldItems = financialDao.saleItemsForSale(sale.id)
+                        // Sales imported from the old web app carry no product ids, and a draft line
+                        // cannot be rebuilt without one. Better to say so than to invent a product.
+                        if (soldItems.isEmpty() || soldItems.any { it.productId == null }) {
+                            uiMessage = getString(R.string.message_sale_legacy_not_editable)
+                            return@launch
+                        }
+                        saleCorrection = SaleCorrection(
+                            saleId = sale.id,
+                            saleNumber = sale.saleNumber,
+                            draft = SaleDraft(
+                                lines = soldItems.map { soldItem ->
+                                    SaleDraftLine(
+                                        productId = requireNotNull(soldItem.productId),
+                                        productName = soldItem.productNameSnapshot,
+                                        quantity = soldItem.quantity.toInt(),
+                                        unitPriceCents = soldItem.unitPriceCents,
+                                        discountCents = soldItem.discountCents,
+                                    )
+                                },
+                                discountCents = sale.discountCents,
+                                dueDateEpochDay = sale.dueDateEpochDay,
+                            ),
+                        )
+                    }
+                }, onSaveCorrection = { draft ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    val correction = saleCorrection ?: return@CuentivoApp
+                    val row = statementCustomer ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val financialDao = database.financialDao()
+                        val previous = financialDao.saleForId(correction.saleId)
+                        if (previous == null || previous.isCanceled) {
+                            uiMessage = getString(R.string.message_sale_correct_failed)
+                            return@launch
+                        }
+                        val now = System.currentTimeMillis()
+                        val saleId = UUID.randomUUID().toString()
+                        // The corrected sale keeps the original sale date and customer: it is the
+                        // same sale written right, not a new one made today for someone else.
+                        val sale = SaleEntity(saleId, businessId, previous.customerId, currentUserId, "V-${now}", previous.saleDateEpochDay, draft.dueDateEpochDay, draft.subtotalCents, draft.discountCents, draft.totalCents, false, null, now, now)
+                        val items = draft.lines.map { line ->
+                            SaleItemEntity(UUID.randomUUID().toString(), saleId, line.productId, line.productName, line.quantity.toLong(), line.unitPriceCents, line.discountCents, line.subtotalCents)
+                        }
+                        val charge = AccountMovementEntity(UUID.randomUUID().toString(), businessId, previous.customerId, saleId, null, "CHARGE", draft.totalCents, "DEBIT", now, currentUserId, null, null)
+                        val cancellation = AccountMovementEntity(UUID.randomUUID().toString(), businessId, previous.customerId, previous.id, null, "CANCELLATION", previous.totalCents, "CREDIT", now, currentUserId, null, "Venta corregida desde la app")
+                        // What was already collected follows the corrected sale, up to its new total.
+                        // Anything above it stays as credit on the customer's balance.
+                        var remainingCents = draft.totalCents
+                        val carriedAllocations = financialDao.activeAllocationsForSale(previous.id).mapNotNull { allocation ->
+                            val amountCents = minOf(allocation.amountCents, remainingCents)
+                            if (amountCents <= 0) return@mapNotNull null
+                            remainingCents -= amountCents
+                            PaymentAllocationEntity(UUID.randomUUID().toString(), allocation.paymentId, saleId, amountCents)
+                        }
+                        runCatching {
+                            financialDao.replaceSaleIdempotently(
+                                OperationEntity("replace-sale-$saleId", "SALE", saleId, now),
+                                previous.id,
+                                cancellation,
+                                sale,
+                                items,
+                                charge,
+                                carriedAllocations,
+                            )
+                        }.onSuccess {
+                            syncQueue.enqueue(businessId, "SALE", sale.id, now, mapOf("businessId" to businessId, "customerId" to sale.customerId, "sellerUserId" to currentUserId, "saleNumber" to sale.saleNumber, "saleDateEpochDay" to sale.saleDateEpochDay, "dueDateEpochDay" to sale.dueDateEpochDay, "subtotalCents" to sale.subtotalCents, "discountCents" to sale.discountCents, "totalCents" to sale.totalCents, "isCanceled" to false, "notes" to null, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now))
+                            items.forEach { item ->
+                                syncQueue.enqueue(businessId, "SALE_ITEM", item.id, now, mapOf("saleId" to sale.id, "productId" to item.productId, "productNameSnapshot" to item.productNameSnapshot, "quantity" to item.quantity, "unitPriceCents" to item.unitPriceCents, "discountCents" to item.discountCents, "subtotalCents" to item.subtotalCents))
+                            }
+                            syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, mapOf("businessId" to businessId, "customerId" to charge.customerId, "saleId" to sale.id, "paymentId" to null, "type" to charge.type, "amountCents" to charge.amountCents, "direction" to charge.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
+                            // The cancellation travels as its own ledger row: sales are create-only
+                            // in firestore.rules, so the void can never go up as an edit.
+                            syncQueue.enqueue(businessId, "MOVEMENT", cancellation.id, now, mapOf("businessId" to businessId, "customerId" to cancellation.customerId, "saleId" to previous.id, "paymentId" to null, "type" to cancellation.type, "amountCents" to cancellation.amountCents, "direction" to cancellation.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to cancellation.notes))
+                            carriedAllocations.forEach { allocation ->
+                                syncQueue.enqueue(businessId, "PAYMENT_ALLOCATION", allocation.id, now, mapOf("paymentId" to allocation.paymentId, "saleId" to allocation.saleId, "amountCents" to allocation.amountCents))
+                            }
+                            saleCorrection = null
+                            refreshKey++
+                            loadStatement(businessId, row)
+                            uiMessage = getString(R.string.message_sale_corrected)
+                        }.onFailure {
+                            uiMessage = getString(R.string.message_sale_correct_failed)
+                        }
+                    }
+                }, backupSection = {
+                    val exportDone = stringResource(R.string.backup_export_done)
+                    val exportFailed = stringResource(R.string.backup_export_failed)
+                    val restoreFailed = stringResource(R.string.backup_restore_failed)
+                    val notABackup = stringResource(R.string.backup_restore_not_a_backup)
+                    val newerApp = stringResource(R.string.backup_restore_newer_app)
+                    val wrongPassword = stringResource(R.string.backup_restore_wrong_password)
+                    BackupSection(
+                        isWorking = isBackupWorking,
+                        onExport = { uri, password ->
+                            lifecycleScope.launch {
+                                isBackupWorking = true
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        val bytes = DatabaseBackup.export(applicationContext, database, password.toCharArray())
+                                        contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                                            ?: error("El destino del respaldo no se pudo abrir")
+                                    }
+                                    uiMessage = exportDone
+                                } catch (cancellation: CancellationException) {
+                                    throw cancellation
+                                } catch (error: Exception) {
+                                    // No detail beyond the type: the message could name a file the
+                                    // person chose, and logs must stay free of anything personal.
+                                    Log.w(TAG, "No se pudo crear el respaldo: ${error.javaClass.simpleName}")
+                                    uiMessage = exportFailed
+                                } finally {
+                                    isBackupWorking = false
+                                }
+                            }
+                        },
+                        onRestore = { uri, password ->
+                            lifecycleScope.launch {
+                                isBackupWorking = true
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                            ?: error("El respaldo no se pudo abrir")
+                                        DatabaseBackup.restore(applicationContext, database, bytes, password.toCharArray())
+                                    }
+                                    // Past this point the file on disk is somebody else's database
+                                    // and every open connection points at the old one. Restarting is
+                                    // not politeness, it is the only safe next step.
+                                    restartAfterRestore()
+                                } catch (cancellation: CancellationException) {
+                                    throw cancellation
+                                } catch (error: BackupException) {
+                                    uiMessage = when (error.failure) {
+                                        BackupFailure.NOT_A_BACKUP -> notABackup
+                                        BackupFailure.NEWER_APP -> newerApp
+                                        BackupFailure.WRONG_PASSWORD_OR_DAMAGED -> wrongPassword
+                                    }
+                                } catch (error: Exception) {
+                                    Log.w(TAG, "No se pudo restaurar: ${error.javaClass.simpleName}")
+                                    uiMessage = restoreFailed
+                                } finally {
+                                    isBackupWorking = false
+                                }
+                            }
+                        },
+                    )
+                }, onRemindCustomer = { customerId ->
+                    // The same statement text the detail sheet shares, minus the movement list: a
+                    // reminder is "you owe this much", not a full account history.
+                    val row = customers.firstOrNull { it.customer.id == customerId }
+                    if (row == null) {
+                        uiMessage = getString(com.cuentivo.app.R.string.detail_payment_not_found)
+                    } else {
+                        share(
+                            row.customer.name,
+                            DebtorShareText.forCustomer(businessName, row.customer.name, row.balanceCents),
+                        )
                     }
                 }, onCancelPayment = { item ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     val row = statementCustomer ?: return@CuentivoApp
                     lifecycleScope.launch {
                         val financialDao = database.financialDao()
-                        val payment = financialDao.paymentForId(item.id)
-                        if (payment == null || payment.canceledAtEpochMillis != null) {
-                            uiMessage = "Ese abono ya está cancelado"
+                        val current = financialDao.correctionPaymentsForCustomer(businessId, row.customer.id)
+                            .firstOrNull { it.id == item.id }
+                        if (current == null) {
+                            uiMessage = getString(com.cuentivo.app.R.string.detail_payment_not_found)
+                            return@launch
+                        }
+                        if (current.blockedByCanceledSale) {
+                            uiMessage = getString(com.cuentivo.app.R.string.detail_payment_cancel_blocked)
                             return@launch
                         }
                         val now = System.currentTimeMillis()
-                        val refund = AccountMovementEntity(UUID.randomUUID().toString(), businessId, payment.customerId, null, payment.id, "REFUND", payment.amountCents, "DEBIT", now, currentUserId, null, "Abono cancelado desde la app")
+                        val refund = PaymentRefundFactory.create(
+                            row = current,
+                            movementId = UUID.randomUUID().toString(),
+                            occurredAtEpochMillis = now,
+                            createdByUserId = currentUserId,
+                        )
                         runCatching {
-                            financialDao.cancelPaymentIdempotently(OperationEntity("cancel-payment-${payment.id}", "PAYMENT", payment.id, now), payment.id, refund)
+                            financialDao.cancelPaymentIdempotently(OperationEntity("cancel-payment-${current.id}", "PAYMENT", current.id, now), current.id, refund)
                         }.onSuccess {
-                            syncQueue.enqueue(businessId, "MOVEMENT", refund.id, now, mapOf("businessId" to businessId, "customerId" to refund.customerId, "saleId" to null, "paymentId" to payment.id, "type" to refund.type, "amountCents" to refund.amountCents, "direction" to refund.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to refund.notes))
+                            syncQueue.enqueue(businessId, "MOVEMENT", refund.id, now, mapOf("businessId" to businessId, "customerId" to refund.customerId, "saleId" to null, "paymentId" to current.id, "type" to refund.type, "amountCents" to refund.amountCents, "direction" to refund.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to refund.notes))
                             refreshKey++
                             loadStatement(businessId, row)
-                            uiMessage = "Abono cancelado; la deuda subió ${Money.format(payment.amountCents)}"
+                            uiMessage = getString(R.string.message_payment_canceled, Money.format(current.amountCents))
                         }.onFailure {
-                            uiMessage = it.message ?: "No fue posible cancelar el abono"
+                            uiMessage = getString(com.cuentivo.app.R.string.detail_payment_guard_failed)
                         }
                     }
                 }, onCallCustomer = { phone -> dial(phone) }, onShowStatement = { row ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     lifecycleScope.launch { loadStatement(businessId, row) }
-                }, onDismissStatement = { statementCustomer = null; cancelables = emptyList() }, onShareStatementCsv = {
+                }, onDismissStatement = { statementCustomer = null; cancelables = emptyList(); suggestedCreditLimitCents = null }, onAcceptCreditLimitSuggestion = { newLimitCents ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
+                    val row = statementCustomer ?: return@CuentivoApp
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        val updated = row.customer.copy(creditLimitCents = newLimitCents, updatedAtEpochMillis = now)
+                        runCatching { database.customerDao().update(updated) }.onSuccess {
+                            syncQueue.enqueue(businessId, "CUSTOMER", updated.id, now, mapOf("businessId" to businessId, "name" to updated.name, "normalizedName" to updated.normalizedName, "phone" to updated.phone, "email" to updated.email, "address" to updated.address, "notes" to updated.notes, "creditLimitCents" to updated.creditLimitCents, "isActive" to updated.isActive, "createdAtEpochMillis" to updated.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to updated.deletedAtEpochMillis))
+                            refreshKey++
+                            suggestedCreditLimitCents = null
+                            uiMessage = getString(R.string.message_credit_limit_updated, row.customer.name, Money.format(newLimitCents))
+                        }
+                    }
+                }, onDismissCreditLimitSuggestion = { suggestedCents ->
+                    statementCustomer?.let { row -> creditLimitSuggestionStore.dismiss(row.customer.id, suggestedCents) }
+                    suggestedCreditLimitCents = null
+                }, onShareStatementCsv = {
                     statementCustomer?.let { row ->
                         share("Estado de cuenta - ${row.customer.name}", CustomerStatementCsv.build(statementEntries))
                     }
@@ -684,8 +1141,7 @@ class MainActivity : ComponentActivity() {
                             result.onSuccess {
                                 authenticatedUserId = null
                             }.onFailure {
-                                uiMessage = it.message
-                                    ?: "Vuelve a iniciar sesión para poder eliminar la cuenta"
+                                uiMessage = getString(R.string.message_account_delete_failed)
                             }
                         }
                     }

@@ -13,9 +13,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.PaidFeature
+import com.cuentivo.app.R
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoShapes
@@ -83,14 +85,13 @@ internal fun SubscriptionContent(
             if (free) {
                 NeoAction("Suscribirme a Pro", onUpgrade, Modifier.fillMaxWidth())
                 Text(
-                    text = "El cobro se hace por Google Play y puedes cancelarlo cuando quieras " +
-                        "desde la tienda. Tus datos no se borran si cancelas.",
+                    text = stringResource(R.string.subscription_billing_note),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 Text(
-                    text = "Tu suscripción se administra desde Google Play.",
+                    text = stringResource(R.string.subscription_play_note),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

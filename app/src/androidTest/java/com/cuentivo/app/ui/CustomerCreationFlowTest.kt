@@ -35,7 +35,7 @@ class CustomerCreationFlowTest {
 
     @Test fun a_successful_save_closes_the_form_with_the_trimmed_name() {
         composeRule.setContent {
-            Harness(onCreate = { name, _ -> created += name; token++ })
+            Harness(onCreate = { name, _, _ -> created += name; token++ })
         }
         openForm()
 
@@ -50,7 +50,7 @@ class CustomerCreationFlowTest {
         // The duplicate-name shape: onCreateCustomer runs, but nothing advances the token — exactly
         // what MainActivity does when the unique index refuses the insert.
         composeRule.setContent {
-            Harness(onCreate = { _, _ -> message = "Ya tienes otro cliente con ese nombre" })
+            Harness(onCreate = { _, _, _ -> message = "Ya tienes otro cliente con ese nombre" })
         }
         openForm()
 
@@ -91,12 +91,13 @@ class CustomerCreationFlowTest {
 
     @Composable
     private fun Harness(
-        onCreate: (String, String?) -> Unit = { _, _ -> },
+        onCreate: (String, String?, Long?) -> Unit = { _, _, _ -> },
+        // This file is about the create dialog itself; the optional sale has its own test.
         isSaving: Boolean = false,
     ) {
         CuentivoApp(
             state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
-            onCreateCustomer = onCreate,
+            onCreateCustomer = { name, phone, creditLimit, _ -> onCreate(name, phone, creditLimit) },
             isSavingCustomer = isSaving,
             customerSavedToken = token,
             message = message,

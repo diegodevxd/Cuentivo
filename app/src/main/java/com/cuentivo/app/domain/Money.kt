@@ -2,6 +2,7 @@ package com.cuentivo.app.domain
 
 import java.math.BigDecimal
 import java.text.NumberFormat
+import java.util.Currency
 import java.util.Locale
 
 /**
@@ -13,8 +14,24 @@ import java.util.Locale
 object Money {
     private val MEXICO = Locale("es", "MX")
 
-    fun format(cents: Long): String = NumberFormat.getCurrencyInstance(MEXICO)
-        .format(BigDecimal.valueOf(cents, 2))
+    /**
+     * Money is formatted in es-MX regardless of the UI language, on purpose.
+     *
+     * Switching the app to English must not change what an amount looks like: the business still
+     * charges pesos, and `$3,000.00` is what the owner and their customers recognise. Formatting
+     * under the UI locale instead would print `MX$3,000.00` in English — and only in the few places
+     * that could reach a Compose locale, since 30-odd call sites live in `domain/` (the CSV, the
+     * WhatsApp texts, the alerts) where there is no Compose context to read. The result would be
+     * two different-looking amounts on the same screen.
+     *
+     * [currencyCode] stays a parameter because `BusinessEntity.currency` exists and a business
+     * outside Mexico is a real future case; the locale deliberately does not.
+     */
+    fun format(cents: Long, currencyCode: String = "MXN"): String {
+        val format = NumberFormat.getCurrencyInstance(MEXICO)
+        format.currency = Currency.getInstance(currencyCode)
+        return format.format(BigDecimal.valueOf(cents, 2))
+    }
 
     /**
      * Parses pesos typed by a person ("150.50") into cents.

@@ -14,8 +14,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.cuentivo.app.R
 import com.cuentivo.app.domain.Money
 
 /**
@@ -42,9 +44,9 @@ internal fun MoneyField(label: String, text: String, onTextChange: (String) -> U
         supportingText = {
             val cents = pesosToCents(text)
             when {
-                text.isBlank() -> Text("Escribe el monto en pesos, por ejemplo 150.50")
-                cents == null -> Text("Monto no válido", color = MaterialTheme.colorScheme.error)
-                else -> Text("Se registrará ${Money.format(cents)}")
+                text.isBlank() -> Text(stringResource(R.string.form_amount_hint))
+                cents == null -> Text(stringResource(R.string.form_amount_invalid), color = MaterialTheme.colorScheme.error)
+                else -> Text(stringResource(R.string.form_amount_preview, Money.format(cents)))
             }
         },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -74,7 +76,7 @@ internal fun FormDialog(
                 content = content,
             )
         },
-        confirmButton = { TextButton(onClick = onConfirm, enabled = confirmEnabled) { Text("Guardar") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = { TextButton(onClick = onConfirm, enabled = confirmEnabled) { Text(stringResource(R.string.form_save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.form_cancel)) } },
     )
 }

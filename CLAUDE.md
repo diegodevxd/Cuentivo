@@ -21,6 +21,12 @@ $env:JAVA_TOOL_OPTIONS='-Djavax.net.ssl.trustStore=C:\tmp\cuentivo-jbr-cacerts -
 
 - `--no-watch-fs` no es opcional: el file watcher de Gradle se vuelve extremadamente lento en este entorno.
 - Si se limpia `C:\tmp`, hay que reexportar `norton-web-mail-shield-root.cer` del almacén de Windows y reimportarlo en la copia del cacerts. **No se modifica el JDK instalado ni se desactiva TLS.**
+- **Norton rota su raíz cada tantas semanas**, y entonces el trust store existente deja de servir aunque el archivo siga ahí. El síntoma engaña: todo compila mientras las dependencias estén en caché y sólo falla al bajar una nueva, con `PKIX path validation failed ... Path does not chain with any of the trust anchors`. Se diagnostica comparando huellas — si no coinciden, se regenera:
+
+```powershell
+& "$env:JAVA_HOME\bin\keytool.exe" -list -v -keystore C:\tmp\cuentivo-jbr-cacerts -storepass changeit -alias norton-web-mail-shield-root | Select-String "SHA1:"
+Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -match 'Norton Web/Mail Shield Root' } | Select-Object Thumbprint
+```
 
 | Tarea | Comando |
 |---|---|
@@ -208,7 +214,7 @@ Resuelto el 2026-07-24, con `testDebugUnitTest` en verde:
 
 Lo que sigue abierto:
 
-5. **Sin verificación contra Firestore real ni Emulator.** *Ninguna subida ni descarga se ha confirmado end-to-end.* `firebase.json` no tiene bloque `emulators`, no hay `.firebaserc`, ningún `useEmulator(...)` → todo apunta a producción. **Este es ahora el siguiente bloqueante real**: no tiene sentido agregar más superficie de sync sobre una base que nunca ejecutó una sola escritura remota.
+5. **Sin verificación contra Firestore real ni Emulator.** *Ninguna subida ni descarga se ha confirmado end-to-end.* Ya existen `.firebaserc` y el bloque `emulators` en `firebase.json` (auth 9099, firestore 8080, ui 4000), así que la vía de verificación está lista — pero sin `-Pcuentivo.useEmulators=true` todo sigue apuntando a producción. **Este es ahora el siguiente bloqueante real**: no tiene sentido agregar más superficie de sync sobre una base que nunca ejecutó una sola escritura remota.
 6. **El encolado no es atómico.** Ocurre como statement suelto después de la escritura local en `MainActivity`, no dentro de la misma transacción. Si el proceso muere entre ambos, la venta existe en local y nunca se encola.
 7. **Sin `WriteBatch`.** El gateway hace `set()` individuales para venta, ítem y movimiento. `FIRESTORE_RULES_AUDIT.json` advierte exactamente contra esto: *"No activar sincronización financiera hasta implementar esa garantía."*
 8. **`PAYMENT_ALLOCATION` no se encola.** Hoy no importa porque `MainActivity` registra pagos con `emptyList()` de asignaciones; al implementar abonos por venta habrá que agregarlo. La descarga sí lo maneja.

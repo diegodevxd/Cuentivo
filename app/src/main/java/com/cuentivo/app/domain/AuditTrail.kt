@@ -11,6 +11,8 @@ package com.cuentivo.app.domain
 enum class AuditAction(val code: String, val summary: String) {
     SALE_CREATED("SALE_CREATED", "Venta registrada"),
     SALE_CANCELED("SALE_CANCELED", "Venta cancelada"),
+    /** One event, not a cancel plus a create: a correction is a single decision by one person. */
+    SALE_CORRECTED("SALE_CORRECTED", "Venta corregida"),
     PAYMENT_REGISTERED("PAYMENT_REGISTERED", "Abono registrado"),
     PAYMENT_CANCELED("PAYMENT_CANCELED", "Abono cancelado"),
     ADJUSTMENT_REGISTERED("ADJUSTMENT_REGISTERED", "Ajuste de saldo registrado"),

@@ -59,6 +59,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -66,6 +67,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
@@ -77,12 +79,14 @@ import com.cuentivo.app.domain.AccessDecision
 import com.cuentivo.app.domain.Alert
 import com.cuentivo.app.domain.Insight
 import com.cuentivo.app.domain.Money
+import com.cuentivo.app.domain.QuickSale
 import com.cuentivo.app.domain.SaleDraft
 import com.cuentivo.app.domain.SaleDraftLine
 import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.account.AccountSheet
+import com.cuentivo.app.ui.account.LanguageSheet
 import com.cuentivo.app.ui.customer.CustomerDetailSheet
 import com.cuentivo.app.ui.customer.CustomersScreen
 import com.cuentivo.app.ui.dashboard.DashboardScreen
@@ -115,8 +119,8 @@ fun CuentivoApp(
     tier: SubscriptionTier = SubscriptionTier.FREE,
     accountLabel: String? = null,
     onCreateBusiness: () -> Unit = {},
-    onCreateCustomer: (String, String?) -> Unit = { _, _ -> },
-    onEditCustomer: (CustomerBalanceRow, String, String?) -> Unit = { _, _, _ -> },
+    onCreateCustomer: (String, String?, Long?, QuickSale?) -> Unit = { _, _, _, _ -> },
+    onEditCustomer: (CustomerBalanceRow, String, String?, Long?) -> Unit = { _, _, _, _ -> },
     onArchiveCustomer: (CustomerBalanceRow) -> Unit = {},
     /** True while a create is being written. Disables Guardar; does not by itself close anything. */
     isSavingCustomer: Boolean = false,
@@ -136,20 +140,31 @@ fun CuentivoApp(
     onImportProducts: (Uri) -> Unit = {},
     importReport: SheetImport? = null,
     onDismissImportReport: () -> Unit = {},
-    onShareImportTemplate: () -> Unit = {},
+    canImportProducts: Boolean = true,
+    onImportBlocked: () -> Unit = {},
     isImportingProducts: Boolean = false,
     onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit = { _, _ -> },
     onCreatePayment: (CustomerBalanceRow, Long) -> Unit = { _, _ -> },
     statementCustomer: CustomerBalanceRow? = null,
     statement: List<StatementEntry> = emptyList(),
-    cancelables: List<CancelableItem> = emptyList(),
-    onCancelSale: (CancelableItem) -> Unit = {},
-    onCancelPayment: (CancelableItem) -> Unit = {},
+    cancelables: List<CorrectionCandidate> = emptyList(),
+    onCancelSale: (CorrectionCandidate.Sale) -> Unit = {},
+    onEditSale: (CorrectionCandidate.Sale) -> Unit = {},
+    /** Non-null while a registered sale is open for correction; it takes over the viewport. */
+    saleCorrection: SaleCorrection? = null,
+    onSaveCorrection: (SaleDraft) -> Unit = {},
+    onDismissCorrection: () -> Unit = {},
+    backupSection: @Composable () -> Unit = {},
+    onRemindCustomer: (String) -> Unit = {},
+    onCancelPayment: (CorrectionCandidate.Payment) -> Unit = {},
     onShowStatement: (CustomerBalanceRow) -> Unit = {},
     onCallCustomer: (String) -> Unit = {},
     onDismissStatement: () -> Unit = {},
     onShareStatementCsv: () -> Unit = {},
     onShareStatementText: () -> Unit = {},
+    suggestedCreditLimitCents: Long? = null,
+    onAcceptCreditLimitSuggestion: (Long) -> Unit = {},
+    onDismissCreditLimitSuggestion: (Long) -> Unit = {},
     onShareDebtorList: () -> Unit = {},
     alerts: List<Alert> = emptyList(),
     onOpenAlertCustomer: (String) -> Unit = {},
@@ -164,6 +179,7 @@ fun CuentivoApp(
     var destination by remember { mutableStateOf(MainDestination.HOME) }
     var showNewSale by remember { mutableStateOf(false) }
     var showAccount by remember { mutableStateOf(false) }
+    var showLanguage by remember { mutableStateOf(false) }
     // Hoisted out of the screens so the floating button can open the same form the screen owns.
     var showCustomerForm by remember { mutableStateOf(false) }
     var showProductForm by remember { mutableStateOf(false) }
@@ -209,11 +225,24 @@ fun CuentivoApp(
             showNewSale = true
         },
         onOpenAccount = { showAccount = true },
+        onOpenLanguage = { showLanguage = true },
         onOpenAlerts = { showAlerts = true },
         snackbarHost = { SnackbarHost(snackbar) },
         showBrandHeader = statementCustomer == null,
     ) { padding ->
-        if (statementCustomer != null) {
+        if (saleCorrection != null && statementCustomer != null) {
+            // Ahead of the statement on purpose: the correction is the task the owner just opened,
+            // and closing it drops them back onto the sheet they came from.
+            NewSaleScreen(
+                customers = customers,
+                products = products,
+                modifier = Modifier.padding(padding),
+                initialCustomer = statementCustomer,
+                initialDraft = saleCorrection.draft,
+                onCreateSale = { _, draft -> onSaveCorrection(draft) },
+                onExit = onDismissCorrection,
+            )
+        } else if (statementCustomer != null) {
             // The detail is a task that owns the viewport, so it outranks the selected destination
             // while it is open. The bottom bar stays visible underneath it.
             CustomerDetailSheet(
@@ -229,10 +258,14 @@ fun CuentivoApp(
                 },
                 onCallCustomer = onCallCustomer,
                 onCancelSale = onCancelSale,
+                onEditSale = onEditSale,
                 onCancelPayment = onCancelPayment,
                 onShareCsv = onShareStatementCsv,
                 onShareText = onShareStatementText,
                 onDismiss = onDismissStatement,
+                suggestedCreditLimitCents = suggestedCreditLimitCents,
+                onAcceptCreditLimitSuggestion = onAcceptCreditLimitSuggestion,
+                onDismissCreditLimitSuggestion = onDismissCreditLimitSuggestion,
             )
         } else if (showNewSale) {
             NewSaleScreen(
@@ -280,7 +313,8 @@ fun CuentivoApp(
                 onEditProduct = onEditProduct,
                 onArchiveProduct = onArchiveProduct,
                 onImportProducts = onImportProducts,
-                onShareImportTemplate = onShareImportTemplate,
+                canImportProducts = canImportProducts,
+                onImportBlocked = onImportBlocked,
                 isImportingProducts = isImportingProducts,
                 isSaving = isSavingProduct,
             )
@@ -298,39 +332,40 @@ fun CuentivoApp(
             title = { Text(limit.title) },
             text = { Text(limit.detail) },
             confirmButton = {
-                TextButton(onClick = { onDismissBlocked(); showAccount = true }) { Text("Ver Cuentivo Pro") }
+                TextButton(onClick = { onDismissBlocked(); showAccount = true }) { Text(stringResource(R.string.app_see_pro)) }
             },
-            dismissButton = { TextButton(onClick = onDismissBlocked) { Text("Ahora no") } },
+            dismissButton = { TextButton(onClick = onDismissBlocked) { Text(stringResource(R.string.app_not_now)) } },
         )
     }
     if (showAlerts) {
         AlertsSheet(
             alerts = alerts,
             onOpenCustomer = onOpenAlertCustomer,
+            onRemindCustomer = onRemindCustomer,
             onDismiss = { showAlerts = false },
         )
     }
     importReport?.let { report ->
         AlertDialog(
             onDismissRequest = onDismissImportReport,
-            title = { Text("Importación terminada") },
+            title = { Text(stringResource(R.string.app_import_done_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text("Se agregaron ${report.accepted.size} productos.")
+                    Text(stringResource(R.string.app_import_added, report.accepted.size))
                     if (report.rejected.isNotEmpty()) {
-                        Text("Estos renglones se quedaron fuera:", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.app_import_rejected_header), style = MaterialTheme.typography.labelLarge)
                         // The line number is the point: it is what lets someone find the row in
                         // their own file and correct it.
                         report.rejected.take(MAX_LISTED_REJECTIONS).forEach { rejected ->
-                            Text("Renglón ${rejected.lineNumber}: ${rejected.reason}", style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(R.string.app_import_rejected_line, rejected.lineNumber, rejected.reason), style = MaterialTheme.typography.labelLarge)
                         }
                         if (report.rejected.size > MAX_LISTED_REJECTIONS) {
-                            Text("y ${report.rejected.size - MAX_LISTED_REJECTIONS} más.", style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(R.string.app_import_rejected_more, report.rejected.size - MAX_LISTED_REJECTIONS), style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = onDismissImportReport) { Text("Entendido") } },
+            confirmButton = { TextButton(onClick = onDismissImportReport) { Text(stringResource(R.string.app_understood)) } },
         )
     }
     if (showAccount) {
@@ -341,7 +376,11 @@ fun CuentivoApp(
             onSignOut = onSignOut,
             onDeleteAccount = onDeleteAccount,
             onDismiss = { showAccount = false },
+            backupSection = backupSection,
         )
+    }
+    if (showLanguage) {
+        LanguageSheet(onDismiss = { showLanguage = false })
     }
 }
 
@@ -379,16 +418,16 @@ private fun LegacyDashboardScreen(
         Spacer(Modifier.height(8.dp))
         when (state) {
             DashboardUiState.NoBusiness -> {
-                Text("Bienvenido a Cuentivo", style = MaterialTheme.typography.headlineSmall)
-                Text("Crea tu primer negocio para comenzar")
-                FilledTonalButton(onClick = onCreateBusiness, modifier = Modifier.fillMaxWidth()) { Text("Crear mi negocio") }
+                Text(stringResource(R.string.app_welcome_title), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.app_welcome_detail))
+                FilledTonalButton(onClick = onCreateBusiness, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.app_create_business)) }
             }
             is DashboardUiState.Content -> {
                 // No "Nueva venta" button here any more: the floating button does it, and two ways
                 // to start the same thing on one screen is clutter.
                 Text(state.businessName, style = MaterialTheme.typography.headlineSmall)
                 NeoBalanceHero(
-                    label = "Por cobrar",
+                    label = stringResource(R.string.dashboard_receivable_short),
                     amountCents = state.receivableCents,
                     supportingText = if (state.overdueCents > 0) {
                         "${formatMoney(state.overdueCents)} requieren atención"
@@ -415,7 +454,7 @@ private fun LegacyDashboardScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
                         Column(Modifier.padding(16.dp)) {
-                            Text("Pagos vencidos", style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(R.string.app_overdue_payments), style = MaterialTheme.typography.labelLarge)
                             Text(
                                 formatMoney(state.overdueCents),
                                 style = MaterialTheme.typography.headlineSmall,
@@ -426,10 +465,10 @@ private fun LegacyDashboardScreen(
                 }
 
                 NeoSectionTitle(
-                    title = "Quién me debe",
-                    eyebrow = "Cartera",
+                    title = stringResource(R.string.app_who_owes_me),
+                    eyebrow = stringResource(R.string.customers_title),
                     trailing = {
-                        AssistChip(onClick = onShareDebtorList, label = { Text("Compartir") })
+                        AssistChip(onClick = onShareDebtorList, label = { Text(stringResource(R.string.app_share)) })
                     },
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

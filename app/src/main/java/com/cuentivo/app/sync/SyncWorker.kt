@@ -21,8 +21,9 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
         // chosen the free plan.
         if (!EntitlementStore(applicationContext).allowsCloudSync()) return Result.success()
 
-        // WorkManager can run this in a process where MainActivity never started, so the emulator
-        // wiring has to happen here too. The call is idempotent within a process.
+        // WorkManager can run this in a process where MainActivity never started, so the App Check
+        // and emulator wiring has to happen here too. Both calls are idempotent within a process.
+        AppCheckInstaller.installOnce()
         FirebaseEmulators.connectIfEnabled()
         val database = Room.databaseBuilder(applicationContext, CuentivoDatabase::class.java, "cuentivo.db")
             .addMigrations(*CUENTIVO_MIGRATIONS)

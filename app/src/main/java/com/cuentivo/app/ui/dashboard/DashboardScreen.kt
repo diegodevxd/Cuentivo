@@ -33,7 +33,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import com.cuentivo.app.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,9 +93,9 @@ fun DashboardScreen(
             when (state) {
                 DashboardUiState.NoBusiness -> item {
                     NeoEmptyState(
-                        title = "Bienvenido a Cuentivo",
-                        detail = "Crea tu primer negocio para comenzar",
-                        actionLabel = "Crear mi negocio",
+                        title = stringResource(R.string.app_welcome_title),
+                        detail = stringResource(R.string.app_welcome_detail),
+                        actionLabel = stringResource(R.string.app_create_business),
                         onAction = onCreateBusiness,
                     )
                 }
@@ -123,8 +126,8 @@ private fun LazyListScope.dashboardContent(
     }
     item {
         Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
-            NeoAction("Registrar abono", onRegisterPayment, Modifier.fillMaxWidth())
-            NeoAction("Nueva venta", onNewSale, Modifier.fillMaxWidth(), primary = false)
+            NeoAction(stringResource(R.string.detail_register_payment), onRegisterPayment, Modifier.fillMaxWidth())
+            NeoAction(stringResource(R.string.nav_new_sale), onNewSale, Modifier.fillMaxWidth(), primary = false)
         }
     }
 
@@ -132,7 +135,7 @@ private fun LazyListScope.dashboardContent(
     val critical = DashboardPresentation.criticalCustomers(customers, state.dueSales, today)
     item {
         NeoSectionHeader(
-            title = "Clientes críticos",
+            title = stringResource(R.string.dashboard_critical_customers),
             trailing = {
                 TextButton(
                     onClick = onSeeAllCustomers,
@@ -141,7 +144,7 @@ private fun LazyListScope.dashboardContent(
                     // minimum height.
                     contentPadding = PaddingValues(horizontal = NeoSpacing.sm),
                 ) {
-                    Text("Ver todos", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.dashboard_see_all), style = MaterialTheme.typography.labelLarge)
                 }
             },
         )
@@ -150,8 +153,8 @@ private fun LazyListScope.dashboardContent(
         // No action: "nobody is late" is the good outcome, and there is nothing to do about it.
         item {
             NeoEmptyState(
-                title = "Sin cobros urgentes",
-                detail = "Nadie tiene un pago vencido hoy.",
+                title = stringResource(R.string.dashboard_no_urgent_title),
+                detail = stringResource(R.string.dashboard_no_urgent_detail),
             )
         }
     } else {
@@ -164,12 +167,50 @@ private fun LazyListScope.dashboardContent(
         }
     }
 
-    item { NeoSectionHeader(title = "Actividad reciente") }
+    // The month, in the two numbers a shopkeeper actually asks about. Both were already being
+    // computed and carried this far; until now nothing drew them.
+    item { NeoSectionHeader(title = stringResource(R.string.dashboard_month_title)) }
+    item {
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("dashboard-month"),
+            shape = NeoShapes.card,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(NeoSpacing.md),
+                verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
+            ) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    MonthFigure(
+                        label = stringResource(R.string.dashboard_month_sold),
+                        amountCents = state.soldCents,
+                        modifier = Modifier.weight(1f),
+                    )
+                    MonthFigure(
+                        label = stringResource(R.string.dashboard_month_collected),
+                        amountCents = state.collectedCents,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                // One sentence per insight, already worded by BusinessInsights.
+                state.insights.forEach { insight ->
+                    Text(
+                        text = insight.text,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
+    item { NeoSectionHeader(title = stringResource(R.string.dashboard_recent_activity)) }
     if (state.recentActivity.isEmpty()) {
         item {
             NeoEmptyState(
-                title = "Aún no hay movimientos",
-                detail = "Aquí aparecerán tus ventas y abonos.",
+                title = stringResource(R.string.dashboard_no_activity_title),
+                detail = stringResource(R.string.dashboard_no_activity_detail),
             )
         }
     } else {
@@ -207,7 +248,7 @@ private fun DashboardHero(state: DashboardUiState.Content) {
         accent = MaterialTheme.colorScheme.primary,
     ) {
         Text(
-            text = "Saldo total por cobrar",
+            text = stringResource(R.string.dashboard_receivable_total),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -221,8 +262,8 @@ private fun DashboardHero(state: DashboardUiState.Content) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(NeoSpacing.lg),
         ) {
-            DashboardMetric("Vence hoy", state.dueTodayCents, Modifier.weight(1f))
-            DashboardMetric("Vencido", state.overdueCents, Modifier.weight(1f), isOverdue = true)
+            DashboardMetric(stringResource(R.string.dashboard_due_today), state.dueTodayCents, Modifier.weight(1f))
+            DashboardMetric(stringResource(R.string.dashboard_overdue), state.overdueCents, Modifier.weight(1f), isOverdue = true)
         }
     }
 }
@@ -334,7 +375,7 @@ private fun ActivityRow(activity: DashboardActivity) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${activity.customerName} · ${activityTime(activity)}",
+                text = stringResource(R.string.dashboard_activity_line, activity.customerName, activityTime(activity)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -411,3 +452,19 @@ private fun initialOf(name: String): String =
 private fun activityTime(activity: DashboardActivity): String =
     DateFormat.getTimeInstance(DateFormat.SHORT, Locale.forLanguageTag("es-MX"))
         .format(Date(activity.occurredAtEpochMillis))
+
+/** One figure of the month: the label small and quiet, the amount doing the talking. */
+@Composable
+private fun MonthFigure(label: String, amountCents: Long, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = Money.format(amountCents),
+            style = MaterialTheme.typography.titleMedium,
+        )
+    }
+}

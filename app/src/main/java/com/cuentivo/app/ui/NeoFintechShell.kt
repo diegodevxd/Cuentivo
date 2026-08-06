@@ -35,14 +35,31 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.cuentivo.app.R
+
+private val GlobeIcon: ImageVector = ImageVector.Builder(
+    name = "Language",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).addPath(
+    pathData = PathParser().parsePathString(
+        "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4.06 13h3.98c.1 2.3.63 4.48 1.52 6.31A8.03 8.03 0 0 1 4.06 13zM8.04 11H4.06a8.03 8.03 0 0 1 5.5-6.31A18.2 18.2 0 0 0 8.04 11zM12 19.96c-1.23-1.78-2.08-4.26-2.15-6.96h4.3c-.07 2.7-.92 5.18-2.15 6.96zM9.85 11C9.92 8.3 10.77 5.82 12 4.04 13.23 5.82 14.08 8.3 14.15 11h-4.3zM14.44 19.31c.89-1.83 1.42-4.01 1.52-6.31h3.98a8.03 8.03 0 0 1-5.5 6.31zM15.96 11a18.2 18.2 0 0 0-1.52-6.31A8.03 8.03 0 0 1 19.94 11h-3.98z",
+    ).toNodes(),
+    fill = SolidColor(Color.Black),
+).build()
 
 /** The four places in the app. Nueva venta deliberately remains an action, not a destination. */
 enum class MainDestination {
@@ -70,6 +87,7 @@ fun NeoFintechShell(
     onDestination: (MainDestination) -> Unit,
     onNewSale: () -> Unit,
     onOpenAccount: () -> Unit,
+    onOpenLanguage: () -> Unit,
     onOpenAlerts: () -> Unit,
     snackbarHost: @Composable () -> Unit = {},
     /**
@@ -83,6 +101,7 @@ fun NeoFintechShell(
     Scaffold(
         topBar = {
             if (!showBrandHeader) return@Scaffold
+            val accountDescription = stringResource(R.string.nav_account_description)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -97,7 +116,7 @@ fun NeoFintechShell(
                     modifier = Modifier
                         .height(48.dp)
                         .semantics(mergeDescendants = true) {
-                            contentDescription = "Cuenta"
+                            contentDescription = accountDescription
                             role = Role.Button
                         }
                         .clickable(onClick = onOpenAccount)
@@ -122,10 +141,22 @@ fun NeoFintechShell(
                     )
                 }
                 Box(Modifier.weight(1f))
+                IconButton(
+                    onClick = onOpenLanguage,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("global-language-action"),
+                ) {
+                    Icon(
+                        imageVector = GlobeIcon,
+                        contentDescription = stringResource(R.string.account_language),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
                 IconButton(onClick = onOpenAlerts, modifier = Modifier.size(48.dp)) {
                     Icon(
                         imageVector = Icons.Filled.Notifications,
-                        contentDescription = "Avisos",
+                        contentDescription = stringResource(R.string.nav_alerts_description),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
@@ -175,13 +206,13 @@ private fun CompactBottomNavigation(
 
 private enum class ShellDestination(
     val destination: MainDestination,
-    val label: String,
+    val labelRes: Int,
     val icon: ImageVector,
 ) {
-    HOME(MainDestination.HOME, "Inicio", Icons.Filled.Home),
-    CUSTOMERS(MainDestination.CUSTOMERS, "Clientes", Icons.Filled.Person),
-    PRODUCTS(MainDestination.PRODUCTS, "Productos", Icons.Filled.Star),
-    PAYMENTS(MainDestination.PAYMENTS, "Abonos", Icons.Filled.CheckCircle),
+    HOME(MainDestination.HOME, R.string.nav_home, Icons.Filled.Home),
+    CUSTOMERS(MainDestination.CUSTOMERS, R.string.nav_customers, Icons.Filled.Person),
+    PRODUCTS(MainDestination.PRODUCTS, R.string.nav_products, Icons.Filled.Star),
+    PAYMENTS(MainDestination.PAYMENTS, R.string.nav_payments, Icons.Filled.CheckCircle),
     ;
 
     @Composable
@@ -225,7 +256,7 @@ private enum class ShellDestination(
                     .background(markerColor),
             )
             Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(19.dp))
-            Text(label, style = MaterialTheme.typography.labelSmall, color = contentColor, maxLines = 1)
+            Text(stringResource(labelRes), style = MaterialTheme.typography.labelSmall, color = contentColor, maxLines = 1)
         }
     }
 }
@@ -246,9 +277,9 @@ private fun NewSaleNavigationAction(onClick: () -> Unit, modifier: Modifier) {
             modifier = Modifier.size(30.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Add, contentDescription = "Nueva venta", modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.nav_new_sale), modifier = Modifier.size(20.dp))
             }
         }
-        Text("Nueva venta", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        Text(stringResource(R.string.nav_new_sale), style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
 }

@@ -25,6 +25,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.cuentivo.app.R
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
@@ -86,26 +88,34 @@ fun PaymentScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {
-            item { NeoTaskHeader(eyebrow = "Movimiento entrante", title = "Registrar abono") }
             item {
+                NeoTaskHeader(
+                    eyebrow = stringResource(R.string.payment_eyebrow),
+                    title = stringResource(R.string.payment_title),
+                )
+            }
+            item {
+                // The raw format string, resolved here because optionDetail is a plain lambda and
+                // cannot call stringResource itself.
+                val balanceFormat = stringResource(R.string.new_sale_customer_balance)
                 NeoSelectorField(
-                    label = "Cliente",
+                    label = stringResource(R.string.new_sale_customer_label),
                     selected = customer,
-                    placeholder = "Toca para elegir al cliente",
+                    placeholder = stringResource(R.string.new_sale_customer_placeholder),
                     options = ordered,
                     optionTitle = { it.customer.name },
-                    optionDetail = { "Saldo: ${Money.format(it.balanceCents)}" },
-                    emptyText = "Primero agrega un cliente en la pestaña Clientes",
+                    optionDetail = { balanceFormat.format(Money.format(it.balanceCents)) },
+                    emptyText = stringResource(R.string.new_sale_customer_empty),
                     onSelect = { customer = it },
                 )
             }
             customer?.let { chosen ->
                 item { BalancePanel(balanceCents = chosen.balanceCents, paymentCents = cents) }
             }
-            item { MoneyField("Monto del abono", amountText) { amountText = it } }
+            item { MoneyField(stringResource(R.string.payment_amount_label), amountText) { amountText = it } }
             item {
                 Text(
-                    text = "El abono se aplica primero a la venta más antigua por vencer.",
+                    text = stringResource(R.string.payment_allocation_note),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -113,7 +123,7 @@ fun PaymentScreen(
             item {
                 val chosen = customer
                 NeoAction(
-                    label = "Guardar abono",
+                    label = stringResource(R.string.payment_save),
                     onClick = {
                         if (chosen != null && cents != null) {
                             onCreatePayment(chosen, cents)
@@ -139,7 +149,7 @@ private fun BalancePanel(balanceCents: Long, paymentCents: Long?) {
     ) {
         Column(Modifier.fillMaxWidth().padding(NeoSpacing.md)) {
             NeoAmountRow(
-                label = "Saldo actual",
+                label = stringResource(R.string.payment_current_balance),
                 amountCents = balanceCents,
                 valueModifier = Modifier.testTag(PAYMENT_BALANCE_TAG),
             )
@@ -149,7 +159,7 @@ private fun BalancePanel(balanceCents: Long, paymentCents: Long?) {
                 Spacer(Modifier.height(NeoSpacing.sm))
                 val remaining = balanceCents - paymentCents
                 NeoAmountRow(
-                    label = "Saldo resultante",
+                    label = stringResource(R.string.payment_resulting_balance),
                     amountCents = remaining,
                     valueModifier = Modifier.testTag(PAYMENT_RESULT_TAG),
                     // A settled or negative balance is money the customer no longer owes, which is
@@ -163,7 +173,7 @@ private fun BalancePanel(balanceCents: Long, paymentCents: Long?) {
                 if (remaining < 0L) {
                     Spacer(Modifier.height(NeoSpacing.xs))
                     Text(
-                        text = "Queda saldo a favor del cliente.",
+                        text = stringResource(R.string.payment_credit_note),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

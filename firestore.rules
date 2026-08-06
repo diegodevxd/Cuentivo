@@ -11,7 +11,12 @@ service cloud.firestore {
     // Sales, items, payments, allocations and movements are append-only.
     // Customer PII is never readable outside a business membership.
 
-    function isAuthenticated() { return request.auth != null; }
+    // Signed in is not enough: the address has to have been proven to exist. Every other function
+    // here hangs off this one, so an account that never opened its verification mail cannot read or
+    // write anything at all. The app checks the same thing, but the app is not the enforcement —
+    // this is. The claim is set by Firebase Auth itself and travels inside the signed ID token, so
+    // a modified client cannot assert it.
+    function isAuthenticated() { return request.auth != null && request.auth.token.email_verified == true; }
     function isOwner(userId) { return isAuthenticated() && request.auth.uid == userId; }
     function uidUnchanged() { return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId; }
     function uidNotModified() { return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId; }

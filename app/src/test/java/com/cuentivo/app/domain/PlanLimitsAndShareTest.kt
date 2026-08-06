@@ -102,12 +102,17 @@ class PlanLimitsAndShareTest {
             "Ana",
             5_000,
             listOf(
-                StatementEntry("2026-07-01", "CHARGE", "DEBIT", 15_000, null),
+                StatementEntry("2026-07-01", "CHARGE", "DEBIT", 15_000, null, saleId = "s1", detail = "2 Jabón Zote"),
                 StatementEntry("2026-07-10", "PAYMENT", "CREDIT", 10_000, null),
             ),
         )
-        assertTrue(text.contains("Compra"))
+        assertTrue(text.contains("Venta"))
         assertTrue(text.contains("Abono"))
+        // What was bought, and a date a person can read: the message lands on WhatsApp, where
+        // "2026-07-01  Compra" tells the customer nothing about their own debt.
+        assertTrue(text.contains("2 Jabón Zote"))
+        assertTrue(text.contains("01/07/2026"))
+        assertFalse(text.contains("2026-07-01"))
     }
 
     @Test

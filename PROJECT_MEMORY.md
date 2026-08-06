@@ -1,6 +1,239 @@
 # Memoria persistente — Cuentivo
 
-Actualizada: 2026-07-27 (America/Mexico_City)
+Actualizada: 2026-08-06 (America/Mexico_City)
+
+## App Check y ficha de Play — 2026-08-06 (tanda 7 de Fase 1)
+
+`AppCheckInstaller.installOnce()` instala el proveedor de App Check y se llama en los **dos**
+arranques —`MainActivity.onCreate` y `SyncWorker.doWork`— justo antes de `FirebaseEmulators`, por
+la misma razón que aquél: WorkManager puede correr en un proceso donde la Activity nunca arrancó.
+Las reglas ya probaban **quién** llama (cuenta con correo verificado); esto prueba **desde dónde**,
+que es el hueco que dejaba `google-services.json` viajando dentro del APK.
+
+**El proveedor se elige por source set, no con `if (BuildConfig.DEBUG)`**: `src/debug` declara
+`AppCheckProvider` sobre `DebugAppCheckProviderFactory` y `src/release` sobre
+`PlayIntegrityAppCheckProviderFactory`. Un solo archivo con rama ni compilaría en release, y sobre
+todo arrastraría al APK un proveedor que entrega tokens a quien los pida. Verificado sobre el APK
+de release: **0 referencias a `DebugAppCheckProviderFactory`**, y Play Integrity presente
+(`fire-app-check`, `IntegrityManager`). `AppCheckInstallerTest` guarda ese contrato.
+
+⚠️ **El enforcement sigue APAGADO y debe seguirlo** hasta que la versionCode 9+ esté desplegada al
+100 %. La 8 que está en producción no lleva App Check: activarlo hoy deja a los 12 testers con
+`PERMISSION_DENIED`. Falta además, del lado de consola: SHA-256 de Play App Signing en Firebase,
+vincular Play Console, registrar la app en App Check y registrar el token de depuración de Logcat
+(sin eso, `a_registered_debug_token_exchanges_for_an_app_check_token` se queda en `assumeTrue`).
+
+`docs/play-listing-es.md` — textos de la ficha, notas de la 1.5 y respuestas del formulario de
+Seguridad de los datos. `PlayStoreCaptureTest` genera las 6 capturas a **1080×1920** escalando el
+bitmap: el formato de 900 dp de `StitchCaptureTest` es más alto que el 2:1 que acepta Play. Los
+fixtures se extrajeron a `CaptureFixtures` para que ficha y referencias de diseño muestren el mismo
+negocio ficticio. La captura del detalle usa un `STORE_STATEMENT` aparte porque el compartido
+cerraba en 1 500 − 250 = 1 500; **la misma incoherencia sigue en las capturas de `StitchCaptureTest`**,
+donde importa menos porque son internas.
+
+Aprendido del entorno, ya en `CLAUDE.md`: **Norton rota su raíz** y el trust store de `C:\tmp` deja
+de servir sin avisar —todo compila mientras haya caché y sólo falla al bajar una dependencia nueva.
+
+## Cobros desde avisos y resumen del mes — 2026-08-05 (tanda 6 de Fase 1)
+
+`AlertsSheet`: cada aviso con `customerId` gana un botón **Cobrar** que comparte
+`DebtorShareText.forCustomer(...)` sin lista de movimientos (un recordatorio es "debes tanto", no
+un historial). ⚠️ Defecto encontrado al probarlo: la columna de texto usaba `fillMaxWidth()` y
+empujaba el botón fuera de la pantalla; ahora usa `weight(1f)`.
+
+Tarjeta **"Este mes"** en `DashboardScreen` con vendido y cobrado más las frases de
+`BusinessInsights`. **No se calculó nada nuevo**: `soldCents`, `collectedCents` e `insights` ya
+venían en `DashboardSnapshot` desde `DashboardRepository` y simplemente nunca se dibujaban.
+
+Pendiente de esta tanda, no hecho: productos más vendidos y ranking de deudores (requieren consulta
+nueva). Verificado con `CollectionsAndReportTest` (3 casos).
+
+## Respaldo y restauración — 2026-08-05 (tanda 5 de Fase 1)
+
+`backup/BackupCrypto.kt` (puro JVM, 9 pruebas) + `backup/DatabaseBackup.kt` + `BackupSection` en la
+hoja de Cuenta. Gratis en todos los planes: es seguridad, no una función premium.
+
+Decisiones que no son obvias y conviene no revertir:
+- **Se copia el archivo de la base entero**, no tabla por tabla. Una tabla agregada después entra
+  sola; un respaldo al que le falte una tabla en silencio es peor que ninguno.
+- **`PRAGMA wal_checkpoint(FULL)` antes de copiar.** Sin eso el respaldo sale sin las últimas
+  ventas, que viven en el `-wal`. Hay una prueba dedicada.
+- **AES-GCM, no AES a secas**: además de cifrar, detecta manipulación, así que un archivo editado
+  no abre en vez de restaurar un libro adulterado. La cabecera va autenticada como AAD, así que
+  tampoco se puede editar la versión de esquema guardada.
+- **Se descifra ANTES de cerrar/borrar nada**: una contraseña equivocada deja el libro intacto.
+  Prueba dedicada; es la propiedad de seguridad más importante de la función.
+- Restaurar borra `-wal` y `-shm` y **reinicia el proceso** (`exit(0)`): cualquier conexión abierta
+  apuntaría a un archivo que ya no existe.
+- Un respaldo de una versión de esquema **mayor** se rechaza (Room migra hacia adelante, nunca
+  hacia atrás).
+
+⚠️ **La contraseña del respaldo la inventa el usuario y no se guarda en ningún lado** — no es la de
+Firebase Auth. Si se pierde, el archivo es irrecuperable. Está dicho en el diálogo.
+
+⚠️ **Sin probar a mano todavía**: falta el recorrido real de respaldar → borrar datos → restaurar
+en un teléfono.
+
+## Alta rápida: cliente + producto + venta — 2026-08-05 (tanda 4 de Fase 1)
+
+El formulario de crear cliente tiene una sección opcional ("¿Se llevó algo?") con producto, precio,
+cantidad y foto; reutiliza `ProductPhotoPicker` tal cual. Vacía = cliente normal. Llena = cliente +
+producto + venta en **una** `database.withTransaction`, así que no puede quedar un cliente sin la
+venta con la que salió. `QuickSalePolicy` (puro) distingue tres estados: vacío, **incompleto**
+(bloquea Guardar en vez de guardar un cliente pelón y perder lo que escribieron) y listo.
+
+Detalles que costaron pensarlos:
+- **Los dos límites del plan se revisan antes de escribir**: `canAddCustomer` y, si hay venta,
+  `canRegisterSale`. Comprobar el segundo después dejaría al cliente creado y la venta rechazada.
+- **Producto repetido**: `products` no tiene índice único ni columna normalizada, así que la
+  deduplicación se hace en memoria contra la lista `products` que `MainActivity` ya tiene, usando
+  `CustomerNameNormalizer.key`. Sin eso, cada cliente nuevo que se lleve un jabón crea otro "Jabón".
+- La sección **no** aparece al editar un cliente.
+- La foto se borra al cancelar el diálogo (`ProductPhotoDraftPolicy.onCancel`).
+
+⚠️ **Sin cobertura automática de la escritura completa**: la transacción vive en `MainActivity` y no
+es testeable sin refactor. Probado: `QuickSalePolicyTest` (JVM) y `QuickSaleFlowTest` (4 casos
+instrumentados) para la política y el contrato de pantalla. El recorrido cliente→producto→venta
+debe hacerse a mano.
+
+Pendiente de Fase 1: tanda 5 **respaldo/restauración** (el hueco grave: los datos viven sólo en el
+teléfono), tanda 6 cobros del día + reportes, tanda 7 App Check + ficha de Play.
+
+## Verificación de correo y refuerzo de seguridad — 2026-08-04 (v1.4 / versionCode 8)
+
+`firestore.rules`: `isAuthenticated()` ahora exige `request.auth.token.email_verified == true`. Como
+toda regla cuelga de esa función, una cuenta sin verificar recibe `PERMISSION_DENIED` incluso al
+leer — confirmado contra el emulador en `SyncEmulatorE2ETest.g_an_unverified_account_...`. **Las
+reglas se publican a mano en la consola; no se desplegaron desde aquí.**
+
+`EmailVerificationPolicy` (puro): verificado entra; sin verificar y creado a partir del corte
+`LEGACY_ACCOUNT_CUTOFF_EPOCH_MILLIS` (2026-08-05) no entra y ve `EmailVerificationScreen`; anterior
+al corte entra con aviso en `AppAlerts` y sin nube. El corte se compara contra
+`FirebaseUser.metadata.creationTimestamp`, no contra el reloj del teléfono. **Si el release se
+retrasa, hay que subir esa constante** o las cuentas creadas entre medias quedan bloqueadas.
+
+`SyncEntitlement.allowsCloudSync` recibe `isEmailVerified` como cuarta condición. Añadidos
+`sendEmailVerification`, `reloadUser` (obligatorio: el flag va cacheado en el token local) y
+`sendPasswordReset` al gateway. El aviso de recuperación es deliberadamente vago para no revelar
+qué correos existen.
+
+Pendiente del usuario: publicar reglas, activar *Email enumeration protection* en la consola, y
+App Check con Play Integrity (queda para la siguiente tanda; el proyecto está en Spark sin billing,
+así que no hay Cloud Functions ni blocking functions).
+
+## Corregir venta, estado de cuenta y importar — 2026-08-04 (v1.4)
+
+`FinancialDao.replaceSaleIdempotently`: corregir una venta es cancelarla y crear la corregida en
+**una** transacción; nada se edita ni se borra. Acredita el **total completo** de la venta previa
+—no sólo el remanente como `cancelSaleIdempotently`— porque la venta nueva vuelve a cobrar todo;
+con crédito parcial el saldo se descuadraría. Los abonos vivos se copian a la venta nueva con ids
+nuevos, topados al total corregido. No editable: venta pagada por completo, cancelada, o importada
+del sistema viejo (sus renglones no tienen `productId` y `SaleDraftLine` lo exige).
+
+`SaleLineSummary` + `FinancialDao.soldLinesForCustomer` (una sola consulta) alimentan el detalle de
+productos en el mensaje de WhatsApp y en el historial. Fecha en `dd/MM/yyyy`; "Compra" pasó a
+"Venta" en ambos lados.
+
+Productos: fuera el botón Plantilla; Importar consulta el candado Pro **antes** de abrir el selector
+de archivos, así el muro de pago no aparece después de elegir el Excel.
+
+## Corrección de cleanup de cámara — 2026-08-03
+
+Corregido el defecto de `ProductPhoto.kt`: `DisposableEffect(Unit)` podía capturar `null` antes de
+que la cámara recibiera el URI. Ahora `rememberUpdatedState` mantiene el URI pendiente más reciente
+para el dismiss/destrucción del picker, sin cambiar la key del efecto (lo que evitaría borrar el URI
+antes de que termine un callback). La política mínima `cleanupPendingCapture` quedó aislada e
+inyectable para probar que un URI pendiente se elimina al destruir el picker.
+
+TDD real:
+
+- **RED:** `ProductPhotoSourceTest` no compiló por faltar `cleanupPendingCapture`.
+- **GREEN:** `ProductPhotoSourceTest` **2/2** en AVD con locale explícito `es-MX`.
+- `ProductFlowTest` **16/16** en el mismo AVD/locale `es-MX`.
+- `lintDebug`: **BUILD SUCCESSFUL**.
+
+## Task 2 — foto de producto con cámara — 2026-08-03
+
+`ProductPhotoPicker` ahora abre un selector compacto al tocar Agregar/Cambiar foto. Ofrece Cámara,
+Galería y Cancelar con acciones de 48 dp y textos ES/EN. La galería sigue usando
+`PickVisualMedia`; la cámara crea un URI temporal con `CameraCaptureStore`, lanza `TakePicture`,
+importa el resultado confirmado mediante `ProductImageStore.save(uri, targetId)` y aplica
+`ProductPhotoDraftPolicy`. Un resultado falso/cancelado elimina únicamente el temporal. Un
+`DisposableEffect` también limpia un temporal pendiente si el formulario sale de composición; no
+borra la foto original.
+
+TDD:
+
+- **RED:** `ProductPhotoSourceTest` falló porque aún no existían selector ni acciones.
+- **GREEN:** `ProductPhotoSourceTest` pasó **1/1** en `Medium_Phone` después de integrar el selector.
+- `lintDebug` pasó sin errores.
+- `ProductFlowTest` se ejecutó, pero sus 16 casos fallaron al buscar `Productos` porque el AVD quedó
+  con el idioma English (`Products`); es un desajuste de expectativas existente en esa suite, no un
+  fallo del selector. Una ejecución paralela adicional terminó abortada por conflicto del daemon/
+  emulador; no se usa como resultado de verificación.
+
+## Infraestructura temporal de cámara de productos — 2026-08-03
+
+Task 1 del plan de cámara quedó implementada con TDD. `ui/product/CameraCaptureStore.kt` crea JPEGs
+únicos en `cacheDir/product-camera`, los expone con `FileProvider` y solo permite borrar nombres o
+URIs que resuelven dentro de esa carpeta. El manifest registra el provider no exportado y
+`res/xml/product_camera_paths.xml` expone exclusivamente ese subdirectorio cache. No se añadieron
+permisos de cámara/almacenamiento ni se tocaron los flujos de producto o financieros.
+
+RED: la clase focalizada no compiló porque `CameraCaptureStore` aún no existía. GREEN:
+`testDebugUnitTest --tests "com.cuentivo.app.ui.product.CameraCaptureStoreTest"` pasó 2/2.
+
+## Selector de idioma en encabezado — 2026-08-03
+
+El acceso al idioma salió de `AccountSheet`: `NeoFintechShell` muestra un globo junto a Cuenta y
+Avisos únicamente cuando `showBrandHeader` es `true`. Toca el globo y `CuentivoApp` abre el nuevo
+`ui/account/LanguageSheet.kt`, compacto, sin scroll, con Sistema/Español/English como radios
+accesibles de selección única y objetivos de al menos 48 dp. Reutiliza `LanguagePreference` y su
+autoridad API-aware; no toca `MainActivity`, `strings.xml`, la jerarquía financiera ni la bottom nav.
+
+TDD verificado:
+
+1. **RED:** `LanguageHeaderTest` falló porque no existía `global-language-action` ni el selector.
+2. **GREEN:** `connectedDebugAndroidTest` filtrado a `com.cuentivo.app.ui.LanguageHeaderTest` pasó
+   **3/3** en `Medium_Phone`.
+3. `lintDebug` y `testDebugUnitTest` también terminaron con **BUILD SUCCESSFUL**.
+
+Se eliminó el antiguo `AccountLanguageTest`, que probaba la ruta visual removida de `AccountSheet`;
+la cobertura vive ahora en `LanguageHeaderTest` desde `CuentivoApp`/`NeoFintechShell`.
+
+## Idioma por aplicación — 2026-08-03
+
+Implementado el selector de idioma de Cuenta con autoridad dividida por API: `LocaleManager` en
+API 33+ y `LanguagePreference` en API 24–32. Los tags se normalizan a `es`/`en`; un tag legado
+desconocido vuelve a Sistema. En API 33+ la preferencia privada solo se migra una vez cuando el
+platform locale está vacío; después no compite con `applicationLocales`. `MainActivity` aplica el
+contexto antes de crear la Activity y no fuerza una segunda recreación en API 33+.
+
+`AccountSheet` muestra las tres opciones como radios semánticos, con estado seleccionado y áreas
+de al menos 48 dp. Se añadió `android:localeConfig` y se eliminó la metadata AppCompat redundante.
+`AccountLanguageTest` quedó con 2 pruebas instrumentadas y pasó en `Medium_Phone` (2/2).
+
+Verificado después de estos cambios:
+
+| Tarea | Resultado |
+|---|---|
+| `testDebugUnitTest` | **BUILD SUCCESSFUL** |
+| `lintDebug` | **BUILD SUCCESSFUL**, sin errores de lint |
+| `assembleDebugAndroidTest` | **BUILD SUCCESSFUL** (el compilador Kotlin usó fallback por caché incremental) |
+| `connectedDebugAndroidTest` filtrado a `AccountLanguageTest` | **2/2, 0 fallos** |
+
+La ejecución completa de `connectedDebugAndroidTest` no se cerró: arrancó 178 pruebas y acumuló
+fallos de suites preexistentes que buscan textos/ContentDescriptions antiguos (`Avisos`, `Nueva
+venta`, `Clientes`, etc.), además de exceder el timeout. No se debe declarar el conjunto completo en
+verde. El intento con `--tests` no es válido para una tarea connected y falló solo por opción CLI.
+
+## Invariantes de operaciones financieras — 2026-08-03
+
+`FinancialDao.createSaleIdempotently` ahora valida, después de reservar la clave y antes de insertar,
+que la venta sea positiva y que su movimiento sea `CHARGE/DEBIT`, positivo, del mismo negocio,
+cliente y venta, y por el total exacto. `registerPaymentIdempotently` aplica el equivalente para
+`PAYMENT/CREDIT` contra el pago. Los reintentos reservados siguen devolviendo el resultado antes
+de validar el payload nuevo. `OperationDaoTest`: RED mostró 2 fallos nuevos; GREEN ejecutó 24/24.
 
 ## FASE A CERRADA — 2026-07-27
 
@@ -626,3 +859,152 @@ registro parcial de `1e84db3` sobre `563b846`. No se modificó código de produc
 - Cambios pequeños, pruebas después de cada bloque, errores visibles.
 - No marcar ninguna fase completada sin evidencia reciente de compilación/pruebas.
 - El siguiente Codex debe leer este archivo, revisar `git status`, y continuar específicamente con “Lo que falta para cerrar Fase 3”.
+
+## Sesión 2026-08-02 — claridad y seguridad de correcciones (pausa solicitada)
+
+Rama: `codex/neo-fintech`, HEAD de inicio `b00d149`. **El workspace ya tenía muchos cambios
+sin commit antes de esta sesión; no limpiar, no hacer checkout, no hacer reset y no hacer commit
+masivo.** `app/google-services.json`, APK/AAB y `artifacts/` siguen fuera de cualquier stage.
+
+### Decisiones de producto aprobadas
+
+1. Un saldo negativo del libro mayor es **crédito a favor del cliente**, no deuda negativa. La UI
+   debe mostrar el valor absoluto con “Saldo a favor” / “Customer credit”, conservando el `Long`
+   firmado para todo cálculo.
+2. Si un abono tiene alguna asignación sobre una venta ya cancelada, **se bloquea su cancelación
+   desde UI**. Se conserva como historial y se explica la razón. El usuario eligió esta política
+   explícitamente para no crear una deuda artificial con un `REFUND/DEBIT` posterior.
+3. Dos abonos con mismo importe y fecha deben diferenciarse sin UUID visible: hora de registro y
+   ordinal estable (“Abono 1 de 2”, “Abono 2 de 2”).
+4. La confirmación de cancelar una venta parcialmente abonada debe mostrar total original, abonos
+   conservados y remanente exacto a compensar; no se cambia la contabilidad append-only.
+5. La localización completa de todos los mensajes de `MainActivity` queda para un bloque posterior;
+   este bloque cubre autenticación y los flujos de corrección.
+
+### Especificación y plan aprobados
+
+- Diseño: `docs/superpowers/specs/2026-08-02-account-correction-clarity-design.md`.
+- Plan ejecutable: `docs/superpowers/plans/2026-08-02-account-correction-clarity.md`.
+- Ledger SDD histórico y del bloque: `.superpowers/sdd/progress.md`.
+- Checklist de recorrido y bloque: `task.md`.
+
+### Trabajo implementado y verificado antes de la pausa
+
+**Task 1 — guardia de abonos**
+
+- `FinancialDao.kt`: nuevo `CancelablePaymentRow` y
+  `correctionPaymentsForCustomer(businessId, customerId)`. La proyección excluye pagos ya
+  cancelados, filtra por negocio/cliente y marca `blockedByCanceledSale` cuando una asignación del
+  pago apunta a una venta cancelada.
+- `OperationDaoTest.kt`: prueba TDD
+  `correction_payments_include_canceled_sale_block_and_exclude_foreign_business`.
+  RED real: faltaban tipo/método/campo. GREEN real:
+  `connectedDebugAndroidTest` filtrada a `OperationDaoTest` → **BUILD SUCCESSFUL, 13 pruebas sin
+  fallos**.
+- Informe: `.superpowers/sdd/task-1-report.md`.
+
+**Task 2 — presentación pura del saldo**
+
+- Nuevos `ui/customer/BalancePresentation.kt` y
+  `test/ui/customer/BalancePresentationTest.kt`.
+- Contrato: `BalanceKind.OWED|SETTLED|CUSTOMER_CREDIT`,
+  `BalancePresentation(kind, amountCents)` y `BalancePresenter.from(balanceCents)`. Un saldo
+  negativo devuelve `CUSTOMER_CREDIT` con monto absoluto; no toca Room ni el libro mayor.
+- RED real: los tipos no existían. GREEN real:
+  `testDebugUnitTest --tests "com.cuentivo.app.ui.customer.BalancePresentationTest"` →
+  **BUILD SUCCESSFUL, 3 pruebas sin fallos**.
+- Informe: `.superpowers/sdd/task-2-report.md`.
+
+**Ambos Tasks están implementados pero aún requieren revisión independiente antes de Task 3.**
+No se modificaron UI, Firebase, Firestore Rules ni Play Console en estos dos carriles.
+
+### Siguiente orden exacto
+
+1. Revisión independiente de Task 1 con `ora-1` (consulta Room, aislamiento por negocio y guardia
+   financiera) y de Task 2 contra su contrato puro. No reiniciar los implementadores: ya están
+   reconciliados y reutilizables.
+2. Reutilizar `des-1` para Task 3 del plan: `CorrectionCandidate` estructurado, hero/totales/saldos
+   corridos con crédito a favor, lista de correcciones inequívoca, fila bloqueada y diálogo de venta
+   parcial. Depende de Tasks 1 y 2 aprobados.
+3. Task 4: localización de validaciones/fallos de autenticación. Mantener paridad de
+   `values/strings.xml` y `values-en/strings.xml`; no mostrar textos crudos de Firebase.
+4. Task 5: suites focalizadas, unitarias, instalación debug con emuladores y recorrido real con
+   datos ficticios en la cuenta de prueba abierta por el usuario.
+5. Después: bloque separado para `CreditLimitAdvisor`: eliminar multiplicadores `Double` y aplicar
+   la ventana de seis meses a todas las consultas de historial. No mezclarlo con este bloque.
+
+### Estado del AVD/Firebase al pausar
+
+- Se verificó `Medium_Phone` API 37, `adb` y Firestore `(default)` Standard de `organitazionlabs`.
+- Auth/Firestore Emulator Suite se arrancó localmente en `9099/8080` (UI `4000`). El debug se
+  instaló con `BuildConfig.USE_FIREBASE_EMULATORS=true` y `versionCode=7`, `versionName=1.3`.
+- En PowerShell, el flag de Gradle debe ir entre comillas:
+  `'-Pcuentivo.useEmulators=true'`; sin comillas Gradle interpreta `.useEmulators=true` como tarea.
+- El AVD tenía el tutorial de IME/stylus y se habilitó temporalmente
+  `show_ime_with_hard_keyboard=1`. El usuario indicó después que abrió el emulador con una cuenta
+  de prueba; **no se inspeccionó ni se alteró esa cuenta antes de pausar**.
+- El usuario cerrará manualmente AVD/emuladores al dormir. Mañana confirmar puertos, `adb devices`,
+  `BuildConfig.USE_FIREBASE_EMULATORS` y que la cuenta de prueba sigue donde espera antes de usarla.
+
+### Cierre de Tasks 3 y 4 — 2026-08-03
+
+- Task 3 quedó aprobada después de corregir todos los hallazgos de revisión. La evidencia fresca fue
+  `OperationDaoTest` **21/21**, `CustomerFlowTest` **23/23** y re-revisión Oracle `Resueltos`.
+- Task 4 quedó completa. `AuthenticationScreen` resuelve las tres validaciones mediante recursos
+  ES/EN; `FirebaseAuthenticationGateway` ya no fabrica excepciones con texto español; y
+  `MainActivity` convierte cualquier fallo de sign-in/sign-up en mensajes fijos de la app, sin
+  mostrar `FirebaseException.message`.
+- La primera verificación con `connectedDebugAndroidTest` se invalidó porque el AVD perdió
+  `ActivityManager` durante el teardown. Tras reinicio frío con `-no-snapshot-load`, el
+  AndroidJUnitRunner directo terminó `AuthenticationFlowTest` con **OK (14 tests)** en 21.142 s.
+- Paridad de recursos comprobada por nombres, no sólo por conteo: **227 claves ES / 227 EN**,
+  `missing_en=[]`, `missing_es=[]`.
+- El siguiente bloque es Task 5: verificación integrada, instalación debug con Firebase Emulator
+  Suite y los cinco recorridos manuales con datos ficticios. Task 4 no modifica configuración remota,
+  reglas de Firestore, Play Console ni `app/google-services.json`.
+
+
+## Cierre Task 5 y release candidate 1.3 — 2026-08-03
+
+- Los mensajes transitorios de pagos, cancelaciones, cupo y eliminación de cuenta usan recursos
+  localizados. El fallo de eliminación ya no lee `Throwable.message`. Paridad exacta comprobada:
+  **237 claves ES / 237 EN**, sin faltantes.
+- El idioma ya no está oculto dentro del scroll de Cuenta. Un globo de 48 dp en el encabezado abre
+  un sheet compacto con System/Español/English como radios accesibles. API 24–32 usa la preferencia
+  privada y `attachBaseContext`; API 33+ usa exclusivamente `LocaleManager`, con migración única.
+  Los splits de idioma del AAB están desactivados para que ambos recursos siempre se instalen.
+- Auditoría manual con datos ficticios y Auth/Firestore Emulator Suite: crédito positivo de
+  **$50.00**; pagos iguales `Payment 1 of 2` / `Payment 2 of 2`; diálogo parcial con total
+  **$100.00**, abonos **$30.00** y pendiente **$70.00**; abono de $30 bloqueado sin acción Cancel;
+  System → Español → English → System persistió tras `force-stop` y relanzamiento.
+- Compuerta final fresca con `--rerun-tasks`: `testDebugUnitTest`, `lintDebug`, `assembleDebug`,
+  `assembleDebugAndroidTest`, `assembleRelease` y `bundleRelease` terminaron `BUILD SUCCESSFUL`.
+  AndroidJUnitRunner directo terminó **OK (64 tests)**: `OperationDaoTest` 24,
+  `CustomerFlowTest` 23, `AuthenticationFlowTest` 14 y `LanguageHeaderTest` 3.
+- Release comprobado: `versionCode=7`, `versionName=1.3`, `DEBUG=false`,
+  `USE_FIREBASE_EMULATORS=false`; APK firmado con esquema v2 y un firmante; AAB `jar verified`.
+- Artefactos nuevos, no stageados:
+  - `artifacts/release-candidate/Cuentivo-1.3-v7-release.apk` — 4,237,927 bytes — SHA-256
+    `5A5ADAEC6B76FB24C793D856D1B36F7F2E667E7B73D983299BEFE9515BA0E950`.
+  - `artifacts/release-candidate/Cuentivo-1.3-v7-prueba-cerrada.aab` — 8,991,141 bytes — SHA-256
+    `28C88B6B2BBD4A01E6008D2F0EE65B3DF567758A54BE580EFAAE1926FA272954`.
+- No se subió nada a Play Console. El APK queda para la aprobación en teléfono físico; el AAB es el
+  candidato para prueba cerrada después de esa luz verde.
+
+## Cámara para fotos de producto — 2026-08-03
+
+- Diseño aprobado: `Agregar foto` abre un selector compacto con **Tomar foto** y **Elegir de
+  galería**. La galería conserva `PickVisualMedia`; la cámara usa `TakePicture` y un URI temporal
+  privado de `FileProvider`.
+- `CameraCaptureStore` crea JPEGs únicos solo en `cacheDir/product-camera`; `product_camera_paths.xml`
+  expone exclusivamente esa carpeta. No se pidió permiso `CAMERA` ni almacenamiento: la cámara
+  externa recibe el URI mediante grant temporal.
+- Una captura exitosa pasa por `ProductImageStore.save()` y la política `PhotoDraft` existente.
+  Cancelar/fallar/destruir el picker limpia solo el temporal; la foto original y el borrador vigente
+  se conservan. `DisposableEffect` usa `rememberUpdatedState` para no capturar un URI pendiente
+  obsoleto al destruirse el formulario.
+- Evidencia fresca: `ProductPhotoSourceTest` + `ProductFlowTest` **18/18** instrumentadas;
+  `CameraCaptureStoreTest` y `lintDebug` exitosos. La captura real debe comprobarse en teléfono con
+  una app de cámara instalada al generar el siguiente APK de prueba.
+- `assembleDebug` posterior terminó `BUILD SUCCESSFUL` en 10 s; APK actual:
+  `app/build/outputs/apk/debug/app-debug.apk`.

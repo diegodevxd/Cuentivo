@@ -5,8 +5,9 @@ import com.cuentivo.app.domain.DueSale
 
 /** What the directory says about a customer, and how urgently it says it. */
 internal data class CustomerStatus(
-    val label: String,
     val tone: CustomerTone,
+    val overdueDays: Long? = null,
+    val daysUntilDue: Long? = null,
 )
 
 internal enum class CustomerTone {
@@ -18,12 +19,15 @@ internal enum class CustomerTone {
 
     /** At least one sale is past its due date. */
     OVERDUE,
+
+    /** The customer has paid more than they owe. */
+    CREDIT,
 }
 
-internal enum class CustomerFilter(val label: String) {
-    ALL("Todos"),
-    OWING("Con saldo"),
-    OVERDUE("En mora"),
+internal enum class CustomerFilter(val labelRes: Int) {
+    ALL(com.cuentivo.app.R.string.customer_filter_all),
+    OWING(com.cuentivo.app.R.string.customer_filter_owing),
+    OVERDUE(com.cuentivo.app.R.string.customer_filter_overdue),
 }
 
 /**
@@ -39,25 +43,22 @@ internal object CustomerDirectoryPresentation {
         dueSales: List<DueSale>,
         todayEpochDay: Long,
     ): CustomerStatus {
-        if (customer.balanceCents <= 0L) return CustomerStatus("Al día", CustomerTone.SETTLED)
+        if (customer.balanceCents < 0L) return CustomerStatus(CustomerTone.CREDIT)
+        if (customer.balanceCents == 0L) return CustomerStatus(CustomerTone.SETTLED)
 
         val mine = dueSales.filter { it.customerId == customer.customer.id }
         val oldestOverdue = mine.filter { it.dueDateEpochDay < todayEpochDay }
             .minOfOrNull { it.dueDateEpochDay }
         if (oldestOverdue != null) {
             val days = todayEpochDay - oldestOverdue
-            return CustomerStatus(
-                "Vencido ($days ${if (days == 1L) "día" else "días"})",
-                CustomerTone.OVERDUE,
-            )
+            return CustomerStatus(CustomerTone.OVERDUE, overdueDays = days)
         }
 
         val nextDue = mine.filter { it.dueDateEpochDay >= todayEpochDay }
             .minOfOrNull { it.dueDateEpochDay }
         return when {
-            nextDue == null -> CustomerStatus("Saldo pendiente", CustomerTone.PENDING)
-            nextDue == todayEpochDay -> CustomerStatus("Vence hoy", CustomerTone.PENDING)
-            else -> CustomerStatus("Vence en ${nextDue - todayEpochDay} días", CustomerTone.PENDING)
+            nextDue == null -> CustomerStatus(CustomerTone.PENDING)
+            else -> CustomerStatus(CustomerTone.PENDING, daysUntilDue = nextDue - todayEpochDay)
         }
     }
 

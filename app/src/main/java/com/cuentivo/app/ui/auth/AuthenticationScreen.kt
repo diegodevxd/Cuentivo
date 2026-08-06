@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -65,8 +66,12 @@ fun AuthenticationScreen(
     message: String?,
     onSignIn: (String, String) -> Unit,
     onSignUp: (String, String) -> Unit,
+    onResetPassword: (String) -> Unit = {},
+    /** Clears whatever the host was showing. A failure from one mode is not news in the other. */
+    onModeChange: () -> Unit = {},
 ) {
     var isSignUp by remember { mutableStateOf(false) }
+    var resetRequested by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -101,7 +106,7 @@ fun AuthenticationScreen(
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = { Text("Correo electrónico") },
+                label = { Text(stringResource(R.string.auth_email_label)) },
                 singleLine = true,
                 isError = email.isNotBlank() && validation == CredentialsValidation.InvalidEmail,
                 shape = NeoShapes.row,
@@ -110,13 +115,13 @@ fun AuthenticationScreen(
             // Beside the field it belongs to, and only once there is something to judge: an error
             // shown before the first character is typed is just noise.
             if (email.isNotBlank() && validation == CredentialsValidation.InvalidEmail) {
-                FieldError("Escribe un correo válido.")
+                FieldError(stringResource(R.string.auth_invalid_email))
             }
 
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text("Contraseña") },
+                label = { Text(stringResource(R.string.auth_password_label)) },
                 singleLine = true,
                 isError = password.isNotBlank() && validation == CredentialsValidation.PasswordTooShort,
                 visualTransformation = PasswordVisualTransformation(),
@@ -124,14 +129,14 @@ fun AuthenticationScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             if (password.isNotBlank() && validation == CredentialsValidation.PasswordTooShort) {
-                FieldError("La contraseña debe tener al menos 8 caracteres.")
+                FieldError(stringResource(R.string.auth_password_too_short))
             }
 
             if (isSignUp) {
                 OutlinedTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
-                    label = { Text("Confirma tu contraseña") },
+                    label = { Text(stringResource(R.string.auth_confirm_password_label)) },
                     singleLine = true,
                     isError = confirmPassword.isNotEmpty() && confirmPassword != password,
                     visualTransformation = PasswordVisualTransformation(),
@@ -139,7 +144,7 @@ fun AuthenticationScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (confirmPassword.isNotEmpty() && confirmPassword != password) {
-                    FieldError("Las contraseñas no coinciden.")
+                    FieldError(stringResource(R.string.auth_password_mismatch))
                 }
             }
 
@@ -147,7 +152,7 @@ fun AuthenticationScreen(
             message?.let { FieldError(it) }
 
             NeoAction(
-                label = "Continuar",
+                label = stringResource(R.string.auth_continue),
                 onClick = {
                     if (canSubmit) {
                         if (isSignUp) onSignUp(email.trim(), password) else onSignIn(email.trim(), password)
@@ -166,10 +171,37 @@ fun AuthenticationScreen(
                 onClick = {
                     isSignUp = !isSignUp
                     confirmPassword = ""
+                    resetRequested = false
+                    // Without this the "could not create the account" error followed people over to
+                    // the sign-in form and read as if signing in had failed too.
+                    onModeChange()
                 },
                 modifier = Modifier.fillMaxWidth().height(48.dp),
             ) {
-                Text(if (isSignUp) "Ya tengo cuenta, iniciar sesión" else "¿No tienes cuenta? Crear una")
+                Text(stringResource(if (isSignUp) R.string.auth_switch_to_sign_in else R.string.auth_switch_to_sign_up))
+            }
+            // Only on the sign-in side: offering it while someone is choosing a password reads as
+            // an error message about the password they are still typing.
+            if (!isSignUp) {
+                TextButton(
+                    onClick = {
+                        onResetPassword(email.trim())
+                        resetRequested = true
+                    },
+                    enabled = !isWorking && validation != CredentialsValidation.InvalidEmail && email.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("auth-forgot-password"),
+                ) {
+                    Text(stringResource(R.string.auth_forgot_password))
+                }
+                // Says the same thing whether or not that address has an account. Confirming which
+                // addresses are registered hands an attacker the customer list.
+                if (resetRequested) {
+                    Text(
+                        text = stringResource(R.string.auth_reset_sent),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
                 }
             }
@@ -196,12 +228,12 @@ private fun BrandHeader(isSignUp: Boolean) {
         }
         Spacer(Modifier.height(NeoSpacing.md))
         Text(
-            text = if (isSignUp) "Crear cuenta" else "Iniciar sesión",
+            text = stringResource(if (isSignUp) R.string.auth_sign_up_title else R.string.auth_sign_in_title),
             style = MaterialTheme.typography.titleLarge,
         )
         Spacer(Modifier.height(NeoSpacing.xs))
         Text(
-            text = "Protege y sincroniza la información de tu negocio.",
+            text = stringResource(R.string.auth_tagline),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

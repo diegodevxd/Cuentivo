@@ -20,12 +20,16 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cuentivo.app.R
 import com.cuentivo.app.domain.Alert
 
 /** Two lines plus a severity word, matching the density of the other compact rows. */
@@ -46,12 +50,15 @@ fun AlertsSheet(
     alerts: List<Alert>,
     onOpenCustomer: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** Sends a short reminder for that customer. Absent for alerts that belong to nobody. */
+    onRemindCustomer: (String) -> Unit = {},
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         AlertsContent(
             alerts = alerts,
             // Routing away closes the sheet first, so you land on the customer rather than on a
             // sheet still covering them.
+            onRemindAlert = onRemindCustomer,
             onOpenAlert = { customerId -> onDismiss(); onOpenCustomer(customerId) },
         )
     }
@@ -70,6 +77,7 @@ internal fun AlertsContent(
     alerts: List<Alert>,
     onOpenAlert: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onRemindAlert: (String) -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -79,24 +87,24 @@ internal fun AlertsContent(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
     ) {
-        Text("Avisos", style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.alerts_title), style = MaterialTheme.typography.titleLarge)
 
         if (alerts.isEmpty()) {
             // Worth saying out loud: "nothing is late" is genuinely good news in this app, and
             // there is no action to offer for it.
             NeoEmptyState(
-                title = "Nada pendiente",
-                detail = "Nadie se te ha atrasado.",
+                title = stringResource(R.string.alerts_empty_title),
+                detail = stringResource(R.string.alerts_empty_detail),
             )
             return@Column
         }
 
-        alerts.forEach { alert -> AlertRow(alert = alert, onOpenAlert = onOpenAlert) }
+        alerts.forEach { alert -> AlertRow(alert = alert, onOpenAlert = onOpenAlert, onRemindAlert = onRemindAlert) }
     }
 }
 
 @Composable
-private fun AlertRow(alert: Alert, onOpenAlert: (String) -> Unit) {
+private fun AlertRow(alert: Alert, onOpenAlert: (String) -> Unit, onRemindAlert: (String) -> Unit) {
     val tone = alert.severity.tone()
     val open = alert.customerId?.let { id -> { onOpenAlert(id) } }
     val rowModifier = Modifier
@@ -117,7 +125,9 @@ private fun AlertRow(alert: Alert, onOpenAlert: (String) -> Unit) {
             Column(
                 modifier = Modifier
                     .padding(horizontal = NeoSpacing.md, vertical = NeoSpacing.sm)
-                    .fillMaxWidth(),
+                    // weight, not fillMaxWidth: the text used to take the whole row and push the
+                    // Cobrar button off the edge of the screen.
+                    .weight(1f),
             ) {
                 Text(
                     text = tone.label,
@@ -138,6 +148,18 @@ private fun AlertRow(alert: Alert, onOpenAlert: (String) -> Unit) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            // Collecting is the actual daily job, and doing it meant leaving this list, finding the
+            // customer and opening their statement. One tap instead.
+            alert.customerId?.let { customerId ->
+                val remindLabel = stringResource(R.string.alerts_remind)
+                TextButton(
+                    onClick = { onRemindAlert(customerId) },
+                    modifier = Modifier
+                        .padding(end = NeoSpacing.sm)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("alert-remind"),
+                ) { Text(remindLabel) }
             }
         }
     }

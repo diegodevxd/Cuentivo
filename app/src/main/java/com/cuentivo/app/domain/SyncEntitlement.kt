@@ -59,10 +59,15 @@ object SyncEntitlement {
     }
 
     /**
-     * The full question the sync paths ask: right account, paid plan, **and** recently confirmed.
+     * The full question the sync paths ask: right account, **proven address**, paid plan, and a
+     * recent confirmation.
      *
-     * All three must hold. Failing any of them means no upload and no download — but never deleting
-     * the outbox, so everything drains once Play confirms again.
+     * All four must hold. Failing any of them means no upload and no download — but never deleting
+     * the outbox, so everything drains once the address is verified and Play confirms again.
+     *
+     * The email check is here rather than only in `firestore.rules` so an unverified account never
+     * even spends attempts on writes the server is going to refuse. The server still refuses them:
+     * this is the polite half, not the enforcing one.
      */
     fun allowsCloudSync(
         storedUserId: String?,
@@ -70,7 +75,9 @@ object SyncEntitlement {
         verifiedAtEpochMillis: Long,
         currentUserId: String?,
         nowEpochMillis: Long,
+        isEmailVerified: Boolean,
         maxAgeMillis: Long = MAX_CONFIRMATION_AGE_MILLIS,
-    ): Boolean = allowsCloudSync(tierFor(storedUserId, storedTier, currentUserId)) &&
+    ): Boolean = isEmailVerified &&
+        allowsCloudSync(tierFor(storedUserId, storedTier, currentUserId)) &&
         isConfirmationFresh(verifiedAtEpochMillis, nowEpochMillis, maxAgeMillis)
 }

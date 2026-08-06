@@ -36,9 +36,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.domain.Money
@@ -68,11 +70,11 @@ private val CART_ROW_HEIGHT = 60.dp
  * The four due dates the reference offers. The label is what a person picks; the days are what
  * becomes `dueDateEpochDay`, and "Sin fecha" stays null rather than quietly meaning "today".
  */
-private enum class DueOption(val label: String, val days: Long?) {
-    NONE("Sin fecha", null),
-    SEVEN("7 días", 7L),
-    FIFTEEN("15 días", 15L),
-    THIRTY("30 días", 30L),
+private enum class DueOption(val labelRes: Int, val days: Long?) {
+    NONE(R.string.new_sale_due_none, null),
+    SEVEN(R.string.new_sale_due_7, 7L),
+    FIFTEEN(R.string.new_sale_due_15, 15L),
+    THIRTY(R.string.new_sale_due_30, 30L),
 }
 
 /**
@@ -92,16 +94,25 @@ fun NewSaleScreen(
     products: List<ProductEntity>,
     modifier: Modifier = Modifier,
     initialCustomer: CustomerBalanceRow? = null,
+    /**
+     * The sale being corrected, rebuilt from what was registered. Non-null puts the screen in
+     * correction mode: same form, different wording, and the host replaces the sale instead of
+     * adding one.
+     */
+    initialDraft: SaleDraft? = null,
     onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit = { _, _ -> },
     onExit: () -> Unit = {},
 ) {
+    val correcting = initialDraft != null
     var customer by remember(initialCustomer?.customer?.id) {
         mutableStateOf(preselectedCustomer(initialCustomer, customers))
     }
-    var cart by remember { mutableStateOf(SaleDraft()) }
+    var cart by remember(initialDraft) { mutableStateOf(initialDraft ?: SaleDraft()) }
     var picked by remember { mutableStateOf<ProductEntity?>(null) }
     var quantityText by remember { mutableStateOf("1") }
-    var discountText by remember { mutableStateOf("") }
+    var discountText by remember(initialDraft) {
+        mutableStateOf(initialDraft?.discountCents?.takeIf { it > 0 }?.let(Money::pesosText).orEmpty())
+    }
     var dueOption by remember { mutableStateOf(DueOption.NONE) }
 
     // Derived, never assigned during composition. `cart` owns the lines, the field owns the text,
@@ -130,33 +141,35 @@ fun NewSaleScreen(
         ) {
             item {
                 NeoTaskHeader(
-                    eyebrow = "Captura guiada",
-                    title = "Nueva venta",
+                    eyebrow = stringResource(R.string.new_sale_eyebrow),
+                    title = stringResource(if (correcting) R.string.new_sale_correct_title else R.string.new_sale_title),
                     onBack = onExit,
-                    backDescription = "Cerrar nueva venta",
+                    backDescription = stringResource(R.string.new_sale_back_description),
                 )
             }
             item {
+                // Resolved outside the lambda: optionDetail is not a composable slot.
+                val balanceFormat = stringResource(R.string.new_sale_customer_balance)
                 NeoSelectorField(
-                    label = "Cliente",
+                    label = stringResource(R.string.new_sale_customer_label),
                     selected = customer,
-                    placeholder = "Toca para elegir al cliente",
+                    placeholder = stringResource(R.string.new_sale_customer_placeholder),
                     options = customers,
                     optionTitle = { it.customer.name },
-                    optionDetail = { "Saldo: ${Money.format(it.balanceCents)}" },
-                    emptyText = "Primero agrega un cliente en la pestaña Clientes",
+                    optionDetail = { balanceFormat.format(Money.format(it.balanceCents)) },
+                    emptyText = stringResource(R.string.new_sale_customer_empty),
                     onSelect = { customer = it },
                 )
             }
             item {
                 NeoSelectorField(
-                    label = "Producto",
+                    label = stringResource(R.string.new_sale_product_label),
                     selected = picked,
-                    placeholder = "Toca para elegir el producto",
+                    placeholder = stringResource(R.string.new_sale_product_placeholder),
                     options = products,
                     optionTitle = { it.name },
                     optionDetail = { Money.format(it.salePriceCents) },
-                    emptyText = "Primero agrega un producto en la pestaña Productos",
+                    emptyText = stringResource(R.string.new_sale_product_empty),
                     onSelect = { picked = it },
                 )
             }
@@ -164,7 +177,7 @@ fun NewSaleScreen(
                 OutlinedTextField(
                     value = quantityText,
                     onValueChange = { raw -> quantityText = raw.filter { it.isDigit() }.take(4) },
-                    label = { Text("Cantidad") },
+                    label = { Text(stringResource(R.string.new_sale_quantity_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     shape = NeoShapes.row,
@@ -174,7 +187,7 @@ fun NewSaleScreen(
             item {
                 val chosenProduct = picked
                 NeoAction(
-                    label = "Agregar al carrito",
+                    label = stringResource(R.string.new_sale_add_to_cart),
                     onClick = {
                         if (chosenProduct != null && quantity > 0) {
                             cart = cart.withLine(
@@ -195,7 +208,7 @@ fun NewSaleScreen(
                 )
             }
 
-            item { SectionLabel("Carrito") }
+            item { SectionLabel(stringResource(R.string.new_sale_cart)) }
             if (draft.isEmpty) {
                 item { EmptyCartRow() }
             } else {
@@ -204,9 +217,9 @@ fun NewSaleScreen(
                 }
             }
 
-            item { MoneyField("Descuento de la venta (opcional)", discountText) { discountText = it } }
+            item { MoneyField(stringResource(R.string.new_sale_discount_label), discountText) { discountText = it } }
 
-            item { SectionLabel("¿Cuándo debe pagar?") }
+            item { SectionLabel(stringResource(R.string.new_sale_due_question)) }
             item {
                 // Two by two rather than one row of four: at 320 dp four chips would get about
                 // 66 dp each, which truncates "Sin fecha" and shrinks every target.
@@ -215,7 +228,7 @@ fun NewSaleScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
                             pair.forEach { option ->
                                 NeoChoiceChip(
-                                    label = option.label,
+                                    label = stringResource(option.labelRes),
                                     isSelected = dueOption == option,
                                     onClick = { dueOption = option },
                                     modifier = Modifier.weight(1f),
@@ -231,20 +244,42 @@ fun NewSaleScreen(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
                     TotalPanel(draft = draft, discountCents = discountCents)
+                    val selectedCustomer = customer
+                    val creditLimitCents = selectedCustomer?.customer?.creditLimitCents
+                    if (selectedCustomer != null && creditLimitCents != null && !draft.isEmpty) {
+                        val projectedBalanceCents = selectedCustomer.balanceCents + draft.totalCents
+                        if (projectedBalanceCents > creditLimitCents) {
+                            // A warning, not a block: the owner is standing in front of the customer
+                            // and needs to decide, not be stopped by a field they set themselves.
+                            Text(
+                                text = stringResource(
+                                    R.string.new_sale_credit_warning,
+                                    selectedCustomer.customer.name,
+                                    Money.format(projectedBalanceCents),
+                                    Money.format(creditLimitCents),
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                     if (customer == null && !draft.isEmpty) {
                         Text(
-                            text = "Falta elegir al cliente",
+                            text = stringResource(R.string.new_sale_missing_customer),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
                     val chosenCustomer = customer
                     NeoAction(
-                        label = "Registrar venta",
+                        label = stringResource(if (correcting) R.string.new_sale_save_correction else R.string.new_sale_register),
                         onClick = {
                             if (chosenCustomer != null && validationError == null) {
+                                // Untouched selector keeps the date the sale already had, so a
+                                // correction about a wrong product cannot silently drop its due date.
                                 val due = dueOption.days
                                     ?.let { LocalDate.now().plusDays(it).toEpochDay() }
+                                    ?: initialDraft?.dueDateEpochDay
                                 onCreateSale(chosenCustomer, draft.copy(dueDateEpochDay = due))
                                 customer = null
                                 cart = SaleDraft()
@@ -285,9 +320,9 @@ private fun EmptyCartRow() {
                 .padding(horizontal = NeoSpacing.md, vertical = NeoSpacing.sm),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text("El carrito está vacío", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.new_sale_empty_cart_title), style = MaterialTheme.typography.bodyMedium)
             Text(
-                text = "Elige un producto y agrégalo.",
+                text = stringResource(R.string.new_sale_empty_cart_detail),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -311,13 +346,13 @@ private fun CartRow(line: SaleDraftLine, onRemove: () -> Unit) {
                 // The name owns its line and elides. A long product name must not push the amount
                 // off the row at 320 dp: the amount is the part nobody can guess.
                 Text(
-                    text = "${line.quantity} × ${line.productName}",
+                    text = stringResource(R.string.new_sale_cart_line, line.quantity, line.productName),
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${Money.format(line.unitPriceCents)} c/u",
+                    text = stringResource(R.string.new_sale_unit_price, Money.format(line.unitPriceCents)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -331,7 +366,7 @@ private fun CartRow(line: SaleDraftLine, onRemove: () -> Unit) {
             IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "Quitar ${line.productName}",
+                    contentDescription = stringResource(R.string.new_sale_remove_description, line.productName),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )
@@ -350,7 +385,7 @@ private fun TotalPanel(draft: SaleDraft, discountCents: Long) {
     ) {
         Column(Modifier.fillMaxWidth().padding(NeoSpacing.md)) {
             Text(
-                text = "TOTAL DE LA VENTA",
+                text = stringResource(R.string.new_sale_total_label),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -365,7 +400,7 @@ private fun TotalPanel(draft: SaleDraft, discountCents: Long) {
             if (discountCents > 0) {
                 Spacer(Modifier.height(NeoSpacing.xs))
                 Text(
-                    text = "Antes del descuento: ${Money.format(draft.subtotalCents)}",
+                    text = stringResource(R.string.new_sale_before_discount, Money.format(draft.subtotalCents)),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

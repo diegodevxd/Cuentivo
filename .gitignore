@@ -32,3 +32,12 @@ app/google-services.json
 keystore.properties
 *.jks
 *.keystore
+
+# Personal Claude Code overrides — not shared with the team.
+/.claude/settings.local.json
+
+# Binarios de release y salidas de build: pesan megas y se regeneran con Gradle.
+*.apk
+*.aab
+/dist/
+/artifacts/

@@ -48,6 +48,26 @@ data class CancelableSaleRow(
     val outstandingCents: Long,
 )
 
+/** One sold line of one sale, as the statement reads it. */
+data class SoldLineRow(
+    val saleId: String,
+    val productNameSnapshot: String,
+    val quantity: Long,
+)
+
+/** A payment as offered for correction, including whether its allocation touches a canceled sale. */
+data class CancelablePaymentRow(
+    val id: String,
+    val businessId: String,
+    val customerId: String,
+    val amountCents: Long,
+    val paymentMethod: String,
+    val paymentDateEpochDay: Long,
+    val reference: String?,
+    val createdAtEpochMillis: Long,
+    val blockedByCanceledSale: Boolean,
+)
+
 @Dao
 interface FinancialDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -140,6 +160,36 @@ interface FinancialDao {
     @Query("SELECT * FROM account_movements WHERE businessId = :businessId AND customerId = :customerId ORDER BY occurredAtEpochMillis DESC")
     suspend fun customerMovements(businessId: String, customerId: String): List<AccountMovementEntity>
 
+    /**
+     * Every line this customer was ever sold, for the whole statement in one read.
+     *
+     * Joined through `sales` rather than queried per movement: a statement with fifty charges would
+     * otherwise be fifty round trips on a phone that is already scrolling.
+     */
+    @Query(
+        "SELECT item.saleId AS saleId, item.productNameSnapshot AS productNameSnapshot, " +
+            "item.quantity AS quantity FROM sale_items AS item " +
+            "INNER JOIN sales AS sale ON sale.id = item.saleId " +
+            "WHERE sale.businessId = :businessId AND sale.customerId = :customerId " +
+            "ORDER BY item.saleId, item.id"
+    )
+    suspend fun soldLinesForCustomer(businessId: String, customerId: String): List<SoldLineRow>
+
+    /**
+     * The allocations still backing a sale. A canceled payment is excluded because its money went
+     * back to the customer, so a correction must not carry it onto the replacement.
+     */
+    @Query(
+        "SELECT allocation.* FROM payment_allocations AS allocation " +
+            "INNER JOIN payments AS payment ON payment.id = allocation.paymentId " +
+            "WHERE allocation.saleId = :saleId AND payment.canceledAtEpochMillis IS NULL " +
+            "ORDER BY allocation.id"
+    )
+    suspend fun activeAllocationsForSale(saleId: String): List<PaymentAllocationEntity>
+
+    @Query("SELECT * FROM sale_items WHERE saleId = :saleId ORDER BY id")
+    suspend fun saleItemsForSale(saleId: String): List<SaleItemEntity>
+
     @Query(
         "SELECT movement.id AS id, movement.customerId AS customerId, " +
             "customer.name AS customerName, movement.type AS type, " +
@@ -216,6 +266,60 @@ interface FinancialDao {
     @Query("SELECT * FROM payments WHERE businessId = :businessId AND customerId = :customerId AND canceledAtEpochMillis IS NULL ORDER BY paymentDateEpochDay DESC, id")
     suspend fun activePaymentsForCustomer(businessId: String, customerId: String): List<PaymentEntity>
 
+    @Query(
+        "SELECT payment.id AS id, payment.businessId AS businessId, payment.customerId AS customerId, " +
+            "payment.amountCents AS amountCents, payment.paymentMethod AS paymentMethod, " +
+            "payment.paymentDateEpochDay AS paymentDateEpochDay, payment.reference AS reference, " +
+            "payment.createdAtEpochMillis AS createdAtEpochMillis, " +
+            "EXISTS(SELECT 1 FROM payment_allocations AS allocation " +
+            "INNER JOIN sales AS sale ON sale.id = allocation.saleId " +
+            "WHERE allocation.paymentId = payment.id AND sale.businessId = payment.businessId " +
+            "AND sale.customerId = payment.customerId AND sale.isCanceled = 1) AS blockedByCanceledSale " +
+            "FROM payments AS payment " +
+            "WHERE payment.businessId = :businessId AND payment.customerId = :customerId " +
+            "AND payment.canceledAtEpochMillis IS NULL " +
+            "ORDER BY payment.paymentDateEpochDay DESC, payment.createdAtEpochMillis ASC, payment.id ASC"
+    )
+    suspend fun correctionPaymentsForCustomer(
+        businessId: String,
+        customerId: String,
+    ): List<CancelablePaymentRow>
+
+    // The four primitives CreditLimitAdvisor needs. Kept as separate read-only queries rather than
+    // one join so each stays simple enough to eyeball: a credit-limit suggestion is exactly the
+    // kind of feature that must never be the thing that makes the ledger queries hard to trust.
+
+    /** Sales fully collected, not cancelled — "this customer has actually paid off debt before". */
+    @Query(
+        "SELECT COUNT(*) FROM (SELECT sale.id, sale.totalCents - COALESCE(SUM(CASE WHEN payment.canceledAtEpochMillis IS NULL THEN allocation.amountCents ELSE 0 END), 0) AS outstandingCents " +
+            "FROM sales AS sale " +
+            "LEFT JOIN payment_allocations AS allocation ON allocation.saleId = sale.id " +
+            "LEFT JOIN payments AS payment ON payment.id = allocation.paymentId " +
+            "WHERE sale.businessId = :businessId AND sale.customerId = :customerId AND sale.isCanceled = 0 " +
+            "GROUP BY sale.id HAVING outstandingCents <= 0)"
+    )
+    suspend fun settledSaleCount(businessId: String, customerId: String): Int
+
+    /** Any sale of this customer ever cancelled — one strike is enough to withhold a suggestion. */
+    @Query("SELECT EXISTS(SELECT 1 FROM sales WHERE businessId = :businessId AND customerId = :customerId AND isCanceled = 1)")
+    suspend fun hasCanceledSale(businessId: String, customerId: String): Boolean
+
+    /** Any active payment that landed after the sale's own due date, within the given window. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM payment_allocations AS allocation " +
+            "INNER JOIN payments AS payment ON payment.id = allocation.paymentId " +
+            "INNER JOIN sales AS sale ON sale.id = allocation.saleId " +
+            "WHERE sale.businessId = :businessId AND sale.customerId = :customerId " +
+            "AND payment.canceledAtEpochMillis IS NULL AND sale.dueDateEpochDay IS NOT NULL " +
+            "AND payment.paymentDateEpochDay > sale.dueDateEpochDay " +
+            "AND payment.paymentDateEpochDay >= :sinceEpochDay)"
+    )
+    suspend fun hasLatePayment(businessId: String, customerId: String, sinceEpochDay: Long): Boolean
+
+    /** The largest sale this customer was ever trusted with — floor for the next credit step. */
+    @Query("SELECT COALESCE(MAX(totalCents), 0) FROM sales WHERE businessId = :businessId AND customerId = :customerId AND isCanceled = 0")
+    suspend fun largestSaleTotalCents(businessId: String, customerId: String): Long
+
     /**
      * Every sale ever written for the business, for the free-plan limit.
      *
@@ -263,6 +367,17 @@ interface FinancialDao {
 
     @Query("SELECT COUNT(*) FROM account_movements WHERE paymentId = :paymentId")
     suspend fun movementCountForPayment(paymentId: String): Int
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM payment_allocations AS allocation " +
+            "INNER JOIN sales AS sale ON sale.id = allocation.saleId " +
+            "WHERE allocation.paymentId = :paymentId AND sale.businessId = :businessId " +
+            "AND sale.customerId = :customerId AND sale.isCanceled = 1)"
+    )
+    suspend fun hasCanceledSaleAllocationForPayment(
+        businessId: String,
+        customerId: String,
+        paymentId: String,
+    ): Boolean
 
     @Query("UPDATE payments SET canceledAtEpochMillis = :canceledAtEpochMillis WHERE id = :paymentId")
     suspend fun markPaymentCanceled(paymentId: String, canceledAtEpochMillis: Long)
@@ -294,6 +409,18 @@ interface FinancialDao {
         if (reserveOperation(operation) == -1L) {
             return requireNotNull(operationResultId(operation.idempotencyKey))
         }
+        require(sale.totalCents > 0) { "Sale must be positive." }
+        require(charge.type == "CHARGE" && charge.direction == "DEBIT") {
+            "Sale charge must be a CHARGE/DEBIT movement."
+        }
+        require(charge.amountCents > 0 && charge.amountCents == sale.totalCents) {
+            "Sale charge must match the sale total and be positive."
+        }
+        require(
+            charge.businessId == sale.businessId &&
+                charge.customerId == sale.customerId &&
+                charge.saleId == sale.id,
+        ) { "Sale charge must belong to the sale business, customer, and sale." }
         insertSale(sale)
         insertSaleItems(items)
         insertMovement(charge)
@@ -313,6 +440,17 @@ interface FinancialDao {
             return requireNotNull(operationResultId(operation.idempotencyKey))
         }
         require(payment.amountCents > 0) { "Payment must be positive." }
+        require(movement.type == "PAYMENT" && movement.direction == "CREDIT") {
+            "Payment movement must be a PAYMENT/CREDIT movement."
+        }
+        require(movement.amountCents > 0 && movement.amountCents == payment.amountCents) {
+            "Payment movement must match the payment amount and be positive."
+        }
+        require(
+            movement.businessId == payment.businessId &&
+                movement.customerId == payment.customerId &&
+                movement.paymentId == payment.id,
+        ) { "Payment movement must belong to the payment business, customer, and payment." }
         require(allocations.sumOf { it.amountCents } <= payment.amountCents) {
             "Allocations cannot exceed the payment amount."
         }
@@ -375,10 +513,86 @@ interface FinancialDao {
         require(cancellation.businessId == sale.businessId && cancellation.customerId == sale.customerId && cancellation.saleId == sale.id)
         val allocatedCents = activeAllocatedPaymentCents(sale.id)
         val outstandingCents = sale.totalCents - allocatedCents
-        require(outstandingCents >= 0 && cancellation.amountCents == outstandingCents) { "Cancellation must compensate the unpaid amount." }
+        require(outstandingCents > 0 && cancellation.amountCents == outstandingCents) { "Cancellation must compensate the unpaid amount." }
         markSaleCanceled(sale.id, cancellation.occurredAtEpochMillis)
         insertMovement(cancellation)
         recordAudit(operation, AuditAction.SALE_CANCELED, sale.businessId, "SALE", sale.id, cancellation.createdByUserId, cancellation.occurredAtEpochMillis)
+        return sale.id
+    }
+
+    /**
+     * Corrects a sale by replacing it: the wrong one is voided and a right one is written, together.
+     *
+     * There is no `UPDATE` on a registered sale anywhere in this app, and this is not one. What the
+     * owner sees as "editar" is a cancellation plus a creation committed in a single transaction,
+     * so the ledger keeps both halves of the story and can never hold one without the other.
+     *
+     * **The cancellation credits the previous total in full**, unlike [cancelSaleIdempotently],
+     * which credits only the unpaid remainder. That asymmetry is the point: a plain cancellation
+     * leaves the paid part settled, while a replacement re-charges everything through [charge], so
+     * anything less than a full credit would count the paid part twice. A $400 sale with $200 paid,
+     * corrected to $500, lands on `+400 −200 −400 +500 = 300`, which is exactly what is owed.
+     *
+     * [carriedAllocations] are fresh rows pointing at the corrected sale, so the money already
+     * collected still counts as applied to it. The previous sale's own allocations stay where they
+     * are, as evidence; every balance query ignores them because their sale is canceled.
+     */
+    @Transaction
+    suspend fun replaceSaleIdempotently(
+        operation: OperationEntity,
+        previousSaleId: String,
+        cancellation: AccountMovementEntity,
+        sale: SaleEntity,
+        items: List<SaleItemEntity>,
+        charge: AccountMovementEntity,
+        carriedAllocations: List<PaymentAllocationEntity>,
+    ): String {
+        if (reserveOperation(operation) == -1L) {
+            return requireNotNull(operationResultId(operation.idempotencyKey))
+        }
+        val previous = requireNotNull(saleForId(previousSaleId)) { "Sale does not exist." }
+        require(!previous.isCanceled) { "Sale is already canceled." }
+        require(previous.id != sale.id) { "The corrected sale needs its own id." }
+        require(previous.businessId == sale.businessId && previous.customerId == sale.customerId) {
+            "A correction stays with the same business and customer."
+        }
+        require(sale.totalCents > 0) { "Sale must be positive." }
+        require(cancellation.type == "CANCELLATION" && cancellation.direction == "CREDIT") {
+            "The voided sale needs a CANCELLATION/CREDIT movement."
+        }
+        require(
+            cancellation.businessId == previous.businessId &&
+                cancellation.customerId == previous.customerId &&
+                cancellation.saleId == previous.id,
+        ) { "The cancellation must belong to the sale being replaced." }
+        require(cancellation.amountCents == previous.totalCents) {
+            "A replacement voids the whole previous sale."
+        }
+        require(charge.type == "CHARGE" && charge.direction == "DEBIT") {
+            "Sale charge must be a CHARGE/DEBIT movement."
+        }
+        require(charge.amountCents > 0 && charge.amountCents == sale.totalCents) {
+            "Sale charge must match the sale total and be positive."
+        }
+        require(
+            charge.businessId == sale.businessId &&
+                charge.customerId == sale.customerId &&
+                charge.saleId == sale.id,
+        ) { "Sale charge must belong to the sale business, customer, and sale." }
+        require(carriedAllocations.all { it.saleId == sale.id && it.amountCents > 0 }) {
+            "Carried allocations must point at the corrected sale and be positive."
+        }
+        val alreadyPaidCents = activeAllocatedPaymentCents(previous.id)
+        require(carriedAllocations.sumOf { it.amountCents } <= minOf(alreadyPaidCents, sale.totalCents)) {
+            "Carried payments cannot exceed what was paid or the corrected total."
+        }
+        markSaleCanceled(previous.id, cancellation.occurredAtEpochMillis)
+        insertMovement(cancellation)
+        insertSale(sale)
+        insertSaleItems(items)
+        insertMovement(charge)
+        insertAllocations(carriedAllocations)
+        recordAudit(operation, AuditAction.SALE_CORRECTED, sale.businessId, "SALE", sale.id, sale.sellerUserId, sale.createdAtEpochMillis)
         return sale.id
     }
 
@@ -397,6 +611,9 @@ interface FinancialDao {
         require(refund.type == "REFUND" && refund.direction == "DEBIT")
         require(refund.businessId == payment.businessId && refund.customerId == payment.customerId && refund.paymentId == payment.id)
         require(refund.amountCents == payment.amountCents) { "Refund must match the original payment." }
+        require(!hasCanceledSaleAllocationForPayment(payment.businessId, payment.customerId, payment.id)) {
+            "Cannot reverse a payment allocated to a canceled sale."
+        }
         markPaymentCanceled(payment.id, refund.occurredAtEpochMillis)
         insertMovement(refund)
         recordAudit(operation, AuditAction.PAYMENT_CANCELED, payment.businessId, "PAYMENT", payment.id, refund.createdByUserId, refund.occurredAtEpochMillis)
