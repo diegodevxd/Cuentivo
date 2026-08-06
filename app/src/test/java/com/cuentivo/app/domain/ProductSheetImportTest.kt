@@ -124,6 +124,61 @@ class ProductSheetImportTest {
         assertEquals(listOf(8_990L), result.accepted.map { it.priceCents })
     }
 
+    @Test
+    fun `reads an xlsx whose tags carry a namespace prefix`() {
+        // Shaped after a file a shop owner actually brought in: every element prefixed with `x:`,
+        // an empty sharedStrings table, and text stored as t="str" with the value inline. The
+        // reader used to find no rows at all in this and report an empty catalog with no errors.
+        val bytes = prefixedXlsx(
+            "<x:row r=\"1\"><x:c r=\"A1\" t=\"str\"><x:v>Nombre</x:v></x:c>" +
+                "<x:c r=\"B1\" t=\"str\"><x:v>Precio</x:v></x:c></x:row>" +
+                "<x:row r=\"2\"><x:c r=\"A2\" t=\"str\"><x:v>Organizador multiusos mediano</x:v></x:c>" +
+                "<x:c r=\"B2\" t=\"n\"><x:v>129.9</x:v></x:c></x:row>" +
+                "<x:row r=\"3\"><x:c r=\"A3\" t=\"str\"><x:v>Cepillo limpiador para cocina</x:v></x:c>" +
+                "<x:c r=\"B3\" t=\"n\"><x:v>89</x:v></x:c></x:row>",
+        )
+
+        val rows = XlsxReader.read(bytes)
+
+        assertEquals(listOf("Nombre", "Precio"), rows[0])
+        assertEquals(listOf("Organizador multiusos mediano", "129.9"), rows[1])
+        assertEquals(listOf("Cepillo limpiador para cocina", "89"), rows[2])
+    }
+
+    @Test
+    fun `a prefixed xlsx imports end to end`() {
+        val bytes = prefixedXlsx(
+            "<x:row r=\"1\"><x:c r=\"A1\" t=\"str\"><x:v>Nombre</x:v></x:c>" +
+                "<x:c r=\"B1\" t=\"str\"><x:v>Precio</x:v></x:c></x:row>" +
+                "<x:row r=\"2\"><x:c r=\"A2\" t=\"str\"><x:v>Contenedor hermetico 1 litro</x:v></x:c>" +
+                "<x:c r=\"B2\" t=\"n\"><x:v>74.5</x:v></x:c></x:row>",
+        )
+
+        val result = ProductSheetParser.parse(XlsxReader.read(bytes), existingNames = emptySet())
+
+        assertEquals(listOf("Contenedor hermetico 1 litro"), result.accepted.map { it.name })
+        assertEquals(listOf(7_450L), result.accepted.map { it.priceCents })
+        assertEquals(emptyList<RejectedRow>(), result.rejected)
+    }
+
+    /** The same workbook written the other legal way: namespace on a prefix instead of the default. */
+    private fun prefixedXlsx(sheet: String): ByteArray {
+        val output = ByteArrayOutputStream()
+        ZipOutputStream(output).use { zip ->
+            zip.putNextEntry(ZipEntry("xl/sharedStrings.xml"))
+            zip.write("<?xml version=\"1.0\"?><x:sst xmlns:x=\"$SPREADSHEET_NS\" />".toByteArray())
+            zip.closeEntry()
+
+            zip.putNextEntry(ZipEntry("xl/worksheets/sheet1.xml"))
+            zip.write(
+                ("<?xml version=\"1.0\"?><x:worksheet xmlns:x=\"$SPREADSHEET_NS\">" +
+                    "<x:sheetData>$sheet</x:sheetData></x:worksheet>").toByteArray(),
+            )
+            zip.closeEntry()
+        }
+        return output.toByteArray()
+    }
+
     /** The smallest zip the reader needs: shared strings plus one worksheet. */
     private fun xlsx(sharedStrings: List<String>, sheet: String): ByteArray {
         val output = ByteArrayOutputStream()
@@ -138,5 +193,9 @@ class ProductSheetImportTest {
             zip.closeEntry()
         }
         return output.toByteArray()
+    }
+
+    private companion object {
+        const val SPREADSHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     }
 }

@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.cuentivo.app.billing.EntitlementStore
 import com.cuentivo.app.data.local.CUENTIVO_MIGRATIONS
 import com.cuentivo.app.data.local.CuentivoDatabase
+import com.google.firebase.auth.FirebaseAuth
 
 class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
@@ -71,7 +72,10 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
     }
 
     private suspend fun pull(database: CuentivoDatabase, gateway: SyncRemotePullGateway): Boolean {
-        val business = database.businessDao().first() ?: return false
+        // Scoped to the signed-in owner, like everywhere else in the app. "The first business in the
+        // database" is the shape of bug that stranded a reinstalled phone's data in the first place.
+        val userId = FirebaseAuth.getInstance().currentUser?.uid
+        val business = userId?.let { database.businessDao().firstOwnedBy(it) } ?: return false
         val since = database.syncStateDao().lastPulledAt(business.id) ?: 0L
         return when (val result = gateway.download(business.id, since)) {
             is SyncDownloadResult.Success -> {

@@ -103,6 +103,11 @@ import com.cuentivo.app.domain.EmailVerificationAccess
 import com.cuentivo.app.domain.EmailVerificationPolicy
 import com.cuentivo.app.sync.AppCheckInstaller
 import com.cuentivo.app.sync.FirebaseEmulators
+import com.cuentivo.app.domain.CloudRestoreDecision
+import com.cuentivo.app.domain.CloudRestorePolicy
+import com.cuentivo.app.sync.CloudRestore
+import com.cuentivo.app.sync.CloudRestoreResult
+import com.cuentivo.app.sync.FirestoreSyncGateway
 import com.cuentivo.app.sync.OwnerMembershipBootstrap
 import com.cuentivo.app.sync.SyncQueue
 
@@ -191,6 +196,10 @@ class MainActivity : ComponentActivity() {
             .build()
         val syncQueue = SyncQueue(database.syncOperationDao(), applicationContext)
         val membershipBootstrap = OwnerMembershipBootstrap(database.businessDao(), database.syncOperationDao(), syncQueue)
+        // Built here rather than lazily: it has to be ready before the "create a business" button can
+        // be reached, since taking that offer is what strands the cloud copy under an unreachable id.
+        val firestoreGateway = FirestoreSyncGateway()
+        val cloudRestore = CloudRestore(database, firestoreGateway, firestoreGateway, membershipBootstrap)
         val dashboardRepository = DashboardRepository(database.businessDao(), database.financialDao())
         val sessionGuard = LocalSessionGuard(applicationContext, database)
         val authenticationGateway = FirebaseAuthenticationGateway()
@@ -379,7 +388,40 @@ class MainActivity : ComponentActivity() {
                     database.businessDao().firstOwnedBy(currentUserId)?.let { membershipBootstrap.ensure(it) }
                     sessionReady = true
                 }
-                if (!sessionReady) {
+
+                // Restoring is keyed on the tier, not on sign-in, because Play answers asynchronously
+                // and the session above deliberately starts at FREE. The moment PRO is confirmed for
+                // this uid, an empty device goes looking for the business the account already owns.
+                var restoreAttempted by remember(currentUserId) { mutableStateOf(false) }
+                var isRestoring by remember(currentUserId) { mutableStateOf(false) }
+                LaunchedEffect(currentUserId, tier, sessionReady) {
+                    if (!sessionReady) return@LaunchedEffect
+                    val decision = CloudRestorePolicy.decide(
+                        tier = tier,
+                        hasLocalBusiness = database.businessDao().firstOwnedBy(currentUserId) != null,
+                        alreadyAttempted = restoreAttempted,
+                    )
+                    if (decision != CloudRestoreDecision.Attempt) return@LaunchedEffect
+
+                    restoreAttempted = true
+                    isRestoring = true
+                    // The loading screen stays up for the whole download so the "create a business"
+                    // button is never reachable while its data is still on its way back.
+                    when (val result = cloudRestore.restore(currentUserId)) {
+                        is CloudRestoreResult.Restored -> {
+                            uiMessage = "Se restauraron ${result.customers} clientes de la nube"
+                            refreshKey++
+                        }
+                        // Nothing in the cloud is the normal path for a new Pro account: say nothing
+                        // and let them create their business.
+                        CloudRestoreResult.NothingInCloud -> Unit
+                        is CloudRestoreResult.Failed ->
+                            uiMessage = "No se pudo recuperar tu información de la nube. Revisa tu conexión y vuelve a abrir la app"
+                    }
+                    isRestoring = false
+                }
+
+                if (!sessionReady || isRestoring) {
                     CuentivoLoadingScreen()
                 } else {
                 val viewModel = remember(currentUserId) {

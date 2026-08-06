@@ -23,22 +23,30 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   ventas e importación de Excel intactos. Room migró sin incidentes.
 - **Fase 1 cerrada y entregada.** La 1.5 llevó a los testers las tandas 4–7: alta rápida de venta,
   respaldo cifrado, cobros del día y resumen del mes, App Check y ficha de Play.
-- Suites en verde en la última corrida: **253 pruebas JVM**, 0 fallos, con `assembleDebug` y
-  `bundleRelease` exitosos. Instrumentadas: 216, 0 fallos (corrida del 2026-08-06, antes del cambio
-  de Billing).
+- **Importar Excel estaba roto para archivos con prefijo de namespace** (`<x:row>` en vez de
+  `<row>`, ambos válidos en OOXML): `XlsxReader` no encontraba ninguna fila y reportaba 0 productos
+  sin un solo error, que es como se ve un archivo vacío. Corregido el 2026-08-06 y **verificado
+  contra el archivo real de Diego: 31 filas → 30 productos aceptados, 0 rechazados**, con acentos y
+  precios correctos.
+- Suites en verde en la última corrida: **260 pruebas JVM**, 0 fallos, con `assembleDebug` y
+  `assembleDebugAndroidTest` exitosos (2026-08-06). Instrumentadas: 216 + `CloudRestoreTest`, sin
+  correr todavía en emulador.
 - Room sigue en `version = 4`. Firebase: proyecto `organitazionlabs` (600636825165), plan Spark.
 - Paridad de textos es/en: **297 claves en cada idioma**.
 
 ## Qué sigue, en orden de valor
 
-1. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
+1. **Probar la restauración en el teléfono** (es el blocker de mayor valor): `firebase deploy --only
+   firestore:rules`, luego desinstalar / reinstalar / iniciar sesión y confirmar que los clientes
+   vuelven solos sin tocar "Crear negocio". Hasta que eso se vea, la nube de Pro no está probada.
+2. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
    2026-08-06, cuando los testers hayan actualizado. Si casi todas las peticiones salen
    *verificadas*, **activar el enforcement**. Si salen *no verificadas*, ver el primer blocker.
-2. **Cerrar la otra mitad del ciclo de cobro**: ver que al **caducar** la suscripción la app vuelve
+3. **Cerrar la otra mitad del ciclo de cobro**: ver que al **caducar** la suscripción la app vuelve
    a FREE. La compra ya está probada; la caducidad no. Es rápido de verificar porque una
    suscripción de prueba renueva cada ~5 min y caduca tras unas 6 renovaciones: dejarla correr
    media hora y comprobar que vuelve a frenar en 5 clientes.
-3. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
+4. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
    - **🟢 Semáforo y score de clientes** — puntualidad de pago por cliente. SQL sobre datos que ya
      existen, cero dependencias nuevas, y responde la pregunta que importa en un negocio de fiado:
      *¿a este le fío?*. Medio camino hecho en `domain/CreditLimitAdvisor.kt`.
@@ -46,7 +54,7 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
      `domain/QuickSale.kt` y en el alta de productos.
    - **📈 Gráficas** en el panel. Baratas, pero decorativas: `BusinessInsights.compare()` ya dice en
      palabras lo que la gráfica diría en pixeles.
-4. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
+5. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
    consulta nueva sobre `sale_items` unido a `sales` no canceladas por periodo. Alimenta tanto el
    panel como el score de clientes.
 
@@ -54,15 +62,21 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 - **El enforcement de App Check está APAGADO a propósito.** Los testers en versiones viejas no
   llevan App Check: activarlo antes de que actualicen les daría `PERMISSION_DENIED`.
-- **⚠️ PRIORIDAD: reinstalar la app con cuenta Pro dejó los clientes vacíos.** Reportado por Diego
-  el 2026-08-06: desinstaló, reinstaló, la suscripción Pro se conservó (correcto, vive en Play) pero
-  **los clientes no volvieron**. El respaldo en la nube es lo que Pro vende, así que esto es lo
-  primero a investigar. Tres hipótesis, sin verificar: (a) no volvió a iniciar sesión; (b) esos
-  clientes se crearon antes de ser Pro y `SyncWorker` nunca los subió (sale temprano si el plan no
-  permite nube, `SyncWorker.kt:22`); (c) **el bug real** — al reinstalar se crea un negocio con
-  `businessId` nuevo y, como toda consulta filtra por él, la descarga busca un negocio que no existe
-  en la nube. Empezar por confirmar con Diego si inició sesión, y luego mirar
-  `sync/OwnerMembershipBootstrap.kt` y el arranque de `MainActivity`.
+- **⚠️ La restauración desde la nube está escrita pero NO probada en el teléfono.** Causa
+  diagnosticada y corregida el 2026-08-06: era la hipótesis (c). Diego sí inició sesión con el mismo
+  correo; el problema es que al reinstalar Room queda vacía, la app ofrece "Crear negocio" y ese
+  botón acuña un `businessId` aleatorio nuevo, dejando los clientes inalcanzables bajo el id viejo.
+  **No existía ninguna ruta que descubriera un negocio remoto.** Lo agregado:
+  `SyncRemoteBusinessLookup` (consulta `businesses` por `ownerUserId`), `sync/CloudRestore.kt`,
+  `domain/CloudRestorePolicy.kt` y el disparo en `MainActivity` al confirmarse PRO. Cubierto por
+  `CloudRestorePolicyTest` (JVM) y `CloudRestoreTest` (androidTest, aún sin correr en emulador).
+  **Falta la evidencia que importa**: desplegar las reglas, desinstalar, reinstalar, iniciar sesión
+  y ver volver los clientes solos. Hasta entonces esto no está cerrado.
+- **`firestore.rules` cambió y hay que desplegarlo antes de publicar la app.** `/businesses/{id}`
+  ahora también permite leer al dueño (`isOwner(resource.data.ownerUserId)`), sin lo cual un
+  teléfono reinstalado no puede encontrar su negocio: `canReadBusiness` exige el documento de
+  miembro, cuyo id es justo lo que se perdió. Sólo amplía acceso del dueño a lo suyo, así que es
+  seguro desplegarlo antes de que los testers actualicen.
 - **La caducidad de Pro nunca se ha visto ocurrir.** Que quien deja de pagar deje de tener nube es
   la mitad del ciclo de cobro que sigue sin evidencia.
 - ~~La SHA-256 podría ser la de la clave de carga~~ **RESUELTO el 2026-08-06**: el logcat del

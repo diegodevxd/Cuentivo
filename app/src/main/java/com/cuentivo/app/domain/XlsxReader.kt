@@ -20,13 +20,16 @@ object XlsxReader {
 
     fun read(bytes: ByteArray): List<List<String>> {
         val entries = unzip(bytes)
-        val sharedStrings = entries[SHARED_STRINGS]?.let(::readSharedStrings) ?: emptyList()
+        val sharedStrings = entries[SHARED_STRINGS]
+            ?.let(::stripNamespacePrefixes)
+            ?.let(::readSharedStrings)
+            ?: emptyList()
         val sheet = entries.entries
             .filter { it.key.startsWith(WORKSHEETS) && it.key.endsWith(".xml") }
             .minByOrNull { it.key }
             ?.value
             ?: return emptyList()
-        return readSheet(sheet, sharedStrings)
+        return readSheet(stripNamespacePrefixes(sheet), sharedStrings)
     }
 
     private fun unzip(bytes: ByteArray): Map<String, String> {
@@ -40,6 +43,17 @@ object XlsxReader {
         }
         return files
     }
+
+    /**
+     * `<x:row>` and `<row>` are the same element: whoever wrote the file decides whether to put the
+     * namespace on the default or on a prefix, and both are valid OOXML. Without this the tag scanner
+     * below matches nothing at all on a prefixed file and the import reports zero rows — no bad rows,
+     * no error, just an empty catalog, which is exactly how it looks when someone's real file fails.
+     *
+     * Only element names are touched, never attribute values: `r:id="rId1"` must survive intact.
+     */
+    private fun stripNamespacePrefixes(xml: String): String =
+        xml.replace(NAMESPACE_PREFIX, "<$1")
 
     /** Every `<si>` is one string; a styled cell splits it across several `<t>` runs to be joined. */
     private fun readSharedStrings(xml: String): List<String> =
@@ -128,6 +142,9 @@ object XlsxReader {
         .replace("&apos;", "'")
         // Ampersand last: doing it first would re-expand the escapes above.
         .replace("&amp;", "&")
+
+    /** An opening or closing tag whose name carries a namespace prefix: `<x:row`, `</x:row`. */
+    private val NAMESPACE_PREFIX = Regex("<(/?)[A-Za-z_][A-Za-z0-9_.-]*:")
 
     private const val SHARED_STRINGS = "xl/sharedStrings.xml"
     private const val WORKSHEETS = "xl/worksheets/sheet"

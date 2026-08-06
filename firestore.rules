@@ -95,7 +95,11 @@ service cloud.firestore {
 
     match /businesses/{businessId} {
       allow create: if isOwner(request.resource.data.ownerUserId) && validBusiness(request.resource.data);
-      allow read: if canReadBusiness(businessId);
+      // The owner clause is what lets a reinstalled phone find its way home. canReadBusiness()
+      // requires the members document, which a wiped device cannot name because it no longer knows
+      // the businessId — so recovery would be impossible with membership as the only route in.
+      // ownerUserId is immutable on update, so this grants nobody anything they did not create.
+      allow read: if canReadBusiness(businessId) || isOwner(resource.data.ownerUserId);
       allow update: if isBusinessOwner(businessId) && validBusiness(request.resource.data) && request.resource.data.ownerUserId == resource.data.ownerUserId && request.resource.data.createdAtEpochMillis == resource.data.createdAtEpochMillis;
       allow delete: if false;
 

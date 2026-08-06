@@ -77,6 +77,28 @@ interface SyncRemotePullGateway {
     fun download(businessId: String, sinceEpochMillis: Long): SyncDownloadResult
 }
 
+sealed interface BusinessLookupResult {
+    data class Found(val businessId: String) : BusinessLookupResult
+
+    /** The account is real but owns no business remotely — a genuinely new user, not an error. */
+    data object None : BusinessLookupResult
+
+    data class Failure(val failure: SyncFailure) : BusinessLookupResult
+}
+
+/**
+ * Finds the business an account already owns in the cloud, given only the uid.
+ *
+ * Everything else in sync starts from a businessId this device already knows. A phone that has just
+ * been reinstalled knows nothing: Room is empty, and creating a business would mint a fresh random
+ * id that no remote document is filed under, stranding the real data forever under the old id. This
+ * is the one lookup that goes the other way — from the account to the business — and it exists so a
+ * reinstall can find its way back rather than silently starting over.
+ */
+interface SyncRemoteBusinessLookup {
+    fun findBusinessOwnedBy(userId: String): BusinessLookupResult
+}
+
 /** What Room already knows about an incoming remote document. */
 data class LocalRecord(
     val updatedAtEpochMillis: Long,

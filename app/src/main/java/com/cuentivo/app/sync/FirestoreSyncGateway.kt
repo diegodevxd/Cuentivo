@@ -30,7 +30,23 @@ private data class PullSpec(val collection: String, val entityType: String, val 
 
 class FirestoreSyncGateway(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
-) : SyncRemoteGateway, SyncRemotePullGateway {
+) : SyncRemoteGateway, SyncRemotePullGateway, SyncRemoteBusinessLookup {
+
+    /**
+     * Queried by owner rather than read by id, because on a reinstalled phone the id is exactly what
+     * was lost. `ownerUserId` is immutable under the rules, so at most one business answers here.
+     */
+    override fun findBusinessOwnedBy(userId: String): BusinessLookupResult = try {
+        val match = Tasks.await(
+            firestore.collection("businesses")
+                .whereEqualTo("ownerUserId", userId)
+                .limit(1)
+                .get()
+        ).documents.firstOrNull()
+        if (match == null) BusinessLookupResult.None else BusinessLookupResult.Found(match.id)
+    } catch (exception: Exception) {
+        BusinessLookupResult.Failure(classify(exception))
+    }
 
     override fun upload(operation: PendingSyncOperation): SyncUploadResult {
         // Resolved before the network try block on purpose. An unsupported entity type or a payload
