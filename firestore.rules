@@ -99,7 +99,14 @@ service cloud.firestore {
       // requires the members document, which a wiped device cannot name because it no longer knows
       // the businessId — so recovery would be impossible with membership as the only route in.
       // ownerUserId is immutable on update, so this grants nobody anything they did not create.
-      allow read: if canReadBusiness(businessId) || isOwner(resource.data.ownerUserId);
+      //
+      // Order matters and is load-bearing, not style. isOwner() reads no documents, while
+      // canReadBusiness() spends an exists() and a get() on the member doc. Rules allow only ten
+      // such calls per query, evaluated per returned document, so putting canReadBusiness() first
+      // made the recovery query die once the account owned six businesses: 6 x 2 = 12 > 10, and the
+      // whole query was denied. With isOwner() first the || short-circuits and the owner's own
+      // documents cost nothing.
+      allow read: if isOwner(resource.data.ownerUserId) || canReadBusiness(businessId);
       allow update: if isBusinessOwner(businessId) && validBusiness(request.resource.data) && request.resource.data.ownerUserId == resource.data.ownerUserId && request.resource.data.createdAtEpochMillis == resource.data.createdAtEpochMillis;
       allow delete: if false;
 
