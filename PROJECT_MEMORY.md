@@ -12,9 +12,15 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 - Rama `codex/neo-fintech`, comiteada y subida a `origin`.
 - **1.5 / versionCode 9 publicada en prueba cerrada** con 12 testers. Lo que se rompa, lo ven ellos.
-- **1.6 / versionCode 10 construida y firmada** en `dist/Cuentivo-v10-1.6.aab`, **sin subir**. Lleva
-  la reconexión de Play Billing (`domain/BillingReconnectPolicy.kt`): antes, una sola desconexión
-  del servicio dejaba el botón de comprar inservible hasta reiniciar la app.
+- **1.6 / versionCode 10 publicada en prueba interna** e instalada desde Play en el teléfono de
+  Diego (`installerPackageName=com.android.vending`). Lleva la reconexión de Play Billing
+  (`domain/BillingReconnectPolicy.kt`): antes, una sola desconexión del servicio dejaba el botón de
+  comprar inservible hasta reiniciar la app.
+- **La compra de Pro funciona de punta a punta.** Primera vez que hay evidencia. La suscripción
+  comprada en la 1.5 la reconoció la 1.6 sin reinstalar nada: una compra pertenece a la cuenta de
+  Google, no a la versión.
+- **Actualizar de versión no borra datos.** Verificado por Diego al pasar de 1.5 a 1.6: clientes,
+  ventas e importación de Excel intactos. Room migró sin incidentes.
 - **Fase 1 cerrada y entregada.** La 1.5 llevó a los testers las tandas 4–7: alta rápida de venta,
   respaldo cifrado, cobros del día y resumen del mes, App Check y ficha de Play.
 - Suites en verde en la última corrida: **253 pruebas JVM**, 0 fallos, con `assembleDebug` y
@@ -28,26 +34,35 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 1. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
    2026-08-06, cuando los testers hayan actualizado. Si casi todas las peticiones salen
    *verificadas*, **activar el enforcement**. Si salen *no verificadas*, ver el primer blocker.
-2. **Fase 1.5 — "Cobrar de verdad" (en curso)**: verificar una compra de Pro de punta a punta.
-   El código ya está listo; falta el trabajo de consola y teléfono, con el checklist paso a paso en
-   **`docs/verificar-compra-pro.md`**. Lo primero a revisar es que exista en Play Console el
-   producto con id exacto `cuentivo_pro_mensual`, activo y con plan base: si no, el botón de
-   comprar dice "no disponibles" sin explicar por qué. Después hay que subir la 1.6 al track e
-   instalar **desde Play** — con APK cargado a mano el diálogo de pago no abre.
-3. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
-   consulta nueva sobre `sale_items` unido a `sales` no canceladas por periodo.
+2. **Cerrar la otra mitad del ciclo de cobro**: ver que al **caducar** la suscripción la app vuelve
+   a FREE. La compra ya está probada; la caducidad no. Es rápido de verificar porque una
+   suscripción de prueba renueva cada ~5 min y caduca tras unas 6 renovaciones: dejarla correr
+   media hora y comprobar que vuelve a frenar en 5 clientes.
+3. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
+   - **🟢 Semáforo y score de clientes** — puntualidad de pago por cliente. SQL sobre datos que ya
+     existen, cero dependencias nuevas, y responde la pregunta que importa en un negocio de fiado:
+     *¿a este le fío?*. Medio camino hecho en `domain/CreditLimitAdvisor.kt`.
+   - **📷 Código de barras** con ML Kit (gratis, on-device, funciona sin internet). Encaja en
+     `domain/QuickSale.kt` y en el alta de productos.
+   - **📈 Gráficas** en el panel. Baratas, pero decorativas: `BusinessInsights.compare()` ya dice en
+     palabras lo que la gráfica diría en pixeles.
+4. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
+   consulta nueva sobre `sale_items` unido a `sales` no canceladas por periodo. Alimenta tanto el
+   panel como el score de clientes.
 
 ## Blockers abiertos
 
-- **La SHA-256 registrada en Firebase puede ser la de la clave de *carga* y no la de *firma de la
-  app*.** Es el primer sospechoso si Play Integrity falla en producción. Se arregla registrando
-  también la otra; tener las dos no rompe nada.
-- **El enforcement de App Check está APAGADO a propósito.** La versionCode 8 en producción no
-  lleva App Check: activarlo antes de que los testers actualicen les daría `PERMISSION_DENIED`.
-- **Sin confirmar** que el vínculo Firebase ↔ Play Console aparezca como *Vinculado*. El MCP de
-  Firebase **no expone App Check ni ese vínculo**, así que sólo se comprueba en la consola web.
-- **Play Integrity no se puede verificar en local**: sólo vale un binario firmado por Play e
-  instalado desde Play.
+- **El enforcement de App Check está APAGADO a propósito.** Los testers en versiones viejas no
+  llevan App Check: activarlo antes de que actualicen les daría `PERMISSION_DENIED`.
+- **La caducidad de Pro nunca se ha visto ocurrir.** Que quien deja de pagar deje de tener nube es
+  la mitad del ciclo de cobro que sigue sin evidencia.
+- ~~La SHA-256 podría ser la de la clave de carga~~ **RESUELTO el 2026-08-06**: el logcat del
+  teléfono mostró `Finsky: requestIntegrityToken() finished for com.cuentivo.app`. Play Integrity
+  emite token en producción, así que la SHA registrada es la correcta.
+- **La librería de Play Billing no registra nada en logcat en builds release.** No busques ahí la
+  confirmación del `acknowledge`: se lee del código (`BillingGateway.kt:238-261`, que reconoce toda
+  compra pendiente en cada arranque) o de Play Console. Las compras de prueba **no aparecen en los
+  informes de ingresos**, sólo en la vista de suscripciones — no confundir eso con un fallo.
 
 ## Pendientes de fondo
 
