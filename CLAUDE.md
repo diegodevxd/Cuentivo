@@ -7,7 +7,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Cuentivo** — app Android offline-first para pequeños negocios que venden a crédito o fiado.
 Modelo: negocio → clientes → productos → ventas → cargos → abonos → saldo.
 
-El proyecto lo inició Codex siguiendo un prompt maestro por fases. `PROJECT_MEMORY.md` es el archivo de continuidad compartido: **léelo al empezar y actualízalo al terminar trabajo relevante.**
+El proyecto lo inició Codex siguiendo un prompt maestro por fases.
+
+**Dónde vive cada cosa, para no leer de más:**
+
+| Archivo | Qué contiene | Cuándo leerlo |
+|---|---|---|
+| `CLAUDE.md` (este) | Arquitectura, reglas innegociables, comandos y trampas del entorno | Siempre |
+| `PROJECT_MEMORY.md` | Estado vivo: dónde estamos, qué sigue, blockers abiertos | Al empezar; **actualízalo al terminar trabajo relevante, sustituyendo, no añadiendo** |
+| `docs/historia-del-proyecto.md` | Diario histórico completo, sesión por sesión | Sólo si necesitas arqueología de una decisión vieja |
+
+`PROJECT_MEMORY.md` se mantiene por debajo de ~100 líneas a propósito: lo que deja de estar vigente baja a `docs/historia-del-proyecto.md`, y lo que se puede leer del código o de `git log` no va en ninguno de los dos.
 
 ## Comandos
 
@@ -42,6 +52,21 @@ Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -match 'Norton
 Los tests de `androidTest/` **requieren emulador o dispositivo conectado**: no hay Robolectric ni `unitTests.isIncludeAndroidResources`. Ahí viven las pruebas de Room (`OperationDaoTest`, 11 casos) y de Compose (`CuentivoAppTest`).
 
 No hay CI. Nada valida el código salvo lo que ejecutes localmente.
+
+### Emulador
+
+SDK en `C:\Users\pibed\AppData\Local\Android\Sdk`, `adb` en `$SDK/platform-tools/`. Hay un AVD, `Medium_Phone`, **API 37** — es la única imagen instalada, por eso nada por debajo de API 33 se ha probado nunca. Para `adb pull` desde Git Bash hace falta `MSYS_NO_PATHCONV=1` y rutas de Windows, o falla.
+
+**El emulador se degrada con el uso.** Si una suite aborta con `INSTRUMENTATION_ABORTED: System has crashed` o aparece `RootViewWithoutFocusException`, la causa suele ser un SIGSEGV del driver GL que deja un diálogo ANR de `com.android.systemui` dueño del foco. Se comprueba con `adb shell dumpsys window | grep mCurrentFocus` y se resuelve arrancando en frío hasta que `adb shell dumpsys user` dé `0=RUNNING_UNLOCKED`:
+
+```bash
+adb emu kill
+emulator -avd Medium_Phone -no-snapshot-load -no-boot-anim
+```
+
+Para sacar archivos que escribió una prueba instrumentada hay que impedir que Gradle desinstale el APK al terminar: `-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`, y luego `adb exec-out run-as com.cuentivo.app cat files/<ruta>`.
+
+Para verificar la firma de un APK o AAB, **`apksigner verify --print-certs`**. `jarsigner -verify` sólo entiende firma v1 y dice "jar is unsigned" para un APK firmado con v2: es un falso negativo.
 
 ## Reglas del proyecto
 
@@ -190,40 +215,47 @@ Cancelaciones y ajustes son el único punto donde el cliente es más estricto qu
 
 `MainActivity.kt` y `ui/theme/*` están físicamente en `app/src/main/java/com/example/organizationlabs/` pero declaran `package com.cuentivo.app`. Funciona por `android.disallowKotlinSourceSets=false` en `gradle.properties`. El único código realmente en `com.example.organizationlabs` es `ExampleUnitTest.kt`.
 
-## Estado real por fases
+## Huecos conocidos de la sincronización
 
-`PROJECT_MEMORY.md` tiene la tabla completa. Resumen:
+El estado por fases y los pendientes del momento están en `PROJECT_MEMORY.md`. Lo que va aquí son
+dos huecos **estructurales** del código de sync, porque condicionan cómo se escribe encima:
 
-| Fase | Estado |
-|---|---|
-| 0. Diagnóstico | Completa |
-| 1. Núcleo financiero | Completa — sólida y bien probada |
-| 2. Interfaz Android | **Parcial** |
-| 3. Firebase/sincronización | **Parcial — código completo, sin verificar contra Firestore** |
-| 4. Colaboración/roles/auditoría | **Parcial — dominio y datos listos, sin UI** |
-| 5–7 | Sin empezar |
+- **El encolado no es atómico, y es deliberado.** El `syncQueue.enqueue(...)` ocurre *después* del
+  `database.withTransaction { ... }` en `MainActivity`, no dentro. La razón está comentada en el
+  código: una fila ya guardada en local no puede quedar oculta porque falle el outbox, así que
+  encolar es *best effort* respecto de ella. El costo: si el proceso muere entre ambos, la venta
+  existe en local y **nunca se encola**. No hay reconciliación que lo recupere.
+- **Sin `WriteBatch`.** `FirestoreSyncGateway` hace `set()` individuales para venta, ítem y
+  movimiento, así que una venta puede quedar publicada a medias en Firestore.
+  `FIRESTORE_RULES_AUDIT.json` advierte exactamente contra esto.
 
-### La Fase 3 NO está cerrada
+### Puerta de verificación del idioma
 
-Resuelto el 2026-07-24, con `testDebugUnitTest` en verde:
+El trabajo de i18n no está hecho hasta que esto salga vacío (salvo etiquetas de animación de Compose):
 
-1. ✅ **Documento `MEMBER` sin encolar.** Era el bloqueante original: sin él toda subida distinta del negocio raíz recibía `PERMISSION_DENIED` y quedaba estacionada. `sync/OwnerMembershipBootstrap.kt` publica la membresía OWNER, al crear el negocio y como backfill en arranque. Se encola con `revision = createdAtEpochMillis + 1` para ordenar justo **después** del `BUSINESS` (las reglas hacen `getAfter` sobre ese documento) y **antes** de las filas operativas.
-2. ✅ **Descarga remota.** `SyncRemotePullGateway.download` + `RemoteMerger` + tabla `sync_state`. Ver la sección de sincronización arriba. `RemoteMergePolicy` por fin tiene call site de producción, vía `RemoteMergePlanner`.
-3. ✅ **Clasificación de fallos.** Ahora por `FirebaseFirestoreException.Code`, no por `contains()` sobre el mensaje. `INVALID_ARGUMENT`, `NOT_FOUND` y `FAILED_PRECONDITION` (= falta un índice) son permanentes; ya no se reintentan para siempre. Hay tope de 10 intentos vía `parkExhausted`.
-4. ✅ **`SyncWorker` ya no puede morir.** El `doWork` envuelve todo en `try/catch` y devuelve `Result.retry()`, nunca `FAILED` — `FAILED` no se reprograma y dejaba la cola sin drenar. Y `FirestoreDocumentPath.forOperation` se resuelve **antes** del `try` de red: un `entityType` no soportado es fallo permanente, no transitorio.
+```bash
+grep -rnE '(Text\(|text = |label = |title = |detail = |placeholder = |contentDescription = |emptyText = |actionLabel = |eyebrow = |note = |backDescription = )"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ¿¡][^"]*"' app/src/main/java/com/cuentivo/app/ui --include=*.kt | grep -vE '"\$ "|" · "|testTag|neo-action-press|"Cuentivo"'
+```
 
-Lo que sigue abierto:
+Y la paridad de claves debe seguir cuadrando (hoy 297 y 297):
 
-5. **Sin verificación contra Firestore real ni Emulator.** *Ninguna subida ni descarga se ha confirmado end-to-end.* Ya existen `.firebaserc` y el bloque `emulators` en `firebase.json` (auth 9099, firestore 8080, ui 4000), así que la vía de verificación está lista — pero sin `-Pcuentivo.useEmulators=true` todo sigue apuntando a producción. **Este es ahora el siguiente bloqueante real**: no tiene sentido agregar más superficie de sync sobre una base que nunca ejecutó una sola escritura remota.
-6. **El encolado no es atómico.** Ocurre como statement suelto después de la escritura local en `MainActivity`, no dentro de la misma transacción. Si el proceso muere entre ambos, la venta existe en local y nunca se encola.
-7. **Sin `WriteBatch`.** El gateway hace `set()` individuales para venta, ítem y movimiento. `FIRESTORE_RULES_AUDIT.json` advierte exactamente contra esto: *"No activar sincronización financiera hasta implementar esa garantía."*
-8. **`PAYMENT_ALLOCATION` no se encola.** Hoy no importa porque `MainActivity` registra pagos con `emptyList()` de asignaciones; al implementar abonos por venta habrá que agregarlo. La descarga sí lo maneja.
-9. Los 16 checkboxes de `docs/superpowers/plans/2026-07-24-phase-3-sync.md` siguen **sin marcar**.
+```bash
+grep -c "<string name=" app/src/main/res/values/strings.xml app/src/main/res/values-en/strings.xml
+```
+
+**Los `object` de `domain/` son Kotlin puro sin `Context`** — por eso corren en `testDebugUnitTest`.
+No les metas `Context` ni `R.string`: rompe las pruebas y la separación que hace valiosa esa capa.
+El patrón correcto es que el `object` devuelva una **clave o un enum** y la UI resuelva el texto.
+`AuditAction.summary` se persiste en `audit_logs`: **no se traduce al escribir**.
+
+**Cuidado con los apóstrofos en `values-en/`**: Android exige `\'`, y escribirlos desde un script
+con varias capas de shell mangla el escapado y produce `Invalid unicode escape sequence in string`
+al mergear recursos. Lo más seguro es redactar el inglés sin apóstrofos ("do not" en vez de "don't").
 
 ## Notas del repositorio
 
-- Rama actual `phase1-financial-core`. **Todo el trabajo de Fase 3** (`auth/`, `sync/`, `ui/auth/`, configs de Firebase) está sin commitear — preservarlo.
-- ⚠️ **`app/google-services.json` NO está en `.gitignore`** y aparece como untracked. No lo incluyas en un `git add -A` sin decisión explícita del usuario.
+- Rama de trabajo `codex/neo-fintech`, con upstream en `origin`. `main` quedó en el commit inicial.
+- `app/google-services.json` **sí está en `.gitignore`** (y también `*.apk`, `*.aab`, `/dist/`, `/artifacts/`, `*.jks`, `keystore.properties`). Aun así, revisa lo que quedó en staging antes de comitear.
 - `.audit-betterorganitazion/` es la app web original (PWA con Supabase/Stripe) como repo git anidado e ignorado. Es la referencia para la migración de datos: **no se compila ni se modifica**.
 - `.agents/skills/` + `skills-lock.json`: 11 skills de Firebase vendorizadas con hash de integridad.
 - No hay README ni CI.
