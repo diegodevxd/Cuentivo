@@ -62,16 +62,28 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 - **El enforcement de App Check está APAGADO a propósito.** Los testers en versiones viejas no
   llevan App Check: activarlo antes de que actualicen les daría `PERMISSION_DENIED`.
-- **⚠️ La restauración desde la nube está escrita pero NO probada en el teléfono.** Causa
-  diagnosticada y corregida el 2026-08-06: era la hipótesis (c). Diego sí inició sesión con el mismo
-  correo; el problema es que al reinstalar Room queda vacía, la app ofrece "Crear negocio" y ese
-  botón acuña un `businessId` aleatorio nuevo, dejando los clientes inalcanzables bajo el id viejo.
-  **No existía ninguna ruta que descubriera un negocio remoto.** Lo agregado:
-  `SyncRemoteBusinessLookup` (consulta `businesses` por `ownerUserId`), `sync/CloudRestore.kt`,
-  `domain/CloudRestorePolicy.kt` y el disparo en `MainActivity` al confirmarse PRO. Cubierto por
-  `CloudRestorePolicyTest` (JVM) y `CloudRestoreTest` (androidTest, aún sin correr en emulador).
-  **Falta la evidencia que importa**: desplegar las reglas, desinstalar, reinstalar, iniciar sesión
-  y ver volver los clientes solos. Hasta entonces esto no está cerrado.
+- **⚠️ La restauración desde la nube sigue sin probarse en el teléfono.** La 1.7 no restauró, y la
+  inspección de Firestore del 2026-08-06 dio evidencia dura de por qué. **La subida funciona
+  perfecto**: el uid `6A4cRF7cIkbzCBBfnoWZMzt2yYE2` posee **cuatro** negocios (19:59, 20:14, 20:21 y
+  21:00) y los 7 clientes de prueba están íntegros en el más reciente, `5b0d730b…`. El problema es
+  sólo la recuperación, y eran dos fallos encadenados, corregidos en la 1.8:
+  1. `findBusinessOwnedBy` usaba `limit(1)` **sin ordenar**. Firestore responde por id de documento,
+     que es un UUID aleatorio, así que elegía un negocio arbitrario — en este caso el vacío de las
+     19:59. Aun restaurando bien, la app habría abierto vacía. Ahora trae los del dueño y se queda
+     con el de `createdAtEpochMillis` mayor, comparado en memoria para **no exigir un índice
+     compuesto** (`whereEqualTo` + `orderBy` sí lo exigiría, y sin desplegarlo la consulta falla
+     entera con FAILED_PRECONDITION).
+  2. **La carrera que realmente ocurrió a las 21:00**: `tierState` arranca en FREE y "plan gratis" era
+     indistinguible de "Play todavía no contesta", así que "Crear negocio" quedaba alcanzable a
+     segundos de abrir. Diego lo tocó antes de que Play confirmara Pro y acuñó el cuarto negocio.
+     Ahora `entitlementResolvedState` separa ambos casos y un dispositivo vacío espera a Play hasta
+     `ENTITLEMENT_WAIT_MILLIS` (8 s) antes de ofrecer nada.
+  **Sigue faltando la evidencia en dispositivo**: instalar la 1.8 desde Play, desinstalar,
+  reinstalar, iniciar sesión y ver volver los clientes. Hasta verlo, esto no está cerrado.
+- **No se pueden correr las pruebas instrumentadas contra el teléfono de Diego.** No hay
+  `applicationIdSuffix` en debug, así que el APK de prueba comparte `applicationId` con el de Play
+  pero lleva otra firma: instalarlo exige desinstalar la versión de Play y **borra justo el estado
+  que se quiere probar**, además de dejar a Play Billing sin ver la suscripción.
 - **`firestore.rules` cambió y hay que desplegarlo antes de publicar la app.** `/businesses/{id}`
   ahora también permite leer al dueño (`isOwner(resource.data.ownerUserId)`), sin lo cual un
   teléfono reinstalado no puede encontrar su negocio: `canReadBusiness` exige el documento de

@@ -85,6 +85,27 @@ class CloudRestoreTest {
     }
 
     @Test
+    fun restoring_adopts_whichever_business_the_lookup_chose() = runBlocking {
+        // The lookup picks the newest business, because an account that reinstalled a few times owns
+        // several and all but the last are empty. Restoring the wrong one looks exactly like the bug
+        // it was supposed to fix: the app opens empty and the real data stays out of reach.
+        val newest = "el-negocio-mas-reciente"
+        val gateway = FakeCloudGateway(
+            ownedBusinessId = newest,
+            documents = listOf(
+                RemoteDocument("BUSINESS", newest, NOW, businessDocument().fields),
+                RemoteDocument("CUSTOMER", "c1", NOW, customerDocument("c1", "Ana").fields + ("businessId" to newest)),
+            ),
+        )
+
+        val result = restoreWith(gateway).restore(OWNER)
+
+        assertEquals(CloudRestoreResult.Restored(newest, customers = 1, sales = 0), result)
+        assertEquals(newest, database.businessDao().firstOwnedBy(OWNER)?.id)
+        assertEquals(1, database.customerDao().activeWithBalances(newest).size)
+    }
+
+    @Test
     fun a_brand_new_account_owns_nothing_and_that_is_not_an_error() = runBlocking {
         val result = restoreWith(FakeCloudGateway(ownedBusinessId = null)).restore(OWNER)
 

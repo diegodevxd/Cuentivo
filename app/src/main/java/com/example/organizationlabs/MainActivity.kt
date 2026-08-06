@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -113,6 +114,14 @@ import com.cuentivo.app.sync.SyncQueue
 
 private const val TAG = "MainActivity"
 
+/**
+ * How long an empty device waits for Play before offering to create a business.
+ *
+ * Long enough for a cold Play Billing handshake on a slow connection, short enough that somebody
+ * genuinely on the free plan does not think the app hung.
+ */
+private const val ENTITLEMENT_WAIT_MILLIS = 8_000L
+
 class MainActivity : ComponentActivity() {
     /**
      * Below API 33, the private preference is applied before the Activity sees its resources. On
@@ -150,6 +159,17 @@ class MainActivity : ComponentActivity() {
      * any moment — a purchase made on another device shows up on the next refresh.
      */
     private val tierState = mutableStateOf(SubscriptionTier.FREE)
+
+    /**
+     * Whether Play has answered yet for the current account, which FREE alone cannot express.
+     *
+     * [tierState] starts at FREE and is also set to FREE the instant an account changes, so "free
+     * plan" and "we have not heard back" look identical. On a device with data that distinction does
+     * not matter; on an empty one it decides whether the person is offered a brand-new business or
+     * made to wait for the one they already own. Getting that wrong is how a reinstall ends up with
+     * a second business and an app that looks empty.
+     */
+    private val entitlementResolvedState = mutableStateOf(false)
     private val billingMessageState = mutableStateOf<String?>(null)
     private var billingGateway: BillingGateway? = null
 
@@ -219,6 +239,9 @@ class MainActivity : ComponentActivity() {
                     currentUserId = authenticationGateway.currentUserId,
                 )
                 tierState.value = decision.publish
+                // Only an answer that belongs to the signed-in account counts as an answer. A reply
+                // for somebody else is dropped above, and must not release the wait below.
+                if (decision.persist) entitlementResolvedState.value = true
                 if (decision.persist) {
                     // Stored against the uid, with the time Play confirmed it, so a Worker with no
                     // Activity alive can tell both whose entitlement it is and how old it is.
@@ -378,6 +401,7 @@ class MainActivity : ComponentActivity() {
                     // This is also the sign-in path, where the first answer arrived with no uid at
                     // all and was therefore discarded.
                     tierState.value = SubscriptionTier.FREE
+                    entitlementResolvedState.value = false
                     billing.refresh(currentUserId)
 
                     if (sessionGuard.adopt(currentUserId)) {
@@ -394,6 +418,24 @@ class MainActivity : ComponentActivity() {
                 // this uid, an empty device goes looking for the business the account already owns.
                 var restoreAttempted by remember(currentUserId) { mutableStateOf(false) }
                 var isRestoring by remember(currentUserId) { mutableStateOf(false) }
+
+                // An empty device waits for Play before it offers to create anything. Without this
+                // the offer is on screen within a second of opening, long before the subscription is
+                // known, and taking it mints a second business while the real one sits in the cloud.
+                // That is not hypothetical: it is how one account ended up owning four of them.
+                val entitlementResolved by entitlementResolvedState
+                var entitlementWaitExpired by remember(currentUserId) { mutableStateOf(false) }
+                LaunchedEffect(currentUserId) {
+                    // Bounded, because Play can stay silent — no Play Services, no network, a
+                    // sideloaded build. Being locked out of your own app is worse than the race.
+                    delay(ENTITLEMENT_WAIT_MILLIS)
+                    entitlementWaitExpired = true
+                }
+                val hasLocalBusiness by produceState<Boolean?>(null, currentUserId, sessionReady, refreshKey) {
+                    value = if (!sessionReady) null else database.businessDao().firstOwnedBy(currentUserId) != null
+                }
+                val waitingForEntitlement =
+                    hasLocalBusiness == false && !entitlementResolved && !entitlementWaitExpired
                 LaunchedEffect(currentUserId, tier, sessionReady) {
                     if (!sessionReady) return@LaunchedEffect
                     val decision = CloudRestorePolicy.decide(
@@ -421,7 +463,7 @@ class MainActivity : ComponentActivity() {
                     isRestoring = false
                 }
 
-                if (!sessionReady || isRestoring) {
+                if (!sessionReady || isRestoring || waitingForEntitlement) {
                     CuentivoLoadingScreen()
                 } else {
                 val viewModel = remember(currentUserId) {

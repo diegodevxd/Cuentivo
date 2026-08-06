@@ -34,16 +34,23 @@ class FirestoreSyncGateway(
 
     /**
      * Queried by owner rather than read by id, because on a reinstalled phone the id is exactly what
-     * was lost. `ownerUserId` is immutable under the rules, so at most one business answers here.
+     * was lost.
+     *
+     * An account can own several businesses — every reinstall before this existed minted another
+     * one — so the newest wins. It is fetched unordered and compared here rather than with
+     * `orderBy`, which would pair with the equality filter into a composite index that has to be
+     * deployed before the query works at all; a person owns a handful of businesses, so sorting a
+     * handful of documents in memory is the cheaper trade. Taking `limit(1)` without ordering was a
+     * real bug: Firestore then answers by document id, which is a random UUID, so recovery landed on
+     * whichever business happened to sort first — usually an empty one.
      */
     override fun findBusinessOwnedBy(userId: String): BusinessLookupResult = try {
-        val match = Tasks.await(
+        val newest = Tasks.await(
             firestore.collection("businesses")
                 .whereEqualTo("ownerUserId", userId)
-                .limit(1)
                 .get()
-        ).documents.firstOrNull()
-        if (match == null) BusinessLookupResult.None else BusinessLookupResult.Found(match.id)
+        ).documents.maxByOrNull { (it.get("createdAtEpochMillis") as? Number)?.toLong() ?: 0L }
+        if (newest == null) BusinessLookupResult.None else BusinessLookupResult.Found(newest.id)
     } catch (exception: Exception) {
         BusinessLookupResult.Failure(classify(exception))
     }
