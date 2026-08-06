@@ -10,11 +10,16 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Dónde estamos
 
-- Rama `codex/neo-fintech`, comiteada y subida a `origin` (`b70389e`).
+- Rama `codex/neo-fintech`, comiteada y subida a `origin`.
 - **1.5 / versionCode 9 publicada en prueba cerrada** con 12 testers. Lo que se rompa, lo ven ellos.
+- **1.6 / versionCode 10 construida y firmada** en `dist/Cuentivo-v10-1.6.aab`, **sin subir**. Lleva
+  la reconexión de Play Billing (`domain/BillingReconnectPolicy.kt`): antes, una sola desconexión
+  del servicio dejaba el botón de comprar inservible hasta reiniciar la app.
 - **Fase 1 cerrada y entregada.** La 1.5 llevó a los testers las tandas 4–7: alta rápida de venta,
   respaldo cifrado, cobros del día y resumen del mes, App Check y ficha de Play.
-- Suites en verde en la última corrida: **248 pruebas JVM** y **216 instrumentadas**, 0 fallos.
+- Suites en verde en la última corrida: **253 pruebas JVM**, 0 fallos, con `assembleDebug` y
+  `bundleRelease` exitosos. Instrumentadas: 216, 0 fallos (corrida del 2026-08-06, antes del cambio
+  de Billing).
 - Room sigue en `version = 4`. Firebase: proyecto `organitazionlabs` (600636825165), plan Spark.
 - Paridad de textos es/en: **297 claves en cada idioma**.
 
@@ -23,9 +28,12 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 1. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
    2026-08-06, cuando los testers hayan actualizado. Si casi todas las peticiones salen
    *verificadas*, **activar el enforcement**. Si salen *no verificadas*, ver el primer blocker.
-2. **Fase 1.5 — "Cobrar de verdad"**: verificar una compra de Pro de punta a punta con una cuenta
-   en *Testers de licencia*. Play Billing está cableado y el `acknowledge` implementado, pero
-   **nunca se ha completado una compra real**. Vender antes de poder cobrar es vender aire.
+2. **Fase 1.5 — "Cobrar de verdad" (en curso)**: verificar una compra de Pro de punta a punta.
+   El código ya está listo; falta el trabajo de consola y teléfono, con el checklist paso a paso en
+   **`docs/verificar-compra-pro.md`**. Lo primero a revisar es que exista en Play Console el
+   producto con id exacto `cuentivo_pro_mensual`, activo y con plan base: si no, el botón de
+   comprar dice "no disponibles" sin explicar por qué. Después hay que subir la 1.6 al track e
+   instalar **desde Play** — con APK cargado a mano el diálogo de pago no abre.
 3. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
    consulta nueva sobre `sale_items` unido a `sales` no canceladas por periodo.
 

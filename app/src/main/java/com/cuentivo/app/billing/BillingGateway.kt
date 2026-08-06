@@ -2,6 +2,8 @@ package com.cuentivo.app.billing
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -13,6 +15,7 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
+import com.cuentivo.app.domain.BillingReconnectPolicy
 import com.cuentivo.app.domain.BillingRequest
 import com.cuentivo.app.domain.PlayPurchase
 import com.cuentivo.app.domain.SubscriptionStatus
@@ -56,6 +59,12 @@ class BillingGateway(
     @Volatile private var connectionRequest: BillingRequest = BillingRequest(null)
     @Volatile private var purchaseRequest: BillingRequest = BillingRequest(null)
 
+    /** Reconnection bookkeeping. See [BillingReconnectPolicy] for why any of it exists. */
+    private val handler = Handler(Looper.getMainLooper())
+    @Volatile private var reconnectAttempt = 0
+    @Volatile private var isConnecting = false
+    @Volatile private var isClosed = false
+
     private val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
         // Attributed to the account that opened the sheet, not to whoever is signed in when Play
         // gets back to us — those differ if the person signed out mid-purchase.
@@ -84,21 +93,56 @@ class BillingGateway(
             refresh(userId)
             return
         }
+        // An explicit start is a fresh intent — signing in, or coming back to the foreground — so
+        // it gets a full budget of retries even if a previous streak had exhausted one.
+        reconnectAttempt = 0
+        connect(userId)
+    }
+
+    private fun connect(userId: String?) {
+        // A second startConnection while the first is still opening gets the same callback twice,
+        // which would double the retry counter and the product query alike.
+        if (isClosed || isConnecting) return
+        isConnecting = true
         // Remembered so the query that follows a slow connection still belongs to an account we
         // asked for, even if another start() happened while the socket was opening.
         connectionRequest = BillingRequest(userId)
         client.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
+                isConnecting = false
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
+                    reconnectAttempt = 0
                     loadProduct()
                     refresh(connectionRequest.userId)
+                } else {
+                    // A failure here stays silent on purpose: someone without Play services must
+                    // still be able to use the app, just on the free plan. Silent is not the same
+                    // as final, though — it is retried like any other lost connection.
+                    scheduleReconnect(connectionRequest.userId)
                 }
-                // A failure here stays silent on purpose: someone without Play services must still
-                // be able to use the app, just on the free plan.
             }
 
-            override fun onBillingServiceDisconnected() = Unit
+            /**
+             * Play hangs up routinely; the app is only broken if it stays hung up.
+             *
+             * Before this existed, one disconnect left `client.isReady` false forever: `refresh()`
+             * returned early and `launchPurchase()` answered "no disponibles" until the process
+             * restarted. Someone trying to subscribe had no way to tell that from a dead paywall.
+             */
+            override fun onBillingServiceDisconnected() {
+                isConnecting = false
+                scheduleReconnect(connectionRequest.userId)
+            }
         })
+    }
+
+    private fun scheduleReconnect(userId: String?) {
+        if (isClosed) return
+        val delay = BillingReconnectPolicy.delayMillisForAttempt(reconnectAttempt + 1) ?: return
+        reconnectAttempt += 1
+        // Posted rather than slept: this runs on Play's callback thread, and blocking it would
+        // stall the very connection being waited on.
+        handler.postDelayed({ connect(userId) }, delay)
     }
 
     /**
@@ -113,7 +157,11 @@ class BillingGateway(
         // overlapping queries cannot be confused no matter what order Play answers in.
         val request = BillingRequest(userId)
         if (!client.isReady) {
+            // Remembering the request is not enough on its own: if nothing is reconnecting, nothing
+            // will ever consume it. onResume() calls this on every return to the foreground, which
+            // makes it the natural place to notice the connection is gone and start it again.
             connectionRequest = request
+            start(userId)
             return
         }
         val params = QueryPurchasesParams.newBuilder()
@@ -158,7 +206,10 @@ class BillingGateway(
         client.launchBillingFlow(activity, flow)
     }
 
+    /** Ends the connection and cancels any pending retry, so a closed gateway stays closed. */
     fun close() {
+        isClosed = true
+        handler.removeCallbacksAndMessages(null)
         if (client.isReady) client.endConnection()
     }
 
