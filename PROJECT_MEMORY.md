@@ -4,7 +4,7 @@ Este archivo dice **dónde está el proyecto hoy y qué sigue**. No es un diario
 sustituyendo, no añadiendo. Lo que deja de estar vigente baja a `docs/historia-del-proyecto.md`.
 La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
-**Última actualización:** 2026-08-06
+**Última actualización:** 2026-08-07
 
 ---
 
@@ -41,31 +41,42 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   `assembleDebugAndroidTest` exitosos (2026-08-06). Instrumentadas: 216 + `CloudRestoreTest`, sin
   correr todavía en emulador.
 - Room sigue en `version = 4`. Firebase: proyecto `organitazionlabs` (600636825165), plan Spark.
-- Paridad de textos es/en: **304 claves en cada idioma**.
-- **🟢🟡🔴 Semáforo de clientes construido** (2026-08-06, sin publicar todavía).
-  `domain/CustomerScoreCalculator.kt` deriva la puntualidad del libro mayor: puntual ≤ 3 días de
-  retraso promedio, tarda ≤ 20, moroso arriba; y una venta abierta con más de 60 días vencida fuerza
-  moroso pese al promedio. Menos de 3 ventas **con fecha pactada** no pinta color: sin evidencia no
-  hay veredicto. Sale de `FinancialDao.saleHistoryForScores`, consulta nueva sin migración — Room
-  sigue en `version = 4`.
+- Paridad de textos es/en: **303 `<string>` + 1 `<plurals>` en cada idioma**. El plural es el
+  primero del proyecto (`customer_score_rated_sales`): decía "Sobre 1 ventas con fecha".
+- **✅ 🟢🟡🔴 El semáforo de clientes FUNCIONA en teléfono real.** Verificado por Diego el 2026-08-07
+  con la **1.11 / versionCode 17** instalada de lado. `domain/CustomerScoreCalculator.kt` deriva la
+  puntualidad del libro mayor: puntual ≤ 3 días de retraso promedio, tarda ≤ 20, moroso arriba; y
+  una venta abierta con más de 60 días vencida fuerza moroso pese al promedio. Menos de 3 ventas
+  **con fecha pactada** no pinta color: sin evidencia no hay veredicto. Sale de
+  `FinancialDao.saleHistoryForScores`, consulta nueva sin migración — Room sigue en `version = 4`.
+- **El semáforo nacía apagado para todos, y no era culpa del cálculo.** Las dos rutas de venta
+  guardaban la fecha pactada vacía, así que ninguna venta podía puntuar nunca.
+  `NewSaleScreen` arrancaba en `DueOption.NONE`; ahora arranca en **15 días** (2026-08-07). Corregir
+  una venta **sigue** arrancando sin fecha: cambiar un producto equivocado no puede inventarle al
+  cliente un plazo que jamás acordó. Lección que se repite: una función puede estar correcta,
+  probada y aun así ser invisible porque nadie alimenta el dato del que vive.
 
 ## Qué sigue, en orden de valor
 
-1. **Suavizar el mensaje de fallo de restauración** y publicar la 1.9.1 más allá de prueba interna.
-   El texto crudo con el código de Firestore ya cumplió su función.
-2. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
+1. **Subir la 1.11 a prueba interna.** Lleva el semáforo ya visto funcionando y el mensaje amable
+   de fallo de restauración. Hasta hoy sólo existe como APK firmado instalado de lado; falta el AAB.
+2. **Darle fecha de pago al alta rápida.** Hoy `MainActivity.kt:662` guarda `dueDateEpochDay = null`
+   a fuerza y sin opción, así que toda venta hecha por la ruta rápida queda fuera del semáforo para
+   siempre. Es el hueco que le queda a la función. El costo es que un selector le quita justo lo
+   rápido a la pantalla rápida.
+3. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
    2026-08-06, cuando los testers hayan actualizado. Si casi todas las peticiones salen
    *verificadas*, **activar el enforcement**. Si salen *no verificadas*, ver el primer blocker.
-3. **Cerrar la otra mitad del ciclo de cobro**: ver que al **caducar** la suscripción la app vuelve
+4. **Cerrar la otra mitad del ciclo de cobro**: ver que al **caducar** la suscripción la app vuelve
    a FREE. La compra ya está probada; la caducidad no. Es rápido de verificar porque una
    suscripción de prueba renueva cada ~5 min y caduca tras unas 6 renovaciones: dejarla correr
    media hora y comprobar que vuelve a frenar en 5 clientes.
-4. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
+5. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
    - **📷 Código de barras** con ML Kit (gratis, on-device, funciona sin internet). Encaja en
      `domain/QuickSale.kt` y en el alta de productos.
    - **📈 Gráficas** en el panel. Baratas, pero decorativas: `BusinessInsights.compare()` ya dice en
      palabras lo que la gráfica diría en pixeles.
-5. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
+6. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
    consulta nueva sobre `sale_items` unido a `sales` no canceladas por periodo. Alimenta tanto el
    panel como el score de clientes.
 
@@ -73,10 +84,6 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 - **El enforcement de App Check está APAGADO a propósito.** Los testers en versiones viejas no
   llevan App Check: activarlo antes de que actualicen les daría `PERMISSION_DENIED`.
-- **El mensaje de error de la restauración es crudo a propósito.** Hoy muestra la etapa y el texto
-  de Firestore (`... (LOOKUP): PERMISSION_DENIED: ...`). Sirvió para diagnosticar; falta volverlo un
-  texto amable con la causa detrás. Los `Log.w` de `CloudRestore` y `FirestoreSyncGateway` sí se
-  quedan: no llevan uid, ids, nombres ni montos.
 - **No se pueden correr las pruebas instrumentadas contra el teléfono de Diego.** No hay
   `applicationIdSuffix` en debug, así que el APK de prueba comparte `applicationId` con el de Play
   pero lleva otra firma: instalarlo exige desinstalar la versión de Play y **borra justo el estado
