@@ -113,7 +113,12 @@ fun NewSaleScreen(
     var discountText by remember(initialDraft) {
         mutableStateOf(initialDraft?.discountCents?.takeIf { it > 0 }?.let(Money::pesosText).orEmpty())
     }
-    var dueOption by remember { mutableStateOf(DueOption.NONE) }
+    // A sale fiado has a date by default, because that is what fiar means. Leaving this on "Sin
+    // fecha" meant almost every sale reached the ledger with no agreed date, and a sale that cannot
+    // be late is a sale the payment score has to ignore — the traffic light stayed off for everyone.
+    // A correction still starts untouched: changing a wrong product must not invent a due date the
+    // customer never agreed to (see the fallback where `due` is resolved).
+    var dueOption by remember { mutableStateOf(if (correcting) DueOption.NONE else DueOption.FIFTEEN) }
 
     // Derived, never assigned during composition. `cart` owns the lines, the field owns the text,
     // and the sale that gets validated and submitted is what the two make together.
@@ -284,7 +289,9 @@ fun NewSaleScreen(
                                 customer = null
                                 cart = SaleDraft()
                                 discountText = ""
-                                dueOption = DueOption.NONE
+                                // Back to the default, not to NONE: the next sale on this screen is
+                                // a new one, and it deserves the same date the first one got.
+                                dueOption = DueOption.FIFTEEN
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),

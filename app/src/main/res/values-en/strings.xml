@@ -70,7 +70,10 @@
     <string name="customer_score_no_history">No payment history yet</string>
     <string name="customer_score_average_days">Average delay: %1$d days</string>
     <string name="customer_score_on_time">Pays on the agreed date</string>
-    <string name="customer_score_rated_sales">Based on %1$d dated sales</string>
+    <plurals name="customer_score_rated_sales">
+        <item quantity="one">Based on %1$d dated sale</item>
+        <item quantity="other">Based on %1$d dated sales</item>
+    </plurals>
     <string name="customer_status_due_today">Due today</string>
     <string name="customer_status_due_in_days">Due in %1$d days</string>
     <string name="customer_status_overdue_one">Overdue (1 day)</string>

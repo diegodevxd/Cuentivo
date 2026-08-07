@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -345,7 +346,7 @@ private fun ScoreLine(score: CustomerScore?) {
             detail,
             score.ratedSaleCount
                 .takeIf { it > 0 }
-                ?.let { stringResource(R.string.customer_score_rated_sales, it) },
+                ?.let { pluralStringResource(R.plurals.customer_score_rated_sales, it, it) },
         ).joinToString(" · "),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
