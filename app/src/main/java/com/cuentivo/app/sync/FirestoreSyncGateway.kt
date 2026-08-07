@@ -2,6 +2,8 @@ package com.cuentivo.app.sync
 
 import android.util.Log
 import com.google.android.gms.tasks.Tasks
+import com.cuentivo.app.domain.BusinessClaimPolicy
+import com.cuentivo.app.domain.RemoteBusiness
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -46,12 +48,34 @@ class FirestoreSyncGateway(
      * whichever business happened to sort first — usually an empty one.
      */
     override fun findBusinessOwnedBy(userId: String): BusinessLookupResult = try {
-        val newest = Tasks.await(
+        val snapshots = Tasks.await(
             firestore.collection("businesses")
                 .whereEqualTo("ownerUserId", userId)
                 .get()
-        ).documents.maxByOrNull { (it.get("createdAtEpochMillis") as? Number)?.toLong() ?: 0L }
-        if (newest == null) BusinessLookupResult.None else BusinessLookupResult.Found(newest.id)
+        ).documents.associateBy { it.id }
+        val owned = snapshots.values.map {
+            RemoteBusiness(it.id, (it.get("createdAtEpochMillis") as? Number)?.toLong() ?: 0L)
+        }
+        // Owning more than one is a bug upstream, not a normal state. Logged without ids so the
+        // signal survives without putting anything identifying in logcat.
+        if (owned.size > 1) Log.w(TAG, "This account owns ${owned.size} businesses; adopting the oldest.")
+        // The oldest, not the newest. Taking the newest was backwards: a duplicate is by definition
+        // the one created later, so that handed the account its own mistake and left the ledger
+        // with the real history unreachable — every query filters by businessId.
+        val chosen = BusinessClaimPolicy.preferred(owned)
+        if (chosen == null) {
+            BusinessLookupResult.None
+        } else {
+            val document = snapshots.getValue(chosen.businessId)
+            BusinessLookupResult.Found(
+                businessId = chosen.businessId,
+                name = document.getString("name") ?: "Mi negocio",
+                currency = document.getString("currency") ?: "MXN",
+                timezone = document.getString("timezone") ?: "America/Mexico_City",
+                createdAtEpochMillis = chosen.createdAtEpochMillis,
+                updatedAtEpochMillis = (document.get("updatedAtEpochMillis") as? Number)?.toLong() ?: 0L,
+            )
+        }
     } catch (exception: Exception) {
         // Logged with the exception attached: Tasks.await wraps the Firestore status, and without
         // the stack trace the reinstall path was failing with nothing at all in logcat.

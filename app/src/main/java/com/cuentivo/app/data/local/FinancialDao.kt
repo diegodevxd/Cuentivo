@@ -161,6 +161,26 @@ interface FinancialDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun adoptMovement(movement: AccountMovementEntity)
 
+    // ---- Outbox backfill ----
+    // Everything a business owns, unfiltered, so an account upgrading to Pro publishes its whole
+    // ledger rather than the part that happens to be active. Sale items and allocations have no
+    // businessId of their own — they hang off their parent — so those two join to reach it.
+
+    @Query("SELECT * FROM sales WHERE businessId = :businessId")
+    suspend fun allSalesForBackfill(businessId: String): List<SaleEntity>
+
+    @Query("SELECT i.* FROM sale_items i JOIN sales s ON s.id = i.saleId WHERE s.businessId = :businessId")
+    suspend fun allSaleItemsForBackfill(businessId: String): List<SaleItemEntity>
+
+    @Query("SELECT * FROM payments WHERE businessId = :businessId")
+    suspend fun allPaymentsForBackfill(businessId: String): List<PaymentEntity>
+
+    @Query("SELECT a.* FROM payment_allocations a JOIN payments p ON p.id = a.paymentId WHERE p.businessId = :businessId")
+    suspend fun allAllocationsForBackfill(businessId: String): List<PaymentAllocationEntity>
+
+    @Query("SELECT * FROM account_movements WHERE businessId = :businessId")
+    suspend fun allMovementsForBackfill(businessId: String): List<AccountMovementEntity>
+
     @Query("SELECT * FROM sale_items WHERE id = :itemId")
     suspend fun saleItemForId(itemId: String): SaleItemEntity?
 

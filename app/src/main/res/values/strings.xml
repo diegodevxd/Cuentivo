@@ -353,4 +353,7 @@
     <string name="dashboard_month_title">Este mes</string>
     <string name="dashboard_month_sold">Vendido</string>
     <string name="dashboard_month_collected">Cobrado</string>
+    <string name="claim_blocked_title">No pudimos confirmar tu negocio</string>
+    <string name="claim_blocked_detail">Necesitamos revisar si esta cuenta ya tiene un negocio antes de crear uno. Revisa tu conexión e inténtalo de nuevo.</string>
+    <string name="claim_blocked_retry">Reintentar</string>
 </resources>

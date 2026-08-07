@@ -353,4 +353,7 @@
     <string name="dashboard_month_title">This month</string>
     <string name="dashboard_month_sold">Sold</string>
     <string name="dashboard_month_collected">Collected</string>
+    <string name="claim_blocked_title">We could not confirm your business</string>
+    <string name="claim_blocked_detail">We need to check whether this account already has a business before creating one. Check your connection and try again.</string>
+    <string name="claim_blocked_retry">Try again</string>
 </resources>

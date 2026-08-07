@@ -34,6 +34,10 @@ interface BusinessDao {
     @Query("SELECT * FROM businesses WHERE id = :businessId")
     suspend fun byId(businessId: String): BusinessEntity?
 
+    /** Every membership of the business. Feeds the outbox backfill. */
+    @Query("SELECT * FROM business_members WHERE businessId = :businessId")
+    suspend fun membersForBackfill(businessId: String): List<BusinessMemberEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(business: BusinessEntity)
 

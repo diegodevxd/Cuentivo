@@ -75,6 +75,8 @@ import com.cuentivo.app.domain.QuickSale
 import com.cuentivo.app.domain.SaleLineSummary
 import com.cuentivo.app.domain.SoldLine
 import com.cuentivo.app.domain.StatementEntry
+import com.cuentivo.app.domain.BusinessClaim
+import com.cuentivo.app.domain.BusinessClaimPolicy
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.domain.SyncEntitlement
 import com.cuentivo.app.ui.CorrectionCandidate
@@ -88,6 +90,7 @@ import com.cuentivo.app.ui.product.ImportStart
 import com.cuentivo.app.ui.product.ProductImportPolicy
 import com.cuentivo.app.ui.product.ProductImportRunner
 import com.cuentivo.app.ui.CuentivoApp
+import com.cuentivo.app.ui.CuentivoClaimBlockedScreen
 import com.cuentivo.app.ui.CuentivoLoadingScreen
 import com.cuentivo.app.ui.PaymentRefundFactory
 import com.cuentivo.app.ui.dashboard.DashboardUiState
@@ -110,7 +113,9 @@ import com.cuentivo.app.sync.AppCheckInstaller
 import com.cuentivo.app.sync.FirebaseEmulators
 import com.cuentivo.app.domain.CloudRestoreDecision
 import com.cuentivo.app.domain.CloudRestorePolicy
+import com.cuentivo.app.sync.BusinessLookupResult
 import com.cuentivo.app.sync.CloudRestore
+import com.cuentivo.app.sync.OutboxBackfill
 import com.cuentivo.app.sync.CloudRestoreResult
 import com.cuentivo.app.sync.FirestoreSyncGateway
 import com.cuentivo.app.sync.OwnerMembershipBootstrap
@@ -224,7 +229,16 @@ class MainActivity : ComponentActivity() {
         val database = Room.databaseBuilder(applicationContext, CuentivoDatabase::class.java, "cuentivo.db")
             .addMigrations(*CUENTIVO_MIGRATIONS)
             .build()
-        val syncQueue = SyncQueue(database.syncOperationDao(), applicationContext)
+        // Built before the queue because the queue asks it, on every enqueue, whether this plan
+        // includes the cloud at all. Nothing reaches the outbox on the free plan; OutboxBackfill
+        // queues it all in one pass the moment Pro is confirmed.
+        val entitlementStore = EntitlementStore(applicationContext)
+        val syncQueue = SyncQueue(
+            database.syncOperationDao(),
+            applicationContext,
+            allowsCloudSync = { entitlementStore.allowsCloudSync() },
+        )
+        val outboxBackfill = OutboxBackfill(database, syncQueue)
         val membershipBootstrap = OwnerMembershipBootstrap(database.businessDao(), database.syncOperationDao(), syncQueue)
         // Built here rather than lazily: it has to be ready before the "create a business" button can
         // be reached, since taking that offer is what strands the cloud copy under an unreachable id.
@@ -233,9 +247,6 @@ class MainActivity : ComponentActivity() {
         val dashboardRepository = DashboardRepository(database.businessDao(), database.financialDao())
         val sessionGuard = LocalSessionGuard(applicationContext, database)
         val authenticationGateway = FirebaseAuthenticationGateway()
-        // Held as state rather than shown directly: Play answers whenever it wants, and the
-        // composition that owns the Snackbar may not exist yet when it does.
-        val entitlementStore = EntitlementStore(applicationContext)
         val creditLimitSuggestionStore = CreditLimitSuggestionStore(applicationContext)
         val billing = BillingGateway(
             context = applicationContext,
@@ -256,10 +267,26 @@ class MainActivity : ComponentActivity() {
                 if (decision.persist) {
                     // Stored against the uid, with the time Play confirmed it, so a Worker with no
                     // Activity alive can tell both whose entitlement it is and how old it is.
+                    // Stored *before* the backfill runs, not after: the queue asks this same store
+                    // whether the plan allows the cloud, so seeding while it still reads FREE would
+                    // have every enqueue return early and publish nothing at all.
                     entitlementStore.remember(decision.userId, decision.publish)
-                    // Getting Pro back drains whatever piled up while it was gone. Those rows were
-                    // never deleted, only left unsent.
-                    if (decision.publish == SubscriptionTier.PRO) SyncScheduler.enqueue(applicationContext)
+                    if (decision.publish == SubscriptionTier.PRO) {
+                        lifecycleScope.launch {
+                            // Nothing was queued while the plan was free, so there is no pile to
+                            // drain — there is a full database and an empty outbox. Seeding is what
+                            // closes that gap, and it is idempotent, so running it on every
+                            // confirmation of Pro rather than only the first costs nothing.
+                            val businessId = database.businessDao().firstOwnedBy(decision.userId ?: "")?.id
+                            if (businessId != null) {
+                                runCatching { outboxBackfill.seed(businessId) }
+                                    // A failed seed must not take the app down with it: the rows are
+                                    // still in Room and the next confirmation of Pro tries again.
+                                    .onFailure { Log.w(TAG, "No se pudo sembrar la bandeja de salida.", it) }
+                            }
+                            SyncScheduler.enqueue(applicationContext)
+                        }
+                    }
                 }
             },
             onMessage = { billingMessageState.value = it },
@@ -430,6 +457,17 @@ class MainActivity : ComponentActivity() {
                 var restoreAttempted by remember(currentUserId) { mutableStateOf(false) }
                 var isRestoring by remember(currentUserId) { mutableStateOf(false) }
 
+                // The claim: does this account already own a business anywhere? Null while unknown.
+                //
+                // Asked on every plan, which is the fix. Consulting the cloud used to be part of
+                // *restoring*, a Pro feature, so a free account never looked — it just offered to
+                // create, and the button minted a fresh random id. Every query filters by
+                // businessId, so each of those was an island; one account collected nine of them.
+                // Asking whether you already own something is data integrity, not a paid feature.
+                // Downloading the ledger still is, and that has not changed.
+                var claim by remember(currentUserId) { mutableStateOf<BusinessClaim?>(null) }
+                var claimAttempt by remember(currentUserId) { mutableIntStateOf(0) }
+
                 // An empty device waits for Play before it offers to create anything. Without this
                 // the offer is on screen within a second of opening, long before the subscription is
                 // known, and taking it mints a second business while the real one sits in the cloud.
@@ -447,8 +485,43 @@ class MainActivity : ComponentActivity() {
                 }
                 val waitingForEntitlement =
                     hasLocalBusiness == false && !entitlementResolved && !entitlementWaitExpired
-                LaunchedEffect(currentUserId, tier, sessionReady) {
+
+                // Resolves the claim before anything can be created. Re-runs on retry and whenever
+                // the plan changes, because a lookup that failed offline has to be able to succeed
+                // later without restarting the app.
+                LaunchedEffect(currentUserId, sessionReady, refreshKey, claimAttempt) {
                     if (!sessionReady) return@LaunchedEffect
+                    if (database.businessDao().firstOwnedBy(currentUserId) != null) {
+                        claim = BusinessClaim.UseLocal
+                        return@LaunchedEffect
+                    }
+                    claim = null
+                    val found = withContext(Dispatchers.IO) { firestoreGateway.findBusinessOwnedBy(currentUserId) }
+                    claim = BusinessClaimPolicy.decide(
+                        hasLocalBusiness = false,
+                        remoteBusinessId = (found as? BusinessLookupResult.Found)?.businessId,
+                        lookupFailed = found is BusinessLookupResult.Failure,
+                    )
+                    // Adopting on the free plan: take the id, not the ledger. Written with the
+                    // remote's own timestamps so this row can never win a merge against the copy it
+                    // was adopted from and rename it back to the default.
+                    val remote = found as? BusinessLookupResult.Found
+                    if (claim is BusinessClaim.AdoptRemote && tier != SubscriptionTier.PRO && remote != null) {
+                        val adopted = BusinessEntity(
+                            remote.businessId, remote.name, currentUserId, remote.currency,
+                            remote.timezone, remote.createdAtEpochMillis, remote.updatedAtEpochMillis,
+                        )
+                        database.businessDao().upsert(adopted)
+                        membershipBootstrap.ensure(adopted)
+                        refreshKey++
+                    }
+                }
+
+                LaunchedEffect(currentUserId, tier, sessionReady, claim) {
+                    if (!sessionReady) return@LaunchedEffect
+                    // Only a claim that found something remote is worth downloading, and only Pro
+                    // may download it. CloudRestorePolicy still owns that half of the decision.
+                    if (claim !is BusinessClaim.AdoptRemote) return@LaunchedEffect
                     val decision = CloudRestorePolicy.decide(
                         tier = tier,
                         hasLocalBusiness = database.businessDao().firstOwnedBy(currentUserId) != null,
@@ -479,8 +552,17 @@ class MainActivity : ComponentActivity() {
                     isRestoring = false
                 }
 
-                if (!sessionReady || isRestoring || waitingForEntitlement) {
+                // The claim gates the whole screen, not just the restore. While it is unresolved
+                // nothing that can mint a business is reachable — that is the point of it.
+                if (!sessionReady || isRestoring || waitingForEntitlement || claim == null) {
                     CuentivoLoadingScreen()
+                } else if (claim == BusinessClaim.Blocked) {
+                    // The lookup failed, so whether this account owns a business is unknown. The
+                    // app used to treat that as "owns none" and let the offer through, which is the
+                    // single most expensive assumption in this file: it needs no free plan and no
+                    // reinstall, just a bad connection at the wrong second. Not knowing has to mean
+                    // not creating, so this offers a retry and nothing else.
+                    CuentivoClaimBlockedScreen(onRetry = { claimAttempt++ })
                 } else {
                 val viewModel = remember(currentUserId) {
                     // Bound to the signed-in owner, never to "the first business in the database".

@@ -78,7 +78,25 @@ interface SyncRemotePullGateway {
 }
 
 sealed interface BusinessLookupResult {
-    data class Found(val businessId: String) : BusinessLookupResult
+    /**
+     * The account owns [businessId] in the cloud.
+     *
+     * The descriptive fields ride along so a **free** account can adopt the id without downloading
+     * anything: it writes the business row locally and keeps working under the id it already owns,
+     * instead of minting a second one. Pulling the ledger itself stays a Pro feature.
+     *
+     * The timestamps default to zero on purpose. An adopted row that claims to be older than the
+     * remote copy can only lose the `RemoteMergePolicy` comparison, so a caller that does not
+     * supply them can never overwrite a name someone actually chose.
+     */
+    data class Found(
+        val businessId: String,
+        val name: String = "Mi negocio",
+        val currency: String = "MXN",
+        val timezone: String = "America/Mexico_City",
+        val createdAtEpochMillis: Long = 0L,
+        val updatedAtEpochMillis: Long = 0L,
+    ) : BusinessLookupResult
 
     /** The account is real but owns no business remotely — a genuinely new user, not an error. */
     data object None : BusinessLookupResult

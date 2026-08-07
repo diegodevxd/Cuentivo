@@ -59,6 +59,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
@@ -106,6 +108,41 @@ import com.cuentivo.app.ui.dashboard.DashboardUiState
 fun CuentivoLoadingScreen() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
+    }
+}
+
+/**
+ * Shown when the app cannot tell whether this account already owns a business.
+ *
+ * It offers a retry and nothing else — deliberately no way forward. Creating a business here is
+ * what mints a duplicate id, and every query filters by businessId, so the customers already in the
+ * cloud would become unreachable: present, paid for, and invisible. Waiting is recoverable;
+ * a second business is not.
+ */
+@Composable
+fun CuentivoClaimBlockedScreen(onRetry: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize().padding(NeoSpacing.lg), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
+        ) {
+            Text(
+                stringResource(R.string.claim_blocked_title),
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                stringResource(R.string.claim_blocked_detail),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            NeoAction(
+                label = stringResource(R.string.claim_blocked_retry),
+                onClick = onRetry,
+                modifier = Modifier.testTag("claim-retry"),
+            )
+        }
     }
 }
 

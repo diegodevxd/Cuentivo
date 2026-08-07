@@ -15,9 +15,38 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   primera que lleva el semáforo, la tipografía grande y el borrado múltiple. Se les mandó un
   mensaje pidiendo tres cosas concretas: si se lee cómodo, si algún texto se corta, y cómo se ve
   la barra de abajo en un Android viejo.
-- **1.15 / versionCode 21 compilada y firmada, SIN SUBIR** (2026-08-07). Trae dos cosas: la fecha
-  pactada en el alta rápida (ver abajo) y el texto del respaldo condicionado al plan. Conviene
-  esperar la retro de la 1.14 antes de subirla, o se pierde esa señal antes de recibirla.
+- **1.15 / versionCode 21 compilada y firmada, SIN SUBIR** (2026-08-07). Trae la fecha pactada en el
+  alta rápida, el texto del respaldo condicionado al plan y el arreglo de negocios duplicados.
+  Conviene esperar la retro de la 1.14 antes de subirla, o se pierde esa señal antes de recibirla.
+- ⚠️ **El arreglo de duplicados NO se ha probado en teléfono.** Compila y las 288 JVM pasan, pero
+  toca la **ruta de arranque**: un error ahí bloquea la entrada, que es peor que el bug que arregla.
+  Faltan los cuatro casos del plan: nube vacía en Gratis, adopción al reinstalar en Gratis, backfill
+  al pasar a Pro, y modo avión (debe salir `Blocked`, nunca el botón de crear).
+- **✅ Los 9 negocios duplicados fueron borrados** el 2026-08-07 con
+  `firebase firestore:delete --recursive` (CLI vía `npx`, sesión `capihwlabs@gmail.com`). Verificado:
+  la consulta por `ownerUserId` devuelve vacío y las subcolecciones también.
+- **✅ Arreglada la causa de los duplicados.** Consultar la nube dejó de ser parte de *restaurar*
+  (Pro) y pasó a ser parte de **reclamar** (todos los planes): preguntar si ya tienes un negocio es
+  integridad de datos, no función de pago; bajar el libro mayor sigue siendo Pro. `domain/
+  BusinessClaimPolicy.kt` decide entre `UseLocal` / `AdoptRemote` / `CreateNew` / **`Blocked`**.
+  `Blocked` es lo importante: **si el lookup falla, no se crea nada**. Antes "no sé" se trataba como
+  "no tienes", y bastaba mala conexión —sin plan Gratis ni reinstalación— para acuñar un duplicado.
+  En Gratis se adopta sólo la fila del negocio, con los timestamps del remoto para que no pueda
+  ganarle una fusión y renombrarlo.
+- **`findBusinessOwnedBy` ahora elige el MÁS ANTIGUO**, no el más nuevo. Elegir el más nuevo era al
+  revés: un duplicado es por definición el creado después, así que devolvía el error del usuario y
+  dejaba inalcanzable el libro con la historia real. Desempate determinista por id, o dos teléfonos
+  adoptarían ids distintos.
+- **En Gratis ya no se encola nada a la nube.** El gate vive **dentro de `SyncQueue`**, no en los 26
+  call sites — repartir el `if` es garantía de olvidar uno. Antes el outbox se llenaba igual y
+  `SyncEntitlement` sólo frenaba al *Worker*: todo lo acumulado se publicaba de golpe al confirmarse
+  Pro, incluidos negocios abandonados hacía reinstalaciones. Al pasar a Pro, `sync/OutboxBackfill.kt`
+  siembra la cola desde Room en un solo paso; es idempotente porque el id es
+  `SHA-256(businessId|entityType|entityId|revision)` con `INSERT IGNORE`.
+- ⚠️ **El backfill duplica los payloads de las rutas de escritura de `MainActivity`.** Si se agrega
+  una columna a una entidad **hay que añadirla en los dos sitios**: la prueba de exhaustividad
+  detecta un **tipo** faltante, no un **campo** faltante.
+- Consultas nuevas `allForBackfill` / `*ForBackfill` en 4 DAOs, **sin migración**: Room sigue en 4.
 - **✅ El alta rápida ya pide fecha pactada.** Era el último hueco del semáforo: `MainActivity`
   guardaba `dueDateEpochDay = null` a fuerza, así que toda venta por la ruta rápida quedaba fuera
   del score para siempre. `QuickSale` ahora lleva `dueInDays` (días, no fecha — el dominio sigue
@@ -38,12 +67,12 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   → iniciar sesión devuelve clientes y productos solos. Es la evidencia de que lo que cobra Pro
   sirve de punta a punta. **`restore()` corre en `Dispatchers.IO` y ahí se queda**: `Tasks.await`
   es bloqueante y Play Services lo rechaza en el hilo principal.
-- Suites en verde en la última corrida: **273 pruebas JVM**, 0 fallos, con `assembleDebug`,
+- Suites en verde en la última corrida: **288 pruebas JVM**, 0 fallos, con `assembleDebug`,
   `assembleDebugAndroidTest`, `assembleRelease` y `bundleRelease` exitosos (2026-08-07). Las
   instrumentadas compilan pero **no se han corrido**: no hay emulador levantado y no se pueden
   correr contra el teléfono de Diego.
 - Room sigue en `version = 4`. Firebase: proyecto `organitazionlabs` (600636825165), plan Spark.
-- Paridad de textos es/en: **317 `<string>` + 3 `<plurals>` en cada idioma**.
+- Paridad de textos es/en: **320 `<string>` + 3 `<plurals>` en cada idioma**.
 - ⚠️ **La puerta del idioma de `CLAUDE.md` no ve texto dentro de un `if`.** El apartado de plan
   llevaba todo su copy en español duro (`text = if (free) "Plan Gratis" else ...`) y el grep nunca
   lo marcó, porque sólo detecta `text = "` seguido de letras. Con la app en inglés seguía saliendo
@@ -114,6 +143,8 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   `applicationIdSuffix` en debug, así que el APK de prueba comparte `applicationId` con el de Play
   pero lleva otra firma: instalarlo exige desinstalar la versión de Play y **borra justo el estado
   que se quiere probar**, además de dejar a Play Billing sin ver la suscripción.
+- **El arreglo de duplicados vive en la ruta de arranque y no se ha probado en dispositivo.** Es el
+  riesgo abierto más grande ahora mismo.
 - **La caducidad de Pro nunca se ha visto ocurrir**, y el 2026-08-07 se averiguó por qué. Una serie
   de compras de prueba cancelada la noche anterior (último pedido 7:25 p.m., renovaciones cada 5
   min) **seguía otorgando Pro 13 horas después**, incluso tras desinstalar la app y limpiar la

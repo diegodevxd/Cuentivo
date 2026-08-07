@@ -26,6 +26,17 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE id = :customerId")
     suspend fun byId(customerId: String): CustomerEntity?
 
+    /**
+     * Every customer of the business, archived and deleted ones included.
+     *
+     * Deliberately unfiltered, unlike [searchActive]: this feeds the outbox backfill, and a
+     * customer archived while the account was on the free plan still has to reach the cloud. The
+     * `isActive` and `deletedAtEpochMillis` columns travel in the payload, so the remote copy ends
+     * up archived too rather than resurrected.
+     */
+    @Query("SELECT * FROM customers WHERE businessId = :businessId")
+    suspend fun allForBackfill(businessId: String): List<CustomerEntity>
+
     /** Adopts a remote customer wholesale. Only call once the merge planner says the remote wins. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(customer: CustomerEntity)

@@ -23,6 +23,10 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE id = :productId")
     suspend fun byId(productId: String): ProductEntity?
 
+    /** Every product, archived ones included. See `CustomerDao.allForBackfill` for why unfiltered. */
+    @Query("SELECT * FROM products WHERE businessId = :businessId")
+    suspend fun allForBackfill(businessId: String): List<ProductEntity>
+
     /** Adopts a remote product wholesale. Only call once the merge planner says the remote wins. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(product: ProductEntity)
