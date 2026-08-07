@@ -28,6 +28,15 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   sin un solo error, que es como se ve un archivo vacío. Corregido el 2026-08-06 y **verificado
   contra el archivo real de Diego: 31 filas → 30 productos aceptados, 0 rechazados**, con acentos y
   precios correctos.
+- **✅ La recuperación desde la nube FUNCIONA.** Verificado por Diego el 2026-08-06 con la
+  **1.9.1 / versionCode 14**: desinstalar → reinstalar → iniciar sesión devuelve clientes y
+  productos solos, sin tocar "Crear negocio". Es la primera evidencia de que lo que cobra Pro
+  funciona de punta a punta. La causa real, tras tres diagnósticos fallidos, no era ni reglas ni
+  índices ni App Check: **`Tasks.await` es bloqueante y Play Services lo rechaza en el hilo
+  principal**, y el único llamador de `CloudRestore.restore` es un `LaunchedEffect` de Compose, que
+  arranca en `Dispatchers.Main`. Fallaba en la primera llamada sin tocar la red — por eso logcat
+  salía vacío, y por eso `SyncWorker` sí funcionaba (ya corre en hilo de fondo). `restore()` ahora
+  envuelve todo en `withContext(Dispatchers.IO)`.
 - Suites en verde en la última corrida: **260 pruebas JVM**, 0 fallos, con `assembleDebug` y
   `assembleDebugAndroidTest` exitosos (2026-08-06). Instrumentadas: 216 + `CloudRestoreTest`, sin
   correr todavía en emulador.
@@ -36,9 +45,8 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Qué sigue, en orden de valor
 
-1. **Probar la restauración en el teléfono** (es el blocker de mayor valor): `firebase deploy --only
-   firestore:rules`, luego desinstalar / reinstalar / iniciar sesión y confirmar que los clientes
-   vuelven solos sin tocar "Crear negocio". Hasta que eso se vea, la nube de Pro no está probada.
+1. **Suavizar el mensaje de fallo de restauración** y publicar la 1.9.1 más allá de prueba interna.
+   El texto crudo con el código de Firestore ya cumplió su función.
 2. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
    2026-08-06, cuando los testers hayan actualizado. Si casi todas las peticiones salen
    *verificadas*, **activar el enforcement**. Si salen *no verificadas*, ver el primer blocker.
@@ -62,42 +70,14 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 - **El enforcement de App Check está APAGADO a propósito.** Los testers en versiones viejas no
   llevan App Check: activarlo antes de que actualicen les daría `PERMISSION_DENIED`.
-- **⚠️ La restauración desde la nube sigue sin probarse en el teléfono.** La 1.7 no restauró, y la
-  inspección de Firestore del 2026-08-06 dio evidencia dura de por qué. **La subida funciona
-  perfecto**: el uid `6A4cRF7cIkbzCBBfnoWZMzt2yYE2` posee **cuatro** negocios (19:59, 20:14, 20:21 y
-  21:00) y los 7 clientes de prueba están íntegros en el más reciente, `5b0d730b…`. El problema es
-  sólo la recuperación, y eran dos fallos encadenados, corregidos en la 1.8:
-  1. `findBusinessOwnedBy` usaba `limit(1)` **sin ordenar**. Firestore responde por id de documento,
-     que es un UUID aleatorio, así que elegía un negocio arbitrario — en este caso el vacío de las
-     19:59. Aun restaurando bien, la app habría abierto vacía. Ahora trae los del dueño y se queda
-     con el de `createdAtEpochMillis` mayor, comparado en memoria para **no exigir un índice
-     compuesto** (`whereEqualTo` + `orderBy` sí lo exigiría, y sin desplegarlo la consulta falla
-     entera con FAILED_PRECONDITION).
-  2. **La carrera que realmente ocurrió a las 21:00**: `tierState` arranca en FREE y "plan gratis" era
-     indistinguible de "Play todavía no contesta", así que "Crear negocio" quedaba alcanzable a
-     segundos de abrir. Diego lo tocó antes de que Play confirmara Pro y acuñó el cuarto negocio.
-     Ahora `entitlementResolvedState` separa ambos casos y un dispositivo vacío espera a Play hasta
-     `ENTITLEMENT_WAIT_MILLIS` (8 s) antes de ofrecer nada.
-  **Probado en la 1.8 el 2026-08-06 y SIGUE FALLANDO.** Diego, con Pro reconocida por la app e
-  internet bien, recibe "No se pudo recuperar tu información de la nube" — o sea
-  `CloudRestoreResult.Failed`. Se desplegó además un tercer arreglo (reordenar `isOwner` antes que
-  `canReadBusiness` en `allow read` de `/businesses`, porque `canReadBusiness` gasta 2 accesos por
-  negocio y el límite es 10 por consulta: con 6 negocios eran 12). **No bastó.**
-  Descartado ya: el documento de miembro está correcto (`status: ACTIVE`, `role: OWNER`).
-  **El problema de fondo es que la app oculta la causa**: el `SyncFailure.message` trae el código de
-  Firestore y se descarta al armar el texto de UI, y no hay un solo `Log` en el camino. Logcat no
-  sirve hoy — se capturó y no aparece ni una línea de la app ni del SDK. **Nada más se arregla a
-  ciegas**: el siguiente paso es una 1.9 que muestre y registre el error real, distinguiendo si
-  falló el descubrimiento o la descarga.
+- **El mensaje de error de la restauración es crudo a propósito.** Hoy muestra la etapa y el texto
+  de Firestore (`... (LOOKUP): PERMISSION_DENIED: ...`). Sirvió para diagnosticar; falta volverlo un
+  texto amable con la causa detrás. Los `Log.w` de `CloudRestore` y `FirestoreSyncGateway` sí se
+  quedan: no llevan uid, ids, nombres ni montos.
 - **No se pueden correr las pruebas instrumentadas contra el teléfono de Diego.** No hay
   `applicationIdSuffix` en debug, así que el APK de prueba comparte `applicationId` con el de Play
   pero lleva otra firma: instalarlo exige desinstalar la versión de Play y **borra justo el estado
   que se quiere probar**, además de dejar a Play Billing sin ver la suscripción.
-- **`firestore.rules` cambió y hay que desplegarlo antes de publicar la app.** `/businesses/{id}`
-  ahora también permite leer al dueño (`isOwner(resource.data.ownerUserId)`), sin lo cual un
-  teléfono reinstalado no puede encontrar su negocio: `canReadBusiness` exige el documento de
-  miembro, cuyo id es justo lo que se perdió. Sólo amplía acceso del dueño a lo suyo, así que es
-  seguro desplegarlo antes de que los testers actualicen.
 - **La caducidad de Pro nunca se ha visto ocurrir.** Que quien deja de pagar deje de tener nube es
   la mitad del ciclo de cobro que sigue sin evidencia.
 - ~~La SHA-256 podría ser la de la clave de carga~~ **RESUELTO el 2026-08-06**: el logcat del
