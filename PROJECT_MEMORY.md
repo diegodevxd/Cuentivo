@@ -15,10 +15,32 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   primera que lleva el semáforo, la tipografía grande y el borrado múltiple. Se les mandó un
   mensaje pidiendo tres cosas concretas: si se lee cómodo, si algún texto se corta, y cómo se ve
   la barra de abajo en un Android viejo.
-- **1.15 / versionCode 21 compilada y firmada, SIN SUBIR** (2026-08-07). Trae la fecha pactada en el
+- **1.15 / versionCode 22 en PRUEBA INTERNA, sin subir a prueba cerrada** (2026-08-07). Trae la fecha pactada en el
   alta rápida, el texto del respaldo condicionado al plan y el arreglo de negocios duplicados.
   Conviene esperar la retro de la 1.14 antes de subirla, o se pierde esa señal antes de recibirla.
-- 🔴 **BLOQUEANTE: el backfill sólo sube el negocio. NO SUBIR LA 1.15 A PRUEBA CERRADA.**
+- ✅ **RESUELTO Y VERIFICADO EN DISPOSITIVO: el backfill sube todo.** Con la **1.15 / versionCode 22**
+  por el canal de **prueba interna**, actualizada encima del estado roto (sin desinstalar, que era
+  la única forma de probar la segunda corrección). Firestore bajo `1668fc61`: **1 miembro** (id = uid,
+  OWNER/ACTIVE), **3 clientes**, **3 ventas**, **3 movimientos**. Orden respetado: miembro a las
+  `19:54:46.153`, el resto detrás. Las 3 ventas con `dueDateEpochDay = 20687` — el arreglo del alta
+  rápida también confirmado en producción.
+  **Eran dos bugs, no uno**: (1) el `entityId` del miembro usaba el id local compuesto
+  `"businessId:userId"` en vez del uid que exige `match /members/{memberUserId}`; (2) sin
+  `reopenParkedOperations()` el arreglo no habría servido a nadie que ya hubiera fallado, porque
+  reencolar no revive una fila `PERMANENT` — el id del outbox es hash de los mismos cuatro campos y
+  `INSERT IGNORE` la deja estacionada. Ver commit `c05b895`.
+  **Lección**: la prueba de exhaustividad cubre que no falte un *tipo*, no que el *id* de un tipo
+  cubierto sea correcto. La ruta remota sólo se verifica en dispositivo.
+- 📌 **Canal correcto para probar: PRUEBA INTERNA**, no "Uso compartido interno de apps". Prueba
+  interna tiene lista de probadores propia, **separada de la prueba cerrada** (los 12 testers de la
+  1.14 no reciben nada), y **sí aparece como actualización en Play Store**. Uso compartido interno
+  es el de links y no notifica.
+- ⚠️ **Dos builds distintos comparten `versionName` 1.15** (versionCode 21 con el bug, 22 con el
+  arreglo). Play distingue por `versionCode`, así que funciona, pero en la Play Store se ven igual.
+  Para saber cuál hay instalada: `adb shell dumpsys package com.cuentivo.app | grep versionCode`.
+  **Regla para adelante**: si el cambio importa lo bastante como para querer distinguirlo, subir
+  también el `versionName`.
+- 🔴 **HISTÓRICO (ya resuelto): el backfill sólo subía el negocio.**
   Probado en teléfono el 2026-08-07 con la 1.15 instalada por **Uso compartido interno**
   (`versionCode=21`, `installerPackageName=com.android.vending`, así que la prueba es válida).
   Secuencia: crear negocio + 3 clientes en Gratis → suscribirse a Pro. Resultado en Firestore:
@@ -132,8 +154,9 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Qué sigue, en orden de valor
 
-1. 🔴 **Arreglar el backfill: sólo sube el negocio.** Es lo primero, bloquea la 1.15 entera. Ver el
-   detalle y la hipótesis en "Dónde estamos". Empezar por conseguir logs de la app en release.
+1. **Probar el caso 3: la adopción.** Es lo único que queda del plan de duplicados. Desinstalar,
+   reinstalar, iniciar sesión con datos ya en la nube: deben volver los clientes y **seguir habiendo
+   un solo negocio** en Firestore. Ahí es donde antes nacía el duplicado.
 2. **Escuchar lo que reporten los testers de la 1.14**, sobre todo si algún texto se corta con la
    tipografía nueva y cómo se ve el navbar en un Android 11 o menor — eso nunca se ha visto, aquí
    sólo hay imagen API 37.
