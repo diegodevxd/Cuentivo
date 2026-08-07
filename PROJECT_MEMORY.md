@@ -11,38 +11,29 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 ## Dónde estamos
 
 - Rama `codex/neo-fintech`, comiteada y subida a `origin`.
-- **1.5 / versionCode 9 publicada en prueba cerrada** con 12 testers. Lo que se rompa, lo ven ellos.
-- **1.6 / versionCode 10 publicada en prueba interna** e instalada desde Play en el teléfono de
-  Diego (`installerPackageName=com.android.vending`). Lleva la reconexión de Play Billing
-  (`domain/BillingReconnectPolicy.kt`): antes, una sola desconexión del servicio dejaba el botón de
-  comprar inservible hasta reiniciar la app.
-- **La compra de Pro funciona de punta a punta.** Primera vez que hay evidencia. La suscripción
-  comprada en la 1.5 la reconoció la 1.6 sin reinstalar nada: una compra pertenece a la cuenta de
-  Google, no a la versión.
-- **Actualizar de versión no borra datos.** Verificado por Diego al pasar de 1.5 a 1.6: clientes,
-  ventas e importación de Excel intactos. Room migró sin incidentes.
-- **Fase 1 cerrada y entregada.** La 1.5 llevó a los testers las tandas 4–7: alta rápida de venta,
-  respaldo cifrado, cobros del día y resumen del mes, App Check y ficha de Play.
-- **Importar Excel estaba roto para archivos con prefijo de namespace** (`<x:row>` en vez de
-  `<row>`, ambos válidos en OOXML): `XlsxReader` no encontraba ninguna fila y reportaba 0 productos
-  sin un solo error, que es como se ve un archivo vacío. Corregido el 2026-08-06 y **verificado
-  contra el archivo real de Diego: 31 filas → 30 productos aceptados, 0 rechazados**, con acentos y
-  precios correctos.
-- **✅ La recuperación desde la nube FUNCIONA.** Verificado por Diego el 2026-08-06 con la
-  **1.9.1 / versionCode 14**: desinstalar → reinstalar → iniciar sesión devuelve clientes y
-  productos solos, sin tocar "Crear negocio". Es la primera evidencia de que lo que cobra Pro
-  funciona de punta a punta. La causa real, tras tres diagnósticos fallidos, no era ni reglas ni
-  índices ni App Check: **`Tasks.await` es bloqueante y Play Services lo rechaza en el hilo
-  principal**, y el único llamador de `CloudRestore.restore` es un `LaunchedEffect` de Compose, que
-  arranca en `Dispatchers.Main`. Fallaba en la primera llamada sin tocar la red — por eso logcat
-  salía vacío, y por eso `SyncWorker` sí funcionaba (ya corre en hilo de fondo). `restore()` ahora
-  envuelve todo en `withContext(Dispatchers.IO)`.
-- Suites en verde en la última corrida: **260 pruebas JVM**, 0 fallos, con `assembleDebug` y
-  `assembleDebugAndroidTest` exitosos (2026-08-06). Instrumentadas: 216 + `CloudRestoreTest`, sin
-  correr todavía en emulador.
+- **1.14 / versionCode 20 subida a prueba cerrada** el 2026-08-07, con los 12 testers. Es la
+  primera que lleva el semáforo, la tipografía grande y el borrado múltiple. Se les mandó un
+  mensaje pidiendo tres cosas concretas: si se lee cómodo, si algún texto se corta, y cómo se ve
+  la barra de abajo en un Android viejo.
+- **La compra de Pro funciona de punta a punta**, y **actualizar de versión no borra datos**
+  (ambos verificados al pasar de 1.5 a 1.6). Una compra pertenece a la cuenta de Google, no a la
+  versión.
+- **Fase 1 cerrada y entregada** (tandas 4–7). Importar Excel verificado contra el archivo real de
+  Diego: 31 filas → 30 productos, 0 rechazados.
+- **✅ La recuperación desde la nube FUNCIONA** (verificado 2026-08-06): desinstalar → reinstalar
+  → iniciar sesión devuelve clientes y productos solos. Es la evidencia de que lo que cobra Pro
+  sirve de punta a punta. **`restore()` corre en `Dispatchers.IO` y ahí se queda**: `Tasks.await`
+  es bloqueante y Play Services lo rechaza en el hilo principal.
+- Suites en verde en la última corrida: **270 pruebas JVM**, 0 fallos, con `assembleDebug`,
+  `assembleDebugAndroidTest`, `assembleRelease` y `bundleRelease` exitosos (2026-08-07). Las
+  instrumentadas compilan pero **no se han corrido**: no hay emulador levantado y no se pueden
+  correr contra el teléfono de Diego.
 - Room sigue en `version = 4`. Firebase: proyecto `organitazionlabs` (600636825165), plan Spark.
-- Paridad de textos es/en: **303 `<string>` + 1 `<plurals>` en cada idioma**. El plural es el
-  primero del proyecto (`customer_score_rated_sales`): decía "Sobre 1 ventas con fecha".
+- Paridad de textos es/en: **316 `<string>` + 3 `<plurals>` en cada idioma**.
+- ⚠️ **La puerta del idioma de `CLAUDE.md` no ve texto dentro de un `if`.** El apartado de plan
+  llevaba todo su copy en español duro (`text = if (free) "Plan Gratis" else ...`) y el grep nunca
+  lo marcó, porque sólo detecta `text = "` seguido de letras. Con la app en inglés seguía saliendo
+  en español. Corregido el 2026-08-07, pero **el grep solo no basta para auditar idiomas**.
 - **✅ 🟢🟡🔴 El semáforo de clientes FUNCIONA en teléfono real.** Verificado por Diego el 2026-08-07
   con la **1.11 / versionCode 17** instalada de lado. `domain/CustomerScoreCalculator.kt` deriva la
   puntualidad del libro mayor: puntual ≤ 3 días de retraso promedio, tarda ≤ 20, moroso arriba; y
@@ -55,11 +46,33 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   una venta **sigue** arrancando sin fecha: cambiar un producto equivocado no puede inventarle al
   cliente un plazo que jamás acordó. Lección que se repite: una función puede estar correcta,
   probada y aun así ser invisible porque nadie alimenta el dato del que vive.
+- **✅ Bloque de diseño para adultos mayores** (2026-08-07, aprobado por Diego en teléfono real).
+  El usuario objetivo son sus papás y gente con lentes, y eso decidió todo:
+  - **Tipografía un escalón por encima del estándar de Material**, no sólo hasta él: cuerpo
+    12 → 16sp, navbar 10 → 13sp. Costo aceptado: ~4 filas por pantalla en vez de ~6.
+  - **17 alturas fijas pasaron a `heightIn(min = ...)`**, o las letras grandes se cortan. Regalo:
+    la app crece con el ajuste de fuente del sistema. ⚠️ Trampa que dejó: un `fillMaxSize()` dentro
+    de una tarjeta con altura mínima se queda sin qué llenar y pega el contenido arriba — se
+    resuelve con `height(IntrinsicSize.Min)`. Corregido en `CustomersScreen`; **puede quedar el
+    mismo patrón en filas que no se revisaron a fondo**.
+  - **El botón de la cuenta dice "Tu cuenta"** con ícono de persona; antes era la insignia "C" más
+    la palabra "Cuentivo" y se leía como logotipo, no como control.
+  - **Navbar claymórfico hecho sólo con degradados y sombras, sin `Modifier.blur`**: blur es
+    `RenderEffect`, no dibuja nada por debajo de API 31, y la app arranca en `minSdk 24`.
+  - **Las pantallas entran animadas**, sólo entrada: `content` se dibuja del estado actual del
+    host, así que animar la salida cruzaría la pantalla nueva consigo misma.
+- **El apartado de plan ya se compara y trae precio real.** Antes: una sola tarjeta —la del plan que
+  ya tenías— sin precio, así que no se veía lo que *no* tienes. Ahora los dos planes en pantalla,
+  el tuyo con insignia. El precio sale de `ProductDetails.formattedPrice`, en la moneda de cada
+  país; si Play no contesta se apunta a Play en vez de inventar cifra. Nunca escrito a mano.
+- **Los productos se borran por selección** (mantener presionado). El lote llama `onArchiveProduct`
+  una vez por producto: archivar es idempotente y no hizo falta camino nuevo en el host.
 
 ## Qué sigue, en orden de valor
 
-1. **Subir la 1.11 a prueba interna.** Lleva el semáforo ya visto funcionando y el mensaje amable
-   de fallo de restauración. Hasta hoy sólo existe como APK firmado instalado de lado; falta el AAB.
+1. **Escuchar lo que reporten los testers de la 1.14**, sobre todo si algún texto se corta con la
+   tipografía nueva y cómo se ve el navbar en un Android 11 o menor — eso nunca se ha visto, aquí
+   sólo hay imagen API 37.
 2. **Darle fecha de pago al alta rápida.** Hoy `MainActivity.kt:662` guarda `dueDateEpochDay = null`
    a fuerza y sin opción, así que toda venta hecha por la ruta rápida queda fuera del semáforo para
    siempre. Es el hueco que le queda a la función. El costo es que un selector le quita justo lo
@@ -90,13 +103,11 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   que se quiere probar**, además de dejar a Play Billing sin ver la suscripción.
 - **La caducidad de Pro nunca se ha visto ocurrir.** Que quien deja de pagar deje de tener nube es
   la mitad del ciclo de cobro que sigue sin evidencia.
-- ~~La SHA-256 podría ser la de la clave de carga~~ **RESUELTO el 2026-08-06**: el logcat del
-  teléfono mostró `Finsky: requestIntegrityToken() finished for com.cuentivo.app`. Play Integrity
-  emite token en producción, así que la SHA registrada es la correcta.
-- **La librería de Play Billing no registra nada en logcat en builds release.** No busques ahí la
-  confirmación del `acknowledge`: se lee del código (`BillingGateway.kt:238-261`, que reconoce toda
-  compra pendiente en cada arranque) o de Play Console. Las compras de prueba **no aparecen en los
-  informes de ingresos**, sólo en la vista de suscripciones — no confundir eso con un fallo.
+- **Play Billing no registra nada en logcat en builds release.** El `acknowledge` se lee del
+  código (`BillingGateway.kt`) o de Play Console. Las compras de prueba **no aparecen en los
+  informes de ingresos**, sólo en la vista de suscripciones — eso no es un fallo.
+- **Instalar de lado deja `installerPackageName=null`**, y entonces Play Billing puede no ver la
+  suscripción ni entregar el precio de Pro. Para probar cobros hay que instalar desde Play.
 
 ## Pendientes de fondo
 

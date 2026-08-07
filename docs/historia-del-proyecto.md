@@ -1008,3 +1008,31 @@ No se modificaron UI, Firebase, Firestore Rules ni Play Console en estos dos car
   una app de cámara instalada al generar el siguiente APK de prueba.
 - `assembleDebug` posterior terminó `BUILD SUCCESSFUL` en 10 s; APK actual:
   `app/build/outputs/apk/debug/app-debug.apk`.
+
+## 2026-08-07 — Detalle bajado del estado vivo
+
+Texto completo de entradas que dejaron de estar vigentes en `PROJECT_MEMORY.md` cuando la 1.14 salió a prueba cerrada. Se conserva aquí por si hace falta arqueología de la decisión.
+
+- **Fase 1 cerrada y entregada.** La 1.5 llevó a los testers las tandas 4–7: alta rápida de venta,
+  respaldo cifrado, cobros del día y resumen del mes, App Check y ficha de Play.
+- **Importar Excel estaba roto para archivos con prefijo de namespace** (`<x:row>` en vez de
+  `<row>`, ambos válidos en OOXML): `XlsxReader` no encontraba ninguna fila y reportaba 0 productos
+  sin un solo error, que es como se ve un archivo vacío. Corregido el 2026-08-06 y **verificado
+  contra el archivo real de Diego: 31 filas → 30 productos aceptados, 0 rechazados**, con acentos y
+  precios correctos.
+
+- **✅ La recuperación desde la nube FUNCIONA.** Verificado por Diego el 2026-08-06 con la
+  **1.9.1 / versionCode 14**: desinstalar → reinstalar → iniciar sesión devuelve clientes y
+  productos solos, sin tocar "Crear negocio". Es la primera evidencia de que lo que cobra Pro
+  funciona de punta a punta. La causa real, tras tres diagnósticos fallidos, no era ni reglas ni
+  índices ni App Check: **`Tasks.await` es bloqueante y Play Services lo rechaza en el hilo
+  principal**, y el único llamador de `CloudRestore.restore` es un `LaunchedEffect` de Compose, que
+  arranca en `Dispatchers.Main`. Fallaba en la primera llamada sin tocar la red — por eso logcat
+  salía vacío, y por eso `SyncWorker` sí funcionaba (ya corre en hilo de fondo). `restore()` ahora
+  envuelve todo en `withContext(Dispatchers.IO)`.
+
+- **La compra de Pro funciona de punta a punta.** Primera vez que hay evidencia. La suscripción
+  comprada en la 1.5 la reconoció la 1.6 sin reinstalar nada: una compra pertenece a la cuenta de
+  Google, no a la versión.
+- **Actualizar de versión no borra datos.** Verificado por Diego al pasar de 1.5 a 1.6: clientes,
+  ventas e importación de Excel intactos. Room migró sin incidentes.
