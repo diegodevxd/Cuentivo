@@ -18,10 +18,29 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 - **1.15 / versionCode 21 compilada y firmada, SIN SUBIR** (2026-08-07). Trae la fecha pactada en el
   alta rápida, el texto del respaldo condicionado al plan y el arreglo de negocios duplicados.
   Conviene esperar la retro de la 1.14 antes de subirla, o se pierde esa señal antes de recibirla.
-- ⚠️ **El arreglo de duplicados NO se ha probado en teléfono.** Compila y las 288 JVM pasan, pero
-  toca la **ruta de arranque**: un error ahí bloquea la entrada, que es peor que el bug que arregla.
-  Faltan los cuatro casos del plan: nube vacía en Gratis, adopción al reinstalar en Gratis, backfill
-  al pasar a Pro, y modo avión (debe salir `Blocked`, nunca el botón de crear).
+- 🔴 **BLOQUEANTE: el backfill sólo sube el negocio. NO SUBIR LA 1.15 A PRUEBA CERRADA.**
+  Probado en teléfono el 2026-08-07 con la 1.15 instalada por **Uso compartido interno**
+  (`versionCode=21`, `installerPackageName=com.android.vending`, así que la prueba es válida).
+  Secuencia: crear negocio + 3 clientes en Gratis → suscribirse a Pro. Resultado en Firestore:
+  **sólo `businesses/1668fc61-c23c-43cc-8481-2cd2b3840a49`**, con **cero** `members`, `customers`,
+  `sales` y `movements`.
+  Que el negocio sí subiera demuestra que `OutboxBackfill` **corrió** y que el worker publicó al
+  menos una fila; se rompe **después de la primera**.
+  **Hipótesis sin confirmar**: la escritura de `MEMBER` se deniega y, como `firestore.rules` gatea
+  cada colección tras el documento de miembro (`isMember`), todo lo demás cae detrás — y una
+  denegación se **estaciona como permanente**, no se reintenta. Revisar primero `validMember` y el
+  bloque `match /businesses/{businessId}/members/{uid}`, y `SyncOperationDao.pending` por si el
+  orden real no es el que se asumió.
+  **No se pudo obtener ni una línea de log de la app en release** (`adb logcat --pid`): sin eso no
+  hay diagnóstico, sólo sospecha. Primer paso de la próxima sesión: conseguir esos logs.
+- ✅ **Caso 1 del plan SÍ pasa**: en Gratis no se encola nada. Negocio + 2 clientes creados en
+  Gratis, desinstalar/reinstalar → Firestore siguió en **cero** negocios. El gate de `SyncQueue`
+  funciona. (Que los clientes no vuelvan en Gratis es lo correcto, no un fallo.)
+- ✅ **Cerrada la otra mitad del ciclo de cobro**: el reembolso/revocación desde Play Console quitó
+  el derecho y **la app volvió a Gratis sola**. Era el pendiente que llevaba desde el 2026-08-06.
+- ⚠️ Siguen sin probar: la **adopción** al reinstalar con datos en la nube, y el caso `Blocked`.
+  Este último **no se puede provocar a mano** (necesita sesión válida + Room vacío + lookup fallido
+  a la vez, y sin red no se puede ni iniciar sesión): queda cubierto sólo por `BusinessClaimPolicyTest`.
 - **✅ Los 9 negocios duplicados fueron borrados** el 2026-08-07 con
   `firebase firestore:delete --recursive` (CLI vía `npx`, sesión `capihwlabs@gmail.com`). Verificado:
   la consulta por `ownerUserId` devuelve vacío y las subcolecciones también.
@@ -113,25 +132,27 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Qué sigue, en orden de valor
 
-1. **Escuchar lo que reporten los testers de la 1.14**, sobre todo si algún texto se corta con la
+1. 🔴 **Arreglar el backfill: sólo sube el negocio.** Es lo primero, bloquea la 1.15 entera. Ver el
+   detalle y la hipótesis en "Dónde estamos". Empezar por conseguir logs de la app en release.
+2. **Escuchar lo que reporten los testers de la 1.14**, sobre todo si algún texto se corta con la
    tipografía nueva y cómo se ve el navbar en un Android 11 o menor — eso nunca se ha visto, aquí
    sólo hay imagen API 37.
-2. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
+3. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
    2026-08-06, cuando los testers hayan actualizado. Si casi todas las peticiones salen
    *verificadas*, **activar el enforcement**. Si salen *no verificadas*, ver el primer blocker.
-3. **Cerrar la otra mitad del ciclo de cobro**: ver que al **caducar** la suscripción la app vuelve
+4. **YA HECHO — ciclo de cobro cerrado**: ver que al **caducar** la suscripción la app vuelve
    a FREE. Es lo más valioso que queda sin evidencia, y ya se sabe **por qué no se había podido
    probar**: el derecho de la compra de prueba sigue otorgado del lado de Google. Requiere
    **revocar** desde Play Console → Suscripciones → Pedidos (cancelar sólo detiene renovaciones, no
    quita el acceso). Diego tiene 3 clientes y datos en la nube, así que es buen caso real para ver
    también que `CloudRestorePolicy` devolviendo `NotEntitled` se comunique con claridad y no
    parezca pérdida de datos.
-4. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
+5. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
    - **📷 Código de barras** con ML Kit (gratis, on-device, funciona sin internet). Encaja en
      `domain/QuickSale.kt` y en el alta de productos.
    - **📈 Gráficas** en el panel. Baratas, pero decorativas: `BusinessInsights.compare()` ya dice en
      palabras lo que la gráfica diría en pixeles.
-5. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
+6. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
    consulta nueva sobre `sale_items` unido a `sales` no canceladas por periodo. Alimenta tanto el
    panel como el score de clientes.
 
