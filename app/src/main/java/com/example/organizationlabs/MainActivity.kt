@@ -457,11 +457,13 @@ class MainActivity : ComponentActivity() {
                         // Nothing in the cloud is the normal path for a new Pro account: say nothing
                         // and let them create their business.
                         CloudRestoreResult.NothingInCloud -> Unit
-                        // The cause is shown on purpose. The generic "check your connection" hid the
-                        // Firestore status code that was already in hand and cost three rounds of
-                        // guessing at a failure nothing in logcat was reporting either.
+                        // Readable first, but never opaque: the stage and Firestore's status code
+                        // ride along in parentheses. The purely generic "check your connection"
+                        // discarded a cause that was already in hand and cost three rounds of
+                        // guessing at a failure logcat was not reporting either. The full text and
+                        // stack trace stay in the log; only this short code reaches the screen.
                         is CloudRestoreResult.Failed ->
-                            uiMessage = "No se pudo recuperar tu información de la nube (${result.stage}): ${result.failure.message.take(200)}"
+                            uiMessage = "No pudimos traer tu información de la nube. Revisa tu conexión y vuelve a abrir la app (${result.stage}/${result.failure.message.substringBefore(":").take(40)})"
                     }
                     isRestoring = false
                 }
