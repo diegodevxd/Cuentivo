@@ -2,6 +2,7 @@ package com.cuentivo.app.ui.customer
 
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.domain.DueSale
+import com.cuentivo.app.domain.PaymentReliability
 
 /** What the directory says about a customer, and how urgently it says it. */
 internal data class CustomerStatus(
@@ -22,6 +23,21 @@ internal enum class CustomerTone {
 
     /** The customer has paid more than they owe. */
     CREDIT,
+}
+
+/**
+ * The wording for a payment-reliability dot. Null for [PaymentReliability.NO_HISTORY]: a customer
+ * without enough history gets no dot at all, rather than a grey one that reads as a verdict.
+ *
+ * Lives here, not in the domain, because `domain/` is Kotlin without a `Context` — the calculator
+ * returns the enum and the UI owns the words, which is what keeps the scoring rules testable on the
+ * JVM.
+ */
+internal fun PaymentReliability.labelRes(): Int? = when (this) {
+    PaymentReliability.PUNCTUAL -> com.cuentivo.app.R.string.customer_score_punctual
+    PaymentReliability.SLOW -> com.cuentivo.app.R.string.customer_score_slow
+    PaymentReliability.DELINQUENT -> com.cuentivo.app.R.string.customer_score_delinquent
+    PaymentReliability.NO_HISTORY -> null
 }
 
 internal enum class CustomerFilter(val labelRes: Int) {

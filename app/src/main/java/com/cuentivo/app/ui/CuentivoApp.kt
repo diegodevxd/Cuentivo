@@ -77,6 +77,7 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 import com.cuentivo.app.domain.AccessDecision
 import com.cuentivo.app.domain.Alert
+import com.cuentivo.app.domain.CustomerScore
 import com.cuentivo.app.domain.Insight
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.domain.QuickSale
@@ -117,6 +118,14 @@ fun CuentivoApp(
     customers: List<CustomerBalanceRow> = emptyList(),
     products: List<ProductEntity> = emptyList(),
     tier: SubscriptionTier = SubscriptionTier.FREE,
+    /**
+     * Payment reliability by customer id, derived on every load rather than stored. Empty until it
+     * arrives, which shows no dots instead of a wrong one.
+     *
+     * Declared after the positional arguments the host already passes, so adding it did not
+     * silently re-bind `products` to a map at the one call site that passes them by position.
+     */
+    customerScores: Map<String, CustomerScore> = emptyMap(),
     accountLabel: String? = null,
     onCreateBusiness: () -> Unit = {},
     onCreateCustomer: (String, String?, Long?, QuickSale?) -> Unit = { _, _, _, _ -> },
@@ -251,6 +260,7 @@ fun CuentivoApp(
                 cancelables = cancelables,
                 modifier = Modifier.padding(padding),
                 dueSales = (state as? DashboardUiState.Content)?.dueSales.orEmpty(),
+                score = customerScores[statementCustomer.customer.id],
                 onRegisterPayment = {
                     onDismissStatement()
                     paymentCustomer = statementCustomer
@@ -295,6 +305,7 @@ fun CuentivoApp(
                 // The same dated sales Inicio uses, so a row can say why it is late without a
                 // second query.
                 dueSales = (state as? DashboardUiState.Content)?.dueSales.orEmpty(),
+                scores = customerScores.mapValues { (_, score) -> score.reliability },
                 modifier = Modifier.padding(padding),
                 showForm = showCustomerForm,
                 onShowFormChange = { showCustomerForm = it },

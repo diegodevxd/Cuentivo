@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -64,6 +65,10 @@ import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.domain.DueSale
 import com.cuentivo.app.domain.Money
+import com.cuentivo.app.domain.PaymentReliability
+import com.cuentivo.app.ui.theme.NeoOverdue
+import com.cuentivo.app.ui.theme.NeoPayment
+import com.cuentivo.app.ui.theme.NeoSlow
 import com.cuentivo.app.domain.QuickSale
 import com.cuentivo.app.domain.QuickSaleEntry
 import com.cuentivo.app.domain.QuickSalePolicy
@@ -96,6 +101,11 @@ private val DIRECTORY_ROW_HEIGHT = 72.dp
 fun CustomersScreen(
     customers: List<CustomerBalanceRow>,
     dueSales: List<DueSale>,
+    /**
+     * Payment reliability by customer id. Defaults to empty so a caller that has not loaded the
+     * scores yet simply shows no dots, rather than every customer briefly reading as unrated.
+     */
+    scores: Map<String, PaymentReliability> = emptyMap(),
     modifier: Modifier = Modifier,
     showForm: Boolean = false,
     onShowFormChange: (Boolean) -> Unit = {},
@@ -188,6 +198,7 @@ fun CustomersScreen(
                     CustomerRow(
                         row = row,
                         status = CustomerDirectoryPresentation.status(row, dueSales, today),
+                        reliability = scores[row.customer.id] ?: PaymentReliability.NO_HISTORY,
                         onOpen = { onOpen(row) },
                         onEdit = { editing = row },
                         onArchive = { archiving = row },
@@ -461,6 +472,31 @@ private fun CustomerFormDialog(
  * stays compact and the finger target is honest.
  */
 @Composable
+/**
+ * The 🟢🟡🔴 dot, drawn only when there is enough history to mean something.
+ *
+ * It carries a `contentDescription` because color alone is not a message: it says nothing to a
+ * screen reader and little to someone who cannot tell red from green.
+ */
+private fun ReliabilityDot(reliability: PaymentReliability) {
+    val labelRes = reliability.labelRes() ?: return
+    val labelText = stringResource(labelRes)
+    val color = when (reliability) {
+        PaymentReliability.PUNCTUAL -> NeoPayment
+        PaymentReliability.SLOW -> NeoSlow
+        PaymentReliability.DELINQUENT -> NeoOverdue
+        PaymentReliability.NO_HISTORY -> Color.Transparent
+    }
+    Box(
+        modifier = Modifier
+            .padding(end = NeoSpacing.xs)
+            .size(8.dp)
+            .background(color, CircleShape)
+            .semantics { contentDescription = labelText },
+    )
+}
+
+@Composable
 private fun FilterChipRow(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
@@ -503,6 +539,7 @@ private fun FilterChipRow(label: String, selected: Boolean, onClick: () -> Unit)
 private fun CustomerRow(
     row: CustomerBalanceRow,
     status: CustomerStatus,
+    reliability: PaymentReliability,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
     onArchive: () -> Unit,
@@ -554,17 +591,24 @@ private fun CustomerRow(
                     .padding(horizontal = NeoSpacing.md),
                 verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
-                Text(
-                    text = row.customer.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (status.tone == CustomerTone.SETTLED) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The traffic light answers "should I let this person owe me?", which the
+                    // balance alone never did. It is deliberately separate from `status`: owing
+                    // money today and being a bad payer are different facts, and a good customer
+                    // mid-purchase must not be painted red for it.
+                    ReliabilityDot(reliability)
+                    Text(
+                        text = row.customer.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (status.tone == CustomerTone.SETTLED) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = when (status.tone) {

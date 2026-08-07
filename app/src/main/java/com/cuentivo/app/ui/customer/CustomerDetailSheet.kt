@@ -58,7 +58,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
+import com.cuentivo.app.domain.CustomerScore
 import com.cuentivo.app.domain.CustomerStatementSummary
+import com.cuentivo.app.domain.PaymentReliability
 import com.cuentivo.app.domain.DueSale
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.domain.StatementEntry
@@ -103,6 +105,8 @@ fun CustomerDetailSheet(
     cancelables: List<CorrectionCandidate>,
     modifier: Modifier = Modifier,
     dueSales: List<DueSale> = emptyList(),
+    /** Null until the scores load, or when this customer has none. The line is simply absent. */
+    score: CustomerScore? = null,
     onRegisterPayment: () -> Unit = {},
     onCallCustomer: (String) -> Unit = {},
     onCancelSale: (CorrectionCandidate.Sale) -> Unit = {},
@@ -142,7 +146,7 @@ fun CustomerDetailSheet(
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
         ) {
             item { DetailTopBar(onDismiss) }
-            item { BalanceHero(customer.balanceCents, status) }
+            item { BalanceHero(customer.balanceCents, status, score) }
             if (entries.isNotEmpty()) {
                 item { TotalsRow(CustomerStatementSummary.totals(entries), customer.balanceCents) }
             }
@@ -275,7 +279,7 @@ private fun DetailTopBar(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun BalanceHero(balanceCents: Long, status: CustomerStatus) {
+private fun BalanceHero(balanceCents: Long, status: CustomerStatus, score: CustomerScore?) {
     val presentation = BalancePresenter.from(balanceCents)
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -312,8 +316,40 @@ private fun BalanceHero(balanceCents: Long, status: CustomerStatus) {
             )
             Spacer(Modifier.height(NeoSpacing.xs))
             StatusPill(status)
+            ScoreLine(score)
         }
     }
+}
+
+/**
+ * The score in words, under the balance: how this customer pays, and on how much evidence.
+ *
+ * The sample size is spelled out on purpose. "Pays on time" over three sales and over forty are
+ * very different claims, and hiding which one you are looking at is how a number stops being
+ * trustworthy.
+ */
+@Composable
+private fun ScoreLine(score: CustomerScore?) {
+    if (score == null) return
+    val headline = score.reliability.labelRes()?.let { stringResource(it) }
+        ?: stringResource(R.string.customer_score_no_history)
+    val detail = when {
+        score.reliability == PaymentReliability.NO_HISTORY -> null
+        score.averageDaysLate <= 0 -> stringResource(R.string.customer_score_on_time)
+        else -> stringResource(R.string.customer_score_average_days, score.averageDaysLate)
+    }
+    Spacer(Modifier.height(NeoSpacing.xs))
+    Text(
+        text = listOfNotNull(
+            headline,
+            detail,
+            score.ratedSaleCount
+                .takeIf { it > 0 }
+                ?.let { stringResource(R.string.customer_score_rated_sales, it) },
+        ).joinToString(" · "),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

@@ -64,6 +64,13 @@
     <string name="customer_status_settled">Al día</string>
     <string name="customer_status_credit">Saldo a favor</string>
     <string name="customer_status_pending">Saldo pendiente</string>
+    <string name="customer_score_punctual">Paga puntual</string>
+    <string name="customer_score_slow">Se tarda en pagar</string>
+    <string name="customer_score_delinquent">Casi nunca paga a tiempo</string>
+    <string name="customer_score_no_history">Aún sin historial de pago</string>
+    <string name="customer_score_average_days">Retraso promedio: %1$d días</string>
+    <string name="customer_score_on_time">Paga en la fecha acordada</string>
+    <string name="customer_score_rated_sales">Sobre %1$d ventas con fecha</string>
     <string name="customer_status_due_today">Vence hoy</string>
     <string name="customer_status_due_in_days">Vence en %1$d días</string>
     <string name="customer_status_overdue_one">Vencido (1 día)</string>

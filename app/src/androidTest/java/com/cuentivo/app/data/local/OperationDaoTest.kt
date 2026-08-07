@@ -529,6 +529,61 @@ class OperationDaoTest {
         id, businessId, customerId, 100, "CASH", 2, null, null, "owner-1", 2, canceledAt,
     )
 
+    @Test fun a_canceled_payment_does_not_count_as_money_collected_in_the_score() = runBlocking {
+        val dao = database.financialDao()
+        val sale = SaleEntity("sale-1", "business-1", "customer-1", "owner-1", "V-1", 1, 30, 10_000, 0, 10_000, false, null, 1, 1)
+        dao.createSaleIdempotently(
+            OperationEntity("sale-1-key", "SALE", sale.id, 1),
+            sale,
+            listOf(SaleItemEntity("item-1", sale.id, "product-1", "Jabón", 1, 10_000, 0, 10_000)),
+            AccountMovementEntity("charge-1", "business-1", "customer-1", sale.id, null, "CHARGE", 10_000, "DEBIT", 1, "owner-1", null, null),
+        )
+        val payment = PaymentEntity("payment-1", "business-1", "customer-1", 10_000, "CASH", 28, null, null, "owner-1", 2, null)
+        dao.registerPaymentIdempotently(
+            OperationEntity("payment-1-key", "PAYMENT", payment.id, 2),
+            payment,
+            listOf(PaymentAllocationEntity("allocation-1", payment.id, sale.id, 10_000)),
+            AccountMovementEntity("movement-1", "business-1", "customer-1", null, payment.id, "PAYMENT", 10_000, "CREDIT", 2, "owner-1", null, null),
+        )
+
+        val settled = dao.saleHistoryForScores("business-1").single()
+        assertEquals(10_000, settled.allocatedCents)
+        assertEquals(28L, settled.lastPaymentDateEpochDay)
+
+        dao.cancelPaymentIdempotently(
+            OperationEntity("refund-1-key", "PAYMENT", payment.id, 3),
+            payment.id,
+            AccountMovementEntity("refund-1", "business-1", "customer-1", null, payment.id, "REFUND", 10_000, "DEBIT", 3, "owner-1", null, "Cheque devuelto"),
+        )
+
+        // The allocation row is still there — nothing financial is ever deleted — so a score that
+        // read it without checking the payment would call this customer settled and punctual.
+        val reversed = dao.saleHistoryForScores("business-1").single()
+        assertEquals(0, reversed.allocatedCents)
+        assertEquals(null, reversed.lastPaymentDateEpochDay)
+    }
+
+    @Test fun the_score_query_never_reaches_into_another_business() = runBlocking {
+        val dao = database.financialDao()
+        val mine = SaleEntity("sale-mine", "business-1", "customer-1", "owner-1", "V-1", 1, 30, 10_000, 0, 10_000, false, null, 1, 1)
+        val theirs = mine.copy(id = "sale-theirs", businessId = "business-2")
+        listOf(mine, theirs).forEachIndexed { index, sale ->
+            dao.createSaleIdempotently(
+                OperationEntity("key-$index", "SALE", sale.id, 1),
+                sale,
+                listOf(SaleItemEntity("item-$index", sale.id, "product-1", "Jabón", 1, 10_000, 0, 10_000)),
+                AccountMovementEntity("charge-$index", sale.businessId, sale.customerId, sale.id, null, "CHARGE", 10_000, "DEBIT", 1, "owner-1", null, null),
+            )
+        }
+
+        // One row, and it is this business's. Nothing in the schema has a @ForeignKey, so the
+        // businessId filter is the only thing keeping another shop's history out of this score.
+        val rows = dao.saleHistoryForScores("business-1")
+        assertEquals(1, rows.size)
+        assertEquals("customer-1", rows.single().customerId)
+        assertEquals(10_000, rows.single().totalCents)
+    }
+
     private fun movement(
         id: String,
         businessId: String,

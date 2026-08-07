@@ -28,6 +28,22 @@ data class DueSaleRow(
     val outstandingCents: Long,
 )
 
+/**
+ * One non-canceled sale as the payment score reads it: what it was worth, what has actually been
+ * paid against it, and when the newest of those payments landed.
+ *
+ * Sales with no agreed date are included on purpose even though they cannot be scored — leaving
+ * that judgement to [com.cuentivo.app.domain.CustomerScoreCalculator] keeps the rule about what
+ * counts as evidence in one place, where it is tested on the JVM.
+ */
+data class CustomerSaleHistoryRow(
+    val customerId: String,
+    val dueDateEpochDay: Long?,
+    val totalCents: Long,
+    val allocatedCents: Long,
+    val lastPaymentDateEpochDay: Long?,
+)
+
 /** An immutable ledger entry with the local customer's name for the dashboard feed. */
 data class DashboardActivityRow(
     val id: String,
@@ -355,6 +371,29 @@ interface FinancialDao {
             "GROUP BY sale.id HAVING outstandingCents > 0 ORDER BY sale.dueDateEpochDay"
     )
     suspend fun salesWithDueDate(businessId: String): List<DueSaleRow>
+
+    /**
+     * Every non-canceled sale of a business, with its settled amount and settlement date, for the
+     * customer payment score.
+     *
+     * The canceled-payment filter sits inside both aggregates rather than in the `ON` clause. Put
+     * there, the allocation row survives the join with `payment` null and its amount would still be
+     * summed, quietly reporting a refunded payment as money collected — the same trap
+     * [salesWithDueDate] avoids the same way. `MAX` needs the guard for the identical reason: the
+     * date of a canceled payment is not the date the sale was settled.
+     */
+    @Query(
+        "SELECT sale.customerId AS customerId, sale.dueDateEpochDay AS dueDateEpochDay, " +
+            "sale.totalCents AS totalCents, " +
+            "COALESCE(SUM(CASE WHEN payment.canceledAtEpochMillis IS NULL THEN allocation.amountCents ELSE 0 END), 0) AS allocatedCents, " +
+            "MAX(CASE WHEN payment.canceledAtEpochMillis IS NULL THEN payment.paymentDateEpochDay END) AS lastPaymentDateEpochDay " +
+            "FROM sales AS sale " +
+            "LEFT JOIN payment_allocations AS allocation ON allocation.saleId = sale.id " +
+            "LEFT JOIN payments AS payment ON payment.id = allocation.paymentId " +
+            "WHERE sale.businessId = :businessId AND sale.isCanceled = 0 " +
+            "GROUP BY sale.id"
+    )
+    suspend fun saleHistoryForScores(businessId: String): List<CustomerSaleHistoryRow>
 
     @Query("SELECT COALESCE(SUM(allocation.amountCents), 0) FROM payment_allocations AS allocation INNER JOIN payments AS payment ON payment.id = allocation.paymentId WHERE allocation.saleId = :saleId AND payment.canceledAtEpochMillis IS NULL")
     suspend fun activeAllocatedPaymentCents(saleId: String): Long

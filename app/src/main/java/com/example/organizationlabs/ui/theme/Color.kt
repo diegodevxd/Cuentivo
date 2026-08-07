@@ -22,3 +22,11 @@ val NeoViolet = Color(0xFFA98BFA)
 
 /** Red is reserved for overdue, destructive, and error states. */
 val NeoOverdue = Color(0xFFFF7B82)
+
+/**
+ * The middle of the payment traffic light: pays, but late.
+ *
+ * Amber rather than a paler red, because "chase this one" and "this one is a loss" have to be
+ * distinguishable at a glance on a phone held at arm's length behind a counter.
+ */
+val NeoSlow = Color(0xFFFFC65C)

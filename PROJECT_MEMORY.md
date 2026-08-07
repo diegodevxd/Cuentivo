@@ -41,7 +41,13 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   `assembleDebugAndroidTest` exitosos (2026-08-06). Instrumentadas: 216 + `CloudRestoreTest`, sin
   correr todavía en emulador.
 - Room sigue en `version = 4`. Firebase: proyecto `organitazionlabs` (600636825165), plan Spark.
-- Paridad de textos es/en: **297 claves en cada idioma**.
+- Paridad de textos es/en: **304 claves en cada idioma**.
+- **🟢🟡🔴 Semáforo de clientes construido** (2026-08-06, sin publicar todavía).
+  `domain/CustomerScoreCalculator.kt` deriva la puntualidad del libro mayor: puntual ≤ 3 días de
+  retraso promedio, tarda ≤ 20, moroso arriba; y una venta abierta con más de 60 días vencida fuerza
+  moroso pese al promedio. Menos de 3 ventas **con fecha pactada** no pinta color: sin evidencia no
+  hay veredicto. Sale de `FinancialDao.saleHistoryForScores`, consulta nueva sin migración — Room
+  sigue en `version = 4`.
 
 ## Qué sigue, en orden de valor
 
@@ -55,9 +61,6 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
    suscripción de prueba renueva cada ~5 min y caduca tras unas 6 renovaciones: dejarla correr
    media hora y comprobar que vuelve a frenar en 5 clientes.
 4. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
-   - **🟢 Semáforo y score de clientes** — puntualidad de pago por cliente. SQL sobre datos que ya
-     existen, cero dependencias nuevas, y responde la pregunta que importa en un negocio de fiado:
-     *¿a este le fío?*. Medio camino hecho en `domain/CreditLimitAdvisor.kt`.
    - **📷 Código de barras** con ML Kit (gratis, on-device, funciona sin internet). Encaja en
      `domain/QuickSale.kt` y en el alta de productos.
    - **📈 Gráficas** en el panel. Baratas, pero decorativas: `BusinessInsights.compare()` ya dice en
@@ -109,6 +112,14 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Decisiones que no se reabren
 
+- **El OCR de libretas y la IA conversacional quedan archivados** (evaluados el 2026-08-06). El OCR
+  choca con la regla 2: adivinar mal un cargo deja cicatriz permanente, porque nada financiero se
+  edita ni se borra. Si algún día se hace, va como **borrador que el dueño confirma línea por
+  línea**, reusando el patrón de `LegacyMigrationPlanner` ("planifica pero nunca escribe"). La IA de
+  preguntas se descarta por costo por uso y porque mandar saldos a un modelo externo viola la regla
+  4 — y porque "¿quién me debe más?" es SQL, no IA. También descartados: **LibreTranslate** (hay 304
+  claves traducidas a mano), **Drive API** (ya hay Firestore + respaldo cifrado), **Calendar API**
+  (`AppAlerts` ya lo hace sin pedir permisos) y **ExchangeRate** (contradice `Money.format` es-MX).
 - **La nube es exclusiva de Pro.** Gratis: 5 clientes / 30 ventas. Pro: $199 MXN/mes.
 - **El proveedor de App Check se elige por *source set*, no con `if (BuildConfig.DEBUG)`.** Una
   rama en un solo archivo arrastraría al APK de release un proveedor que entrega tokens a quien los

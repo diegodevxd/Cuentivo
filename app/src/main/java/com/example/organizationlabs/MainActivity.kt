@@ -37,6 +37,9 @@ import com.cuentivo.app.customer.CreditLimitSuggestionStore
 import com.cuentivo.app.domain.CreditHistory
 import com.cuentivo.app.domain.CreditLimitAdvisor
 import com.cuentivo.app.domain.CustomerNameNormalizer
+import com.cuentivo.app.domain.CustomerSaleHistory
+import com.cuentivo.app.domain.CustomerScore
+import com.cuentivo.app.domain.CustomerScoreCalculator
 import com.cuentivo.app.data.local.AccountMovementEntity
 import com.cuentivo.app.data.local.BusinessEntity
 import com.cuentivo.app.data.local.CustomerBalanceRow
@@ -479,6 +482,31 @@ class MainActivity : ComponentActivity() {
                 val customers by produceState<List<CustomerBalanceRow>>(initialValue = emptyList(), state, refreshKey) {
                     value = (state as? DashboardUiState.Content)?.let { database.customerDao().activeWithBalances(it.businessId) } ?: emptyList()
                 }
+                // Derived on every refresh, like the balance and the sale status: settle a debt and
+                // the customer's light turns on the next read, with no stored column to go stale.
+                val customerScores by produceState<Map<String, CustomerScore>>(emptyMap(), state, refreshKey) {
+                    val businessId = (state as? DashboardUiState.Content)?.businessId
+                    value = if (businessId == null) {
+                        emptyMap()
+                    } else {
+                        val today = LocalDate.now().toEpochDay()
+                        database.financialDao().saleHistoryForScores(businessId)
+                            .groupBy { it.customerId }
+                            .mapValues { (_, rows) ->
+                                CustomerScoreCalculator.score(
+                                    rows.map { row ->
+                                        CustomerSaleHistory(
+                                            dueDateEpochDay = row.dueDateEpochDay,
+                                            totalCents = row.totalCents,
+                                            allocatedCents = row.allocatedCents,
+                                            lastPaymentDateEpochDay = row.lastPaymentDateEpochDay,
+                                        )
+                                    },
+                                    todayEpochDay = today,
+                                )
+                            }
+                    }
+                }
                 val products by produceState<List<ProductEntity>>(initialValue = emptyList(), state, refreshKey) {
                     value = (state as? DashboardUiState.Content)?.let { database.productDao().searchActive(it.businessId, "", "") } ?: emptyList()
                 }
@@ -568,7 +596,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                CuentivoApp(state, customers, products, tier, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, onCreateBusiness = {
+                CuentivoApp(state, customers, products, tier, customerScores = customerScores, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
                         val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)
