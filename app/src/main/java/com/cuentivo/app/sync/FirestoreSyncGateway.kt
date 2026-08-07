@@ -1,5 +1,6 @@
 package com.cuentivo.app.sync
 
+import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
@@ -52,6 +53,9 @@ class FirestoreSyncGateway(
         ).documents.maxByOrNull { (it.get("createdAtEpochMillis") as? Number)?.toLong() ?: 0L }
         if (newest == null) BusinessLookupResult.None else BusinessLookupResult.Found(newest.id)
     } catch (exception: Exception) {
+        // Logged with the exception attached: Tasks.await wraps the Firestore status, and without
+        // the stack trace the reinstall path was failing with nothing at all in logcat.
+        Log.w(TAG, "Owner business lookup failed", exception)
         BusinessLookupResult.Failure(classify(exception))
     }
 
@@ -107,6 +111,7 @@ class FirestoreSyncGateway(
 
         SyncDownloadResult.Success(documents)
     } catch (exception: Exception) {
+        Log.w(TAG, "Download failed", exception)
         SyncDownloadResult.Failure(classify(exception))
     }
 
@@ -167,6 +172,7 @@ class FirestoreSyncGateway(
     }
 
     private companion object {
+        const val TAG = "CuentivoSync"
         const val PAGE_SIZE = 200L
 
         val PULL_SPECS = listOf(

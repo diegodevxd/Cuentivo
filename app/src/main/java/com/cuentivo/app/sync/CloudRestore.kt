@@ -1,6 +1,12 @@
 package com.cuentivo.app.sync
 
+import android.util.Log
 import com.cuentivo.app.data.local.CuentivoDatabase
+
+/** Which half of the restore broke. Both used to collapse into one message, which cost three rounds
+ * of guessing: "it failed" says nothing about whether the account could not be *found* or could not
+ * be *read*, and those have opposite fixes. */
+enum class CloudRestoreStage { LOOKUP, DOWNLOAD }
 
 /** Outcome of a restore attempt. Counts only, never names or amounts — this reaches logs and the UI. */
 sealed interface CloudRestoreResult {
@@ -11,7 +17,7 @@ sealed interface CloudRestoreResult {
     data object NothingInCloud : CloudRestoreResult
 
     /** The lookup or the download failed. The device keeps its empty state and may try again. */
-    data class Failed(val failure: SyncFailure) : CloudRestoreResult
+    data class Failed(val failure: SyncFailure, val stage: CloudRestoreStage) : CloudRestoreResult
 }
 
 /**
@@ -38,13 +44,13 @@ class CloudRestore(
         val businessId = when (val found = lookup.findBusinessOwnedBy(userId)) {
             is BusinessLookupResult.Found -> found.businessId
             BusinessLookupResult.None -> return CloudRestoreResult.NothingInCloud
-            is BusinessLookupResult.Failure -> return CloudRestoreResult.Failed(found.failure)
+            is BusinessLookupResult.Failure -> return failed(found.failure, CloudRestoreStage.LOOKUP)
         }
 
         // From zero, not from a watermark: this device has never seen any of it.
         val documents = when (val download = gateway.download(businessId, FROM_THE_BEGINNING)) {
             is SyncDownloadResult.Success -> download.documents
-            is SyncDownloadResult.Failure -> return CloudRestoreResult.Failed(download.failure)
+            is SyncDownloadResult.Failure -> return failed(download.failure, CloudRestoreStage.DOWNLOAD)
         }
 
         RemoteMerger(database).apply(businessId, documents)
@@ -61,7 +67,18 @@ class CloudRestore(
         )
     }
 
+    /**
+     * The one place a restore failure is recorded. Only the stage and Firestore's own status text
+     * go out — no uid, no business id, no names or amounts — so this stays inside the no-PII rule
+     * while still naming the cause.
+     */
+    private fun failed(failure: SyncFailure, stage: CloudRestoreStage): CloudRestoreResult.Failed {
+        Log.w(TAG, "Cloud restore failed at $stage: ${failure.message}")
+        return CloudRestoreResult.Failed(failure, stage)
+    }
+
     private companion object {
         const val FROM_THE_BEGINNING = 0L
+        const val TAG = "CuentivoRestore"
     }
 }

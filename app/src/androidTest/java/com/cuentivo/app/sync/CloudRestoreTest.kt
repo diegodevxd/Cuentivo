@@ -118,7 +118,7 @@ class CloudRestoreTest {
         val failure = SyncFailure.Transient("network down")
         val result = restoreWith(FakeCloudGateway(lookupFailure = failure)).restore(OWNER)
 
-        assertEquals(CloudRestoreResult.Failed(failure), result)
+        assertEquals(CloudRestoreResult.Failed(failure, CloudRestoreStage.LOOKUP), result)
         // Nothing half-written: the next attempt starts from the same clean slate.
         assertEquals(null, database.businessDao().first())
     }
