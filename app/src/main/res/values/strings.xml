@@ -7,6 +7,7 @@
     <string name="nav_products">Productos</string>
     <string name="nav_payments">Abonos</string>
     <string name="nav_new_sale">Nueva venta</string>
+    <string name="nav_account">Tu cuenta</string>
     <string name="nav_account_description">Cuenta</string>
     <string name="nav_alerts_description">Avisos</string>
 

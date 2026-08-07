@@ -510,7 +510,7 @@ private fun FilterChipRow(label: String, selected: Boolean, onClick: () -> Unit)
     ) {
         Box(
             modifier = Modifier
-                .height(30.dp)
+                .heightIn(min = 30.dp)
                 .background(
                     color = if (selected) {
                         MaterialTheme.colorScheme.surfaceContainerHigh
@@ -556,7 +556,7 @@ private fun CustomerRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(DIRECTORY_ROW_HEIGHT)
+            .heightIn(min = DIRECTORY_ROW_HEIGHT)
             .clickable(onClick = onOpen),
         shape = NeoShapes.row,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),

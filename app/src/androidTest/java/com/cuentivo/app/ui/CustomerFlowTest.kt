@@ -88,8 +88,11 @@ class CustomerFlowTest {
         composeRule.onNodeWithText("Detalle de Cliente").assertIsDisplayed()
         composeRule.onNodeWithText("BALANCE TOTAL").assertIsDisplayed()
         composeRule.onNodeWithText("Historial de Movimientos").assertIsDisplayed()
-        // The brand header steps aside, the bottom bar stays.
-        composeRule.onAllNodesWithText("Cuentivo").assertCountEquals(0)
+        // The top header steps aside, the bottom bar stays. Asserted against the account label the
+        // header actually shows: it used to look for "Cuentivo", and once the wordmark left that
+        // row the assertion would have passed for the wrong reason — the text was simply gone from
+        // the whole app, so it proved nothing about this screen.
+        composeRule.onAllNodesWithText("Tu cuenta").assertCountEquals(0)
         composeRule.onNodeWithText("Inicio").assertIsDisplayed()
     }
 

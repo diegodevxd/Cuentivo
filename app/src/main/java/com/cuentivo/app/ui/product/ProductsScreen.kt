@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -334,7 +335,7 @@ private fun ProductRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Card(
-        modifier = Modifier.fillMaxWidth().height(CATALOG_ROW_HEIGHT),
+        modifier = Modifier.fillMaxWidth().heightIn(min = CATALOG_ROW_HEIGHT),
         shape = NeoShapes.row,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),

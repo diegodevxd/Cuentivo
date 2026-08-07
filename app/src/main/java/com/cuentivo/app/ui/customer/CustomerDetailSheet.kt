@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -260,7 +261,7 @@ fun CustomerDetailSheet(
 
 @Composable
 private fun DetailTopBar(onDismiss: () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), contentAlignment = Alignment.Center) {
         IconButton(
             onClick = onDismiss,
             modifier = Modifier.align(Alignment.CenterStart).size(48.dp),
@@ -783,7 +784,7 @@ private fun CorrectionRow(
 @Composable
 private fun CompactRow(text: String) {
     Card(
-        modifier = Modifier.fillMaxWidth().height(MOVEMENT_ROW_HEIGHT),
+        modifier = Modifier.fillMaxWidth().heightIn(min = MOVEMENT_ROW_HEIGHT),
         shape = NeoShapes.row,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),

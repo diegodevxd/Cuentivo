@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -96,11 +97,11 @@ fun EmailVerificationScreen(
                     TextButton(
                         onClick = onResend,
                         enabled = !isWorking,
-                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("verify-resend"),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("verify-resend"),
                     ) { Text(stringResource(R.string.verify_resend)) }
                     TextButton(
                         onClick = onUseAnotherAccount,
-                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("verify-sign-out"),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("verify-sign-out"),
                     ) { Text(stringResource(R.string.verify_use_another_account)) }
                 }
             }

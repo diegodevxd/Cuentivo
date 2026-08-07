@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -176,7 +177,7 @@ fun AuthenticationScreen(
                     // the sign-in form and read as if signing in had failed too.
                     onModeChange()
                 },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) {
                 Text(stringResource(if (isSignUp) R.string.auth_switch_to_sign_in else R.string.auth_switch_to_sign_up))
             }
@@ -189,7 +190,7 @@ fun AuthenticationScreen(
                         resetRequested = true
                     },
                     enabled = !isWorking && validation != CredentialsValidation.InvalidEmail && email.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("auth-forgot-password"),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("auth-forgot-password"),
                 ) {
                     Text(stringResource(R.string.auth_forgot_password))
                 }

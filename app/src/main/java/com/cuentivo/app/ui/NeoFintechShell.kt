@@ -2,7 +2,7 @@ package com.cuentivo.app.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,13 +11,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
@@ -34,6 +34,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -108,13 +110,13 @@ fun NeoFintechShell(
                     // The app draws edge-to-edge, so without this the logo and the bell sit under
                     // the status bar's clock and icons instead of below them.
                     .statusBarsPadding()
-                    .height(52.dp)
+                    .heightIn(min = 52.dp)
                     .padding(horizontal = NeoSpacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     modifier = Modifier
-                        .height(48.dp)
+                        .heightIn(min = 48.dp)
                         .semantics(mergeDescendants = true) {
                             contentDescription = accountDescription
                             role = Role.Button
@@ -123,18 +125,19 @@ fun NeoFintechShell(
                         .padding(end = NeoSpacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.primary,
-                        shape = NeoShapes.row,
-                        modifier = Modifier.size(28.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("C", style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
+                    // This used to be the "C" badge beside the word "Cuentivo", which read as a
+                    // logo rather than a control: nobody guesses that tapping the brand opens their
+                    // account, and only the screen reader was ever told. The wordmark lives on in
+                    // the launcher icon, the sign-in screen and the Play listing, none of which
+                    // needed this row to carry it.
+                    Icon(
+                        imageVector = Icons.Filled.AccountCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(30.dp),
+                    )
                     Text(
-                        text = "Cuentivo",
+                        text = stringResource(R.string.nav_account),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(start = NeoSpacing.xs),
@@ -182,15 +185,25 @@ private fun CompactBottomNavigation(
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 2.dp,
+        shape = NeoClay.shape,
+        shadowElevation = NeoClay.elevation,
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .padding(horizontal = NeoClay.inset),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
+                // The domed rim: a light edge along the top fading into the surface, which is what
+                // makes a flat rectangle read as a thick slab of clay rather than a panel.
+                .background(
+                    Brush.verticalGradient(
+                        0f to MaterialTheme.colorScheme.onSurface.copy(alpha = NeoClay.HIGHLIGHT_ALPHA),
+                        0.35f to Color.Transparent,
+                    ),
+                )
+                .heightIn(min = 68.dp)
                 .padding(horizontal = NeoSpacing.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -222,16 +235,16 @@ private enum class ShellDestination(
         modifier: Modifier,
     ) {
         val isSelected = selectedDestination == destination
-        val markerColor by animateColorAsState(
-            targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        // Clay does not highlight, it dents. The selected tab sinks into the bar: darker at the top
+        // where the material would fall away from the light, lighter at the bottom where it catches
+        // it again. Animated through alpha so the press reads as pressure, not as a lamp switching
+        // on. Unselected stays fully transparent and the bar shows through untouched.
+        val pressedAlpha by animateFloatAsState(
+            targetValue = if (isSelected) 1f else 0f,
             animationSpec = tween(NeoMotion.STANDARD_MS),
-            label = "navigation marker color",
+            label = "navigation press depth",
         )
-        val markerHeight by animateDpAsState(
-            targetValue = if (isSelected) 3.dp else 0.dp,
-            animationSpec = tween(NeoMotion.STANDARD_MS),
-            label = "navigation marker height",
-        )
+        val shadeColor = MaterialTheme.colorScheme.onSurface
         val contentColor by animateColorAsState(
             targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             animationSpec = tween(NeoMotion.STANDARD_MS),
@@ -244,18 +257,23 @@ private enum class ShellDestination(
                     selected = isSelected
                     role = Role.Tab
                 }
-                .height(56.dp)
+                .padding(horizontal = 2.dp, vertical = NeoSpacing.xs)
+                .clip(NeoClay.tabShape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            shadeColor.copy(alpha = NeoClay.PRESSED_TOP_ALPHA * pressedAlpha),
+                            shadeColor.copy(alpha = NeoClay.PRESSED_BOTTOM_ALPHA * pressedAlpha),
+                        ),
+                    ),
+                )
+                .heightIn(min = 56.dp)
                 .clickable { onDestination(destination) },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .height(markerHeight)
-                    .width(20.dp)
-                    .background(markerColor),
-            )
-            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(19.dp))
+            // 22 dp rather than 19: beside 13 sp labels a 19 dp glyph looks undernourished.
+            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(22.dp))
             Text(stringResource(labelRes), style = MaterialTheme.typography.labelSmall, color = contentColor, maxLines = 1)
         }
     }
@@ -265,7 +283,7 @@ private enum class ShellDestination(
 private fun NewSaleNavigationAction(onClick: () -> Unit, modifier: Modifier) {
     Column(
         modifier = modifier
-            .height(56.dp)
+            .heightIn(min = 56.dp)
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

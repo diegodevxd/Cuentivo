@@ -96,7 +96,7 @@ internal fun NeoTaskHeader(
     backDescription: String = "Volver",
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().height(52.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
@@ -299,7 +299,7 @@ internal fun NeoChoiceChip(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(CHIP_HEIGHT)
+                .heightIn(min = CHIP_HEIGHT)
                 .background(
                     color = if (isSelected) accent.copy(alpha = 0.16f) else Color.Transparent,
                     shape = RoundedCornerShape(9.dp),

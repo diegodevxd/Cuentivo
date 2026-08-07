@@ -355,7 +355,7 @@ private fun ActivityRow(activity: DashboardActivity) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(SECTION_ROW_HEIGHT),
+            .heightIn(min = SECTION_ROW_HEIGHT),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(
@@ -403,7 +403,7 @@ private fun SectionRowSurface(
 ) {
     val base = Modifier
         .fillMaxWidth()
-        .height(SECTION_ROW_HEIGHT)
+        .heightIn(min = SECTION_ROW_HEIGHT)
     Card(
         modifier = if (onClick == null) base else base.clickable(onClick = onClick),
         shape = NeoShapes.row,
