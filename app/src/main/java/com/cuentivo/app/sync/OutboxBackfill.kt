@@ -42,6 +42,16 @@ class OutboxBackfill(
             Log.w(TAG, "Backfill skipped: the business is not on this device.")
             return@withContext 0
         }
+        // Rows parked by an earlier attempt come back into play first.
+        //
+        // A rejected write is marked PERMANENT and disappears from `pending` for good, which is
+        // right while the cause stands and wrong the moment it is fixed. Everything queued behind a
+        // missing membership was rejected for a reason that no longer holds, and re-enqueueing does
+        // not revive it: the outbox id is a hash of the same four fields, so `INSERT IGNORE` sees
+        // the parked row and keeps it parked. Without this the fix would work only for accounts
+        // that had never tried and failed.
+        database.syncOperationDao().reopenParkedOperations()
+
         val members = database.businessDao().membersForBackfill(businessId)
         val customers = database.customerDao().allForBackfill(businessId)
         val products = database.productDao().allForBackfill(businessId)
@@ -83,10 +93,18 @@ class OutboxBackfill(
                 }
 
                 SyncEntityType.MEMBER -> members.onEach {
+                    // **The remote document id is the uid, not the Room row id.** The local row is
+                    // keyed "$businessId:$userId" while `match /members/{memberUserId}` requires
+                    // `request.resource.data.userId == memberUserId`, so publishing under the
+                    // composite id is rejected. Getting this wrong cost a whole upload: the
+                    // rejection is classified permanent, membership never lands, and every later
+                    // write fails `isMember()` — customers, sales and movements all parked behind
+                    // one wrong document name, with only the business making it to the cloud.
+                    //
                     // +1 on the business timestamp, matching OwnerMembershipBootstrap: the queue
                     // drains by createdAtEpochMillis and the rules read the business document, so
                     // membership has to land immediately after it and before everything else.
-                    enqueue(businessId, type, it.id, business.createdAtEpochMillis + 1, mapOf(
+                    enqueue(businessId, type, it.userId, business.createdAtEpochMillis + 1, mapOf(
                         "businessId" to it.businessId,
                         "userId" to it.userId,
                         "role" to it.role,
