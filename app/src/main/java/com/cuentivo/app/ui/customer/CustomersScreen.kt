@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -562,7 +563,15 @@ private fun CustomerRow(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        // `fillMaxSize` used to work because the card had a fixed height, so "fill" had something to
+        // fill. With a minimum height instead, the incoming max height is unbounded, fill resolves
+        // to the content's own height, and the text ended up sitting against the top of a card that
+        // was taller than it. IntrinsicSize.Min gives the row a real height to centre within — and
+        // is also what lets the overdue accent stripe below reach full height again.
+        Row(
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             // The reference marks a late customer with a red edge, not a full red outline.
             Spacer(
                 Modifier

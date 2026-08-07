@@ -32,6 +32,8 @@ fun AccountSheet(
     tier: SubscriptionTier,
     accountLabel: String?,
     onUpgrade: () -> Unit,
+    /** Pro's price as Play formats it, or null while it has not loaded. */
+    proPrice: String? = null,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
     onDismiss: () -> Unit,
@@ -66,7 +68,7 @@ fun AccountSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            SubscriptionContent(tier = tier, onUpgrade = onUpgrade)
+            SubscriptionContent(tier = tier, onUpgrade = onUpgrade, proPrice = proPrice)
 
             OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.account_sign_out))

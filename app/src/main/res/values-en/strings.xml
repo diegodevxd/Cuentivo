@@ -290,6 +290,16 @@
     <string name="auth_continue">Continue</string>
     <string name="dashboard_receivable_short">Receivable</string>
     <string name="dashboard_activity_line">%1$s · %2$s</string>
+    <string name="subscription_plan_free">Free plan</string>
+    <string name="subscription_plan_pro">Cuentivo Pro</string>
+    <string name="subscription_current_badge">Your current plan</string>
+    <string name="subscription_free_limits">%1$d customers and %2$d sales</string>
+    <string name="subscription_pro_limits">Unlimited customers and sales</string>
+    <string name="subscription_price_per_month">%1$s per month</string>
+    <string name="subscription_price_unknown">See price on Google Play</string>
+    <string name="subscription_pro_adds">With Pro you also get:</string>
+    <string name="subscription_pro_includes">Your plan includes:</string>
+    <string name="subscription_upgrade_action">Subscribe to Pro</string>
     <string name="subscription_billing_note">Billing goes through Google Play and you can cancel any time from there.</string>
     <string name="auth_sign_in_title">Sign in</string>
     <string name="auth_sign_up_title">Create account</string>

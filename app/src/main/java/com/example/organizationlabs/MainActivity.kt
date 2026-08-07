@@ -164,6 +164,12 @@ class MainActivity : ComponentActivity() {
     private val tierState = mutableStateOf(SubscriptionTier.FREE)
 
     /**
+     * Pro's price as Play formats it, null until Play answers. Held here rather than read on demand
+     * because the query is asynchronous and finishes after the composition that wants it.
+     */
+    private val proPriceState = mutableStateOf<String?>(null)
+
+    /**
      * Whether Play has answered yet for the current account, which FREE alone cannot express.
      *
      * [tierState] starts at FREE and is also set to FREE the instant an account changes, so "free
@@ -232,6 +238,7 @@ class MainActivity : ComponentActivity() {
         val creditLimitSuggestionStore = CreditLimitSuggestionStore(applicationContext)
         val billing = BillingGateway(
             context = applicationContext,
+            onPriceLoaded = { formatted -> proPriceState.value = formatted },
             onTierChanged = { tier, sessionUserId ->
                 // Play and Firebase Auth move independently, so an answer can arrive before anyone
                 // has signed in, or after the account changed. The reconciler decides whether this
@@ -596,7 +603,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                CuentivoApp(state, customers, products, tier, customerScores = customerScores, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, onCreateBusiness = {
+                CuentivoApp(state, customers, products, tier, customerScores = customerScores, proPrice = proPriceState.value, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
                         val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)

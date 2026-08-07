@@ -45,6 +45,19 @@ class BillingGateway(
     context: Context,
     private val onTierChanged: (SubscriptionTier, String?) -> Unit,
     private val onMessage: (String) -> Unit,
+    /**
+     * Pro's price as Play itself formats it — already in the shopper's own currency and their
+     * country's conventions — or null while it has not arrived, which is also what a phone with no
+     * Play connection keeps seeing.
+     *
+     * The plan screen used to show no price at all, on the grounds that the price lives in Play.
+     * That reasoning was right about the *source* and wrong about the *destination*: asking someone
+     * to open a purchase sheet to find out what it costs is how a plan section stops being a
+     * decision and becomes a leap. Reading it from here keeps the single source of truth and puts
+     * the number where the choice is made — and a hardcoded "$199 MXN" would have gone stale the
+     * day the price changed and been plain wrong for anyone outside Mexico.
+     */
+    private val onPriceLoaded: (String?) -> Unit = {},
 ) {
     private var proProduct: ProductDetails? = null
 
@@ -226,7 +239,21 @@ class BillingGateway(
             .build()
         client.queryProductDetailsAsync(params) { result, details ->
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                proProduct = details.productDetailsList.firstOrNull()
+                val product = details.productDetailsList.firstOrNull()
+                proProduct = product
+                // The first pricing phase of the first offer: for a plain monthly subscription that
+                // is the recurring price. If Play ever returns an introductory phase first, this
+                // shows the introductory price, which is the honest thing to put beside a button
+                // that is about to charge exactly that.
+                onPriceLoaded(
+                    product
+                        ?.subscriptionOfferDetails
+                        ?.firstOrNull()
+                        ?.pricingPhases
+                        ?.pricingPhaseList
+                        ?.firstOrNull()
+                        ?.formattedPrice
+                )
             }
         }
     }

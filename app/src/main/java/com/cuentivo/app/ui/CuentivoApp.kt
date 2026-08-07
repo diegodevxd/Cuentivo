@@ -180,6 +180,8 @@ fun CuentivoApp(
     blocked: AccessDecision.Blocked? = null,
     onDismissBlocked: () -> Unit = {},
     onUpgrade: () -> Unit = {},
+    /** Pro's price as Play formats it, or null while it has not loaded. */
+    proPrice: String? = null,
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
     message: String? = null,
@@ -384,6 +386,7 @@ fun CuentivoApp(
             tier = tier,
             accountLabel = accountLabel,
             onUpgrade = { showAccount = false; onUpgrade() },
+                        proPrice = proPrice,
             onSignOut = onSignOut,
             onDeleteAccount = onDeleteAccount,
             onDismiss = { showAccount = false },

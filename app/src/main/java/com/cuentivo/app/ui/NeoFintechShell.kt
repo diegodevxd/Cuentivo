@@ -1,6 +1,11 @@
 package com.cuentivo.app.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -173,7 +178,25 @@ fun NeoFintechShell(
                 onNewSale = onNewSale,
             )
         },
-        content = content,
+        // Screens arrive instead of appearing: a short lift and fade whenever the destination
+        // changes, so moving between Inicio, Clientes, Productos and Abonos reads as travel rather
+        // than as the screen being replaced under you.
+        //
+        // Keyed on the destination and deliberately entrance-only. The outgoing screen is not
+        // animated out, because `content` renders from the host's current state — during a
+        // transition both halves would draw the *new* screen, and cross-fading something with
+        // itself is motion that costs frames and communicates nothing.
+        content = { padding ->
+            AnimatedContent(
+                targetState = destination,
+                transitionSpec = {
+                    (fadeIn(tween(NeoMotion.ENTRANCE_MS)) +
+                        slideInVertically(tween(NeoMotion.ENTRANCE_MS)) { it / 14 })
+                        .togetherWith(ExitTransition.None)
+                },
+                label = "destination entrance",
+            ) { _ -> content(padding) }
+        },
     )
 }
 

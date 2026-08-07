@@ -56,4 +56,7 @@ internal object NeoMotion {
     const val QUICK_MS = 160
     const val STANDARD_MS = 200
     const val PRESSED_SCALE = 0.97f
+
+    /** Screen and sheet entrances. Long enough to be felt, short enough never to be waited on. */
+    const val ENTRANCE_MS = 260
 }

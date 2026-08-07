@@ -290,6 +290,16 @@
     <string name="auth_continue">Continuar</string>
     <string name="dashboard_receivable_short">Por cobrar</string>
     <string name="dashboard_activity_line">%1$s · %2$s</string>
+    <string name="subscription_plan_free">Plan Gratis</string>
+    <string name="subscription_plan_pro">Cuentivo Pro</string>
+    <string name="subscription_current_badge">Tu plan actual</string>
+    <string name="subscription_free_limits">%1$d clientes y %2$d ventas</string>
+    <string name="subscription_pro_limits">Clientes y ventas sin límite</string>
+    <string name="subscription_price_per_month">%1$s al mes</string>
+    <string name="subscription_price_unknown">Ver precio en Google Play</string>
+    <string name="subscription_pro_adds">Con Pro además tienes:</string>
+    <string name="subscription_pro_includes">Tu plan incluye:</string>
+    <string name="subscription_upgrade_action">Suscribirme a Pro</string>
     <string name="subscription_billing_note">El cobro se hace por Google Play y puedes cancelarlo cuando quieras desde ahí.</string>
     <string name="auth_sign_in_title">Iniciar sesión</string>
     <string name="auth_sign_up_title">Crear cuenta</string>
