@@ -1,4 +1,4 @@
-// Imported explicitly: inside the android { } block, `java` resolves to Gradle's java extension.
+﻿// Imported explicitly: inside the android { } block, `java` resolves to Gradle's java extension.
 import java.util.Properties
 
 plugins {
@@ -27,8 +27,8 @@ android {
         targetSdk = 36
         // Play refuses an AAB whose versionCode was already uploaded, so this goes up on every
         // upload even when versionName does not.
-        versionCode = 19
-        versionName = "1.13"
+        versionCode = 20
+        versionName = "1.14"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -74,7 +74,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
         // java.time only exists from API 26, and this app ships to minSdk 24. Without desugaring it
-        // does not merely look wrong on Android 7.0/7.1 — LocalDate throws NoClassDefFoundError and
+        // does not merely look wrong on Android 7.0/7.1 â€” LocalDate throws NoClassDefFoundError and
         // the app fails to open at all. Every screen touches dates, so there is no partial failure.
         isCoreLibraryDesugaringEnabled = true
     }
@@ -113,7 +113,7 @@ dependencies {
     // protection. The variant-specific AppCheckProvider is what keeps the two apart.
     debugImplementation("com.google.firebase:firebase-appcheck-debug")
     implementation(platform(libs.androidx.compose.bom))
-    // Version managed by the Compose BOM. Core set only — material-icons-extended stays out.
+    // Version managed by the Compose BOM. Core set only â€” material-icons-extended stays out.
     implementation("androidx.compose.material:material-icons-core")
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -127,7 +127,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     // androidTest only: lets the E2E build a real SyncWorker without WorkManager scheduling it.
-    // Deliberately not `implementation` — none of this reaches the release APK.
+    // Deliberately not `implementation` â€” none of this reaches the release APK.
     androidTestImplementation("androidx.work:work-testing:2.11.2")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

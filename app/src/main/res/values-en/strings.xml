@@ -99,6 +99,16 @@
     <string name="products_form_name_label">Product name</string>
     <string name="products_form_price_label">Price</string>
     <string name="products_form_edit_note">The new price only applies to future sales: each sale keeps the price you charged that day.</string>
+    <string name="products_select_all">All</string>
+    <string name="products_select_description">Select %1$s</string>
+    <plurals name="products_selected_count">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <plurals name="products_delete_selected_title">
+        <item quantity="one">Delete %1$d product?</item>
+        <item quantity="other">Delete %1$d products?</item>
+    </plurals>
     <string name="products_delete_title">Delete %1$s?</string>
     <string name="products_delete_detail">It will stop showing up when you register sales. Your past sales do not change: each one keeps the name and price you charged that day.</string>
     <string name="products_delete_confirm">Yes, delete</string>

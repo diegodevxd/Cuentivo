@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -43,6 +46,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -110,6 +117,11 @@ fun ProductsScreen(
     val productsAddDescription = stringResource(R.string.products_add_description)
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<ProductEntity?>(null) }
+    // Ids rather than entities: the list reloads after every write, and a held entity would go
+    // stale while its id never does. Empty means selection mode is off entirely.
+    var selectedIds by remember { mutableStateOf(emptySet<String>()) }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
+    val selectionActive = selectedIds.isNotEmpty()
     var archiving by remember { mutableStateOf<ProductEntity?>(null) }
     val context = LocalContext.current
     val imageStore = remember(context) { ProductImageStore(context) }
@@ -215,10 +227,29 @@ fun ProductsScreen(
                     )
                 }
             } else {
+                if (selectionActive) {
+                    item {
+                        SelectionBar(
+                            count = selectedIds.size,
+                            onSelectAll = { selectedIds = visible.map { it.id }.toSet() },
+                            onClear = { selectedIds = emptySet() },
+                            onDelete = { confirmBulkDelete = true },
+                        )
+                    }
+                }
                 items(visible, key = { it.id }) { product ->
                     ProductRow(
                         product = product,
                         store = imageStore,
+                        selectionActive = selectionActive,
+                        isSelected = product.id in selectedIds,
+                        onToggleSelected = {
+                            selectedIds = if (product.id in selectedIds) {
+                                selectedIds - product.id
+                            } else {
+                                selectedIds + product.id
+                            }
+                        },
                         onEdit = { editing = product },
                         onArchive = { archiving = product },
                     )
@@ -279,6 +310,66 @@ fun ProductsScreen(
             dismissButton = { TextButton(onClick = { archiving = null }) { Text(stringResource(R.string.form_cancel)) } },
         )
     }
+    if (confirmBulkDelete) {
+        val chosen = products.filter { it.id in selectedIds }
+        AlertDialog(
+            onDismissRequest = { confirmBulkDelete = false },
+            title = {
+                Text(pluralStringResource(R.plurals.products_delete_selected_title, chosen.size, chosen.size))
+            },
+            // Same promise as deleting one: sale_items keeps the name and the price charged that
+            // day, so clearing the catalog cannot rewrite what anyone was charged.
+            text = { Text(stringResource(R.string.products_delete_detail)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmBulkDelete = false
+                        // One call per product, through the same callback the single delete uses.
+                        // Nothing here needs a bulk path in the host: archiving is idempotent and
+                        // the list reloads once the writes land.
+                        chosen.forEach(onArchiveProduct)
+                        selectedIds = emptySet()
+                    },
+                ) {
+                    Text(stringResource(R.string.products_delete_confirm), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmBulkDelete = false }) { Text(stringResource(R.string.form_cancel)) }
+            },
+        )
+    }
+}
+
+/**
+ * What appears above the list while a selection is live: how many are picked, and the things worth
+ * doing with them.
+ *
+ * Deliberately not a floating action. The destructive control belongs beside the count that says
+ * what it is about to remove, not somewhere the thumb reaches before the eye does.
+ */
+@Composable
+private fun SelectionBar(
+    count: Int,
+    onSelectAll: () -> Unit,
+    onClear: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = pluralStringResource(R.plurals.products_selected_count, count, count),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onSelectAll) { Text(stringResource(R.string.products_select_all)) }
+        TextButton(onClick = onClear) { Text(stringResource(R.string.form_cancel)) }
+        TextButton(onClick = onDelete) {
+            Text(stringResource(R.string.products_delete), color = MaterialTheme.colorScheme.error)
+        }
+    }
 }
 
 @Composable
@@ -327,23 +418,55 @@ private fun ProductFormDialog(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun ProductRow(
     product: ProductEntity,
     store: ProductImageStore,
+    selectionActive: Boolean,
+    isSelected: Boolean,
+    onToggleSelected: () -> Unit,
     onEdit: () -> Unit,
     onArchive: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val selectDescription = stringResource(R.string.products_select_description, product.name)
     Card(
-        modifier = Modifier.fillMaxWidth().heightIn(min = CATALOG_ROW_HEIGHT),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = CATALOG_ROW_HEIGHT)
+            // Long press starts a selection, and once one is live a plain tap keeps adding to it.
+            // The row had no tap action of its own to give up: editing and deleting already live in
+            // the overflow menu, so nothing was taken away to make room for this.
+            .combinedClickable(
+                onClick = { if (selectionActive) onToggleSelected() },
+                onLongClick = onToggleSelected,
+            )
+            .semantics {
+                if (selectionActive) {
+                    selected = isSelected
+                    contentDescription = selectDescription
+                }
+            },
         shape = NeoShapes.row,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            },
+        ),
+        border = BorderStroke(
+            if (isSelected) 2.dp else 1.dp,
+            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        ),
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(start = NeoSpacing.md),
+            modifier = Modifier.fillMaxWidth().padding(start = NeoSpacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (selectionActive) {
+                Checkbox(checked = isSelected, onCheckedChange = { onToggleSelected() })
+            }
             ProductPhoto(product.imageUri, store, 44.dp)
             Column(modifier = Modifier.weight(1f).padding(horizontal = NeoSpacing.md)) {
                 // The name owns its line. Sharing it with the price truncated real product names
