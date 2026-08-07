@@ -60,8 +60,11 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   funciona. (Que los clientes no vuelvan en Gratis es lo correcto, no un fallo.)
 - ✅ **Cerrada la otra mitad del ciclo de cobro**: el reembolso/revocación desde Play Console quitó
   el derecho y **la app volvió a Gratis sola**. Era el pendiente que llevaba desde el 2026-08-06.
-- ⚠️ Siguen sin probar: la **adopción** al reinstalar con datos en la nube, y el caso `Blocked`.
-  Este último **no se puede provocar a mano** (necesita sesión válida + Room vacío + lookup fallido
+- ✅ **Caso 3 (adopción) VERIFICADO**: desinstalar, reinstalar e iniciar sesión devolvió los datos y
+  dejó **un solo** negocio — el **mismo** `1668fc61`, con `createdAtEpochMillis` idéntico. Que el id
+  y el timestamp no cambien es la prueba de que lo **adoptó** en vez de recrearlo. Los tres casos
+  probables del plan quedan verificados en dispositivo.
+- ⚠️ Sigue sin probar sólo el caso `Blocked`, que **no se puede provocar a mano** (necesita sesión válida + Room vacío + lookup fallido
   a la vez, y sin red no se puede ni iniciar sesión): queda cubierto sólo por `BusinessClaimPolicyTest`.
 - **✅ Los 9 negocios duplicados fueron borrados** el 2026-08-07 con
   `firebase firestore:delete --recursive` (CLI vía `npx`, sesión `capihwlabs@gmail.com`). Verificado:
@@ -154,9 +157,14 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Qué sigue, en orden de valor
 
-1. **Probar el caso 3: la adopción.** Es lo único que queda del plan de duplicados. Desinstalar,
-   reinstalar, iniciar sesión con datos ya en la nube: deben volver los clientes y **seguir habiendo
-   un solo negocio** en Firestore. Ahí es donde antes nacía el duplicado.
+1. **SUBIR `cuentivo-1.15-vc22.aab` A PRUEBA CERRADA.** Aprobado el 2026-08-07 con los tres casos
+   verificados en dispositivo. La retro pedida sobre la 1.14 (legibilidad, navbar en Android viejo)
+   **sigue siendo válida** aunque actualicen: la 1.15 no toca tipografía ni navbar. Al revés,
+   dejarlos en la 1.14 los mantiene expuestos a los duplicados y a ventas rápidas sin fecha, que
+   **no se pueden corregir después** (regla 2).
+   Avisos al subir: el caso `Blocked` sólo está cubierto por pruebas unitarias; y "gana el más
+   antiguo" puede hacer que un tester con duplicados previos aterrice en un negocio distinto del
+   que venía usando — es lo correcto, pero si reporta "me cambiaron los datos", es esto.
 2. **Escuchar lo que reporten los testers de la 1.14**, sobre todo si algún texto se corta con la
    tipografía nueva y cómo se ve el navbar en un Android 11 o menor — eso nunca se ha visto, aquí
    sólo hay imagen API 37.
