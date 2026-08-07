@@ -85,6 +85,8 @@ import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
+import com.cuentivo.app.ui.transaction.DueOption
+import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import java.time.LocalDate
 
 /** Matches the reference's three-line row: name, status, balance. */
@@ -348,10 +350,14 @@ private fun CustomerFormDialog(
     var photo by remember(formKey) { mutableStateOf(ProductPhotoDraftPolicy.start(null)) }
     val context = LocalContext.current
     val imageStore = remember(context) { ProductImageStore(context) }
+    // Starts on the default plazo, like Nueva venta. Selling fiado means agreeing on a date, and
+    // this route used to save none at all — every customer created this way stayed invisible to the
+    // payment score forever.
+    var dueOption by remember(formKey) { mutableStateOf(DueOption.FIFTEEN) }
     val quickSaleEntry = if (quickSaleTargetId == null) {
         QuickSaleEntry.Empty
     } else {
-        QuickSalePolicy.read(productName, productPriceText, quantityText, photo.current)
+        QuickSalePolicy.read(productName, productPriceText, quantityText, photo.current, dueOption.days)
     }
     val quickSale = (quickSaleEntry as? QuickSaleEntry.Ready)?.sale
     val nameLabel = stringResource(R.string.customers_form_name_label)
@@ -449,6 +455,25 @@ private fun CustomerFormDialog(
                 modifier = Modifier.fillMaxWidth().testTag("quick-sale-quantity"),
             )
             ProductPhotoPicker(photo, imageStore, quickSaleTargetId) { photo = it }
+            Text(
+                stringResource(R.string.new_sale_due_question),
+                style = MaterialTheme.typography.labelMedium,
+            )
+            // Two by two, same as Nueva venta: four chips in one row truncate "Sin fecha" at 320 dp.
+            Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.xs)) {
+                DueOption.entries.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
+                        pair.forEach { option ->
+                            NeoChoiceChip(
+                                label = stringResource(option.labelRes),
+                                isSelected = dueOption == option,
+                                onClick = { dueOption = option },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
             quickSale?.let {
                 Text(
                     stringResource(R.string.customers_form_quick_sale_total, Money.format(it.totalCents)),

@@ -76,6 +76,7 @@ import com.cuentivo.app.domain.SaleLineSummary
 import com.cuentivo.app.domain.SoldLine
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
+import com.cuentivo.app.domain.SyncEntitlement
 import com.cuentivo.app.ui.CorrectionCandidate
 import com.cuentivo.app.ui.SaleCorrection
 import com.cuentivo.app.domain.SaleDraft
@@ -666,7 +667,11 @@ class MainActivity : ComponentActivity() {
                                     SaleItemEntity(UUID.randomUUID().toString(), saleId, product?.id, sale.productName, sale.quantity.toLong(), sale.unitPriceCents, 0L, sale.totalCents)
                                 }
                                 val saleEntity = quickSale?.let { sale ->
-                                    SaleEntity(saleId, businessId, customer.id, currentUserId, "V-${now}", LocalDate.now().toEpochDay(), null, sale.totalCents, 0L, sale.totalCents, false, null, now, now)
+                                    // The agreed date the form asked for. Resolved here rather than
+                                    // in the domain, which stays free of a clock; null still means
+                                    // "sin fecha" and keeps the sale out of the score, as chosen.
+                                    val dueDateEpochDay = sale.dueInDays?.let { LocalDate.now().plusDays(it).toEpochDay() }
+                                    SaleEntity(saleId, businessId, customer.id, currentUserId, "V-${now}", LocalDate.now().toEpochDay(), dueDateEpochDay, sale.totalCents, 0L, sale.totalCents, false, null, now, now)
                                 }
                                 val charge = quickSale?.let { sale ->
                                     AccountMovementEntity(UUID.randomUUID().toString(), businessId, customer.id, saleId, null, "CHARGE", sale.totalCents, "DEBIT", now, currentUserId, null, null)
@@ -712,7 +717,7 @@ class MainActivity : ComponentActivity() {
                                             syncQueue.enqueue(businessId, "PRODUCT", created.id, now, mapOf("businessId" to businessId, "name" to created.name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to created.salePriceCents, "costPriceCents" to null, "stock" to null, "imageUri" to created.imageUri, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
                                         }
                                         if (saleEntity != null && charge != null && saleItem != null) {
-                                            syncQueue.enqueue(businessId, "SALE", saleEntity.id, now, mapOf("businessId" to businessId, "customerId" to customer.id, "sellerUserId" to currentUserId, "saleNumber" to saleEntity.saleNumber, "saleDateEpochDay" to saleEntity.saleDateEpochDay, "dueDateEpochDay" to null, "subtotalCents" to saleEntity.subtotalCents, "discountCents" to saleEntity.discountCents, "totalCents" to saleEntity.totalCents, "isCanceled" to false, "notes" to null, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now))
+                                            syncQueue.enqueue(businessId, "SALE", saleEntity.id, now, mapOf("businessId" to businessId, "customerId" to customer.id, "sellerUserId" to currentUserId, "saleNumber" to saleEntity.saleNumber, "saleDateEpochDay" to saleEntity.saleDateEpochDay, "dueDateEpochDay" to saleEntity.dueDateEpochDay, "subtotalCents" to saleEntity.subtotalCents, "discountCents" to saleEntity.discountCents, "totalCents" to saleEntity.totalCents, "isCanceled" to false, "notes" to null, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now))
                                             syncQueue.enqueue(businessId, "SALE_ITEM", saleItem.id, now, mapOf("saleId" to saleEntity.id, "productId" to saleItem.productId, "productNameSnapshot" to saleItem.productNameSnapshot, "quantity" to saleItem.quantity, "unitPriceCents" to saleItem.unitPriceCents, "discountCents" to saleItem.discountCents, "subtotalCents" to saleItem.subtotalCents))
                                             syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, mapOf("businessId" to businessId, "customerId" to customer.id, "saleId" to saleEntity.id, "paymentId" to null, "type" to charge.type, "amountCents" to charge.amountCents, "direction" to charge.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
                                         }
@@ -1100,6 +1105,9 @@ class MainActivity : ComponentActivity() {
                     val wrongPassword = stringResource(R.string.backup_restore_wrong_password)
                     BackupSection(
                         isWorking = isBackupWorking,
+                        // The same tier the plan card below is drawn from, so the two cannot
+                        // disagree on screen the way they did.
+                        hasCloudBackup = SyncEntitlement.allowsCloudSync(tier),
                         onExport = { uri, password ->
                             lifecycleScope.launch {
                                 isBackupWorking = true

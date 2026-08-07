@@ -46,7 +46,8 @@ class QuickSaleFlowTest {
         composeRule.runOnIdle {
             assertEquals(1, created.size)
             assertEquals("Carmen", created[0].first)
-            assertEquals(QuickSale("Jabón Zote", 2_550, 2, null), created[0].second)
+            // The plazo is left untouched, so it must arrive as the default rather than as no date.
+            assertEquals(QuickSale("Jabón Zote", 2_550, 2, null, 15L), created[0].second)
         }
     }
 

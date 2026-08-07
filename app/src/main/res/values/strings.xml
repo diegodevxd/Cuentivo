@@ -330,6 +330,7 @@
     <string name="verify_pending_alert_detail">Tu cuenta sigue sin verificar. Sin eso no podemos ayudarte a recuperar tu contraseña ni respaldar tus datos.</string>
     <string name="backup_title">Respaldo</string>
     <string name="backup_detail">Tus datos viven solo en este teléfono. Guarda un respaldo por si lo pierdes o lo cambias.</string>
+    <string name="backup_detail_cloud">Tus datos se respaldan en la nube con tu plan Pro. Guarda también una copia en tu teléfono si quieres tenerla a la mano.</string>
     <string name="backup_export">Crear respaldo</string>
     <string name="backup_restore">Restaurar un respaldo</string>
     <string name="backup_export_title">Ponle una contraseña</string>

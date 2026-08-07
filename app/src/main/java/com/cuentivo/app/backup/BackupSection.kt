@@ -39,6 +39,15 @@ fun BackupSection(
     onExport: (Uri, String) -> Unit,
     onRestore: (Uri, String) -> Unit,
     isWorking: Boolean = false,
+    /**
+     * Whether this account's data is already being kept in the cloud.
+     *
+     * Only the explanatory line changes; the buttons stay identical on every plan. Telling a Pro
+     * subscriber "your data lives only on this phone" — directly above the plan card that sells
+     * them cloud sync — reads as either a broken promise or a lie, and it is neither. Defaults to
+     * false so the cautious sentence is what shows whenever the plan is not known yet.
+     */
+    hasCloudBackup: Boolean = false,
 ) {
     var exportPassword by remember { mutableStateOf<String?>(null) }
     var askExportPassword by remember { mutableStateOf(false) }
@@ -60,7 +69,9 @@ fun BackupSection(
     Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm), modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleMedium)
         Text(
-            stringResource(R.string.backup_detail),
+            stringResource(
+                if (hasCloudBackup) R.string.backup_detail_cloud else R.string.backup_detail
+            ),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

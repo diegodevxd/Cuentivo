@@ -330,6 +330,7 @@
     <string name="verify_pending_alert_detail">Your account is still unverified. Without it we cannot help you recover your password or back up your data.</string>
     <string name="backup_title">Backup</string>
     <string name="backup_detail">Your data lives only on this phone. Keep a backup in case you lose it or replace it.</string>
+    <string name="backup_detail_cloud">Your data is backed up to the cloud with your Pro plan. Keep a copy on your phone too if you want one on hand.</string>
     <string name="backup_export">Create backup</string>
     <string name="backup_restore">Restore a backup</string>
     <string name="backup_export_title">Set a password</string>

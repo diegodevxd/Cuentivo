@@ -71,7 +71,12 @@ private val CART_ROW_HEIGHT = 60.dp
  * The four due dates the reference offers. The label is what a person picks; the days are what
  * becomes `dueDateEpochDay`, and "Sin fecha" stays null rather than quietly meaning "today".
  */
-private enum class DueOption(val labelRes: Int, val days: Long?) {
+/**
+ * Shared with the quick sale on the customer form rather than duplicated: two lists of plazos that
+ * drift apart is how the same shop ends up with sales the score treats differently depending on
+ * which screen recorded them.
+ */
+internal enum class DueOption(val labelRes: Int, val days: Long?) {
     NONE(R.string.new_sale_due_none, null),
     SEVEN(R.string.new_sale_due_7, 7L),
     FIFTEEN(R.string.new_sale_due_15, 15L),

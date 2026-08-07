@@ -12,11 +12,24 @@ data class QuickSale(
     val unitPriceCents: Long,
     val quantity: Int,
     val photoFileName: String?,
+    /**
+     * How many days from today the customer agreed to pay, or null for no agreed date.
+     *
+     * Days rather than a date because this is the domain: resolving it against a calendar needs a
+     * clock, and keeping that out is what lets the rest of this file run without a device.
+     *
+     * It exists at all because a sale with no agreed date can never be late, and a sale that cannot
+     * be late is one the payment score has to ignore. This route saved every sale with no date at
+     * all, so the traffic light stayed off for every customer whose only purchases came through
+     * here — the same bug already fixed in `NewSaleScreen`, still open on this side.
+     */
+    val dueInDays: Long? = null,
 ) {
     init {
         require(productName.isNotBlank()) { "A quick sale needs a product name." }
         require(unitPriceCents > 0) { "A quick sale needs a positive price." }
         require(quantity > 0) { "A quick sale needs a positive quantity." }
+        require(dueInDays == null || dueInDays > 0) { "An agreed date cannot be today or earlier." }
     }
 
     /** Integer cents throughout, like every other total in this app. */
@@ -47,6 +60,11 @@ object QuickSalePolicy {
         priceText: String,
         quantityText: String,
         photoFileName: String?,
+        /**
+         * Not part of "touched": the form offers a plazo by default, so leaving it alone must not
+         * turn an untouched form into a sale nobody meant to record.
+         */
+        dueInDays: Long? = DEFAULT_DUE_DAYS,
     ): QuickSaleEntry {
         val name = productName.trim()
         val price = priceText.trim().ifBlank { null }?.let(Money::positiveCentsFromPesos)
@@ -58,10 +76,16 @@ object QuickSalePolicy {
         return when {
             !touched -> QuickSaleEntry.Empty
             name.isEmpty() || price == null || quantity == null || quantity <= 0 -> QuickSaleEntry.Incomplete
-            else -> QuickSaleEntry.Ready(QuickSale(name, price, quantity, photoFileName))
+            else -> QuickSaleEntry.Ready(QuickSale(name, price, quantity, photoFileName, dueInDays))
         }
     }
 
     /** The quantity the form starts with, so leaving it alone does not read as "started". */
     const val DEFAULT_QUANTITY = "1"
+
+    /**
+     * The plazo a quick sale starts with. Fifteen days, matching `NewSaleScreen`, because selling
+     * fiado *means* agreeing on a date — starting at "sin fecha" is what left the score blind.
+     */
+    const val DEFAULT_DUE_DAYS = 15L
 }

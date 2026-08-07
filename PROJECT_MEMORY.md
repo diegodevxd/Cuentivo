@@ -15,6 +15,20 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   primera que lleva el semáforo, la tipografía grande y el borrado múltiple. Se les mandó un
   mensaje pidiendo tres cosas concretas: si se lee cómodo, si algún texto se corta, y cómo se ve
   la barra de abajo en un Android viejo.
+- **1.15 / versionCode 21 compilada y firmada, SIN SUBIR** (2026-08-07). Trae dos cosas: la fecha
+  pactada en el alta rápida (ver abajo) y el texto del respaldo condicionado al plan. Conviene
+  esperar la retro de la 1.14 antes de subirla, o se pierde esa señal antes de recibirla.
+- **✅ El alta rápida ya pide fecha pactada.** Era el último hueco del semáforo: `MainActivity`
+  guardaba `dueDateEpochDay = null` a fuerza, así que toda venta por la ruta rápida quedaba fuera
+  del score para siempre. `QuickSale` ahora lleva `dueInDays` (días, no fecha — el dominio sigue
+  sin reloj) y el host lo resuelve contra `LocalDate.now()`. `DueOption` pasó de `private` a
+  `internal` y se comparte con `NewSaleScreen` en vez de duplicar la lista de plazos. **Iba también
+  un bug de nube**: el `syncQueue.enqueue` de esa ruta mandaba `"dueDateEpochDay" to null` fijo, así
+  que aunque se hubiera guardado bien en local, la copia remota habría perdido la fecha.
+- **El texto del respaldo ya distingue el plan.** `backup_detail` decía "tus datos viven solo en
+  este teléfono" a un suscriptor Pro, justo encima de la tarjeta que le vende sincronización en la
+  nube. Nueva clave `backup_detail_cloud`, elegida con el **mismo `tier`** del que se dibuja la
+  tarjeta del plan, para que las dos mitades de la pantalla no puedan volver a contradecirse.
 - **La compra de Pro funciona de punta a punta**, y **actualizar de versión no borra datos**
   (ambos verificados al pasar de 1.5 a 1.6). Una compra pertenece a la cuenta de Google, no a la
   versión.
@@ -24,12 +38,12 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   → iniciar sesión devuelve clientes y productos solos. Es la evidencia de que lo que cobra Pro
   sirve de punta a punta. **`restore()` corre en `Dispatchers.IO` y ahí se queda**: `Tasks.await`
   es bloqueante y Play Services lo rechaza en el hilo principal.
-- Suites en verde en la última corrida: **270 pruebas JVM**, 0 fallos, con `assembleDebug`,
+- Suites en verde en la última corrida: **273 pruebas JVM**, 0 fallos, con `assembleDebug`,
   `assembleDebugAndroidTest`, `assembleRelease` y `bundleRelease` exitosos (2026-08-07). Las
   instrumentadas compilan pero **no se han corrido**: no hay emulador levantado y no se pueden
   correr contra el teléfono de Diego.
 - Room sigue en `version = 4`. Firebase: proyecto `organitazionlabs` (600636825165), plan Spark.
-- Paridad de textos es/en: **316 `<string>` + 3 `<plurals>` en cada idioma**.
+- Paridad de textos es/en: **317 `<string>` + 3 `<plurals>` en cada idioma**.
 - ⚠️ **La puerta del idioma de `CLAUDE.md` no ve texto dentro de un `if`.** El apartado de plan
   llevaba todo su copy en español duro (`text = if (free) "Plan Gratis" else ...`) y el grep nunca
   lo marcó, porque sólo detecta `text = "` seguido de letras. Con la app en inglés seguía saliendo
@@ -73,23 +87,22 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 1. **Escuchar lo que reporten los testers de la 1.14**, sobre todo si algún texto se corta con la
    tipografía nueva y cómo se ve el navbar en un Android 11 o menor — eso nunca se ha visto, aquí
    sólo hay imagen API 37.
-2. **Darle fecha de pago al alta rápida.** Hoy `MainActivity.kt:662` guarda `dueDateEpochDay = null`
-   a fuerza y sin opción, así que toda venta hecha por la ruta rápida queda fuera del semáforo para
-   siempre. Es el hueco que le queda a la función. El costo es que un selector le quita justo lo
-   rápido a la pantalla rápida.
-3. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
+2. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
    2026-08-06, cuando los testers hayan actualizado. Si casi todas las peticiones salen
    *verificadas*, **activar el enforcement**. Si salen *no verificadas*, ver el primer blocker.
-4. **Cerrar la otra mitad del ciclo de cobro**: ver que al **caducar** la suscripción la app vuelve
-   a FREE. La compra ya está probada; la caducidad no. Es rápido de verificar porque una
-   suscripción de prueba renueva cada ~5 min y caduca tras unas 6 renovaciones: dejarla correr
-   media hora y comprobar que vuelve a frenar en 5 clientes.
-5. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
+3. **Cerrar la otra mitad del ciclo de cobro**: ver que al **caducar** la suscripción la app vuelve
+   a FREE. Es lo más valioso que queda sin evidencia, y ya se sabe **por qué no se había podido
+   probar**: el derecho de la compra de prueba sigue otorgado del lado de Google. Requiere
+   **revocar** desde Play Console → Suscripciones → Pedidos (cancelar sólo detiene renovaciones, no
+   quita el acceso). Diego tiene 3 clientes y datos en la nube, así que es buen caso real para ver
+   también que `CloudRestorePolicy` devolviendo `NotEntitled` se comunique con claridad y no
+   parezca pérdida de datos.
+4. **Las tres mejoras acordadas para después**, en este orden de valor/esfuerzo:
    - **📷 Código de barras** con ML Kit (gratis, on-device, funciona sin internet). Encaja en
      `domain/QuickSale.kt` y en el alta de productos.
    - **📈 Gráficas** en el panel. Baratas, pero decorativas: `BusinessInsights.compare()` ya dice en
      palabras lo que la gráfica diría en pixeles.
-6. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
+5. **Cerrar el hueco de la tanda 6**: productos más vendidos y ranking de deudores. Requiere una
    consulta nueva sobre `sale_items` unido a `sales` no canceladas por periodo. Alimenta tanto el
    panel como el score de clientes.
 
@@ -101,8 +114,14 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   `applicationIdSuffix` en debug, así que el APK de prueba comparte `applicationId` con el de Play
   pero lleva otra firma: instalarlo exige desinstalar la versión de Play y **borra justo el estado
   que se quiere probar**, además de dejar a Play Billing sin ver la suscripción.
-- **La caducidad de Pro nunca se ha visto ocurrir.** Que quien deja de pagar deje de tener nube es
-  la mitad del ciclo de cobro que sigue sin evidencia.
+- **La caducidad de Pro nunca se ha visto ocurrir**, y el 2026-08-07 se averiguó por qué. Una serie
+  de compras de prueba cancelada la noche anterior (último pedido 7:25 p.m., renovaciones cada 5
+  min) **seguía otorgando Pro 13 horas después**, incluso tras desinstalar la app y limpiar la
+  caché de Play Store — o sea que viene del servidor de Google, no de estado viejo en el teléfono.
+  La app está bien: el tier no se guarda en Firestore ni en Room, `EntitlementStore.currentTier` ni
+  siquiera se usa, y `tierState` arranca en FREE, así que un Pro persistente sólo puede venir de la
+  respuesta viva de Play. **Ante un "se quedó en Pro", descartar el entorno de prueba antes de
+  buscar el bug en el código.**
 - **Play Billing no registra nada en logcat en builds release.** El `acknowledge` se lee del
   código (`BillingGateway.kt`) o de Play Console. Las compras de prueba **no aparecen en los
   informes de ingresos**, sólo en la vista de suscripciones — eso no es un fallo.
