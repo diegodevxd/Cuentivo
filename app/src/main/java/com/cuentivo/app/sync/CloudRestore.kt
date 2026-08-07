@@ -2,6 +2,8 @@ package com.cuentivo.app.sync
 
 import android.util.Log
 import com.cuentivo.app.data.local.CuentivoDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Which half of the restore broke. Both used to collapse into one message, which cost three rounds
  * of guessing: "it failed" says nothing about whether the account could not be *found* or could not
@@ -40,17 +42,28 @@ class CloudRestore(
     private val membershipBootstrap: OwnerMembershipBootstrap,
 ) {
 
-    suspend fun restore(userId: String): CloudRestoreResult {
+    /**
+     * Runs off the main thread, always. The gateway reaches Firestore through blocking
+     * `Tasks.await(...)`, which Play Services refuses outright on the main thread — and the only
+     * caller is a Compose `LaunchedEffect`, which starts on `Dispatchers.Main`. That combination
+     * failed on the very first call with "must not be called on the main application thread",
+     * before a single byte reached the network, which is also why logcat had nothing to show. The
+     * dispatcher belongs here rather than at the call site: every path into this class is blocking,
+     * so no caller should have to know that.
+     */
+    suspend fun restore(userId: String): CloudRestoreResult = withContext(Dispatchers.IO) {
         val businessId = when (val found = lookup.findBusinessOwnedBy(userId)) {
             is BusinessLookupResult.Found -> found.businessId
-            BusinessLookupResult.None -> return CloudRestoreResult.NothingInCloud
-            is BusinessLookupResult.Failure -> return failed(found.failure, CloudRestoreStage.LOOKUP)
+            BusinessLookupResult.None -> return@withContext CloudRestoreResult.NothingInCloud
+            is BusinessLookupResult.Failure ->
+                return@withContext failed(found.failure, CloudRestoreStage.LOOKUP)
         }
 
         // From zero, not from a watermark: this device has never seen any of it.
         val documents = when (val download = gateway.download(businessId, FROM_THE_BEGINNING)) {
             is SyncDownloadResult.Success -> download.documents
-            is SyncDownloadResult.Failure -> return failed(download.failure, CloudRestoreStage.DOWNLOAD)
+            is SyncDownloadResult.Failure ->
+                return@withContext failed(download.failure, CloudRestoreStage.DOWNLOAD)
         }
 
         RemoteMerger(database).apply(businessId, documents)
@@ -60,7 +73,7 @@ class CloudRestore(
         // this device's outbox is empty — nothing else would ever enqueue it again.
         database.businessDao().byId(businessId)?.let { membershipBootstrap.ensure(it) }
 
-        return CloudRestoreResult.Restored(
+        CloudRestoreResult.Restored(
             businessId = businessId,
             customers = documents.count { it.entityType == "CUSTOMER" },
             sales = documents.count { it.entityType == "SALE" },
