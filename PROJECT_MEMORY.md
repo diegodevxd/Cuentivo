@@ -4,7 +4,7 @@ Este archivo dice **dónde está el proyecto hoy y qué sigue**. No es un diario
 sustituyendo, no añadiendo. Lo que deja de estar vigente baja a `docs/historia-del-proyecto.md`.
 La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
-**Última actualización:** 2026-08-07
+**Última actualización:** 2026-08-08
 
 ---
 
@@ -15,9 +15,27 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   primera que lleva el semáforo, la tipografía grande y el borrado múltiple. Se les mandó un
   mensaje pidiendo tres cosas concretas: si se lee cómodo, si algún texto se corta, y cómo se ve
   la barra de abajo en un Android viejo.
-- **1.15 / versionCode 22 en PRUEBA INTERNA, sin subir a prueba cerrada** (2026-08-07). Trae la fecha pactada en el
-  alta rápida, el texto del respaldo condicionado al plan y el arreglo de negocios duplicados.
-  Conviene esperar la retro de la 1.14 antes de subirla, o se pierde esa señal antes de recibirla.
+- **1.15.2 / versionCode 24 SUBIDA el 2026-08-08.** Es la vigente. Cierra tres bugs de la misma
+  familia, todos alrededor de `BusinessClaimPolicy`, y el mensaje al tester que los destapó ya se
+  envió. Los dos primeros están **verificados en el teléfono de Diego**, no sólo por pruebas:
+  1. **`reloadUser` no refrescaba el ID token.** Hacía sólo `user.reload()`, que actualiza el objeto
+     local — `isEmailVerified` pasa a true y el cliente deja entrar — pero **no el token**, y
+     `firestore.rules` lee `request.auth.token.email_verified`. Un **usuario nuevo** verificaba su
+     correo, entraba, y la primera consulta se denegaba: pantalla `Blocked` con un "Reintentar" que
+     reemitía la misma consulta con el mismo token viejo. Ahora fuerza `getIdToken(true)`.
+  2. **`findBusinessOwnedBy` leía del caché.** Con `.get()` a secas, un teléfono sin red recibe un
+     snapshot vacío **sin error**, así que "no pude preguntar" llegaba disfrazado de "esta cuenta no
+     tiene nada" y el candado nunca se cerraba — era casi inalcanzable por la única causa para la que
+     se escribió. Ahora `.get(Source.SERVER)`.
+  3. Cuentas legacy sin verificar ya no consultan la nube (`canQueryCloud`), y un registro hecho en
+     **este mismo proceso** puede crear aunque falle el lookup (`accountIsBrandNew`) — sin esa
+     exención, exigir servidor dejaba a un usuario nuevo sin señal fuera de una app offline-first.
+     La exención se resuelve en memoria y **nunca por reloj**: un reloj mal puesto haría que una
+     reinstalación pareciera reciente y mintiera el duplicado que todo esto existe para impedir.
+  La pantalla bloqueada ya tiene salida: **"Usar otra cuenta"** además de "Reintentar".
+  294 pruebas JVM en verde, `jar verified`, paridad de idiomas 320 = 320.
+- **1.15 / versionCode 22 y 1.15.1 / vc23 quedaron superadas.** La 22 estuvo en prueba interna; la 23
+  se subió y quedó reemplazada por la 24 el mismo día.
 - ✅ **RESUELTO Y VERIFICADO EN DISPOSITIVO: el backfill sube todo.** Con la **1.15 / versionCode 22**
   por el canal de **prueba interna**, actualizada encima del estado roto (sin desinstalar, que era
   la única forma de probar la segunda corrección). Firestore bajo `1668fc61`: **1 miembro** (id = uid,
@@ -157,14 +175,11 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Qué sigue, en orden de valor
 
-1. **SUBIR `cuentivo-1.15-vc22.aab` A PRUEBA CERRADA.** Aprobado el 2026-08-07 con los tres casos
-   verificados en dispositivo. La retro pedida sobre la 1.14 (legibilidad, navbar en Android viejo)
-   **sigue siendo válida** aunque actualicen: la 1.15 no toca tipografía ni navbar. Al revés,
-   dejarlos en la 1.14 los mantiene expuestos a los duplicados y a ventas rápidas sin fecha, que
-   **no se pueden corregir después** (regla 2).
-   Avisos al subir: el caso `Blocked` sólo está cubierto por pruebas unitarias; y "gana el más
-   antiguo" puede hacer que un tester con duplicados previos aterrice en un negocio distinto del
-   que venía usando — es lo correcto, pero si reporta "me cambiaron los datos", es esto.
+1. **Esperar la retro de la 1.15.2 / vc24**, ya subida y anunciada. Si alguien reporta algo raro
+   **sin señal**, mirar primero el restore de Pro (ver Pendientes de fondo): es el único hueco de esa
+   familia que queda abierto. Aviso que sigue vigente: "gana el más antiguo" puede hacer que un
+   tester con duplicados previos aterrice en un negocio distinto del que venía usando — es lo
+   correcto, pero si reporta "me cambiaron los datos", es esto.
 2. **Escuchar lo que reporten los testers de la 1.14**, sobre todo si algún texto se corta con la
    tipografía nueva y cómo se ve el navbar en un Android 11 o menor — eso nunca se ha visto, aquí
    sólo hay imagen API 37.
@@ -195,8 +210,15 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   `applicationIdSuffix` en debug, así que el APK de prueba comparte `applicationId` con el de Play
   pero lleva otra firma: instalarlo exige desinstalar la versión de Play y **borra justo el estado
   que se quiere probar**, además de dejar a Play Billing sin ver la suscripción.
-- **El arreglo de duplicados vive en la ruta de arranque y no se ha probado en dispositivo.** Es el
-  riesgo abierto más grande ahora mismo.
+- ✅ **RESUELTO (2026-08-08): el arreglo de duplicados ya está probado en dispositivo.** Se creía
+  imposible de montar a mano — exige sesión válida + Room vacío + lookup fallido a la vez. Sí se
+  puede, en un build debug: `adb shell run-as com.cuentivo.app rm ./databases/cuentivo.db{,-wal,-shm}`
+  borra Room y **deja viva** la sesión de Firebase (vive en `shared_prefs`), que es exactamente el
+  estado de una reinstalación. Con modo avión encima, el log dio `UNAVAILABLE` y la app bloqueó en
+  vez de crear — **con el caché de Firestore todavía lleno en el teléfono**, que es la prueba de que
+  `Source.SERVER` hace lo que dice. Respaldar `databases/` antes y restaurar después; un comando por
+  llamada, sin `sh -c`. El único caso que **sigue** sin poderse montar es "usuario nuevo sin señal":
+  registrarse y verificar exigen internet.
 - **La caducidad de Pro nunca se ha visto ocurrir**, y el 2026-08-07 se averiguó por qué. Una serie
   de compras de prueba cancelada la noche anterior (último pedido 7:25 p.m., renovaciones cada 5
   min) **seguía otorgando Pro 13 horas después**, incluso tras desinstalar la app y limpiar la
@@ -213,6 +235,13 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Pendientes de fondo
 
+- **El restore de Pro todavía lee del caché.** `FirestoreSyncGateway.download` usa `.get()` sin
+  `Source`, así que si la señal se cae a media descarga Firestore contesta desde un caché vacío
+  **sin error**: `NothingInCloud`, silencio total, y `restoreAttempted = true` impide reintentar.
+  El usuario se queda con el negocio adoptado y el ledger vacío, creyendo que perdió sus datos. Es
+  el mismo error que ya se corrigió en `findBusinessOwnedBy` (2026-08-08, `Source.SERVER`), en la
+  ruta que más duele. Arreglo: `Source.SERVER` ahí también, o no marcar `restoreAttempted` cuando
+  la respuesta venga del caché.
 - **Textos en español fuera de `ui/`**: snackbars de `MainActivity` y literales de
   `domain/AppAlerts.kt`, `BusinessInsights.kt`, `CustomerStatementCsv.kt`, `DebtorShareText.kt`,
   `SaleDraft.kt`, `SubscriptionTier.kt`, `auth/AuthenticationGateway.kt`, `billing/BillingGateway.kt`.

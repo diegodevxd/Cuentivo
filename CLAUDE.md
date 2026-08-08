@@ -66,7 +66,9 @@ emulator -avd Medium_Phone -no-snapshot-load -no-boot-anim
 
 Para sacar archivos que escribió una prueba instrumentada hay que impedir que Gradle desinstale el APK al terminar: `-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`, y luego `adb exec-out run-as com.cuentivo.app cat files/<ruta>`.
 
-Para verificar la firma de un APK o AAB, **`apksigner verify --print-certs`**. `jarsigner -verify` sólo entiende firma v1 y dice "jar is unsigned" para un APK firmado con v2: es un falso negativo.
+Para verificar la firma de un **APK**, **`apksigner verify --print-certs`**. `jarsigner -verify` sólo entiende firma v1 y dice "jar is unsigned" para un APK firmado con v2: es un falso negativo.
+
+Para un **AAB es al revés**: `apksigner` truena con `ApkFormatException: Missing AndroidManifest.xml` porque un bundle no es un APK. Ahí va **`jarsigner -verify`** (debe decir `jar verified`; los avisos de certificado autofirmado y sin timestamp son normales con una llave de subida). Para comparar que dos AAB llevan la **misma llave** — obligatorio antes de subir un parche, porque Play rechaza para siempre un bundle firmado con otra: `keytool -printcert -jarfile <aab>` y contrastar el SHA1.
 
 ## Reglas del proyecto
 
