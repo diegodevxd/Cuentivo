@@ -47,6 +47,92 @@ class BusinessClaimPolicyTest {
     }
 
     /**
+     * The retro that found this: a session the rules will not serve is not a broken connection, and
+     * telling somebody to check theirs sends them after a problem they do not have. There is nothing
+     * in the cloud to duplicate either — the same rules refused every write this account attempted.
+     */
+    @Test fun a_session_that_may_not_read_the_cloud_creates_instead_of_blocking() {
+        assertEquals(
+            BusinessClaim.CreateNew,
+            BusinessClaimPolicy.decide(
+                hasLocalBusiness = false,
+                remoteBusinessId = null,
+                lookupFailed = true,
+                canQueryCloud = false,
+            ),
+        )
+    }
+
+    /** Not being allowed to ask must not take the data off a device that already has it. */
+    @Test fun a_session_that_may_not_read_the_cloud_still_uses_what_is_local() {
+        assertEquals(
+            BusinessClaim.UseLocal,
+            BusinessClaimPolicy.decide(
+                hasLocalBusiness = true,
+                remoteBusinessId = null,
+                lookupFailed = true,
+                canQueryCloud = false,
+            ),
+        )
+    }
+
+    /**
+     * Offline-first has to survive being offline. Requiring the server for this lookup made the
+     * Blocked screen reachable for the first time — including for somebody who just registered and
+     * has no signal, who would meet a screen about confirming data they have never had.
+     */
+    @Test fun an_account_registered_in_this_session_may_create_even_if_the_lookup_failed() {
+        assertEquals(
+            BusinessClaim.CreateNew,
+            BusinessClaimPolicy.decide(
+                hasLocalBusiness = false,
+                remoteBusinessId = null,
+                lookupFailed = true,
+                accountIsBrandNew = true,
+            ),
+        )
+    }
+
+    /** The reinstall is the case that strands a ledger, and it is never brand new. Still blocked. */
+    @Test fun a_reinstall_with_a_failed_lookup_is_blocked_even_though_the_device_is_empty() {
+        assertEquals(
+            BusinessClaim.Blocked,
+            BusinessClaimPolicy.decide(
+                hasLocalBusiness = false,
+                remoteBusinessId = null,
+                lookupFailed = true,
+                accountIsBrandNew = false,
+            ),
+        )
+    }
+
+    /** Being new never overrides a real answer: a business that was found is still adopted. */
+    @Test fun a_brand_new_account_still_adopts_a_business_the_lookup_actually_found() {
+        assertEquals(
+            BusinessClaim.AdoptRemote("b-1"),
+            BusinessClaimPolicy.decide(
+                hasLocalBusiness = false,
+                remoteBusinessId = "b-1",
+                lookupFailed = false,
+                accountIsBrandNew = true,
+            ),
+        )
+    }
+
+    /** A verified session that genuinely cannot reach the network is still blocked, as before. */
+    @Test fun a_verified_session_with_a_failed_lookup_is_still_blocked() {
+        assertEquals(
+            BusinessClaim.Blocked,
+            BusinessClaimPolicy.decide(
+                hasLocalBusiness = false,
+                remoteBusinessId = null,
+                lookupFailed = true,
+                canQueryCloud = true,
+            ),
+        )
+    }
+
+    /**
      * The old gateway took the newest, which hands the account its own duplicate and strands the
      * ledger with the real history.
      */

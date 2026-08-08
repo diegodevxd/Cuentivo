@@ -44,15 +44,38 @@ object BusinessClaimPolicy {
      * @param lookupFailed whether the lookup could not be completed at all. Checked before
      *   [remoteBusinessId] precisely because a failure and an empty answer are indistinguishable
      *   once both have collapsed into "null".
+     * @param canQueryCloud whether this session is allowed to talk to the cloud at all. False for an
+     *   unverified address: the rules deny every read it makes, so asking is guaranteed to "fail".
+     * @param accountIsBrandNew whether this very session registered the account. Only ever true for
+     *   a sign-up that happened in this process, never for a sign-in and never after a restart.
      */
     fun decide(
         hasLocalBusiness: Boolean,
         remoteBusinessId: String?,
         lookupFailed: Boolean,
+        canQueryCloud: Boolean = true,
+        accountIsBrandNew: Boolean = false,
     ): BusinessClaim = when {
         // First, so a device with its data intact never spends a network call — and so a lookup
         // failure cannot lock out somebody who was not going to create anything anyway.
         hasLocalBusiness -> BusinessClaim.UseLocal
+        // A session that may not read the cloud may still create, and this is not the loophole it
+        // looks like. The same rules that deny it the lookup denied it every write it ever tried, so
+        // there is provably nothing up there under this account to duplicate. Without this branch a
+        // grandfathered account — allowed in without verifying, precisely so it would not lose its
+        // ledger — got Blocked the first time it opened the app on an empty device, and the retry
+        // button could never clear it because the denial was not transient.
+        !canQueryCloud -> BusinessClaim.CreateNew
+        // An account registered seconds ago, by this very process, cannot own a business anywhere:
+        // it did not exist to own one. So a failed lookup tells it nothing it does not already know,
+        // and blocking on it would strand a brand new user behind a screen about confirming data
+        // they have never had — in an offline-first app, over a signal they may not get back today.
+        //
+        // This is deliberately not "the account looks recent". No timestamp, no window, no clock:
+        // those can all be wrong or gamed, and being wrong here means minting the duplicate this
+        // class exists to prevent. Only the sign-up that just happened in memory sets it, so a
+        // reinstall — the case that actually strands a ledger — can never take this branch.
+        lookupFailed && accountIsBrandNew -> BusinessClaim.CreateNew
         lookupFailed -> BusinessClaim.Blocked
         remoteBusinessId != null -> BusinessClaim.AdoptRemote(remoteBusinessId)
         else -> BusinessClaim.CreateNew

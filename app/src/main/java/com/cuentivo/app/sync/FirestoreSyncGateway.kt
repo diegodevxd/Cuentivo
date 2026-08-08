@@ -8,6 +8,7 @@ import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
 import org.json.JSONObject
 
 object FirestoreDocumentPath {
@@ -51,7 +52,17 @@ class FirestoreSyncGateway(
         val snapshots = Tasks.await(
             firestore.collection("businesses")
                 .whereEqualTo("ownerUserId", userId)
-                .get()
+                // Source.SERVER, and this is the whole point of the query rather than a detail.
+                // The default source answers from the local cache whenever the server is
+                // unreachable, and it answers *without an error*: an offline phone gets an empty
+                // snapshot, not a failure. On a freshly installed device that cache is empty by
+                // definition, so "I could not ask" arrived here disguised as "this account owns
+                // nothing" — the exact confusion BusinessClaim.Blocked exists to prevent, sailing
+                // straight past it. The Blocked screen was therefore mostly unreachable by the one
+                // cause it was written for, and a reinstall with no signal could still mint the
+                // duplicate that stranded a ledger. Asking the server explicitly makes offline
+                // throw, which is what the caller already knows how to handle correctly.
+                .get(Source.SERVER)
         ).documents.associateBy { it.id }
         val owned = snapshots.values.map {
             RemoteBusiness(it.id, (it.get("createdAtEpochMillis") as? Number)?.toLong() ?: 0L)

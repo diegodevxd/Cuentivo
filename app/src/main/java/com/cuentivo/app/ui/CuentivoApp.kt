@@ -120,7 +120,7 @@ fun CuentivoLoadingScreen() {
  * a second business is not.
  */
 @Composable
-fun CuentivoClaimBlockedScreen(onRetry: () -> Unit) {
+fun CuentivoClaimBlockedScreen(onRetry: () -> Unit, onUseAnotherAccount: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().padding(NeoSpacing.lg), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -142,6 +142,13 @@ fun CuentivoClaimBlockedScreen(onRetry: () -> Unit) {
                 onClick = onRetry,
                 modifier = Modifier.testTag("claim-retry"),
             )
+            // The way out. Retry is the only thing worth trying first, but it is not worth trying
+            // forever: somebody signed into the wrong account, or with no signal they will not get
+            // back today, had nothing here but uninstalling. This screen gates creating a business,
+            // not the person — and a dead end is how a first impression becomes a bad review.
+            TextButton(onClick = onUseAnotherAccount, modifier = Modifier.testTag("claim-sign-out")) {
+                Text(stringResource(R.string.verify_use_another_account))
+            }
         }
     }
 }

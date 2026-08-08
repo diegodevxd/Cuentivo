@@ -300,6 +300,9 @@ class MainActivity : ComponentActivity() {
                 var authenticatedUserId by remember { mutableStateOf(authenticationGateway.currentUserId) }
                 var authenticationMessage by remember { mutableStateOf<String?>(null) }
                 var isAuthenticating by remember { mutableStateOf(false) }
+                // The uid this process registered, if any. Held as the id rather than a flag so
+                // signing out and into an older account cannot inherit the exemption below.
+                var signedUpUserId by remember { mutableStateOf<String?>(null) }
                 // Bumped whenever the account is re-read, so the access decision below recomposes
                 // the moment somebody comes back from clicking the link in their inbox.
                 var verificationKey by remember { mutableIntStateOf(0) }
@@ -335,6 +338,9 @@ class MainActivity : ComponentActivity() {
                                     // Sent straight away: the verification screen this lands on is
                                     // useless without the mail it tells people to go and open.
                                     authenticationGateway.sendEmailVerification { }
+                                    // Recorded here and nowhere else: this is the only moment the
+                                    // app can know an account owns nothing without asking the cloud.
+                                    signedUpUserId = userId
                                     authenticatedUserId = userId
                                     verificationKey++
                                 }.onFailure { error ->
@@ -489,18 +495,27 @@ class MainActivity : ComponentActivity() {
                 // Resolves the claim before anything can be created. Re-runs on retry and whenever
                 // the plan changes, because a lookup that failed offline has to be able to succeed
                 // later without restarting the app.
-                LaunchedEffect(currentUserId, sessionReady, refreshKey, claimAttempt) {
+                // Asking the cloud is pointless for a session the rules will refuse, and worse than
+                // pointless: the refusal arrives as a failed lookup, which means Blocked, which is a
+                // dead end with a retry button that cannot work. Grandfathered accounts are exactly
+                // that case — let in without verifying on purpose — so they skip the question.
+                val canQueryCloud = EmailVerificationPolicy.allowsCloudSync(emailAccess)
+                LaunchedEffect(currentUserId, sessionReady, refreshKey, claimAttempt, canQueryCloud) {
                     if (!sessionReady) return@LaunchedEffect
                     if (database.businessDao().firstOwnedBy(currentUserId) != null) {
                         claim = BusinessClaim.UseLocal
                         return@LaunchedEffect
                     }
                     claim = null
-                    val found = withContext(Dispatchers.IO) { firestoreGateway.findBusinessOwnedBy(currentUserId) }
+                    val found = if (!canQueryCloud) null else {
+                        withContext(Dispatchers.IO) { firestoreGateway.findBusinessOwnedBy(currentUserId) }
+                    }
                     claim = BusinessClaimPolicy.decide(
                         hasLocalBusiness = false,
                         remoteBusinessId = (found as? BusinessLookupResult.Found)?.businessId,
                         lookupFailed = found is BusinessLookupResult.Failure,
+                        canQueryCloud = canQueryCloud,
+                        accountIsBrandNew = signedUpUserId == currentUserId,
                     )
                     // Adopting on the free plan: take the id, not the ledger. Written with the
                     // remote's own timestamps so this row can never win a merge against the copy it
@@ -562,7 +577,15 @@ class MainActivity : ComponentActivity() {
                     // single most expensive assumption in this file: it needs no free plan and no
                     // reinstall, just a bad connection at the wrong second. Not knowing has to mean
                     // not creating, so this offers a retry and nothing else.
-                    CuentivoClaimBlockedScreen(onRetry = { claimAttempt++ })
+                    CuentivoClaimBlockedScreen(
+                        onRetry = { claimAttempt++ },
+                        onUseAnotherAccount = {
+                            authenticationGateway.signOut()
+                            signedUpUserId = null
+                            authenticationMessage = null
+                            authenticatedUserId = null
+                        },
+                    )
                 } else {
                 val viewModel = remember(currentUserId) {
                     // Bound to the signed-in owner, never to "the first business in the database".

@@ -94,8 +94,31 @@ class FirebaseAuthenticationGateway(
             return
         }
         user.reload().addOnCompleteListener { task ->
-            if (task.isSuccessful) onComplete(Result.success(auth.currentUser?.isEmailVerified == true))
-            else onComplete(Result.failure(task.exception ?: IllegalStateException()))
+            if (!task.isSuccessful) {
+                onComplete(Result.failure(task.exception ?: IllegalStateException()))
+                return@addOnCompleteListener
+            }
+            val refreshed = auth.currentUser
+            if (refreshed?.isEmailVerified != true) {
+                onComplete(Result.success(false))
+                return@addOnCompleteListener
+            }
+            // reload() is not enough, and believing it was cost a tester the whole app. It refreshes
+            // the local user object, so `isEmailVerified` flips to true and the client lets them in
+            // — but Firestore does not read that object. It reads `email_verified` out of the signed
+            // ID token, which reload() leaves untouched. So the app opened, the very first thing it
+            // does is ask the cloud whether this account already owns a business, and the rules
+            // denied it: still unverified as far as the token was concerned. A denied lookup is
+            // indistinguishable from a broken connection, so it landed on the Blocked screen, whose
+            // Retry button reissued the same query with the same stale token forever.
+            //
+            // Forcing the token is therefore part of verifying, not an optimisation. Only after this
+            // succeeds is the session actually able to do anything with the cloud, so a failure here
+            // is reported as a failure: the caller asks them to try again, which is exactly right.
+            refreshed.getIdToken(true).addOnCompleteListener { tokenTask ->
+                if (tokenTask.isSuccessful) onComplete(Result.success(true))
+                else onComplete(Result.failure(tokenTask.exception ?: IllegalStateException()))
+            }
         }
     }
 
