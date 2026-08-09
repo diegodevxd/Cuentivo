@@ -4,12 +4,48 @@ Este archivo dice **dónde está el proyecto hoy y qué sigue**. No es un diario
 sustituyendo, no añadiendo. Lo que deja de estar vigente baja a `docs/historia-del-proyecto.md`.
 La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
-**Última actualización:** 2026-08-08
+**Última actualización:** 2026-08-09
 
 ---
 
 ## Dónde estamos
 
+- 🆕 **La app dejó de estar atada al catálogo** (2026-08-09, retro de tester: la gente que vende
+  como los independientes de catálogo piensa por cliente, no por producto). **Sin migración de Room
+  ni cambio a `firestore.rules`**: `sale_items.productId` ya era nullable en los dos lados, y
+  `LegacyMigrationPlanner` ya escribía líneas así desde la importación web. Cuatro cosas:
+  1. **Línea escrita a mano en Nueva venta.** Chips "Del catálogo / Escribir a mano"; la manual no
+     crea producto en el catálogo. `SaleDraftLine` ganó `lineId` y su `productId` es nullable; el
+     carrito se ordena y se borra por `lineId`, porque una línea a mano no tiene producto que nombrar.
+     Dos líneas a mano con el mismo nombre **no se fusionan** (tocar dos veces el mismo producto es
+     un resbalón; escribirlo dos veces es a propósito). Arranca en "a mano" si el catálogo está vacío.
+  2. **El alta de cliente lleva carrito, no un producto.** `QuickSale` se volvió `QuickSaleLine` +
+     `QuickSaleCart`, y `dueInDays` subió de la línea al carrito (la fecha se pacta por venta, no por
+     producto). Cada renglón se toma **del catálogo** o se escribe a mano, y todos salen como **una
+     sola venta** — clave en Gratis: un pedido de 5 cosas gasta 1 venta, no 5. ⚠️ Un renglón lleno
+     sin presionar "Agregar" **igual se guarda** al dar Guardar: era el comportamiento de cuando
+     había un solo producto, y hay prueba instrumentada que lo fija.
+     Además **"Guardar y agregar productos"**: guarda al cliente y cae en Nueva venta con él ya
+     elegido, para el pedido que no cabe en un diálogo. La señal
+     (`pendingSaleCustomerId`) se pone **junto a `customerSavedToken`** y el `LaunchedEffect` está
+     clavado también en la lista de clientes, porque el refresco puede no traer todavía la fila nueva.
+  3. **Saldo anterior de verdad**, en vez de inventar un producto "deuda anterior". Es una **venta**
+     con una sola línea sin producto (`domain/OpeningBalance.kt`), no un `ADJUSTMENT`: todo lo que
+     sirve para cobrar —abonos asignados, deudores, estado de cuenta, WhatsApp, antigüedad— cuelga de
+     `sales`. Campo opcional en el alta. ⚠️ **Gasta cupo del límite de 30 ventas de Gratis.**
+  4. **"Traer deudas de mi libreta"**: captura de nombre + monto por renglones.
+     `domain/OpeningBalancePlanner.kt` **planifica pero nunca escribe**, como `LegacyMigrationPlanner`.
+     Un nombre que ya existe se pega al cliente existente por `CustomerNameNormalizer.key` (la misma
+     mitad del índice único); repetido dentro del lote **se rechaza** en vez de cobrar dos veces.
+     Todo-o-nada, y **los dos límites del plan se revisan sobre el lote completo antes de escribir**.
+  Efecto lateral buscado: **corregir una venta ya no exige productos de catálogo**, así que las
+  ventas de la importación web —que nunca se pudieron editar— ahora sí. Se borró
+  `message_sale_legacy_not_editable`.
+  **322 pruebas JVM en verde**, `assembleDebug` y las instrumentadas compilando, puerta del idioma
+  limpia, paridad **347 = 347**. Instalada en el teléfono de Diego y **sin un solo error en logcat**,
+  pero **el comportamiento nuevo no se ha ejercitado a mano todavía**.
+  ⚠️ **Un cambio de firma no lo detecta `compileDebugKotlin`**: dos veces esta sesión el build
+  principal pasó y `compileDebugAndroidTestKotlin` reventó. Hay que correr los dos.
 - Rama `codex/neo-fintech`, comiteada y subida a `origin`.
 - **1.14 / versionCode 20 subida a prueba cerrada** el 2026-08-07, con los 12 testers. Es la
   primera que lleva el semáforo, la tipografía grande y el borrado múltiple. Se les mandó un
@@ -175,6 +211,11 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Qué sigue, en orden de valor
 
+0. **Probar en dispositivo lo del 2026-08-09**, que es lo único que valida la ruta remota: venta con
+   línea a mano (y que **no** aparezca producto nuevo en el catálogo); "Guardar y agregar productos";
+   saldo anterior y que se le pueda abonar; libreta con un nombre repetido → se pega al que ya existía.
+   Con cuenta **Pro**, ver en Firestore `sales`, `items` con `productId: null` y `movements`.
+   En **Gratis**, que los dos límites frenen antes de escribir: ni cliente a medias ni libreta a medias.
 1. **Esperar la retro de la 1.15.2 / vc24**, ya subida y anunciada. Si alguien reporta algo raro
    **sin señal**, mirar primero el restore de Pro (ver Pendientes de fondo): es el único hueco de esa
    familia que queda abierto. Aviso que sigue vigente: "gana el más antiguo" puede hacer que un
@@ -254,6 +295,17 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   suscripción ni entregar el precio de Pro. Para probar cobros hay que instalar desde Play.
 
 ## Pendientes de fondo
+
+- **Los 27 `syncQueue.enqueue` de `MainActivity` siguen armando el payload a mano.**
+  `sync/SyncPayloads.kt` ya existe y construye el mapa **desde la entidad**, que es lo que impide que
+  se pierda un campo; hoy sólo lo usan el saldo anterior y la libreta. Convertir los otros 27 y los de
+  `OutboxBackfill` es mecánico, pero **no se hizo junto con features a propósito**: un payload mal
+  armado lo rechaza `hasExactKeys()` en silencio, la fila se estaciona como permanente y nada aparece
+  en pantalla. Va en una tanda propia donde el diff sea sólo el movimiento.
+- **La preferencia "¿cómo vendes?" (paso 5 del plan) no se hizo.** Iba a elegir con qué chip abre
+  Nueva venta. Quedó fuera porque el default automático —abrir en "a mano" cuando el catálogo está
+  vacío— cubre el caso real sin agregar un ajuste, textos en dos idiomas ni otra pantalla. Si al
+  probarlo se siente necesario, es chico: una preferencia tipo `LanguagePreference`, sin Room.
 
 - **El restore de Pro todavía lee del caché.** `FirestoreSyncGateway.download` usa `.get()` sin
   `Source`, así que si la señal se cae a media descarga Firestore contesta desde un caché vacío
