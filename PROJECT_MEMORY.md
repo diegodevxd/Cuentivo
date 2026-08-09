@@ -183,9 +183,10 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 2. **Escuchar lo que reporten los testers de la 1.14**, sobre todo si algún texto se corta con la
    tipografía nueva y cómo se ve el navbar en un Android 11 o menor — eso nunca se ha visto, aquí
    sólo hay imagen API 37.
-3. **Revisar el panel de App Check** (Firebase → App Check → Métricas), ~2–3 días después del
-   2026-08-06, cuando los testers hayan actualizado. Si casi todas las peticiones salen
-   *verificadas*, **activar el enforcement**. Si salen *no verificadas*, ver el primer blocker.
+3. **Volver a leer el panel de App Check** (Firebase → App Check → APIs → Cloud Firestore) a partir
+   del 2026-08-09, ya con tráfico posterior al vínculo de Play Integrity. **La barra del día, no el
+   acumulado.** Verificadas > 0 → activar el enforcement. Cero → Play Integrity API en Google Cloud.
+   Los detalles y lo ya descartado están en el primer blocker.
 4. **YA HECHO — ciclo de cobro cerrado**: ver que al **caducar** la suscripción la app vuelve
    a FREE. Es lo más valioso que queda sin evidencia, y ya se sabe **por qué no se había podido
    probar**: el derecho de la compra de prueba sigue otorgado del lado de Google. Requiere
@@ -204,8 +205,27 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Blockers abiertos
 
-- **El enforcement de App Check está APAGADO a propósito.** Los testers en versiones viejas no
-  llevan App Check: activarlo antes de que actualicen les daría `PERMISSION_DENIED`.
+- **El enforcement de App Check sigue APAGADO, pero por otra razón que la anotada antes.** El motivo
+  viejo ("los testers en versiones viejas no llevan App Check") caducó: App Check entró en el
+  **versionCode 9** (`b70389e`) y nadie está tan atrás. El motivo real es que el panel marcaba
+  **0 verificadas y 100% "solicitudes no válidas"** (4.9 K), así que activarlo habría rechazado
+  *todo* el tráfico y tumbado la app de los 17 testers al instante.
+  **Causa encontrada el 2026-08-08**: faltaba vincular el proyecto de Cloud **dentro de la Play
+  Integrity API** (Play Console → app → Play Integrity API → Configuración de proyectos). Es un paso
+  **distinto** de la integración "Google Play" de Firebase, que sí estaba puesta — de ahí la
+  confusión. Ya quedó vinculado (`organitazionlabs / 600636825165`, con `PLAY_RECOGNIZED` y
+  `MEETS_DEVICE_INTEGRITY`).
+  **Ya descartados con evidencia, no volver a perseguirlos**: la huella SHA-256 (la registrada
+  `fed4245e…` sí es la de firma de apps de Play, no la de subida `7845ec3e…` ni la de depuración
+  `e287880f…`); el registro del proveedor (aparece Play Integrity / Registrada); y la teoría de que
+  las inválidas fueran ruido de builds debug (entraron 1 K peticiones nuevas desde release y también
+  salieron inválidas).
+  **Falta sólo leer el panel con tráfico posterior al vínculo**, mirando **la barra del día**, no el
+  acumulado. Si sale verificadas > 0, activar; si sigue en cero, revisar la Play Integrity API en
+  Google Cloud. Ojo: con los testers en **Gratis** casi no hay tráfico a Firestore, así que una
+  lectura limpia necesita un dispositivo sin modo desarrollador y una cuenta **Pro** que sincronice.
+  Y antes de volver a trabajar con builds debug, **registrar el token de depuración** (App Check →
+  Apps → `com.cuentivo.app` → ⋮), o cada sesión vuelve a ensuciar la métrica.
 - **No se pueden correr las pruebas instrumentadas contra el teléfono de Diego.** No hay
   `applicationIdSuffix` en debug, así que el APK de prueba comparte `applicationId` con el de Play
   pero lleva otra firma: instalarlo exige desinstalar la versión de Play y **borra justo el estado
