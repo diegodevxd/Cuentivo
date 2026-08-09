@@ -82,7 +82,8 @@ import com.cuentivo.app.domain.Alert
 import com.cuentivo.app.domain.CustomerScore
 import com.cuentivo.app.domain.Insight
 import com.cuentivo.app.domain.Money
-import com.cuentivo.app.domain.QuickSale
+import com.cuentivo.app.domain.NewCustomerDraft
+import com.cuentivo.app.domain.OpeningBalanceRow
 import com.cuentivo.app.domain.SaleDraft
 import com.cuentivo.app.domain.SaleDraftLine
 import com.cuentivo.app.domain.SheetImport
@@ -172,7 +173,7 @@ fun CuentivoApp(
     customerScores: Map<String, CustomerScore> = emptyMap(),
     accountLabel: String? = null,
     onCreateBusiness: () -> Unit = {},
-    onCreateCustomer: (String, String?, Long?, QuickSale?) -> Unit = { _, _, _, _ -> },
+    onCreateCustomer: (NewCustomerDraft) -> Unit = {},
     onEditCustomer: (CustomerBalanceRow, String, String?, Long?) -> Unit = { _, _, _, _ -> },
     onArchiveCustomer: (CustomerBalanceRow) -> Unit = {},
     /** True while a create is being written. Disables Guardar; does not by itself close anything. */
@@ -183,6 +184,20 @@ fun CuentivoApp(
      * stays open and the person sees why instead of watching it vanish.
      */
     customerSavedToken: Int = 0,
+    /**
+     * The customer a just-finished create asked to keep selling to, or null.
+     *
+     * Set by the host in the same place as [customerSavedToken] and for the same reason: it is the
+     * only point that knows the write actually reached Room. Sending someone into an empty cart for
+     * a customer who was never saved would be worse than not offering the shortcut at all.
+     */
+    pendingSaleCustomerId: String? = null,
+    /** Called once the hand-off above has been acted on, so it cannot fire twice. */
+    onPendingSaleConsumed: () -> Unit = {},
+    onImportOpeningBalances: (List<OpeningBalanceRow>) -> Unit = {},
+    isImportingBalances: Boolean = false,
+    /** Same shape as [customerSavedToken], for the notebook import. */
+    balancesImportedToken: Int = 0,
     onCreateProduct: (String, Long, String?) -> Unit = { _, _, _ -> },
     onEditProduct: (ProductEntity, String, Long, String?) -> Unit = { _, _, _, _ -> },
     onArchiveProduct: (ProductEntity) -> Unit = {},
@@ -258,6 +273,17 @@ fun CuentivoApp(
     }
     LaunchedEffect(productSavedToken) {
         if (productSavedToken > 0) showProductForm = false
+    }
+    // Keyed on the list too, not just the id: the host refreshes `customers` after the write, so on
+    // the composition where the id first arrives the new row may not be in the list yet. Waiting for
+    // it to appear is what makes the hand-off land on the right person instead of an empty selector.
+    LaunchedEffect(pendingSaleCustomerId, customers) {
+        val target = pendingSaleCustomerId ?: return@LaunchedEffect
+        val row = customers.firstOrNull { it.customer.id == target } ?: return@LaunchedEffect
+        showCustomerForm = false
+        saleCustomer = row
+        showNewSale = true
+        onPendingSaleConsumed()
     }
     // System Back closes the sale task and nothing else — and it must drop the preselection with
     // it, or the next sale would silently inherit a customer nobody chose for it.
@@ -355,7 +381,11 @@ fun CuentivoApp(
                 modifier = Modifier.padding(padding),
                 showForm = showCustomerForm,
                 onShowFormChange = { showCustomerForm = it },
+                products = products,
                 onCreateCustomer = onCreateCustomer,
+                onImportOpeningBalances = onImportOpeningBalances,
+                isImportingBalances = isImportingBalances,
+                balancesImportedToken = balancesImportedToken,
                 onEditCustomer = onEditCustomer,
                 onArchiveCustomer = onArchiveCustomer,
                 onOpen = onShowStatement,

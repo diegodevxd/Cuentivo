@@ -54,6 +54,7 @@ import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
 import java.time.LocalDate
+import java.util.UUID
 
 /** The scroll container needs a handle so a 320 dp test can reach the total and the action. */
 const val NEW_SALE_LIST_TAG = "new-sale-list"
@@ -63,6 +64,9 @@ const val NEW_SALE_LIST_TAG = "new-sale-list"
  * the same figure as the total, and a test that cannot tell the two apart is not testing the total.
  */
 const val SALE_TOTAL_TAG = "sale-total"
+
+/** The hand-written product name, so a test can reach it without matching a translated label. */
+const val MANUAL_NAME_TAG = "manual-line-name"
 
 /** Compact enough for two lines plus a remove action, dense enough to show a real cart. */
 private val CART_ROW_HEIGHT = 60.dp
@@ -76,6 +80,19 @@ private val CART_ROW_HEIGHT = 60.dp
  * drift apart is how the same shop ends up with sales the score treats differently depending on
  * which screen recorded them.
  */
+/**
+ * Where the next line comes from.
+ *
+ * [MANUAL] exists because this app was unusable for anyone who sells without a catalog: the seller
+ * who writes down "3 trapeadores, $80" has no product list and is not going to build one before
+ * making a sale. A manual line writes nothing to `products` — `sale_items.productId` is nullable in
+ * Room and in the rules, and the name and price are already snapshotted onto the line.
+ */
+internal enum class LineSource(val labelRes: Int) {
+    CATALOG(R.string.new_sale_source_catalog),
+    MANUAL(R.string.new_sale_source_manual),
+}
+
 internal enum class DueOption(val labelRes: Int, val days: Long?) {
     NONE(R.string.new_sale_due_none, null),
     SEVEN(R.string.new_sale_due_7, 7L),
@@ -116,6 +133,13 @@ fun NewSaleScreen(
     var cart by remember(initialDraft) { mutableStateOf(initialDraft ?: SaleDraft()) }
     var picked by remember { mutableStateOf<ProductEntity?>(null) }
     var quantityText by remember { mutableStateOf("1") }
+    // Starts on whatever the shop actually is. A business with an empty catalog offered nothing but
+    // an empty selector, which reads as a broken screen rather than as a missing catalog.
+    var lineSource by remember(products.isEmpty()) {
+        mutableStateOf(if (products.isEmpty()) LineSource.MANUAL else LineSource.CATALOG)
+    }
+    var manualName by remember { mutableStateOf("") }
+    var manualPriceText by remember { mutableStateOf("") }
     var discountText by remember(initialDraft) {
         mutableStateOf(initialDraft?.discountCents?.takeIf { it > 0 }?.let(Money::pesosText).orEmpty())
     }
@@ -132,6 +156,11 @@ fun NewSaleScreen(
     val draft = cart.copy(discountCents = discountCents)
     val quantity = quantityText.toIntOrNull() ?: 0
     val validationError = draft.validationError()
+    val manualPriceCents = manualPriceText.trim().ifBlank { null }?.let(Money::positiveCentsFromPesos)
+    val canAddLine = quantity > 0 && when (lineSource) {
+        LineSource.CATALOG -> picked != null
+        LineSource.MANUAL -> manualName.isNotBlank() && manualPriceCents != null
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
         val layout = NeoFintechLayoutPolicy.forWidth(maxWidth.value.toInt())
@@ -173,16 +202,46 @@ fun NewSaleScreen(
                 )
             }
             item {
-                NeoSelectorField(
-                    label = stringResource(R.string.new_sale_product_label),
-                    selected = picked,
-                    placeholder = stringResource(R.string.new_sale_product_placeholder),
-                    options = products,
-                    optionTitle = { it.name },
-                    optionDetail = { Money.format(it.salePriceCents) },
-                    emptyText = stringResource(R.string.new_sale_product_empty),
-                    onSelect = { picked = it },
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
+                    LineSource.entries.forEach { source ->
+                        NeoChoiceChip(
+                            label = stringResource(source.labelRes),
+                            isSelected = lineSource == source,
+                            onClick = { lineSource = source },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            if (lineSource == LineSource.CATALOG) {
+                item {
+                    NeoSelectorField(
+                        label = stringResource(R.string.new_sale_product_label),
+                        selected = picked,
+                        placeholder = stringResource(R.string.new_sale_product_placeholder),
+                        options = products,
+                        optionTitle = { it.name },
+                        optionDetail = { Money.format(it.salePriceCents) },
+                        emptyText = stringResource(R.string.new_sale_product_empty),
+                        onSelect = { picked = it },
+                    )
+                }
+            } else {
+                item {
+                    OutlinedTextField(
+                        value = manualName,
+                        onValueChange = { manualName = it.take(120) },
+                        label = { Text(stringResource(R.string.new_sale_manual_name_label)) },
+                        singleLine = true,
+                        shape = NeoShapes.row,
+                        modifier = Modifier.fillMaxWidth().testTag(MANUAL_NAME_TAG),
+                    )
+                }
+                item {
+                    MoneyField(stringResource(R.string.new_sale_manual_price_label), manualPriceText) {
+                        manualPriceText = it
+                    }
+                }
             }
             item {
                 OutlinedTextField(
@@ -200,21 +259,35 @@ fun NewSaleScreen(
                 NeoAction(
                     label = stringResource(R.string.new_sale_add_to_cart),
                     onClick = {
-                        if (chosenProduct != null && quantity > 0) {
-                            cart = cart.withLine(
+                        if (canAddLine) {
+                            val line = if (lineSource == LineSource.CATALOG && chosenProduct != null) {
                                 SaleDraftLine(
+                                    lineId = UUID.randomUUID().toString(),
                                     productId = chosenProduct.id,
                                     productName = chosenProduct.name,
                                     quantity = quantity,
                                     unitPriceCents = chosenProduct.salePriceCents,
                                 )
-                            )
+                            } else {
+                                SaleDraftLine(
+                                    lineId = UUID.randomUUID().toString(),
+                                    // No product id and nothing written to the catalog: what was
+                                    // sold is already snapshotted onto the line itself.
+                                    productId = null,
+                                    productName = manualName.trim(),
+                                    quantity = quantity,
+                                    unitPriceCents = requireNotNull(manualPriceCents),
+                                )
+                            }
+                            cart = cart.withLine(line)
                             picked = null
+                            manualName = ""
+                            manualPriceText = ""
                             quantityText = "1"
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = chosenProduct != null && quantity > 0,
+                    enabled = canAddLine,
                     primary = false,
                 )
             }
@@ -223,8 +296,8 @@ fun NewSaleScreen(
             if (draft.isEmpty) {
                 item { EmptyCartRow() }
             } else {
-                items(draft.lines, key = { it.productId }) { line ->
-                    CartRow(line) { cart = cart.withoutProduct(line.productId) }
+                items(draft.lines, key = { it.lineId }) { line ->
+                    CartRow(line) { cart = cart.withoutLine(line.lineId) }
                 }
             }
 

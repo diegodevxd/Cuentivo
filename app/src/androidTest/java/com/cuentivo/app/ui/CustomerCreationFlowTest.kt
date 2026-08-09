@@ -97,7 +97,7 @@ class CustomerCreationFlowTest {
     ) {
         CuentivoApp(
             state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
-            onCreateCustomer = { name, phone, creditLimit, _ -> onCreate(name, phone, creditLimit) },
+            onCreateCustomer = { draft -> onCreate(draft.name, draft.phone, draft.creditLimitCents) },
             isSavingCustomer = isSaving,
             customerSavedToken = token,
             message = message,

@@ -71,7 +71,8 @@ import com.cuentivo.app.domain.PaymentAllocator
 import com.cuentivo.app.domain.ProductSheetParser
 import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.XlsxReader
-import com.cuentivo.app.domain.QuickSale
+import com.cuentivo.app.domain.OpeningBalance
+import com.cuentivo.app.domain.OpeningBalancePlanner
 import com.cuentivo.app.domain.SaleLineSummary
 import com.cuentivo.app.domain.SoldLine
 import com.cuentivo.app.domain.StatementEntry
@@ -119,6 +120,7 @@ import com.cuentivo.app.sync.OutboxBackfill
 import com.cuentivo.app.sync.CloudRestoreResult
 import com.cuentivo.app.sync.FirestoreSyncGateway
 import com.cuentivo.app.sync.OwnerMembershipBootstrap
+import com.cuentivo.app.sync.SyncPayloads
 import com.cuentivo.app.sync.SyncQueue
 
 private const val TAG = "MainActivity"
@@ -421,6 +423,11 @@ class MainActivity : ComponentActivity() {
                 // total silence.
                 var isSavingCustomer by remember { mutableStateOf(false) }
                 var customerSavedToken by remember { mutableIntStateOf(0) }
+                // Set alongside the token above, and for the same reason: only a write that reached
+                // Room may send anyone into a cart for that customer.
+                var pendingSaleCustomerId by remember { mutableStateOf<String?>(null) }
+                var isImportingBalances by remember { mutableStateOf(false) }
+                var balancesImportedToken by remember { mutableIntStateOf(0) }
                 var isSavingProduct by remember { mutableStateOf(false) }
                 var productSavedToken by remember { mutableIntStateOf(0) }
                 val productImages = remember { ProductImageStore(this@MainActivity) }
@@ -709,7 +716,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                CuentivoApp(state, customers, products, tier, customerScores = customerScores, proPrice = proPriceState.value, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, onCreateBusiness = {
+                CuentivoApp(state, customers, products, tier, customerScores = customerScores, proPrice = proPriceState.value, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, pendingSaleCustomerId = pendingSaleCustomerId, onPendingSaleConsumed = { pendingSaleCustomerId = null }, isImportingBalances = isImportingBalances, balancesImportedToken = balancesImportedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
                         val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)
@@ -719,7 +726,12 @@ class MainActivity : ComponentActivity() {
                         refreshKey++
                         uiMessage = "Negocio creado"
                     }
-                }, onCreateCustomer = { name, phone, creditLimitCents, quickSale ->
+                }, onCreateCustomer = { newCustomer ->
+                    val name = newCustomer.name
+                    val phone = newCustomer.phone
+                    val creditLimitCents = newCustomer.creditLimitCents
+                    val quickSale = newCustomer.quickSale
+                    val openingBalanceCents = newCustomer.openingBalanceCents
                     val businessId = (state as? DashboardUiState.Content)?.businessId
                     if (businessId == null) {
                         // The old return@CuentivoApp here was silent: the form had already closed
@@ -740,9 +752,14 @@ class MainActivity : ComponentActivity() {
                                 // The sale limit too, and still before the first write: refusing
                                 // afterwards would create the customer and then reject what they
                                 // walked out with, leaving half the job done.
-                                if (quickSale != null) {
+                                // An opening balance is a sale too, so it counts here. Both are
+                                // checked against the count *before* either is written: allowing the
+                                // first and refusing the second would leave the person half migrated
+                                // with no way to tell which half.
+                                val salesToWrite = listOfNotNull(quickSale, openingBalanceCents).size
+                                if (salesToWrite > 0) {
                                     val salesSoFar = database.financialDao().registeredSaleCount(businessId)
-                                    val saleDecision = FeatureAccessManager.canRegisterSale(tier, salesSoFar)
+                                    val saleDecision = FeatureAccessManager.canRegisterSale(tier, salesSoFar + salesToWrite - 1)
                                     if (saleDecision is AccessDecision.Blocked) {
                                         blocked = saleDecision
                                         return@launch
@@ -755,44 +772,71 @@ class MainActivity : ComponentActivity() {
                                 // exists once accents and case are folded away. Editing already
                                 // reported that; creating used to let the exception kill the
                                 // coroutine, so the screen neither refreshed nor said anything.
-                                // The product this customer walked out with, if any. Reused from
-                                // the catalog when the name already exists there: `products` has no
-                                // unique index, so without this every new customer taking a "Jabón"
-                                // would mint another one.
-                                val existingProduct = quickSale?.let { sale ->
-                                    val key = CustomerNameNormalizer.key(sale.productName)
-                                    products.firstOrNull { CustomerNameNormalizer.key(it.name) == key }
+                                // Each row resolved against the catalog. A row picked from it keeps
+                                // its product; a hand-written one is reused when the name already
+                                // exists — `products` has no unique index, so without this every new
+                                // customer taking a "Jabón" would mint another one — and only minted
+                                // when it is genuinely new.
+                                val newProducts = mutableListOf<ProductEntity>()
+                                val resolved = quickSale?.lines.orEmpty().map { line ->
+                                    val existing = line.productId?.let { id -> products.firstOrNull { it.id == id } }
+                                        ?: CustomerNameNormalizer.key(line.productName).let { key ->
+                                            products.firstOrNull { CustomerNameNormalizer.key(it.name) == key }
+                                                ?: newProducts.firstOrNull { CustomerNameNormalizer.key(it.name) == key }
+                                        }
+                                    val product = existing ?: ProductEntity(UUID.randomUUID().toString(), businessId, line.productName, null, null, null, line.unitPriceCents, null, null, line.photoFileName, true, now, now, null).also { newProducts += it }
+                                    line to product
                                 }
-                                val newProduct = quickSale?.takeIf { existingProduct == null }?.let { sale ->
-                                    ProductEntity(UUID.randomUUID().toString(), businessId, sale.productName, null, null, null, sale.unitPriceCents, null, null, sale.photoFileName, true, now, now, null)
-                                }
-                                val product = existingProduct ?: newProduct
                                 val saleId = UUID.randomUUID().toString()
-                                val saleItem = quickSale?.let { sale ->
-                                    SaleItemEntity(UUID.randomUUID().toString(), saleId, product?.id, sale.productName, sale.quantity.toLong(), sale.unitPriceCents, 0L, sale.totalCents)
+                                val saleItems = resolved.map { (line, product) ->
+                                    SaleItemEntity(UUID.randomUUID().toString(), saleId, product.id, line.productName, line.quantity.toLong(), line.unitPriceCents, 0L, line.totalCents)
                                 }
-                                val saleEntity = quickSale?.let { sale ->
+                                val saleEntity = quickSale?.let { cart ->
                                     // The agreed date the form asked for. Resolved here rather than
                                     // in the domain, which stays free of a clock; null still means
                                     // "sin fecha" and keeps the sale out of the score, as chosen.
-                                    val dueDateEpochDay = sale.dueInDays?.let { LocalDate.now().plusDays(it).toEpochDay() }
-                                    SaleEntity(saleId, businessId, customer.id, currentUserId, "V-${now}", LocalDate.now().toEpochDay(), dueDateEpochDay, sale.totalCents, 0L, sale.totalCents, false, null, now, now)
+                                    val dueDateEpochDay = cart.dueInDays?.let { LocalDate.now().plusDays(it).toEpochDay() }
+                                    SaleEntity(saleId, businessId, customer.id, currentUserId, "V-${now}", LocalDate.now().toEpochDay(), dueDateEpochDay, cart.totalCents, 0L, cart.totalCents, false, null, now, now)
                                 }
-                                val charge = quickSale?.let { sale ->
-                                    AccountMovementEntity(UUID.randomUUID().toString(), businessId, customer.id, saleId, null, "CHARGE", sale.totalCents, "DEBIT", now, currentUserId, null, null)
+                                val charge = quickSale?.let { cart ->
+                                    AccountMovementEntity(UUID.randomUUID().toString(), businessId, customer.id, saleId, null, "CHARGE", cart.totalCents, "DEBIT", now, currentUserId, null, null)
+                                }
+                                // What they already owed before the app. A real sale with a single
+                                // product-less line, so it can be paid off, chased and shown like
+                                // any other debt — see OpeningBalance for why not an adjustment.
+                                val opening = openingBalanceCents?.let { amountCents ->
+                                    OpeningBalance.entry(
+                                        saleId = UUID.randomUUID().toString(),
+                                        itemId = UUID.randomUUID().toString(),
+                                        chargeId = UUID.randomUUID().toString(),
+                                        businessId = businessId,
+                                        customerId = customer.id,
+                                        ownerUserId = currentUserId,
+                                        amountCents = amountCents,
+                                        todayEpochDay = LocalDate.now().toEpochDay(),
+                                        nowEpochMillis = now,
+                                    )
                                 }
                                 val saved = try {
                                     // One transaction: a customer who exists without the sale they
                                     // walked out with is worse than nothing happening at all.
                                     database.withTransaction {
                                         database.customerDao().insert(customer)
-                                        newProduct?.let { database.productDao().insert(it) }
-                                        if (saleEntity != null && charge != null && saleItem != null) {
+                                        newProducts.forEach { database.productDao().insert(it) }
+                                        if (saleEntity != null && charge != null && saleItems.isNotEmpty()) {
                                             database.financialDao().createSaleIdempotently(
                                                 OperationEntity("sale-$saleId", "SALE", saleId, now),
                                                 saleEntity,
-                                                listOf(saleItem),
+                                                saleItems,
                                                 charge,
+                                            )
+                                        }
+                                        opening?.let { entry ->
+                                            database.financialDao().createSaleIdempotently(
+                                                OperationEntity("sale-${entry.sale.id}", "SALE", entry.sale.id, now),
+                                                entry.sale,
+                                                listOf(entry.item),
+                                                entry.charge,
                                             )
                                         }
                                     }
@@ -809,7 +853,7 @@ class MainActivity : ComponentActivity() {
                                     // it may hide it. The outbox write is best effort relative to a
                                     // row that is already saved.
                                     try {
-                                        syncQueue.enqueue(businessId, "CUSTOMER", customer.id, now, mapOf("businessId" to businessId, "name" to customer.name, "normalizedName" to customer.normalizedName, "phone" to phone, "email" to null, "address" to null, "notes" to null, "creditLimitCents" to creditLimitCents, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                        syncQueue.enqueue(businessId, "CUSTOMER", customer.id, now, SyncPayloads.customer(customer))
                                     } catch (cancellation: CancellationException) {
                                         throw cancellation
                                     } catch (error: Exception) {
@@ -818,13 +862,22 @@ class MainActivity : ComponentActivity() {
                                     // Best effort, like the customer row above: these are already
                                     // committed locally and nothing here may hide them.
                                     try {
-                                        newProduct?.let { created ->
-                                            syncQueue.enqueue(businessId, "PRODUCT", created.id, now, mapOf("businessId" to businessId, "name" to created.name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to created.salePriceCents, "costPriceCents" to null, "stock" to null, "imageUri" to created.imageUri, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                        newProducts.forEach { created ->
+                                            syncQueue.enqueue(businessId, "PRODUCT", created.id, now, SyncPayloads.product(created))
                                         }
-                                        if (saleEntity != null && charge != null && saleItem != null) {
-                                            syncQueue.enqueue(businessId, "SALE", saleEntity.id, now, mapOf("businessId" to businessId, "customerId" to customer.id, "sellerUserId" to currentUserId, "saleNumber" to saleEntity.saleNumber, "saleDateEpochDay" to saleEntity.saleDateEpochDay, "dueDateEpochDay" to saleEntity.dueDateEpochDay, "subtotalCents" to saleEntity.subtotalCents, "discountCents" to saleEntity.discountCents, "totalCents" to saleEntity.totalCents, "isCanceled" to false, "notes" to null, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now))
-                                            syncQueue.enqueue(businessId, "SALE_ITEM", saleItem.id, now, mapOf("saleId" to saleEntity.id, "productId" to saleItem.productId, "productNameSnapshot" to saleItem.productNameSnapshot, "quantity" to saleItem.quantity, "unitPriceCents" to saleItem.unitPriceCents, "discountCents" to saleItem.discountCents, "subtotalCents" to saleItem.subtotalCents))
-                                            syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, mapOf("businessId" to businessId, "customerId" to customer.id, "saleId" to saleEntity.id, "paymentId" to null, "type" to charge.type, "amountCents" to charge.amountCents, "direction" to charge.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
+                                        if (saleEntity != null && charge != null && saleItems.isNotEmpty()) {
+                                            syncQueue.enqueue(businessId, "SALE", saleEntity.id, now, SyncPayloads.sale(saleEntity))
+                                            saleItems.forEach { item ->
+                                                syncQueue.enqueue(businessId, "SALE_ITEM", item.id, now, SyncPayloads.saleItem(item))
+                                            }
+                                            syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, SyncPayloads.movement(charge))
+                                        }
+                                        opening?.let { entry ->
+                                            // Built from the rows themselves, not re-typed from the
+                                            // locals nearby: that is how a payload loses a field.
+                                            syncQueue.enqueue(businessId, "SALE", entry.sale.id, now, SyncPayloads.sale(entry.sale))
+                                            syncQueue.enqueue(businessId, "SALE_ITEM", entry.item.id, now, SyncPayloads.saleItem(entry.item))
+                                            syncQueue.enqueue(businessId, "MOVEMENT", entry.charge.id, now, SyncPayloads.movement(entry.charge))
                                         }
                                     } catch (cancellation: CancellationException) {
                                         throw cancellation
@@ -832,16 +885,120 @@ class MainActivity : ComponentActivity() {
                                         Log.w(TAG, "La venta rápida quedó guardada pero no se pudo encolar.", error)
                                     }
                                     refreshKey++
-                                    uiMessage = quickSale?.let {
-                                        getString(R.string.message_quick_sale_created, Money.format(it.totalCents))
-                                    } ?: "Cliente agregado"
+                                    uiMessage = when {
+                                        quickSale != null -> getString(R.string.message_quick_sale_created, Money.format(quickSale.totalCents))
+                                        // Same order as the writes above: the sale is the headline
+                                        // when there is one, the opening balance when there is not.
+                                        opening != null -> getString(R.string.message_opening_balance_created, Money.format(opening.sale.totalCents))
+                                        else -> "Cliente agregado"
+                                    }
                                     // The only signal that closes the form. It advances only here,
                                     // so a failure above leaves it untouched and the dialog stays up.
                                     customerSavedToken++
+                                    // Same rule, same place: the hand-off into Nueva venta only
+                                    // happens for a customer that actually reached Room.
+                                    if (newCustomer.continueToSale) pendingSaleCustomerId = customer.id
                                 }
                             } finally {
                                 isSavingCustomer = false
                             }
+                        }
+                    }
+                }, onImportOpeningBalances = { rows ->
+                    val businessId = (state as? DashboardUiState.Content)?.businessId
+                    if (businessId == null) {
+                        uiMessage = "Primero crea tu negocio en Inicio"
+                        return@CuentivoApp
+                    }
+                    lifecycleScope.launch {
+                        isImportingBalances = true
+                        try {
+                            val now = System.currentTimeMillis()
+                            val plan = OpeningBalancePlanner.plan(
+                                businessId = businessId,
+                                ownerUserId = currentUserId,
+                                rows = rows,
+                                existingCustomers = customers.map { it.customer },
+                                todayEpochDay = LocalDate.now().toEpochDay(),
+                                nowEpochMillis = now,
+                                newId = { UUID.randomUUID().toString() },
+                            )
+                            // The sheet already refuses to confirm a batch with bad rows, so this is
+                            // the belt to that braces: the import is all-or-nothing and nothing
+                            // financial can be edited afterwards, so a half-planned batch is not
+                            // something to write and apologise for.
+                            if (plan.rejected.isNotEmpty() || plan.isEmpty) {
+                                uiMessage = getString(R.string.message_opening_import_failed)
+                                return@launch
+                            }
+                            // Both plan limits over the whole batch, before the first write. Checking
+                            // row by row would stop halfway and leave the person unable to tell which
+                            // debts made it in.
+                            val customerDecision = FeatureAccessManager.canAddCustomer(
+                                tier,
+                                customers.size + plan.customers.size - 1,
+                            )
+                            if (customerDecision is AccessDecision.Blocked) {
+                                blocked = customerDecision
+                                return@launch
+                            }
+                            val salesSoFar = database.financialDao().registeredSaleCount(businessId)
+                            val saleDecision = FeatureAccessManager.canRegisterSale(
+                                tier,
+                                salesSoFar + plan.entries.size - 1,
+                            )
+                            if (saleDecision is AccessDecision.Blocked) {
+                                blocked = saleDecision
+                                return@launch
+                            }
+                            val saved = try {
+                                database.withTransaction {
+                                    plan.customers.forEach { database.customerDao().insert(it) }
+                                    plan.entries.forEach { entry ->
+                                        database.financialDao().createSaleIdempotently(
+                                            OperationEntity("sale-${entry.sale.id}", "SALE", entry.sale.id, now),
+                                            entry.sale,
+                                            listOf(entry.item),
+                                            entry.charge,
+                                        )
+                                    }
+                                }
+                                true
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (error: Exception) {
+                                Log.w(TAG, "No se pudo guardar la libreta de deudas.", error)
+                                uiMessage = getString(R.string.message_opening_import_failed)
+                                false
+                            }
+                            if (saved) {
+                                // Best effort past this point, like every other write path: the rows
+                                // are already committed locally and nothing here may hide them.
+                                try {
+                                    plan.customers.forEach {
+                                        syncQueue.enqueue(businessId, "CUSTOMER", it.id, now, SyncPayloads.customer(it))
+                                    }
+                                    plan.entries.forEach { entry ->
+                                        syncQueue.enqueue(businessId, "SALE", entry.sale.id, now, SyncPayloads.sale(entry.sale))
+                                        syncQueue.enqueue(businessId, "SALE_ITEM", entry.item.id, now, SyncPayloads.saleItem(entry.item))
+                                        syncQueue.enqueue(businessId, "MOVEMENT", entry.charge.id, now, SyncPayloads.movement(entry.charge))
+                                    }
+                                } catch (cancellation: CancellationException) {
+                                    throw cancellation
+                                } catch (error: Exception) {
+                                    Log.w(TAG, "La libreta quedó guardada pero no se pudo encolar.", error)
+                                }
+                                refreshKey++
+                                uiMessage = getString(
+                                    R.string.message_opening_import_done,
+                                    plan.entries.size,
+                                    Money.format(plan.totalCents),
+                                )
+                                // Closes the sheet, and only on a write that landed.
+                                balancesImportedToken++
+                            }
+                        } finally {
+                            isImportingBalances = false
                         }
                     }
                 }, onEditCustomer = { row, name, phone, creditLimitCents ->
@@ -1117,10 +1274,12 @@ class MainActivity : ComponentActivity() {
                             return@launch
                         }
                         val soldItems = financialDao.saleItemsForSale(sale.id)
-                        // Sales imported from the old web app carry no product ids, and a draft line
-                        // cannot be rebuilt without one. Better to say so than to invent a product.
-                        if (soldItems.isEmpty() || soldItems.any { it.productId == null }) {
-                            uiMessage = getString(R.string.message_sale_legacy_not_editable)
+                        // A sale with no lines at all cannot be rebuilt into a draft. A line with no
+                        // product id now can: the name and price were snapshotted onto the line when
+                        // it was sold, which is also what makes a hand-written line correctable and
+                        // what finally lets the sales imported from the old web app be fixed.
+                        if (soldItems.isEmpty()) {
+                            uiMessage = getString(R.string.message_sale_not_editable)
                             return@launch
                         }
                         saleCorrection = SaleCorrection(
@@ -1129,7 +1288,8 @@ class MainActivity : ComponentActivity() {
                             draft = SaleDraft(
                                 lines = soldItems.map { soldItem ->
                                     SaleDraftLine(
-                                        productId = requireNotNull(soldItem.productId),
+                                        lineId = soldItem.id,
+                                        productId = soldItem.productId,
                                         productName = soldItem.productNameSnapshot,
                                         quantity = soldItem.quantity.toInt(),
                                         unitPriceCents = soldItem.unitPriceCents,

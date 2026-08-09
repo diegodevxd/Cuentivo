@@ -70,7 +70,10 @@ import com.cuentivo.app.domain.PaymentReliability
 import com.cuentivo.app.ui.theme.NeoOverdue
 import com.cuentivo.app.ui.theme.NeoPayment
 import com.cuentivo.app.ui.theme.NeoSlow
-import com.cuentivo.app.domain.QuickSale
+import androidx.compose.runtime.LaunchedEffect
+import com.cuentivo.app.domain.NewCustomerDraft
+import com.cuentivo.app.domain.OpeningBalanceRow
+import com.cuentivo.app.domain.QuickSaleCart
 import com.cuentivo.app.domain.QuickSaleEntry
 import com.cuentivo.app.domain.QuickSalePolicy
 import com.cuentivo.app.data.local.ProductImageStore
@@ -85,8 +88,11 @@ import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
+import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.ui.transaction.DueOption
 import com.cuentivo.app.ui.transaction.NeoChoiceChip
+import com.cuentivo.app.ui.transaction.NeoSelectorField
+import androidx.compose.material.icons.filled.Close
 import java.time.LocalDate
 
 /** Matches the reference's three-line row: name, status, balance. */
@@ -112,7 +118,18 @@ fun CustomersScreen(
     modifier: Modifier = Modifier,
     showForm: Boolean = false,
     onShowFormChange: (Boolean) -> Unit = {},
-    onCreateCustomer: (String, String?, Long?, QuickSale?) -> Unit = { _, _, _, _ -> },
+    /**
+     * The catalog, so the quick sale on the create form can take rows from it instead of making the
+     * person retype a product they already have.
+     */
+    products: List<ProductEntity> = emptyList(),
+    onCreateCustomer: (NewCustomerDraft) -> Unit = {},
+    /** The whole notebook at once. All-or-nothing: the host writes every row or none of them. */
+    onImportOpeningBalances: (List<OpeningBalanceRow>) -> Unit = {},
+    /** True while that import is being written; closing is the host's job, as with the form. */
+    isImportingBalances: Boolean = false,
+    /** Bumped by the host once the import actually lands, which is what closes the sheet. */
+    balancesImportedToken: Int = 0,
     onEditCustomer: (CustomerBalanceRow, String, String?, Long?) -> Unit = { _, _, _, _ -> },
     onArchiveCustomer: (CustomerBalanceRow) -> Unit = {},
     onOpen: (CustomerBalanceRow) -> Unit = {},
@@ -129,6 +146,11 @@ fun CustomersScreen(
     var chip by remember { mutableStateOf(CustomerFilter.ALL) }
     var editing by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     var archiving by remember { mutableStateOf<CustomerBalanceRow?>(null) }
+    var importingBalances by remember { mutableStateOf(false) }
+    // Same rule as the customer form: the sheet closes on a write that landed, never on the tap.
+    LaunchedEffect(balancesImportedToken) {
+        if (balancesImportedToken > 0) importingBalances = false
+    }
     val today = LocalDate.now().toEpochDay()
     val visible = CustomerDirectoryPresentation.filter(customers, query, chip, dueSales, today)
 
@@ -174,6 +196,14 @@ fun CustomersScreen(
                     CustomerFilter.entries.forEach { option ->
                         FilterChipRow(stringResource(option.labelRes), option == chip) { chip = option }
                     }
+                }
+            }
+            item {
+                TextButton(
+                    onClick = { importingBalances = true },
+                    modifier = Modifier.fillMaxWidth().testTag("open-debt-import"),
+                ) {
+                    Text(stringResource(R.string.opening_import_action))
                 }
             }
             if (visible.isEmpty()) {
@@ -251,11 +281,17 @@ fun CustomersScreen(
             // gone by the time anything went wrong. Closing is now the host's job, done only once
             // `onCreateCustomer` actually succeeds.
             quickSaleTargetId = newCustomerDraftId,
-            onConfirm = { name, phone, creditLimitCents, quickSale ->
-                onCreateCustomer(name, phone, creditLimitCents, quickSale)
-            },
+            products = products,
+            onConfirm = onCreateCustomer,
             onDismiss = { onShowFormChange(false) },
             isSaving = isSaving,
+        )
+    }
+    if (importingBalances) {
+        OpeningBalanceImportDialog(
+            onConfirm = onImportOpeningBalances,
+            onDismiss = { importingBalances = false },
+            isSaving = isImportingBalances,
         )
     }
     editing?.let { row ->
@@ -266,8 +302,10 @@ fun CustomersScreen(
             initialCreditLimitCents = row.customer.creditLimitCents,
             formKey = row.customer.id,
             note = stringResource(R.string.customers_form_edit_note),
-            onConfirm = { name, phone, creditLimitCents, _ ->
-                onEditCustomer(row, name, phone, creditLimitCents)
+            onConfirm = { draft ->
+                // Editing only ever touches the descriptive fields; the rest of the draft is off in
+                // this mode, because `quickSaleTargetId` is null.
+                onEditCustomer(row, draft.name, draft.phone, draft.creditLimitCents)
                 editing = null
             },
             onDismiss = { editing = null },
@@ -322,7 +360,7 @@ private fun CustomerFormDialog(
     title: String,
     initialName: String,
     initialPhone: String,
-    onConfirm: (String, String?, Long?, QuickSale?) -> Unit,
+    onConfirm: (NewCustomerDraft) -> Unit,
     onDismiss: () -> Unit,
     initialCreditLimitCents: Long? = null,
     formKey: Any? = Unit,
@@ -330,6 +368,8 @@ private fun CustomerFormDialog(
     isSaving: Boolean = false,
     /** Non-null only when creating: enables the optional "took something with them" section. */
     quickSaleTargetId: String? = null,
+    /** Empty while editing, and empty for a shop that keeps no catalog. */
+    products: List<ProductEntity> = emptyList(),
 ) {
     // Keyed on the customer so reopening for another row starts from that row's data.
     var name by remember(formKey) { mutableStateOf(initialName) }
@@ -344,39 +384,72 @@ private fun CustomerFormDialog(
     val creditLimitCents = creditLimitText.trim().ifBlank { null }?.let { Money.positiveCentsFromPesos(it) }
     val creditLimitValid = creditLimitText.isBlank() || creditLimitCents != null
 
+    // The rows already added, and separately the row being typed. Keeping them apart is what lets
+    // Guardar still work for somebody who filled one product and never pressed "Agregar": the
+    // pending row is folded in at confirm time, exactly as this form behaved when it held one.
+    var cart by remember(formKey) { mutableStateOf(QuickSaleCart()) }
+    var pickedProduct by remember(formKey) { mutableStateOf<ProductEntity?>(null) }
+    var fromCatalog by remember(formKey, products.isEmpty()) { mutableStateOf(products.isNotEmpty()) }
     var productName by remember(formKey) { mutableStateOf("") }
     var productPriceText by remember(formKey) { mutableStateOf("") }
     var quantityText by remember(formKey) { mutableStateOf(QuickSalePolicy.DEFAULT_QUANTITY) }
     var photo by remember(formKey) { mutableStateOf(ProductPhotoDraftPolicy.start(null)) }
+    // Each added row needs its own id, and so does the photo file the picker writes for it.
+    var pendingLineId by remember(formKey) { mutableStateOf(UUID.randomUUID().toString()) }
     val context = LocalContext.current
     val imageStore = remember(context) { ProductImageStore(context) }
     // Starts on the default plazo, like Nueva venta. Selling fiado means agreeing on a date, and
     // this route used to save none at all — every customer created this way stayed invisible to the
     // payment score forever.
     var dueOption by remember(formKey) { mutableStateOf(DueOption.FIFTEEN) }
-    val quickSaleEntry = if (quickSaleTargetId == null) {
-        QuickSaleEntry.Empty
-    } else {
-        QuickSalePolicy.read(productName, productPriceText, quantityText, photo.current, dueOption.days)
+    val chosen = pickedProduct
+    val quickSaleEntry = when {
+        quickSaleTargetId == null -> QuickSaleEntry.Empty
+        // A catalog pick is read from the product, so no name or price has to be typed at all.
+        fromCatalog && chosen != null -> QuickSalePolicy.read(
+            pendingLineId, chosen.id, chosen.name, Money.pesosText(chosen.salePriceCents), quantityText, null,
+        )
+        fromCatalog -> QuickSaleEntry.Empty
+        else -> QuickSalePolicy.read(pendingLineId, null, productName, productPriceText, quantityText, photo.current)
     }
-    val quickSale = (quickSaleEntry as? QuickSaleEntry.Ready)?.sale
+    val pendingLine = (quickSaleEntry as? QuickSaleEntry.Ready)?.line
+    // What actually gets sold: the rows added plus whatever is still in the row being typed.
+    val quickSale = cart
+        .let { current -> pendingLine?.let(current::withLine) ?: current }
+        .copy(dueInDays = dueOption.days)
+        .takeIf { !it.isEmpty }
+    // What they already owed before this app existed. Only offered while creating: an opening
+    // balance for somebody who is already in the ledger would be a second, unexplained debt.
+    var openingBalanceText by remember(formKey) { mutableStateOf("") }
+    val openingBalanceCents = openingBalanceText.trim().ifBlank { null }
+        ?.let { Money.positiveCentsFromPesos(it) }
+    val openingBalanceValid = openingBalanceText.isBlank() || openingBalanceCents != null
     val nameLabel = stringResource(R.string.customers_form_name_label)
     val phoneLabel = stringResource(R.string.customers_form_phone_label)
     val creditLabel = stringResource(R.string.customers_form_credit_limit_label)
     val noCreditLabel = stringResource(R.string.customers_form_credit_limit_none)
     val invalidCreditLabel = stringResource(R.string.customers_form_credit_limit_invalid)
     val creditHint = stringResource(R.string.customers_form_credit_limit_hint)
+    // One definition of "this form can be saved", so the Guardar button and the secondary action
+    // can never disagree about it.
+    val canSave = name.isNotBlank() && creditLimitValid && openingBalanceValid && !isSaving &&
+        quickSaleEntry != QuickSaleEntry.Incomplete
+    val draftOf = { continueToSale: Boolean ->
+        NewCustomerDraft(
+            name = name.trim(),
+            phone = phone.trim().ifBlank { null },
+            creditLimitCents = creditLimitCents,
+            quickSale = quickSale,
+            openingBalanceCents = openingBalanceCents,
+            continueToSale = continueToSale,
+        )
+    }
     FormDialog(
         title = title,
         // A half-filled product blocks Guardar rather than saving a bare customer: somebody who
         // typed what they were selling did not mean to lose it.
-        confirmEnabled = name.isNotBlank() && creditLimitValid && !isSaving &&
-            quickSaleEntry != QuickSaleEntry.Incomplete,
-        onConfirm = {
-            if (name.isNotBlank() && creditLimitValid && !isSaving && quickSaleEntry != QuickSaleEntry.Incomplete) {
-                onConfirm(name.trim(), phone.trim().ifBlank { null }, creditLimitCents, quickSale)
-            }
-        },
+        confirmEnabled = canSave,
+        onConfirm = { if (canSave) onConfirm(draftOf(false)) },
         onDismiss = {
             // Nothing points at a photo taken for a customer who was never saved.
             ProductPhotoDraftPolicy.onCancel(photo).forEach(imageStore::delete)
@@ -419,6 +492,37 @@ private fun CustomerFormDialog(
         )
         if (quickSaleTargetId != null) {
             Text(
+                stringResource(R.string.customers_form_opening_balance_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            OutlinedTextField(
+                value = openingBalanceText,
+                onValueChange = { raw -> openingBalanceText = raw.filter { it.isDigit() || it == '.' } },
+                label = { Text(stringResource(R.string.customers_form_opening_balance_label)) },
+                prefix = { Text("$ ") },
+                supportingText = {
+                    when {
+                        openingBalanceText.isBlank() -> {
+                            Text(stringResource(R.string.customers_form_opening_balance_hint))
+                        }
+                        openingBalanceCents == null -> Text(
+                            stringResource(R.string.customers_form_opening_balance_invalid),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        else -> Text(
+                            stringResource(
+                                R.string.customers_form_opening_balance_detail,
+                                Money.format(openingBalanceCents),
+                            )
+                        )
+                    }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                shape = NeoShapes.row,
+                modifier = Modifier.fillMaxWidth().testTag("opening-balance-field"),
+            )
+            Text(
                 stringResource(R.string.customers_form_quick_sale_title),
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -427,24 +531,88 @@ private fun CustomerFormDialog(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedTextField(
-                value = productName,
-                onValueChange = { productName = it },
-                label = { Text(stringResource(R.string.customers_form_quick_sale_product)) },
-                singleLine = true,
-                shape = NeoShapes.row,
-                modifier = Modifier.fillMaxWidth().testTag("quick-sale-product"),
-            )
-            OutlinedTextField(
-                value = productPriceText,
-                onValueChange = { raw -> productPriceText = raw.filter { it.isDigit() || it == '.' } },
-                label = { Text(stringResource(R.string.customers_form_quick_sale_price)) },
-                prefix = { Text("$ ") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                shape = NeoShapes.row,
-                modifier = Modifier.fillMaxWidth().testTag("quick-sale-price"),
-            )
+            // Everything already added, each with its own way out. Drawn above the entry fields so
+            // a growing list does not push what you are typing off the bottom of the dialog.
+            cart.lines.forEach { line ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.customers_form_quick_sale_line,
+                            line.quantity,
+                            line.productName,
+                            Money.format(line.totalCents),
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = { cart = cart.withoutLine(line.lineId) },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = stringResource(
+                                R.string.customers_form_quick_sale_remove,
+                                line.productName,
+                            ),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            // Only offered when there is a catalog to pick from: two chips where one leads to an
+            // empty list is a dead end, not a choice.
+            if (products.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
+                    NeoChoiceChip(
+                        label = stringResource(R.string.new_sale_source_catalog),
+                        isSelected = fromCatalog,
+                        onClick = { fromCatalog = true },
+                        modifier = Modifier.weight(1f),
+                    )
+                    NeoChoiceChip(
+                        label = stringResource(R.string.new_sale_source_manual),
+                        isSelected = !fromCatalog,
+                        onClick = { fromCatalog = false },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            if (fromCatalog && products.isNotEmpty()) {
+                NeoSelectorField(
+                    label = stringResource(R.string.new_sale_product_label),
+                    selected = pickedProduct,
+                    placeholder = stringResource(R.string.new_sale_product_placeholder),
+                    options = products,
+                    optionTitle = { it.name },
+                    optionDetail = { Money.format(it.salePriceCents) },
+                    emptyText = stringResource(R.string.new_sale_product_empty),
+                    onSelect = { pickedProduct = it },
+                )
+            } else {
+                OutlinedTextField(
+                    value = productName,
+                    onValueChange = { productName = it },
+                    label = { Text(stringResource(R.string.customers_form_quick_sale_product)) },
+                    singleLine = true,
+                    shape = NeoShapes.row,
+                    modifier = Modifier.fillMaxWidth().testTag("quick-sale-product"),
+                )
+                OutlinedTextField(
+                    value = productPriceText,
+                    onValueChange = { raw -> productPriceText = raw.filter { it.isDigit() || it == '.' } },
+                    label = { Text(stringResource(R.string.customers_form_quick_sale_price)) },
+                    prefix = { Text("$ ") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    shape = NeoShapes.row,
+                    modifier = Modifier.fillMaxWidth().testTag("quick-sale-price"),
+                )
+            }
             OutlinedTextField(
                 value = quantityText,
                 onValueChange = { raw -> quantityText = raw.filter { it.isDigit() }.take(4) },
@@ -454,7 +622,30 @@ private fun CustomerFormDialog(
                 shape = NeoShapes.row,
                 modifier = Modifier.fillMaxWidth().testTag("quick-sale-quantity"),
             )
-            ProductPhotoPicker(photo, imageStore, quickSaleTargetId) { photo = it }
+            // A photo only makes sense for a product being created here; a catalog product has one.
+            if (!fromCatalog || products.isEmpty()) {
+                ProductPhotoPicker(photo, imageStore, pendingLineId) { photo = it }
+            }
+            TextButton(
+                onClick = {
+                    pendingLine?.let { line ->
+                        cart = cart.withLine(line)
+                        // The photo file now belongs to the added row. `provisional` is left alone
+                        // on purpose: it is what cancelling the dialog uses to delete every file it
+                        // created, and a row that was never saved must not leave one behind.
+                        photo = photo.copy(current = null)
+                        pendingLineId = UUID.randomUUID().toString()
+                        pickedProduct = null
+                        productName = ""
+                        productPriceText = ""
+                        quantityText = QuickSalePolicy.DEFAULT_QUANTITY
+                    }
+                },
+                enabled = pendingLine != null,
+                modifier = Modifier.fillMaxWidth().testTag("quick-sale-add-line"),
+            ) {
+                Text(stringResource(R.string.customers_form_quick_sale_add_line))
+            }
             Text(
                 stringResource(R.string.new_sale_due_question),
                 style = MaterialTheme.typography.labelMedium,
@@ -486,6 +677,17 @@ private fun CustomerFormDialog(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+            // Inside the body rather than beside Guardar: three buttons in an AlertDialog's action
+            // row truncate at 320 dp, and this label is the long one. The section above holds a
+            // single product; a real order is five or more, and this hands off to the actual cart
+            // instead of growing a second one inside a dialog.
+            TextButton(
+                onClick = { if (canSave) onConfirm(draftOf(true)) },
+                enabled = canSave,
+                modifier = Modifier.fillMaxWidth().testTag("customer-save-and-sell"),
+            ) {
+                Text(stringResource(R.string.customers_form_save_and_sell))
             }
         }
         note?.let { Text(it, style = MaterialTheme.typography.labelMedium) }

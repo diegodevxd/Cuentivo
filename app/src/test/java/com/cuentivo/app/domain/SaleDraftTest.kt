@@ -7,8 +7,15 @@ import org.junit.Test
 
 class SaleDraftTest {
 
+    private var nextLineId = 0
+
+    /** A catalog line. Every call gets its own line id, so merging can only happen by product. */
     private fun line(id: String, quantity: Int, unitPriceCents: Long, discountCents: Long = 0) =
-        SaleDraftLine(id, "Producto $id", quantity, unitPriceCents, discountCents)
+        SaleDraftLine("l${nextLineId++}", id, "Producto $id", quantity, unitPriceCents, discountCents)
+
+    /** A line the seller typed by hand: no catalog product behind it. */
+    private fun manual(name: String, quantity: Int, unitPriceCents: Long) =
+        SaleDraftLine("l${nextLineId++}", null, name, quantity, unitPriceCents)
 
     @Test
     fun `line subtotal multiplies quantity and subtracts its discount`() {
@@ -40,7 +47,43 @@ class SaleDraftTest {
     @Test
     fun `removing a product drops only that line`() {
         val draft = SaleDraft().withLine(line("a", 1, 10_000)).withLine(line("b", 1, 5_000))
-        assertEquals(5_000, draft.withoutProduct("a").totalCents)
+        val removed = draft.lines.first { it.productId == "a" }
+        assertEquals(5_000, draft.withoutLine(removed.lineId).totalCents)
+    }
+
+    @Test
+    fun `a hand-written line needs no catalog product`() {
+        val draft = SaleDraft().withLine(manual("Trapeador", 3, 8_000))
+        assertNull(draft.lines.single().productId)
+        assertEquals(24_000, draft.totalCents)
+        assertNull(draft.validationError())
+    }
+
+    @Test
+    fun `two hand-written lines with the same name stay separate rows`() {
+        // Tapping the same catalog product twice is a slip; typing the same thing twice is not.
+        val draft = SaleDraft().withLine(manual("Trapeador", 1, 8_000)).withLine(manual("Trapeador", 1, 8_000))
+        assertEquals(2, draft.lines.size)
+        assertEquals(16_000, draft.totalCents)
+    }
+
+    @Test
+    fun `removing one hand-written line leaves its twin alone`() {
+        val draft = SaleDraft().withLine(manual("Trapeador", 1, 8_000)).withLine(manual("Trapeador", 1, 8_000))
+        val remaining = draft.withoutLine(draft.lines.first().lineId)
+        assertEquals(1, remaining.lines.size)
+        assertEquals(8_000, remaining.totalCents)
+    }
+
+    @Test
+    fun `catalog and hand-written lines add up together`() {
+        val draft = SaleDraft().withLine(line("a", 2, 10_000)).withLine(manual("Trapeador", 1, 8_000))
+        assertEquals(28_000, draft.totalCents)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a line with a blank name is refused at construction`() {
+        manual("  ", 1, 8_000)
     }
 
     @Test

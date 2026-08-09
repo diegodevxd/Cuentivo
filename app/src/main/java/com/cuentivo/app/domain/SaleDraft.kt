@@ -7,13 +7,27 @@ package com.cuentivo.app.domain
  * charged that day even if the product is repriced tomorrow.
  */
 data class SaleDraftLine(
-    val productId: String,
+    /**
+     * Identifies this row while the cart is on screen. Separate from [productId] because a line
+     * written by hand has no product at all, and the cart still has to be able to draw it and remove
+     * it. Supplied by the caller so this file stays free of `UUID` and the tests get fixed ids.
+     */
+    val lineId: String,
+    /**
+     * The catalog product this line came from, or null when the seller typed the name and price by
+     * hand. Nullable because `sale_items.productId` is nullable in Room and in `firestore.rules`:
+     * somebody who sells door to door has no catalog, and requiring one is what made this app
+     * unusable for them.
+     */
+    val productId: String?,
     val productName: String,
     val quantity: Int,
     val unitPriceCents: Long,
     val discountCents: Long = 0,
 ) {
     init {
+        require(lineId.isNotBlank()) { "A cart line needs an id." }
+        require(productName.isNotBlank()) { "A cart line needs a name." }
         require(quantity > 0) { "Quantity must be positive." }
         require(unitPriceCents > 0) { "Unit price must be positive." }
         require(discountCents >= 0) { "Line discount cannot be negative." }
@@ -45,9 +59,14 @@ data class SaleDraft(
     /**
      * Adding a product already in the cart bumps its quantity instead of repeating the row, which is
      * what a person tapping the same product twice means.
+     *
+     * A line written by hand never merges, even with an identical name: picking the same catalog
+     * product twice is a slip of the finger, but typing the same thing twice is deliberate.
      */
     fun withLine(line: SaleDraftLine): SaleDraft {
-        val existing = lines.indexOfFirst { it.productId == line.productId && it.unitPriceCents == line.unitPriceCents }
+        val existing = if (line.productId == null) -1 else lines.indexOfFirst {
+            it.productId == line.productId && it.unitPriceCents == line.unitPriceCents
+        }
         val merged = if (existing == -1) {
             lines + line
         } else {
@@ -62,7 +81,8 @@ data class SaleDraft(
         return copy(lines = merged)
     }
 
-    fun withoutProduct(productId: String): SaleDraft = copy(lines = lines.filterNot { it.productId == productId })
+    /** Removes one row. By line id, not by product: a hand-written line has no product to name. */
+    fun withoutLine(lineId: String): SaleDraft = copy(lines = lines.filterNot { it.lineId == lineId })
 
     /** A sale can be saved only when it has lines and the discount does not swallow the total. */
     fun validationError(): String? = when {

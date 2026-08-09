@@ -16,7 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
-import com.cuentivo.app.domain.QuickSale
+import com.cuentivo.app.domain.QuickSaleCart
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -28,7 +28,7 @@ import org.junit.Test
 class QuickSaleFlowTest {
     @get:Rule val composeRule = createComposeRule()
 
-    private val created = mutableListOf<Pair<String, QuickSale?>>()
+    private val created = mutableListOf<Pair<String, QuickSaleCart?>>()
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test fun a_customer_with_a_product_reports_both() {
@@ -46,8 +46,16 @@ class QuickSaleFlowTest {
         composeRule.runOnIdle {
             assertEquals(1, created.size)
             assertEquals("Carmen", created[0].first)
+            // The row was never added by hand, so this also pins the behaviour that a filled row
+            // still counts when Guardar is pressed straight away — the way this form always worked.
+            val cart = created[0].second!!
+            val line = cart.lines.single()
+            assertEquals("Jabón Zote", line.productName)
+            assertEquals(2_550, line.unitPriceCents)
+            assertEquals(2, line.quantity)
+            assertEquals(5_100, cart.totalCents)
             // The plazo is left untouched, so it must arrive as the default rather than as no date.
-            assertEquals(QuickSale("Jabón Zote", 2_550, 2, null, 15L), created[0].second)
+            assertEquals(15L, cart.dueInDays)
         }
     }
 
@@ -107,7 +115,7 @@ class QuickSaleFlowTest {
         CuentivoApp(
             state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 1),
             customers = listOf(customerRow()),
-            onCreateCustomer = { name, _, _, quickSale -> created += name to quickSale },
+            onCreateCustomer = { draft -> created += draft.name to draft.quickSale },
         )
     }
 
