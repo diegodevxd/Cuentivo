@@ -207,6 +207,7 @@
     <string name="message_sale_cancel_failed">No fue posible cancelar la venta</string>
     <string name="message_payment_canceled">Abono cancelado; la deuda subió %1$s</string>
     <string name="message_credit_limit_updated">Cupo de %1$s actualizado a %2$s</string>
+    <string name="message_account_delete_cloud_pending">Tu teléfono quedó limpio, pero no pudimos avisar al servidor. Escríbenos para terminar de borrar tu copia en la nube.</string>
     <string name="message_account_delete_failed">Vuelve a iniciar sesión para poder eliminar la cuenta</string>
 
     <!-- Alerts (AlertsSheet) -->

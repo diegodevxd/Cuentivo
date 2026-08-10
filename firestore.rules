@@ -33,11 +33,22 @@ service cloud.firestore {
     function canAdministerBusiness(businessId) { return isMember(businessId) && role(businessId) in ['OWNER', 'ADMIN']; }
     function isBusinessOwner(businessId) { return isAuthenticated() && exists(/databases/$(database)/documents/businesses/$(businessId)) && get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerUserId == request.auth.uid; }
 
+    // The only document in the schema with an OPTIONAL key, and deliberately so.
+    // `deletionRequestedAtEpochMillis` is the owner asking for their business to be erased. It cannot
+    // be required, because every business written before this rule existed has six keys and would
+    // stop validating; and it cannot be left out of hasOnly, because then anything could be smuggled
+    // onto the document. So: the six stay mandatory, the seventh is allowed and validated if present.
+    //
+    // It exists because the client cannot delete anything — every collection here is `delete: if
+    // false` — so "borrar mi cuenta" had no way to reach the cloud copy at all. This is the request;
+    // the erasure itself is done out of band. See docs/borrado-de-cuenta.md.
     function validBusiness(data) {
-      return hasExactKeys(data, ['name', 'ownerUserId', 'currency', 'timezone', 'createdAtEpochMillis', 'updatedAtEpochMillis']) &&
+      return data.keys().hasAll(['name', 'ownerUserId', 'currency', 'timezone', 'createdAtEpochMillis', 'updatedAtEpochMillis']) &&
+        data.keys().hasOnly(['name', 'ownerUserId', 'currency', 'timezone', 'createdAtEpochMillis', 'updatedAtEpochMillis', 'deletionRequestedAtEpochMillis']) &&
         validString(data.name, 1, 120) && validString(data.ownerUserId, 1, 128) &&
         data.currency is string && data.currency.matches('^[A-Z]{3}$') &&
-        validString(data.timezone, 1, 80) && validEpoch(data.createdAtEpochMillis) && validEpoch(data.updatedAtEpochMillis);
+        validString(data.timezone, 1, 80) && validEpoch(data.createdAtEpochMillis) && validEpoch(data.updatedAtEpochMillis) &&
+        (!('deletionRequestedAtEpochMillis' in data) || validEpoch(data.deletionRequestedAtEpochMillis));
     }
     function validMember(data) {
       return hasExactKeys(data, ['businessId', 'userId', 'role', 'status', 'invitedAtEpochMillis', 'acceptedAtEpochMillis']) &&

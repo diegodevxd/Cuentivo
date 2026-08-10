@@ -119,7 +119,12 @@ Puntos que Play pregunta explícitamente:
 
 - **Los datos van cifrados en tránsito**: sí (HTTPS/Firestore).
 - **El usuario puede pedir que se borren sus datos**: sí — *Cuenta → Eliminar mi cuenta* borra la
-  cuenta y toda la información del teléfono.
+  cuenta, toda la información del teléfono, y **marca la copia en la nube para su eliminación**.
+  ⚠️ **La eliminación en la nube todavía se procesa a mano** (ver `docs/borrado-de-cuenta.md`), porque
+  las reglas prohíben que un cliente borre documentos y el proyecto está en plan Spark, sin Cloud
+  Functions. No declares aquí un borrado automático mientras siga siendo así: Play pide además una
+  **URL de solicitud de borrado accesible desde la web**, que hoy **no existe** y hay que crear antes
+  de salir de prueba cerrada a producción.
 - **Se comparten con terceros**: no.
 - **La app recopila datos de forma opcional**: sí — sin Pro, nada del negocio sale del teléfono.
 

@@ -48,6 +48,32 @@ class FirestoreSyncGateway(
      * real bug: Firestore then answers by document id, which is a random UUID, so recovery landed on
      * whichever business happened to sort first — usually an empty one.
      */
+    /**
+     * Stamps the business as "the owner asked for this to be erased", and waits for the server.
+     *
+     * Deliberately **not** routed through the outbox like every other write. The outbox is drained
+     * later by a WorkManager job, and the very next thing this flow does is delete the Firebase Auth
+     * account — after which there is no credential left to authenticate that job, so the request
+     * would fail permanently and silently. It has to land while the account still exists.
+     *
+     * It only asks. The client cannot erase anything: every collection is `delete: if false` in
+     * `firestore.rules`, on purpose. The actual erasure is done out of band against this flag; see
+     * `docs/borrado-de-cuenta.md`.
+     */
+    fun requestBusinessDeletion(businessId: String, nowEpochMillis: Long): Result<Unit> = try {
+        Tasks.await(
+            firestore.collection("businesses")
+                .document(businessId)
+                .update("deletionRequestedAtEpochMillis", nowEpochMillis)
+        )
+        Result.success(Unit)
+    } catch (error: Exception) {
+        // Never rethrown into the delete flow: a phone with no signal must still be able to wipe
+        // itself. The caller tells the person their cloud copy is still pending.
+        Log.w(TAG, "Could not flag the business for deletion", error)
+        Result.failure(error)
+    }
+
     override fun findBusinessOwnedBy(userId: String): BusinessLookupResult = try {
         val snapshots = Tasks.await(
             firestore.collection("businesses")

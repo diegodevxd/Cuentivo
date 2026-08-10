@@ -1523,9 +1523,20 @@ class MainActivity : ComponentActivity() {
                     authenticationGateway.signOut()
                     authenticatedUserId = null
                 }, onDeleteAccount = {
+                    val businessToErase = (state as? DashboardUiState.Content)?.businessId
                     // Local data goes first: if the account delete fails, the person is still signed
                     // in and can retry, rather than being locked out of rows that outlived them.
                     lifecycleScope.launch {
+                        // The cloud request goes before anything else. Once the Auth account is gone
+                        // there is no credential left to write with, and the rules forbid deleting
+                        // from the client at all, so this is the only window in which the copy in
+                        // Firestore can be marked for erasure. Blocking call, so off the main thread.
+                        var cloudRequested = true
+                        if (businessToErase != null) {
+                            cloudRequested = withContext(Dispatchers.IO) {
+                                firestoreGateway.requestBusinessDeletion(businessToErase, System.currentTimeMillis())
+                            }.isSuccess
+                        }
                         // clearAllTables() is a blocking Room call and Room refuses to run one on the
                         // main thread; lifecycleScope launches on Main, so this used to crash the app
                         // the moment the button was confirmed.
@@ -1537,6 +1548,12 @@ class MainActivity : ComponentActivity() {
                         authenticationGateway.deleteAccount { result ->
                             result.onSuccess {
                                 authenticatedUserId = null
+                                // Said out loud rather than swallowed: the phone is wiped either
+                                // way, but if the request never reached the server the person is
+                                // owed the truth about their copy in the cloud.
+                                if (!cloudRequested) {
+                                    uiMessage = getString(R.string.message_account_delete_cloud_pending)
+                                }
                             }.onFailure {
                                 uiMessage = getString(R.string.message_account_delete_failed)
                             }

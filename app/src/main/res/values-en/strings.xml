@@ -207,6 +207,7 @@
     <string name="message_sale_cancel_failed">The sale could not be cancelled</string>
     <string name="message_payment_canceled">Payment cancelled; the debt increased by %1$s</string>
     <string name="message_credit_limit_updated">Credit limit for %1$s updated to %2$s</string>
+    <string name="message_account_delete_cloud_pending">Your phone is wiped, but we could not reach the server. Write to us to finish deleting your cloud copy.</string>
     <string name="message_account_delete_failed">Sign in again to delete the account</string>
 
     <!-- Alerts (AlertsSheet) -->
