@@ -1,5 +1,12 @@
 package com.cuentivo.app.ui.transaction
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
+import com.cuentivo.app.ui.NeoDisabled
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -145,6 +153,12 @@ internal fun <T> NeoSelectorField(
     emptyText: String,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Whether to repeat the label inside the panel. False where a section header already says it —
+     * "CLIENTE" printed twice, once as the heading and once inside the control it heads, reads as a
+     * mistake rather than as emphasis.
+     */
+    showLabel: Boolean = true,
 ) {
     var open by remember { mutableStateOf(false) }
     Card(
@@ -165,12 +179,14 @@ internal fun <T> NeoSelectorField(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    text = label.uppercase(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
+                if (showLabel) {
+                    Text(
+                        text = label.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
                 Text(
                     text = selected?.let(optionTitle) ?: placeholder,
                     style = MaterialTheme.typography.bodyLarge,
@@ -349,3 +365,146 @@ internal fun NeoAmountRow(
 }
 
 private fun selectorTag(label: String) = "selector-${label.lowercase()}"
+
+/**
+ * The heading that opens a step of the sale.
+ *
+ * Nueva venta is one screen with six jobs on it — pick the customer, pick what they took, review the
+ * cart, agree a date, read the total, commit — and every one of them used to arrive at the same
+ * visual weight, so the screen read as a wall of fields. A small cyan label with a rule running to
+ * the edge costs one row and tells you where you are without splitting the flow into wizard pages.
+ */
+@Composable
+internal fun NeoSectionHeader(title: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxWidth().padding(top = NeoSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
+    ) {
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        HorizontalDivider(
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+    }
+}
+
+/**
+ * Two mutually exclusive choices drawn as one control.
+ *
+ * As two separate chips they read as two buttons you could somehow press both of; inside a single
+ * bordered track it is obvious that picking one releases the other. Used for
+ * "Del catálogo / Escribir a mano", where the wrong reading costs a mis-typed product.
+ */
+@Composable
+internal fun <T> NeoSegmentedControl(
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, NeoShapes.row)
+            .padding(3.dp),
+    ) {
+        options.forEach { option ->
+            val isSelected = option == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 42.dp)
+                    .clip(NeoShapes.row)
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent,
+                    )
+                    .semantics {
+                        role = Role.Tab
+                        this.selected = isSelected
+                    }
+                    .clickable { onSelect(option) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label(option),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Quantity as two buttons and a number, instead of a text field.
+ *
+ * Almost every sale is one, two or three of something. Opening a keyboard to change a 1 into a 2 —
+ * on a phone held behind a counter, by someone whose reading glasses are elsewhere — is the slowest
+ * possible way to do the most common edit on this screen. Typing is still possible for the rare
+ * large number, so nothing is lost.
+ */
+@Composable
+internal fun NeoQuantityStepper(
+    value: Int,
+    onValueChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    decreaseDescription: String,
+    increaseDescription: String,
+) {
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, NeoShapes.row),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // One is the floor, not zero: a line of zero is not a line, and the add action already
+        // refuses it. Disabling the control says so before the tap instead of after.
+        IconButton(
+            onClick = { if (value > 1) onValueChange(value - 1) },
+            enabled = value > 1,
+            // The label rides on the button, not on an icon: a minus is drawn as text here, since
+            // the core Material icon set has no "remove" and pulling in the extended set for one
+            // glyph would add a few thousand vectors to the APK.
+            modifier = Modifier.size(48.dp).semantics { contentDescription = decreaseDescription },
+        ) {
+            Text(
+                text = "−",
+                style = MaterialTheme.typography.titleLarge,
+                color = if (value > 1) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = NeoDisabled.LABEL)
+                },
+            )
+        }
+        Text(
+            text = value.coerceAtLeast(0).toString(),
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.defaultMinSize(minWidth = 56.dp),
+        )
+        IconButton(
+            onClick = { onValueChange(value + 1) },
+            enabled = value < 9999,
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = increaseDescription,
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}

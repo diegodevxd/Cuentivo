@@ -155,6 +155,11 @@
     <string name="new_sale_customer_placeholder">Tap to pick the customer</string>
     <string name="new_sale_customer_empty">Add a customer first, on the Customers tab</string>
     <string name="new_sale_customer_balance">Balance: %1$s</string>
+    <string name="new_sale_section_customer">Customer</string>
+    <string name="new_sale_section_products">Products</string>
+    <string name="new_sale_section_conditions">Payment terms</string>
+    <string name="new_sale_quantity_decrease">Remove one</string>
+    <string name="new_sale_quantity_increase">Add one</string>
     <string name="new_sale_source_catalog">From catalog</string>
     <string name="new_sale_source_manual">Type it in</string>
     <string name="new_sale_manual_name_label">What did you sell?</string>

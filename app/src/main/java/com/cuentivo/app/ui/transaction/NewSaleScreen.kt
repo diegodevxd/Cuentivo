@@ -188,6 +188,7 @@ fun NewSaleScreen(
                     backDescription = stringResource(R.string.new_sale_back_description),
                 )
             }
+            item { NeoSectionHeader(stringResource(R.string.new_sale_section_customer)) }
             item {
                 // Resolved outside the lambda: optionDetail is not a composable slot.
                 val balanceFormat = stringResource(R.string.new_sale_customer_balance)
@@ -200,19 +201,20 @@ fun NewSaleScreen(
                     optionDetail = { balanceFormat.format(Money.format(it.balanceCents)) },
                     emptyText = stringResource(R.string.new_sale_customer_empty),
                     onSelect = { customer = it },
+                    // The section header above already says CLIENTE.
+                    showLabel = false,
                 )
             }
+            item { NeoSectionHeader(stringResource(R.string.new_sale_section_products)) }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
-                    LineSource.entries.forEach { source ->
-                        NeoChoiceChip(
-                            label = stringResource(source.labelRes),
-                            isSelected = lineSource == source,
-                            onClick = { lineSource = source },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
+                val catalogLabel = stringResource(R.string.new_sale_source_catalog)
+                val manualLabel = stringResource(R.string.new_sale_source_manual)
+                NeoSegmentedControl(
+                    options = LineSource.entries,
+                    selected = lineSource,
+                    label = { if (it == LineSource.CATALOG) catalogLabel else manualLabel },
+                    onSelect = { lineSource = it },
+                )
             }
             if (lineSource == LineSource.CATALOG) {
                 item {
@@ -225,6 +227,7 @@ fun NewSaleScreen(
                         optionDetail = { Money.format(it.salePriceCents) },
                         emptyText = stringResource(R.string.new_sale_product_empty),
                         onSelect = { picked = it },
+                        showLabel = false,
                     )
                 }
             } else {
@@ -245,15 +248,24 @@ fun NewSaleScreen(
                 }
             }
             item {
-                OutlinedTextField(
-                    value = quantityText,
-                    onValueChange = { raw -> quantityText = raw.filter { it.isDigit() }.take(4) },
-                    label = { Text(stringResource(R.string.new_sale_quantity_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    shape = NeoShapes.row,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                // Quantity and the add action on one row: they are one gesture, and stacking them
+                // full width made the most common edit on this screen look like two separate steps.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.new_sale_quantity_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    NeoQuantityStepper(
+                        value = quantity,
+                        onValueChange = { quantityText = it.toString() },
+                        decreaseDescription = stringResource(R.string.new_sale_quantity_decrease),
+                        increaseDescription = stringResource(R.string.new_sale_quantity_increase),
+                    )
+                }
             }
             item {
                 val chosenProduct = picked
@@ -293,7 +305,7 @@ fun NewSaleScreen(
                 )
             }
 
-            item { SectionLabel(stringResource(R.string.new_sale_cart)) }
+            item { NeoSectionHeader(stringResource(R.string.new_sale_cart)) }
             if (draft.isEmpty) {
                 item { EmptyCartRow() }
             } else {
@@ -302,9 +314,15 @@ fun NewSaleScreen(
                 }
             }
 
+            item { NeoSectionHeader(stringResource(R.string.new_sale_section_conditions)) }
             item { MoneyField(stringResource(R.string.new_sale_discount_label), discountText) { discountText = it } }
-
-            item { SectionLabel(stringResource(R.string.new_sale_due_question)) }
+            item {
+                Text(
+                    text = stringResource(R.string.new_sale_due_question),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             item {
                 // Two by two rather than one row of four: at 320 dp four chips would get about
                 // 66 dp each, which truncates "Sin fecha" and shrinks every target.
@@ -392,29 +410,23 @@ private fun SectionLabel(text: String) {
     )
 }
 
+/**
+ * Nothing in the cart yet.
+ *
+ * One muted line, not a card. A bordered surface the size of a real row announced an emptiness that
+ * needs no announcing — the cart is visibly empty — and pushed the total further off screen on the
+ * one screen where the total matters most.
+ */
 @Composable
 private fun EmptyCartRow() {
-    Card(
-        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = CART_ROW_HEIGHT),
-        shape = NeoShapes.row,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = CART_ROW_HEIGHT)
-                .padding(horizontal = NeoSpacing.md, vertical = NeoSpacing.sm),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(stringResource(R.string.new_sale_empty_cart_title), style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = stringResource(R.string.new_sale_empty_cart_detail),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    Text(
+        text = stringResource(R.string.new_sale_empty_cart_title),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = NeoSpacing.sm),
+    )
 }
 
 @Composable
@@ -462,15 +474,22 @@ private fun CartRow(line: SaleDraftLine, onRemove: () -> Unit) {
     }
 }
 
+/**
+ * The end of the flow, and the only figure on the screen that has to be unmistakable.
+ *
+ * Deliberately unlike every input above it: filled surface rather than an outlined field, cyan rule
+ * across the top, and the amount at display size. Everything above is something you are still
+ * deciding; this is what you are about to commit to somebody's account.
+ */
 @Composable
 private fun TotalPanel(draft: SaleDraft, discountCents: Long) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(top = NeoSpacing.sm),
         shape = NeoShapes.card,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)),
     ) {
-        Column(Modifier.fillMaxWidth().padding(NeoSpacing.md)) {
+        Column(Modifier.fillMaxWidth().padding(NeoSpacing.lg)) {
             Text(
                 text = stringResource(R.string.new_sale_total_label),
                 style = MaterialTheme.typography.labelSmall,
@@ -481,7 +500,9 @@ private fun TotalPanel(draft: SaleDraft, discountCents: Long) {
                 NeoMoney(
                     amountCents = draft.totalCents,
                     modifier = Modifier.testTag(SALE_TOTAL_TAG),
-                    style = MaterialTheme.typography.headlineSmall,
+                    // A step up from every other figure on the screen: the total is the one number
+                    // the person is actually agreeing to.
+                    style = MaterialTheme.typography.displaySmall,
                 )
             }
             if (discountCents > 0) {

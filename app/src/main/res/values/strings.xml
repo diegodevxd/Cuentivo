@@ -155,6 +155,11 @@
     <string name="new_sale_customer_placeholder">Toca para elegir al cliente</string>
     <string name="new_sale_customer_empty">Primero agrega un cliente en la pestaña Clientes</string>
     <string name="new_sale_customer_balance">Saldo: %1$s</string>
+    <string name="new_sale_section_customer">Cliente</string>
+    <string name="new_sale_section_products">Productos</string>
+    <string name="new_sale_section_conditions">Condiciones de pago</string>
+    <string name="new_sale_quantity_decrease">Quitar uno</string>
+    <string name="new_sale_quantity_increase">Agregar uno</string>
     <string name="new_sale_source_catalog">Del catálogo</string>
     <string name="new_sale_source_manual">Escribir a mano</string>
     <string name="new_sale_manual_name_label">¿Qué le vendiste?</string>
