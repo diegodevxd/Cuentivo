@@ -124,6 +124,7 @@ fun CustomerDetailSheet(
     onDismissCreditLimitSuggestion: (Long) -> Unit = {},
 ) {
     var pendingCancel by remember { mutableStateOf<CorrectionCandidate?>(null) }
+    var correctionsExpanded by remember { mutableStateOf(false) }
     var shareMenuOpen by remember { mutableStateOf(false) }
     BackHandler(onBack = onDismiss)
 
@@ -214,16 +215,32 @@ fun CustomerDetailSheet(
             }
 
             if (cancelables.isNotEmpty()) {
-                item { NeoSectionHeader(title = stringResource(R.string.detail_correct)) }
                 item {
-                    Text(
-                        stringResource(R.string.detail_correct_note),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    NeoSectionHeader(
+                        title = stringResource(R.string.detail_correct),
+                        trailing = {
+                            TextButton(onClick = { correctionsExpanded = !correctionsExpanded }) {
+                                Text(
+                                    stringResource(
+                                        if (correctionsExpanded) R.string.detail_corrections_hide
+                                        else R.string.detail_corrections_show,
+                                    ),
+                                )
+                            }
+                        },
                     )
                 }
-                items(cancelables) { item ->
-                    CorrectionRow(item, onEdit = onEditSale) { pendingCancel = item }
+                if (correctionsExpanded) {
+                    item {
+                        Text(
+                            stringResource(R.string.detail_correct_note),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    items(cancelables) { item ->
+                        CorrectionRow(item, onEdit = onEditSale) { pendingCancel = item }
+                    }
                 }
             }
         }
@@ -706,7 +723,7 @@ private fun CorrectionRow(
             Column(Modifier.weight(1f).padding(vertical = NeoSpacing.sm)) {
                 when (item) {
                     is CorrectionCandidate.Sale -> {
-                        Text(item.saleNumber, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                        Text(stringResource(R.string.detail_correction_sale), style = MaterialTheme.typography.titleMedium, maxLines = 1)
                         Text(
                             stringResource(
                                 R.string.detail_sale_correction_amounts,

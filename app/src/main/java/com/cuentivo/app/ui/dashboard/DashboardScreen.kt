@@ -126,9 +126,23 @@ private fun LazyListScope.dashboardContent(
         DashboardHero(state)
     }
     item {
-        Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
-            NeoAction(stringResource(R.string.detail_register_payment), onRegisterPayment, Modifier.fillMaxWidth())
-            NeoAction(stringResource(R.string.nav_new_sale), onNewSale, Modifier.fillMaxWidth(), primary = false)
+        // Both next steps are visible at the same glance: cobrar resolves the debt, vender grows it.
+        // Equal width prevents the secondary outline from disappearing beneath a full-width cyan CTA.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
+        ) {
+            NeoAction(
+                stringResource(R.string.detail_register_payment),
+                onRegisterPayment,
+                Modifier.weight(1f),
+            )
+            NeoAction(
+                stringResource(R.string.nav_new_sale),
+                onNewSale,
+                Modifier.weight(1f),
+                primary = false,
+            )
         }
     }
 
@@ -194,14 +208,9 @@ private fun LazyListScope.dashboardContent(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                // One sentence per insight, already worded by BusinessInsights.
-                state.insights.forEach { insight ->
-                    Text(
-                        text = insight.text,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                // The BusinessInsights sentences were dropped on purpose: the two figures already
+                // say it, and the paragraph under them was the explanatory text this card had too
+                // much of.
             }
         }
     }
@@ -309,6 +318,9 @@ private fun CriticalCustomerRow(
                     modifier = Modifier.size(17.dp),
                 )
             } else {
+                // The initial is what every customer who is *not* overdue shows. Without it the
+                // avatar is an empty box, which reads as a picture that failed to load rather than
+                // as "nothing is wrong here".
                 Text(
                     text = initialOf(critical.customer.customer.name),
                     style = MaterialTheme.typography.labelMedium,

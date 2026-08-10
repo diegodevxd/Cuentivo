@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -99,7 +99,7 @@ internal fun ProductPhoto(
                 modifier = Modifier.fillMaxSize(),
             )
         } ?: Icon(
-            imageVector = Icons.Filled.ShoppingCart,
+            imageVector = Icons.Filled.Add,
             contentDescription = stringResource(R.string.product_photo_none),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(size / 2),

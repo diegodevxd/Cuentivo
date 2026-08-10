@@ -167,6 +167,19 @@ fun ProductsScreen(
                         )
                         Text(stringResource(R.string.products_title), style = MaterialTheme.typography.titleLarge)
                     }
+                    // Importing is useful but occasional; it belongs beside the catalog title rather
+                    // than occupying the first full-width action on every visit.
+                    TextButton(
+                        onClick = {
+                            if (canImportProducts) importLauncher.launch(arrayOf("*/*")) else onImportBlocked()
+                        },
+                        enabled = !isImportingProducts,
+                    ) {
+                        Text(
+                            if (isImportingProducts) stringResource(R.string.products_importing)
+                            else stringResource(R.string.products_import),
+                        )
+                    }
                     // The bottom bar's central + belongs to Nueva venta, so adding a product needs
                     // its own control rather than competing for that one.
                     IconButton(
@@ -181,17 +194,7 @@ fun ProductsScreen(
                     }
                 }
             }
-            item {
-                NeoAction(
-                    label = if (isImportingProducts) stringResource(R.string.products_importing) else stringResource(R.string.products_import),
-                    onClick = {
-                        if (canImportProducts) importLauncher.launch(arrayOf("*/*")) else onImportBlocked()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isImportingProducts,
-                    primary = false,
-                )
-            }
+
             item {
                 OutlinedTextField(
                     value = query,

@@ -193,7 +193,7 @@
     <string name="payment_amount_label">Payment amount</string>
     <string name="payment_allocation_note">The payment goes first to the oldest sale due.</string>
     <string name="payment_save">Save payment</string>
-    <string name="payment_current_balance">Current balance</string>
+    <string name="payment_current_balance">Currently owed</string>
     <string name="payment_resulting_balance">Resulting balance</string>
     <string name="payment_credit_note">The customer is left with credit.</string>
     <string name="message_sale_registered">Sale of %1$s registered</string>
@@ -297,7 +297,10 @@
     <string name="detail_history">Movement history</string>
     <string name="detail_no_movements_title">No movements</string>
     <string name="detail_no_movements_detail">Sales and payments for this customer will show up here.</string>
-    <string name="detail_correct">Correct</string>
+    <string name="detail_correct">Corrections and adjustments</string>
+    <string name="detail_corrections_show">Show</string>
+    <string name="detail_corrections_hide">Hide</string>
+    <string name="detail_correction_sale">Registered sale</string>
     <string name="detail_correct_note">Nothing is deleted: a movement is recorded that offsets the mistake, and it stays in the history.</string>
     <string name="detail_cancel_sale_title">Cancel this sale?</string>
     <string name="detail_cancel_payment_title">Cancel this payment?</string>

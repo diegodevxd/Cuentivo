@@ -193,7 +193,7 @@
     <string name="payment_amount_label">Monto del abono</string>
     <string name="payment_allocation_note">El abono se aplica primero a la venta más antigua por vencer.</string>
     <string name="payment_save">Guardar abono</string>
-    <string name="payment_current_balance">Saldo actual</string>
+    <string name="payment_current_balance">Debe actualmente</string>
     <string name="payment_resulting_balance">Saldo resultante</string>
     <string name="payment_credit_note">Queda saldo a favor del cliente.</string>
     <string name="message_sale_registered">Venta de %1$s registrada</string>
@@ -297,7 +297,10 @@
     <string name="detail_history">Historial de Movimientos</string>
     <string name="detail_no_movements_title">Sin movimientos</string>
     <string name="detail_no_movements_detail">Las ventas y los abonos de este cliente aparecerán aquí.</string>
-    <string name="detail_correct">Corregir</string>
+    <string name="detail_correct">Correcciones y ajustes</string>
+    <string name="detail_corrections_show">Ver</string>
+    <string name="detail_corrections_hide">Ocultar</string>
+    <string name="detail_correction_sale">Venta registrada</string>
     <string name="detail_correct_note">Nada se borra: se registra un movimiento que compensa el error y queda en el historial.</string>
     <string name="detail_cancel_sale_title">¿Cancelar esta venta?</string>
     <string name="detail_cancel_payment_title">¿Cancelar este abono?</string>
