@@ -10,6 +10,28 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Dónde estamos
 
+- 🆕 **1.16 / versionCode 25 lista para prueba cerrada**, y **auditoría de seguridad de la app**
+  (2026-08-10). AAB construido desde `7fc40c7`, firmado con la llave de subida (SHA-256 `7845EC3E…`,
+  `jar verified`), en `app/build/outputs/bundle/release/app-release.aab`.
+- 🔴 **RESUELTO A MEDIAS — borrar la cuenta no alcanzaba la nube** (commit `6ff19e9`).
+  `onDeleteAccount` borraba Room y la cuenta de Auth y **nada más**: el negocio entero se quedaba en
+  Firestore para siempre, incluidos **nombre y teléfono de los clientes del usuario** — terceros que
+  nunca aceptaron nada. No se podía arreglar desde el cliente a propósito: las reglas tienen
+  `allow delete: if false` en todo.
+  Ahora la app **pide** el borrado: escribe `deletionRequestedAtEpochMillis` en el documento del
+  negocio y **espera al servidor antes de tocar nada más**, porque en cuanto muere la cuenta de Auth
+  ya no hay credencial. Por eso **no va por el outbox**: se drena después y fallaría en silencio.
+  Sin señal el borrado local sigue y la app lo dice.
+  ⚠️ **La eliminación en la nube se procesa A MANO** — ver `docs/borrado-de-cuenta.md`, al menos una
+  vez al mes. **Esto NO cumple del todo con Play**: falta borrado efectivo y una **URL de solicitud
+  accesible en web**. Cerrarlo antes de salir de prueba cerrada a producción; la solución real es
+  Blaze + Cloud Function (hoy el proyecto está en Spark, donde no se despliegan funciones).
+  `deletionRequestedAtEpochMillis` es **la única llave opcional del esquema**: `hasOnly` la admite,
+  `hasAll` no la exige, o los negocios viejos dejarían de validar. Reglas validadas contra Firebase.
+- ✅ **Lo que la auditoría encontró BIEN** (verificado, no asumido): ningún `Log.*` lleva PII, saldos
+  ni tokens; el respaldo usa PBKDF2 + AES-GCM con salt e IV de `SecureRandom` por archivo;
+  `firestore.rules` es create-only en lo financiero con `hasExactKeys` y aritmética validada.
+
 - 🆕 **Pasada de UI/UX, fases 0–2** (2026-08-09, retro de diseño tras revisar en dispositivo real).
   **Ninguna toca lógica de negocio.** Commits `f91f45c` (transversal) y `81dd3a0` (Nueva venta).
   - ✅ **Fase 0: lo del modo cliente quedó verificado en el teléfono.** Venta con dos líneas escritas
@@ -329,6 +351,17 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   suscripción ni entregar el precio de Pro. Para probar cobros hay que instalar desde Play.
 
 ## Pendientes de fondo
+
+- 🔴 **URL de solicitud de borrado en web + borrado efectivo**, antes de salir de prueba cerrada a
+  producción. Ver `docs/borrado-de-cuenta.md`.
+- **PBKDF2 en 120 000 iteraciones** (`BackupCrypto.ITERATIONS`), por debajo de las 600 000 que se
+  recomiendan hoy. Las iteraciones viajan en la cabecera, así que subirlas **no rompe respaldos
+  viejos**; medir antes en un teléfono lento, que es el usuario objetivo.
+- **No hay aviso de privacidad dentro de la app**, y la app guarda nombre y teléfono de terceros.
+- **Falta `docs/checklist-publicacion.md`.** Cada release se redescubre a mano: subir `versionCode`,
+  `jarsigner` y no `apksigner` para un AAB, contar pruebas desde los XML, comparar el SHA-256 de la
+  llave, correr también `compileDebugAndroidTestKotlin`, y que el AAB salga de un commit. Este último
+  ya falló una vez el 2026-08-10.
 
 - **Los 27 `syncQueue.enqueue` de `MainActivity` siguen armando el payload a mano.**
   `sync/SyncPayloads.kt` ya existe y construye el mapa **desde la entidad**, que es lo que impide que
