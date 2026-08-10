@@ -4,11 +4,29 @@ Este archivo dice **dónde está el proyecto hoy y qué sigue**. No es un diario
 sustituyendo, no añadiendo. Lo que deja de estar vigente baja a `docs/historia-del-proyecto.md`.
 La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
-**Última actualización:** 2026-08-09
+**Última actualización:** 2026-08-10
 
 ---
 
 ## Dónde estamos
+
+- ✅ **Un solo lugar arma el documento que Firestore espera** (2026-08-10, commit `d6a84ea`).
+  Los 21 payloads a mano de `MainActivity`, los 9 de `OutboxBackfill` y el de
+  `OwnerMembershipBootstrap` pasan por `sync/SyncPayloads.kt`, que construye el mapa **desde la
+  entidad**. Se agregaron `business`, `member`, `payment` y `allocation`. Cada tipo se verificó
+  campo por campo contra su `valid*` de `firestore.rules` y la tabla quedó **en el mensaje del
+  commit**, no aquí. Con esto **se acabó la duplicación entre el backfill y las rutas de escritura**:
+  agregar una columna se hace en un solo sitio. `deletionRequestedAtEpochMillis` sigue **fuera** del
+  payload de negocio a propósito — es la única llave opcional y la escribe la solicitud de borrado,
+  no el outbox. Sin cambio de comportamiento: 322 pruebas, 0 fallos, paridad 358 = 358.
+- ✅ **RESUELTO: el restore de Pro ya no lee del caché** (commit `4edf9a6`). Las cinco lecturas de
+  `FirestoreSyncGateway.download` pasaron a `Source.SERVER`, igual que `findBusinessOwnedBy` en
+  agosto 8. Antes, sin señal, Firestore contestaba vacío **sin error** y eso se leía como
+  `NothingInCloud`: se marcaba `restoreAttempted` y el usuario quedaba con el ledger vacío creyendo
+  que perdió todo. ⚠️ **Sin probar en dispositivo**: exige un teléfono Pro con la señal cortada a
+  media descarga.
+- ✅ **`backup-cuentivo-*/` ignorado** (commit `c1b32db`). Llevaba nombres y saldos de clientes
+  reales dentro del repo; nunca estuvo en el historial, así que no hubo que reescribir nada.
 
 - 🆕 **1.16 / versionCode 25 lista para prueba cerrada**, y **auditoría de seguridad de la app**
   (2026-08-10). AAB construido desde `7fc40c7`, firmado con la llave de subida (SHA-256 `7845EC3E…`,
@@ -194,9 +212,10 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   Pro, incluidos negocios abandonados hacía reinstalaciones. Al pasar a Pro, `sync/OutboxBackfill.kt`
   siembra la cola desde Room en un solo paso; es idempotente porque el id es
   `SHA-256(businessId|entityType|entityId|revision)` con `INSERT IGNORE`.
-- ⚠️ **El backfill duplica los payloads de las rutas de escritura de `MainActivity`.** Si se agrega
-  una columna a una entidad **hay que añadirla en los dos sitios**: la prueba de exhaustividad
-  detecta un **tipo** faltante, no un **campo** faltante.
+- ⚠️ **La prueba de exhaustividad del backfill detecta un *tipo* faltante, no un *campo* faltante**,
+  y **nada valida los payloads contra `firestore.rules`**. Desde `d6a84ea` el campo se agrega en un
+  solo sitio (`SyncPayloads`), así que el riesgo bajó mucho, pero no a cero: una llave mal escrita
+  ahí sigue sin tener quien la atrape antes de que Firestore la rechace en silencio.
 - Consultas nuevas `allForBackfill` / `*ForBackfill` en 4 DAOs, **sin migración**: Room sigue en 4.
 - **✅ El alta rápida ya pide fecha pactada.** Era el último hueco del semáforo: `MainActivity`
   guardaba `dueDateEpochDay = null` a fuerza, así que toda venta por la ruta rápida quedaba fuera
@@ -363,24 +382,14 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
   llave, correr también `compileDebugAndroidTestKotlin`, y que el AAB salga de un commit. Este último
   ya falló una vez el 2026-08-10.
 
-- **Los 27 `syncQueue.enqueue` de `MainActivity` siguen armando el payload a mano.**
-  `sync/SyncPayloads.kt` ya existe y construye el mapa **desde la entidad**, que es lo que impide que
-  se pierda un campo; hoy sólo lo usan el saldo anterior y la libreta. Convertir los otros 27 y los de
-  `OutboxBackfill` es mecánico, pero **no se hizo junto con features a propósito**: un payload mal
-  armado lo rechaza `hasExactKeys()` en silencio, la fila se estaciona como permanente y nada aparece
-  en pantalla. Va en una tanda propia donde el diff sea sólo el movimiento.
+- **Falta una prueba JVM que fije los juegos de llaves de `SyncPayloads`** contra los `hasExactKeys`
+  de `firestore.rules`. Es barata y pura (los mapas no tocan Android), y convierte en algo durable la
+  comparación campo por campo que hoy sólo vive en el mensaje de `d6a84ea`.
 - **La preferencia "¿cómo vendes?" (paso 5 del plan) no se hizo.** Iba a elegir con qué chip abre
   Nueva venta. Quedó fuera porque el default automático —abrir en "a mano" cuando el catálogo está
   vacío— cubre el caso real sin agregar un ajuste, textos en dos idiomas ni otra pantalla. Si al
   probarlo se siente necesario, es chico: una preferencia tipo `LanguagePreference`, sin Room.
 
-- **El restore de Pro todavía lee del caché.** `FirestoreSyncGateway.download` usa `.get()` sin
-  `Source`, así que si la señal se cae a media descarga Firestore contesta desde un caché vacío
-  **sin error**: `NothingInCloud`, silencio total, y `restoreAttempted = true` impide reintentar.
-  El usuario se queda con el negocio adoptado y el ledger vacío, creyendo que perdió sus datos. Es
-  el mismo error que ya se corrigió en `findBusinessOwnedBy` (2026-08-08, `Source.SERVER`), en la
-  ruta que más duele. Arreglo: `Source.SERVER` ahí también, o no marcar `restoreAttempted` cuando
-  la respuesta venga del caché.
 - **Textos en español fuera de `ui/`**: snackbars de `MainActivity` y literales de
   `domain/AppAlerts.kt`, `BusinessInsights.kt`, `CustomerStatementCsv.kt`, `DebtorShareText.kt`,
   `SaleDraft.kt`, `SubscriptionTier.kt`, `auth/AuthenticationGateway.kt`, `billing/BillingGateway.kt`.
