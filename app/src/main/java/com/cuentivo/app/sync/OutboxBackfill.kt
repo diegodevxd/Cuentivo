@@ -20,12 +20,12 @@ private const val TAG = "OutboxBackfill"
  * first. `SyncOperationId.create` hashes `businessId|entityType|entityId|revision` and the insert
  * ignores conflicts, so a row already queued or already sent is not queued twice.
  *
- * The payloads below mirror the ones the ordinary write paths in `MainActivity` build. That
- * duplication is deliberate and the alternative is worse: the write paths compose their maps from
- * values in hand mid-transaction, while this one has only the stored entity. Sharing a builder
- * would mean either passing entities through the hot path or reconstructing them here anyway.
- * **If a column is added to an entity, it has to be added in both places** — the exhaustiveness
- * test in `OutboxBackfillPlannerTest` catches a missing *type*, not a missing *field*.
+ * The payloads come from [SyncPayloads], the same builders the ordinary write paths in
+ * `MainActivity` use. They used to be a second hand-written copy of the same maps, which meant
+ * adding a column to an entity had to be remembered in two places; forgetting one published a
+ * document that validates when it is written normally and is rejected when it arrives through the
+ * backfill — silently, because a rejection parks permanent. The exhaustiveness test in
+ * `OutboxBackfillPlannerTest` catches a missing *type*, never a missing *field*.
  */
 class OutboxBackfill(
     private val database: CuentivoDatabase,
@@ -81,14 +81,7 @@ class OutboxBackfill(
         for (type in OutboxBackfillPlanner.plan(counts)) {
             queued += when (type) {
                 SyncEntityType.BUSINESS -> {
-                    enqueue(businessId, type, business.id, business.updatedAtEpochMillis, mapOf(
-                        "name" to business.name,
-                        "ownerUserId" to business.ownerUserId,
-                        "currency" to business.currency,
-                        "timezone" to business.timezone,
-                        "createdAtEpochMillis" to business.createdAtEpochMillis,
-                        "updatedAtEpochMillis" to business.updatedAtEpochMillis,
-                    ))
+                    enqueue(businessId, type, business.id, business.updatedAtEpochMillis, SyncPayloads.business(business))
                     1
                 }
 
@@ -104,118 +97,35 @@ class OutboxBackfill(
                     // +1 on the business timestamp, matching OwnerMembershipBootstrap: the queue
                     // drains by createdAtEpochMillis and the rules read the business document, so
                     // membership has to land immediately after it and before everything else.
-                    enqueue(businessId, type, it.userId, business.createdAtEpochMillis + 1, mapOf(
-                        "businessId" to it.businessId,
-                        "userId" to it.userId,
-                        "role" to it.role,
-                        "status" to it.status,
-                        "invitedAtEpochMillis" to it.invitedAtEpochMillis,
-                        "acceptedAtEpochMillis" to it.acceptedAtEpochMillis,
-                    ))
+                    enqueue(businessId, type, it.userId, business.createdAtEpochMillis + 1, SyncPayloads.member(it))
                 }.size
 
                 SyncEntityType.CUSTOMER -> customers.onEach {
-                    enqueue(businessId, type, it.id, it.updatedAtEpochMillis, mapOf(
-                        "businessId" to it.businessId,
-                        "name" to it.name,
-                        "normalizedName" to it.normalizedName,
-                        "phone" to it.phone,
-                        "email" to it.email,
-                        "address" to it.address,
-                        "notes" to it.notes,
-                        "creditLimitCents" to it.creditLimitCents,
-                        "isActive" to it.isActive,
-                        "createdAtEpochMillis" to it.createdAtEpochMillis,
-                        "updatedAtEpochMillis" to it.updatedAtEpochMillis,
-                        "deletedAtEpochMillis" to it.deletedAtEpochMillis,
-                    ))
+                    enqueue(businessId, type, it.id, it.updatedAtEpochMillis, SyncPayloads.customer(it))
                 }.size
 
                 SyncEntityType.PRODUCT -> products.onEach {
-                    enqueue(businessId, type, it.id, it.updatedAtEpochMillis, mapOf(
-                        "businessId" to it.businessId,
-                        "name" to it.name,
-                        "description" to it.description,
-                        "sku" to it.sku,
-                        "category" to it.category,
-                        "salePriceCents" to it.salePriceCents,
-                        "costPriceCents" to it.costPriceCents,
-                        "stock" to it.stock,
-                        "imageUri" to it.imageUri,
-                        "isActive" to it.isActive,
-                        "createdAtEpochMillis" to it.createdAtEpochMillis,
-                        "updatedAtEpochMillis" to it.updatedAtEpochMillis,
-                        "deletedAtEpochMillis" to it.deletedAtEpochMillis,
-                    ))
+                    enqueue(businessId, type, it.id, it.updatedAtEpochMillis, SyncPayloads.product(it))
                 }.size
 
                 SyncEntityType.SALE -> sales.onEach {
-                    enqueue(businessId, type, it.id, it.updatedAtEpochMillis, mapOf(
-                        "businessId" to it.businessId,
-                        "customerId" to it.customerId,
-                        "sellerUserId" to it.sellerUserId,
-                        "saleNumber" to it.saleNumber,
-                        "saleDateEpochDay" to it.saleDateEpochDay,
-                        "dueDateEpochDay" to it.dueDateEpochDay,
-                        "subtotalCents" to it.subtotalCents,
-                        "discountCents" to it.discountCents,
-                        "totalCents" to it.totalCents,
-                        "isCanceled" to it.isCanceled,
-                        "notes" to it.notes,
-                        "createdAtEpochMillis" to it.createdAtEpochMillis,
-                        "updatedAtEpochMillis" to it.updatedAtEpochMillis,
-                    ))
+                    enqueue(businessId, type, it.id, it.updatedAtEpochMillis, SyncPayloads.sale(it))
                 }.size
 
                 SyncEntityType.SALE_ITEM -> saleItems.onEach {
-                    enqueue(businessId, type, it.id, business.updatedAtEpochMillis, mapOf(
-                        "saleId" to it.saleId,
-                        "productId" to it.productId,
-                        "productNameSnapshot" to it.productNameSnapshot,
-                        "quantity" to it.quantity,
-                        "unitPriceCents" to it.unitPriceCents,
-                        "discountCents" to it.discountCents,
-                        "subtotalCents" to it.subtotalCents,
-                    ))
+                    enqueue(businessId, type, it.id, business.updatedAtEpochMillis, SyncPayloads.saleItem(it))
                 }.size
 
                 SyncEntityType.PAYMENT -> payments.onEach {
-                    enqueue(businessId, type, it.id, it.createdAtEpochMillis, mapOf(
-                        "businessId" to it.businessId,
-                        "customerId" to it.customerId,
-                        "amountCents" to it.amountCents,
-                        "paymentMethod" to it.paymentMethod,
-                        "paymentDateEpochDay" to it.paymentDateEpochDay,
-                        "reference" to it.reference,
-                        "notes" to it.notes,
-                        "createdByUserId" to it.createdByUserId,
-                        "createdAtEpochMillis" to it.createdAtEpochMillis,
-                        "canceledAtEpochMillis" to it.canceledAtEpochMillis,
-                    ))
+                    enqueue(businessId, type, it.id, it.createdAtEpochMillis, SyncPayloads.payment(it))
                 }.size
 
                 SyncEntityType.PAYMENT_ALLOCATION -> allocations.onEach {
-                    enqueue(businessId, type, it.id, business.updatedAtEpochMillis, mapOf(
-                        "paymentId" to it.paymentId,
-                        "saleId" to it.saleId,
-                        "amountCents" to it.amountCents,
-                    ))
+                    enqueue(businessId, type, it.id, business.updatedAtEpochMillis, SyncPayloads.allocation(it))
                 }.size
 
                 SyncEntityType.MOVEMENT -> movements.onEach {
-                    enqueue(businessId, type, it.id, it.occurredAtEpochMillis, mapOf(
-                        "businessId" to it.businessId,
-                        "customerId" to it.customerId,
-                        "saleId" to it.saleId,
-                        "paymentId" to it.paymentId,
-                        "type" to it.type,
-                        "amountCents" to it.amountCents,
-                        "direction" to it.direction,
-                        "occurredAtEpochMillis" to it.occurredAtEpochMillis,
-                        "createdByUserId" to it.createdByUserId,
-                        "reversesMovementId" to it.reversesMovementId,
-                        "notes" to it.notes,
-                    ))
+                    enqueue(businessId, type, it.id, it.occurredAtEpochMillis, SyncPayloads.movement(it))
                 }.size
             }
         }

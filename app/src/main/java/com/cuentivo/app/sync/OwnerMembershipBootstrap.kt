@@ -39,15 +39,9 @@ class OwnerMembershipBootstrap(
             entityType = MEMBER_ENTITY_TYPE,
             entityId = business.ownerUserId,
             revision = business.createdAtEpochMillis + 1,
-            // validMember() uses hasExactKeys: these six keys, no more and no fewer.
-            fields = mapOf(
-                "businessId" to business.id,
-                "userId" to business.ownerUserId,
-                "role" to OWNER_ROLE,
-                "status" to ACTIVE_STATUS,
-                "invitedAtEpochMillis" to null,
-                "acceptedAtEpochMillis" to business.createdAtEpochMillis,
-            ),
+            // Built from the row that was just inserted, not re-typed from the values nearby:
+            // validMember() uses hasExactKeys, and a key too many or too few is rejected in silence.
+            fields = SyncPayloads.member(member),
         )
 
         if (isFirstTime) {

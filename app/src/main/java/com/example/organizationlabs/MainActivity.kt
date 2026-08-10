@@ -721,7 +721,7 @@ class MainActivity : ComponentActivity() {
                         val now = System.currentTimeMillis()
                         val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)
                         database.businessDao().insert(business)
-                        syncQueue.enqueue(business.id, "BUSINESS", business.id, now, mapOf("name" to business.name, "ownerUserId" to business.ownerUserId, "currency" to business.currency, "timezone" to business.timezone, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now))
+                        syncQueue.enqueue(business.id, "BUSINESS", business.id, now, SyncPayloads.business(business))
                         membershipBootstrap.ensure(business)
                         refreshKey++
                         uiMessage = "Negocio creado"
@@ -1016,7 +1016,7 @@ class MainActivity : ComponentActivity() {
                             updatedAtEpochMillis = now,
                         )
                         runCatching { database.customerDao().update(updated) }.onSuccess {
-                            syncQueue.enqueue(businessId, "CUSTOMER", updated.id, now, mapOf("businessId" to businessId, "name" to updated.name, "normalizedName" to updated.normalizedName, "phone" to updated.phone, "email" to updated.email, "address" to updated.address, "notes" to updated.notes, "creditLimitCents" to updated.creditLimitCents, "isActive" to updated.isActive, "createdAtEpochMillis" to updated.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to updated.deletedAtEpochMillis))
+                            syncQueue.enqueue(businessId, "CUSTOMER", updated.id, now, SyncPayloads.customer(updated))
                             refreshKey++
                             uiMessage = "Cliente actualizado"
                         }.onFailure {
@@ -1048,7 +1048,7 @@ class MainActivity : ComponentActivity() {
                         // Soft delete, so it travels as an ordinary update: firestore.rules allows no
                         // delete from any client, in any collection.
                         val archived = row.customer.copy(isActive = false, deletedAtEpochMillis = now, updatedAtEpochMillis = now)
-                        syncQueue.enqueue(businessId, "CUSTOMER", archived.id, now, mapOf("businessId" to businessId, "name" to archived.name, "normalizedName" to archived.normalizedName, "phone" to archived.phone, "email" to archived.email, "address" to archived.address, "notes" to archived.notes, "creditLimitCents" to archived.creditLimitCents, "isActive" to false, "createdAtEpochMillis" to archived.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to now))
+                        syncQueue.enqueue(businessId, "CUSTOMER", archived.id, now, SyncPayloads.customer(archived))
                         refreshKey++
                         uiMessage = "${row.customer.name} eliminado"
                     }
@@ -1078,7 +1078,7 @@ class MainActivity : ComponentActivity() {
                             }
                             if (saved) {
                                 try {
-                                    syncQueue.enqueue(businessId, "PRODUCT", product.id, now, mapOf("businessId" to businessId, "name" to name, "description" to null, "sku" to null, "category" to null, "salePriceCents" to priceCents, "costPriceCents" to null, "stock" to null, "imageUri" to imageFileName, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                    syncQueue.enqueue(businessId, "PRODUCT", product.id, now, SyncPayloads.product(product))
                                 } catch (cancellation: CancellationException) {
                                     throw cancellation
                                 } catch (error: Exception) {
@@ -1103,7 +1103,7 @@ class MainActivity : ComponentActivity() {
                         // Only now, and only if the row no longer references it: deleting earlier
                         // left imageUri pointing at a file that was already gone.
                         product.imageUri?.takeIf { it != imageFileName }?.let(productImages::delete)
-                        syncQueue.enqueue(businessId, "PRODUCT", updated.id, now, mapOf("businessId" to businessId, "name" to updated.name, "description" to updated.description, "sku" to updated.sku, "category" to updated.category, "salePriceCents" to updated.salePriceCents, "costPriceCents" to updated.costPriceCents, "stock" to updated.stock, "imageUri" to updated.imageUri, "isActive" to updated.isActive, "createdAtEpochMillis" to updated.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to updated.deletedAtEpochMillis))
+                        syncQueue.enqueue(businessId, "PRODUCT", updated.id, now, SyncPayloads.product(updated))
                         refreshKey++
                         uiMessage = "Producto actualizado"
                     }
@@ -1115,7 +1115,7 @@ class MainActivity : ComponentActivity() {
                         // No balance guard here: sale_items keeps the name and price charged on each
                         // past sale, so removing the product from the catalog rewrites nothing.
                         val archived = product.copy(isActive = false, deletedAtEpochMillis = now, updatedAtEpochMillis = now)
-                        syncQueue.enqueue(businessId, "PRODUCT", archived.id, now, mapOf("businessId" to businessId, "name" to archived.name, "description" to archived.description, "sku" to archived.sku, "category" to archived.category, "salePriceCents" to archived.salePriceCents, "costPriceCents" to archived.costPriceCents, "stock" to archived.stock, "imageUri" to archived.imageUri, "isActive" to false, "createdAtEpochMillis" to archived.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to now))
+                        syncQueue.enqueue(businessId, "PRODUCT", archived.id, now, SyncPayloads.product(archived))
                         refreshKey++
                         uiMessage = "${product.name} eliminado"
                     }
@@ -1150,7 +1150,7 @@ class MainActivity : ComponentActivity() {
                                     val now = System.currentTimeMillis()
                                     val product = ProductEntity(UUID.randomUUID().toString(), importBusinessId, parsed.name, parsed.description, parsed.sku, parsed.category, parsed.priceCents, null, null, null, true, now, now, null)
                                     database.productDao().insert(product)
-                                    syncQueue.enqueue(importBusinessId, "PRODUCT", product.id, now, mapOf("businessId" to importBusinessId, "name" to product.name, "description" to product.description, "sku" to product.sku, "category" to product.category, "salePriceCents" to product.salePriceCents, "costPriceCents" to null, "stock" to null, "imageUri" to null, "isActive" to true, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to null))
+                                    syncQueue.enqueue(importBusinessId, "PRODUCT", product.id, now, SyncPayloads.product(product))
                                 }
                                 result
                             }?.onSuccess { result ->
@@ -1191,11 +1191,11 @@ class MainActivity : ComponentActivity() {
                                 // not how the cart was composed.
                                 val charge = AccountMovementEntity(UUID.randomUUID().toString(), businessId, customer.customer.id, saleId, null, "CHARGE", draft.totalCents, "DEBIT", now, currentUserId, null, null)
                                 database.financialDao().createSaleIdempotently(OperationEntity("sale-$saleId", "SALE", saleId, now), sale, items, charge)
-                                syncQueue.enqueue(businessId, "SALE", sale.id, now, mapOf("businessId" to businessId, "customerId" to sale.customerId, "sellerUserId" to currentUserId, "saleNumber" to sale.saleNumber, "saleDateEpochDay" to sale.saleDateEpochDay, "dueDateEpochDay" to sale.dueDateEpochDay, "subtotalCents" to sale.subtotalCents, "discountCents" to sale.discountCents, "totalCents" to sale.totalCents, "isCanceled" to false, "notes" to null, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now))
+                                syncQueue.enqueue(businessId, "SALE", sale.id, now, SyncPayloads.sale(sale))
                                 items.forEach { item ->
-                                    syncQueue.enqueue(businessId, "SALE_ITEM", item.id, now, mapOf("saleId" to sale.id, "productId" to item.productId, "productNameSnapshot" to item.productNameSnapshot, "quantity" to item.quantity, "unitPriceCents" to item.unitPriceCents, "discountCents" to item.discountCents, "subtotalCents" to item.subtotalCents))
+                                    syncQueue.enqueue(businessId, "SALE_ITEM", item.id, now, SyncPayloads.saleItem(item))
                                 }
-                                syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, mapOf("businessId" to businessId, "customerId" to charge.customerId, "saleId" to sale.id, "paymentId" to null, "type" to charge.type, "amountCents" to charge.amountCents, "direction" to charge.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
+                                syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, SyncPayloads.movement(charge))
                                 refreshKey++
                                 uiMessage = getString(R.string.message_sale_registered, Money.format(draft.totalCents))
                             }
@@ -1218,11 +1218,11 @@ class MainActivity : ComponentActivity() {
                         val payment = PaymentEntity(paymentId, businessId, customer.customer.id, amountCents, "CASH", LocalDate.now().toEpochDay(), null, null, currentUserId, now, null)
                         val movement = AccountMovementEntity(UUID.randomUUID().toString(), businessId, customer.customer.id, null, paymentId, "PAYMENT", amountCents, "CREDIT", now, currentUserId, null, null)
                         database.financialDao().registerPaymentIdempotently(OperationEntity("payment-$paymentId", "PAYMENT", paymentId, now), payment, allocations, movement)
-                        syncQueue.enqueue(businessId, "PAYMENT", payment.id, now, mapOf("businessId" to businessId, "customerId" to payment.customerId, "amountCents" to payment.amountCents, "paymentMethod" to payment.paymentMethod, "paymentDateEpochDay" to payment.paymentDateEpochDay, "reference" to null, "notes" to null, "createdByUserId" to currentUserId, "createdAtEpochMillis" to now, "canceledAtEpochMillis" to null))
+                        syncQueue.enqueue(businessId, "PAYMENT", payment.id, now, SyncPayloads.payment(payment))
                         allocations.forEach { allocation ->
-                            syncQueue.enqueue(businessId, "PAYMENT_ALLOCATION", allocation.id, now, mapOf("paymentId" to allocation.paymentId, "saleId" to allocation.saleId, "amountCents" to allocation.amountCents))
+                            syncQueue.enqueue(businessId, "PAYMENT_ALLOCATION", allocation.id, now, SyncPayloads.allocation(allocation))
                         }
-                        syncQueue.enqueue(businessId, "MOVEMENT", movement.id, now, mapOf("businessId" to businessId, "customerId" to movement.customerId, "saleId" to null, "paymentId" to payment.id, "type" to movement.type, "amountCents" to movement.amountCents, "direction" to movement.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
+                        syncQueue.enqueue(businessId, "MOVEMENT", movement.id, now, SyncPayloads.movement(movement))
                         refreshKey++
                         uiMessage = when {
                              allocations.isEmpty() -> getString(R.string.message_payment_registered_as_credit)
@@ -1254,7 +1254,7 @@ class MainActivity : ComponentActivity() {
                         }.onSuccess {
                             // Only the movement is queued: sales are create-only in firestore.rules,
                             // so the cancellation travels as its own ledger row, never as an edit.
-                            syncQueue.enqueue(businessId, "MOVEMENT", cancellation.id, now, mapOf("businessId" to businessId, "customerId" to cancellation.customerId, "saleId" to sale.id, "paymentId" to null, "type" to cancellation.type, "amountCents" to cancellation.amountCents, "direction" to cancellation.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to cancellation.notes))
+                            syncQueue.enqueue(businessId, "MOVEMENT", cancellation.id, now, SyncPayloads.movement(cancellation))
                             refreshKey++
                             loadStatement(businessId, row)
                             uiMessage = getString(R.string.message_sale_canceled, Money.format(outstandingCents))
@@ -1342,16 +1342,16 @@ class MainActivity : ComponentActivity() {
                                 carriedAllocations,
                             )
                         }.onSuccess {
-                            syncQueue.enqueue(businessId, "SALE", sale.id, now, mapOf("businessId" to businessId, "customerId" to sale.customerId, "sellerUserId" to currentUserId, "saleNumber" to sale.saleNumber, "saleDateEpochDay" to sale.saleDateEpochDay, "dueDateEpochDay" to sale.dueDateEpochDay, "subtotalCents" to sale.subtotalCents, "discountCents" to sale.discountCents, "totalCents" to sale.totalCents, "isCanceled" to false, "notes" to null, "createdAtEpochMillis" to now, "updatedAtEpochMillis" to now))
+                            syncQueue.enqueue(businessId, "SALE", sale.id, now, SyncPayloads.sale(sale))
                             items.forEach { item ->
-                                syncQueue.enqueue(businessId, "SALE_ITEM", item.id, now, mapOf("saleId" to sale.id, "productId" to item.productId, "productNameSnapshot" to item.productNameSnapshot, "quantity" to item.quantity, "unitPriceCents" to item.unitPriceCents, "discountCents" to item.discountCents, "subtotalCents" to item.subtotalCents))
+                                syncQueue.enqueue(businessId, "SALE_ITEM", item.id, now, SyncPayloads.saleItem(item))
                             }
-                            syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, mapOf("businessId" to businessId, "customerId" to charge.customerId, "saleId" to sale.id, "paymentId" to null, "type" to charge.type, "amountCents" to charge.amountCents, "direction" to charge.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to null))
+                            syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, SyncPayloads.movement(charge))
                             // The cancellation travels as its own ledger row: sales are create-only
                             // in firestore.rules, so the void can never go up as an edit.
-                            syncQueue.enqueue(businessId, "MOVEMENT", cancellation.id, now, mapOf("businessId" to businessId, "customerId" to cancellation.customerId, "saleId" to previous.id, "paymentId" to null, "type" to cancellation.type, "amountCents" to cancellation.amountCents, "direction" to cancellation.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to cancellation.notes))
+                            syncQueue.enqueue(businessId, "MOVEMENT", cancellation.id, now, SyncPayloads.movement(cancellation))
                             carriedAllocations.forEach { allocation ->
-                                syncQueue.enqueue(businessId, "PAYMENT_ALLOCATION", allocation.id, now, mapOf("paymentId" to allocation.paymentId, "saleId" to allocation.saleId, "amountCents" to allocation.amountCents))
+                                syncQueue.enqueue(businessId, "PAYMENT_ALLOCATION", allocation.id, now, SyncPayloads.allocation(allocation))
                             }
                             saleCorrection = null
                             refreshKey++
@@ -1462,7 +1462,7 @@ class MainActivity : ComponentActivity() {
                         runCatching {
                             financialDao.cancelPaymentIdempotently(OperationEntity("cancel-payment-${current.id}", "PAYMENT", current.id, now), current.id, refund)
                         }.onSuccess {
-                            syncQueue.enqueue(businessId, "MOVEMENT", refund.id, now, mapOf("businessId" to businessId, "customerId" to refund.customerId, "saleId" to null, "paymentId" to current.id, "type" to refund.type, "amountCents" to refund.amountCents, "direction" to refund.direction, "occurredAtEpochMillis" to now, "createdByUserId" to currentUserId, "reversesMovementId" to null, "notes" to refund.notes))
+                            syncQueue.enqueue(businessId, "MOVEMENT", refund.id, now, SyncPayloads.movement(refund))
                             refreshKey++
                             loadStatement(businessId, row)
                             uiMessage = getString(R.string.message_payment_canceled, Money.format(current.amountCents))
@@ -1480,7 +1480,7 @@ class MainActivity : ComponentActivity() {
                         val now = System.currentTimeMillis()
                         val updated = row.customer.copy(creditLimitCents = newLimitCents, updatedAtEpochMillis = now)
                         runCatching { database.customerDao().update(updated) }.onSuccess {
-                            syncQueue.enqueue(businessId, "CUSTOMER", updated.id, now, mapOf("businessId" to businessId, "name" to updated.name, "normalizedName" to updated.normalizedName, "phone" to updated.phone, "email" to updated.email, "address" to updated.address, "notes" to updated.notes, "creditLimitCents" to updated.creditLimitCents, "isActive" to updated.isActive, "createdAtEpochMillis" to updated.createdAtEpochMillis, "updatedAtEpochMillis" to now, "deletedAtEpochMillis" to updated.deletedAtEpochMillis))
+                            syncQueue.enqueue(businessId, "CUSTOMER", updated.id, now, SyncPayloads.customer(updated))
                             refreshKey++
                             suggestedCreditLimitCents = null
                             uiMessage = getString(R.string.message_credit_limit_updated, row.customer.name, Money.format(newLimitCents))
