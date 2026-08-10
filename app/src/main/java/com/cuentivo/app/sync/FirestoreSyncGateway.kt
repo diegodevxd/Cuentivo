@@ -141,9 +141,19 @@ class FirestoreSyncGateway(
         val root = firestore.collection("businesses").document(businessId)
         val documents = mutableListOf<RemoteDocument>()
 
-        // The business document and the member list are both tiny and both gate everything else,
-        // so they are fetched whole rather than by watermark.
-        Tasks.await(root.get()).let { snapshot ->
+        // Every read below is Source.SERVER, for the same reason findBusinessOwnedBy is, and it
+        // matters most here. The default source falls back to the local cache whenever the server
+        // is unreachable and answers *without an error* — so a Pro restore that lost signal partway
+        // returned an empty document list and was reported as success. The caller read that as
+        // NothingInCloud, set restoreAttempted and never asked again: the person ended up with the
+        // business adopted and the ledger empty, believing their data was gone. The one place in
+        // the app where a silent empty answer costs a user their history. Asking the server
+        // explicitly makes offline throw, which classify() turns into a transient failure that is
+        // retried instead of being mistaken for an answer.
+        //
+        // The ordinary background pull pays for this too: with no signal it now fails loudly rather
+        // than merging the cache into itself, which was a no-op anyway.
+        Tasks.await(root.get(Source.SERVER)).let { snapshot ->
             val data = snapshot.data
             if (snapshot.exists() && data != null) {
                 documents += RemoteDocument(
@@ -154,7 +164,7 @@ class FirestoreSyncGateway(
                 )
             }
         }
-        Tasks.await(root.collection("members").get()).documents.forEach { snapshot ->
+        Tasks.await(root.collection("members").get(Source.SERVER)).documents.forEach { snapshot ->
             val data = snapshot.data ?: return@forEach
             documents += RemoteDocument("MEMBER", snapshot.id, 0L, data)
         }
@@ -182,7 +192,7 @@ class FirestoreSyncGateway(
                 .whereGreaterThan(spec.watermarkField, sinceEpochMillis)
                 .orderBy(spec.watermarkField, Query.Direction.ASCENDING)
                 .limit(PAGE_SIZE)
-                .get()
+                .get(Source.SERVER)
         ).documents.mapNotNull { snapshot ->
             val data = snapshot.data ?: return@mapNotNull null
             val watermark = (data[spec.watermarkField] as? Number)?.toLong() ?: return@mapNotNull null
@@ -190,7 +200,7 @@ class FirestoreSyncGateway(
         }
 
     private fun children(parent: DocumentReference, collection: String, entityType: String, watermark: Long): List<RemoteDocument> =
-        Tasks.await(parent.collection(collection).get()).documents.mapNotNull { snapshot ->
+        Tasks.await(parent.collection(collection).get(Source.SERVER)).documents.mapNotNull { snapshot ->
             val data = snapshot.data ?: return@mapNotNull null
             RemoteDocument(entityType, snapshot.id, watermark, data)
         }
