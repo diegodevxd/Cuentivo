@@ -1,6 +1,7 @@
 package com.cuentivo.app.ui.customer
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -27,8 +28,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
+import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.domain.CustomerNameNormalizer
 import com.cuentivo.app.domain.Money
+import com.cuentivo.app.ui.transaction.NeoSelectorField
 import com.cuentivo.app.domain.OpeningBalanceRow
 import com.cuentivo.app.ui.FormDialog
 import com.cuentivo.app.ui.NeoShapes
@@ -51,6 +54,7 @@ private const val INITIAL_ROWS = 3
  */
 @Composable
 internal fun OpeningBalanceImportDialog(
+    customers: List<CustomerBalanceRow>,
     onConfirm: (List<OpeningBalanceRow>) -> Unit,
     onDismiss: () -> Unit,
     isSaving: Boolean = false,
@@ -78,6 +82,9 @@ internal fun OpeningBalanceImportDialog(
     }
     val totalCents = filled.filter { rowErrors[it] == null }.sumOf { amountCentsAt[it] ?: 0L }
     val canConfirm = filled.isNotEmpty() && rowErrors.values.all { it == null } && !isSaving
+    val selectCustomerLabel = stringResource(R.string.opening_import_select_customer)
+    val noCustomersLabel = stringResource(R.string.opening_import_no_customers)
+    val newCustomerLabel = stringResource(R.string.opening_import_new_customer)
 
     FormDialog(
         title = stringResource(R.string.opening_import_title),
@@ -100,14 +107,28 @@ internal fun OpeningBalanceImportDialog(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                OutlinedTextField(
-                    value = names[index],
-                    onValueChange = { names[index] = it },
-                    label = { Text(stringResource(R.string.opening_import_name)) },
-                    singleLine = true,
-                    shape = NeoShapes.row,
-                    modifier = Modifier.weight(1f).testTag("opening-import-name-$index"),
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    NeoSelectorField(
+                        label = selectCustomerLabel,
+                        selected = customers.firstOrNull { CustomerNameNormalizer.key(it.customer.name) == CustomerNameNormalizer.key(names[index]) },
+                        placeholder = selectCustomerLabel,
+                        options = customers,
+                        optionTitle = { it.customer.name },
+                        optionDetail = { null },
+                        emptyText = noCustomersLabel,
+                        onSelect = { names[index] = it.customer.name },
+                        showLabel = false,
+                        modifier = Modifier.testTag("opening-import-customer-$index"),
+                    )
+                    OutlinedTextField(
+                        value = names[index],
+                        onValueChange = { names[index] = it },
+                        label = { Text(newCustomerLabel) },
+                        singleLine = true,
+                        shape = NeoShapes.row,
+                        modifier = Modifier.fillMaxWidth().testTag("opening-import-name-$index"),
+                    )
+                }
                 OutlinedTextField(
                     value = amounts[index],
                     onValueChange = { raw -> amounts[index] = raw.filter { it.isDigit() || it == '.' } },

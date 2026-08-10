@@ -290,6 +290,7 @@ fun CustomersScreen(
     }
     if (importingBalances) {
         OpeningBalanceImportDialog(
+            customers = customers,
             onConfirm = onImportOpeningBalances,
             onDismiss = { importingBalances = false },
             isSaving = isImportingBalances,

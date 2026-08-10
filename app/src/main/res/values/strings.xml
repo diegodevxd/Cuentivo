@@ -47,7 +47,9 @@
     <string name="opening_import_action">Traer deudas de mi libreta</string>
     <string name="opening_import_title">Deudas de tu libreta</string>
     <string name="opening_import_hint">Escribe el nombre y cuánto te debe cada quien. Si ya tienes a esa persona, la deuda se le suma a la que ya está.</string>
-    <string name="opening_import_name">Nombre</string>
+    <string name="opening_import_select_customer">Seleccionar cliente existente</string>
+    <string name="opening_import_new_customer">O escribe un cliente nuevo</string>
+    <string name="opening_import_no_customers">Aún no tienes clientes</string>
     <string name="opening_import_amount">Debe</string>
     <string name="opening_import_add_row">Agregar otro renglón</string>
     <string name="opening_import_remove_row">Quitar este renglón</string>

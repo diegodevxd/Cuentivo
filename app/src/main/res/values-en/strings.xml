@@ -47,7 +47,9 @@
     <string name="opening_import_action">Bring in debts from my notebook</string>
     <string name="opening_import_title">Debts from your notebook</string>
     <string name="opening_import_hint">Write each name and how much they owe. If that person is already here, the debt is added to what they already owe.</string>
-    <string name="opening_import_name">Name</string>
+    <string name="opening_import_select_customer">Select an existing customer</string>
+    <string name="opening_import_new_customer">Or type a new customer</string>
+    <string name="opening_import_no_customers">You do not have customers yet</string>
     <string name="opening_import_amount">Owes</string>
     <string name="opening_import_add_row">Add another row</string>
     <string name="opening_import_remove_row">Remove this row</string>
