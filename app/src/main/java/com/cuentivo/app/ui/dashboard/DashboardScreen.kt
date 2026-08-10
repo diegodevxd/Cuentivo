@@ -459,7 +459,7 @@ private fun criticalCustomerStatus(
     return CriticalStatus(if (dueToday) "Vence hoy" else "Saldo pendiente", urgent = false)
 }
 
-private fun initialOf(name: String): String =
+internal fun initialOf(name: String): String =
     name.trim().firstOrNull()?.uppercase() ?: "?"
 
 private fun activityTime(activity: DashboardActivity): String =

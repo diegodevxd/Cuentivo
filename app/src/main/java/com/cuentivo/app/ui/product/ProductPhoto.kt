@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.R
 import com.cuentivo.app.ui.NeoShapes
+import com.cuentivo.app.ui.dashboard.initialOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -77,6 +78,8 @@ internal fun ProductPhoto(
     fileName: String?,
     store: ProductImageStore,
     size: Dp,
+    /** Null for the form's empty picker, which deliberately reads as an add-photo affordance. */
+    placeholderName: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val bitmap by produceState<Bitmap?>(initialValue = null, fileName) {
@@ -98,12 +101,20 @@ internal fun ProductPhoto(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-        } ?: Icon(
-            imageVector = Icons.Filled.Add,
-            contentDescription = stringResource(R.string.product_photo_none),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(size / 2),
-        )
+        } ?: if (placeholderName == null) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = stringResource(R.string.product_photo_none),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(size / 2),
+            )
+        } else {
+            Text(
+                text = initialOf(placeholderName),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 
 }

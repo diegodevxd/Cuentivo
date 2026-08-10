@@ -471,7 +471,7 @@ private fun ProductRow(
             if (selectionActive) {
                 Checkbox(checked = isSelected, onCheckedChange = { onToggleSelected() })
             }
-            ProductPhoto(product.imageUri, store, 44.dp)
+            ProductPhoto(product.imageUri, store, 44.dp, product.name)
             Column(modifier = Modifier.weight(1f).padding(horizontal = NeoSpacing.md)) {
                 // The name owns its line. Sharing it with the price truncated real product names
                 // at 320 dp, where the row only has about 164 dp for both.
