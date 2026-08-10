@@ -3,13 +3,56 @@ package com.cuentivo.app.ui
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
-/** Compact dimensions distilled from the approved Stitch captures. */
+/**
+ * Compact dimensions distilled from the approved Stitch captures.
+ *
+ * This is the whole spacing scale. A screen that needs a gap not on this list is a screen that is
+ * about to invent its own, and enough of those is how an app stops looking like one product.
+ */
 internal object NeoSpacing {
     val xs = 4.dp
     val sm = 8.dp
     val md = 12.dp
     val lg = 16.dp
     val xl = 20.dp
+
+    /** Separation between sections of a screen — bigger than the gap between rows inside one. */
+    val xxl = 24.dp
+
+    /** Breathing room around something that owns its area, like a total or an empty state. */
+    val xxxl = 32.dp
+}
+
+/**
+ * How far a disabled control fades, in one place, because "disabled" is a system-wide statement.
+ *
+ * The rule: **a disabled control keeps a visible surface and legible text.** It is saying "not yet",
+ * which the person has to be able to read; it is not saying "gone". Material's defaults (12 % fill,
+ * 38 % label) were tuned for a light surface and vanish on this app's graphite.
+ */
+internal object NeoDisabled {
+    /** Fill of a primary action. Enough cyan left to still read as the same button. */
+    const val SURFACE = 0.22f
+
+    /** Label on any disabled action. Above the 4.5:1 floor against that dimmed fill. */
+    const val LABEL = 0.60f
+
+    /** Outline of a secondary action, so the border fades with its label instead of staying lit. */
+    const val BORDER = 0.45f
+}
+
+/** Layout distances that exist because of the shell, not because of any one screen. */
+internal object NeoLayout {
+    /**
+     * How much room a scrolling screen must leave at the bottom so the clay navigation bar never
+     * covers its last row.
+     *
+     * One value, used by every scrolling screen. Each screen used to pick its own — 16 dp on Inicio,
+     * 20 dp on Productos, 88 dp on Clientes, 96 dp on Nueva venta and Abonos — so the same bar
+     * covered the last row on two of them and the bug came back with every screen added. It has to
+     * clear the bar itself, [NeoClay.inset] beneath it, and the system gesture handle under that.
+     */
+    val bottomBarClearance = 104.dp
 }
 
 internal object NeoShapes {

@@ -66,6 +66,7 @@ import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
+import com.cuentivo.app.ui.NeoLayout
 import com.cuentivo.app.ui.NeoSpacing
 import com.cuentivo.app.ui.pesosToCents
 import java.util.UUID
@@ -152,7 +153,7 @@ fun ProductsScreen(
                 start = layout.horizontalPaddingDp.dp,
                 top = NeoSpacing.md,
                 end = layout.horizontalPaddingDp.dp,
-                bottom = NeoSpacing.xl,
+                bottom = NeoLayout.bottomBarClearance,
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {

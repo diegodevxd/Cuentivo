@@ -52,6 +52,7 @@ import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
+import com.cuentivo.app.ui.NeoLayout
 import com.cuentivo.app.ui.NeoSpacing
 import java.time.LocalDate
 import java.util.UUID
@@ -175,7 +176,7 @@ fun NewSaleScreen(
                 end = layout.horizontalPaddingDp.dp,
                 // Room for the bottom bar and the gesture inset, so the action is never the thing
                 // sitting under the system's own handle.
-                bottom = 96.dp,
+                bottom = NeoLayout.bottomBarClearance,
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {

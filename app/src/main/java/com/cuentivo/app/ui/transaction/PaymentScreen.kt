@@ -35,6 +35,7 @@ import com.cuentivo.app.ui.MoneyField
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoShapes
+import com.cuentivo.app.ui.NeoLayout
 import com.cuentivo.app.ui.NeoSpacing
 import com.cuentivo.app.ui.pesosToCents
 
@@ -84,7 +85,7 @@ fun PaymentScreen(
             contentPadding = PaddingValues(
                 start = layout.horizontalPaddingDp.dp,
                 end = layout.horizontalPaddingDp.dp,
-                bottom = 96.dp,
+                bottom = NeoLayout.bottomBarClearance,
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {

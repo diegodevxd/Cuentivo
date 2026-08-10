@@ -126,8 +126,14 @@ fun NeoFintechShell(
                             contentDescription = accountDescription
                             role = Role.Button
                         }
+                        // Clipped before `clickable` so the press state is a rounded rectangle in
+                        // the app's own shape language. Unclipped it spilled as a hard-edged
+                        // rectangle beside two circular icon ripples — three controls in one header,
+                        // each reacting to a touch differently.
+                        .clip(NeoShapes.row)
                         .clickable(onClick = onOpenAccount)
-                        .padding(end = NeoSpacing.sm),
+                        .padding(horizontal = NeoSpacing.xs)
+                        .padding(end = NeoSpacing.xs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // This used to be the "C" badge beside the word "Cuentivo", which read as a

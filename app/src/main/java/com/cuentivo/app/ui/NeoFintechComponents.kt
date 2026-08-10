@@ -96,7 +96,15 @@ internal fun NeoPanel(
     }
 }
 
-/** A compact action that still reserves the Android 48 dp minimum touch target. */
+/**
+ * A compact action that still reserves the Android 48 dp minimum touch target.
+ *
+ * **A disabled button here keeps its surface and readable text; only the contrast drops.** Material's
+ * own defaults are `onSurface` at 12 % for the fill and 38 % for the label, which on this app's
+ * graphite ground (`#0D0F11`) leaves nothing on screen at all — the button reads as broken rather
+ * than as "not yet". Since every CTA in the app goes through here, that one default was why
+ * "Guardar producto", "Agregar al carrito" and "Guardar abono" all looked missing at once.
+ */
 @Composable
 internal fun NeoAction(
     label: String,
@@ -127,6 +135,9 @@ internal fun NeoAction(
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
+                // Dimmed cyan, not absence: still obviously the same button, just not ready.
+                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = NeoDisabled.SURFACE),
+                disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = NeoDisabled.LABEL),
             ),
         ) {
             Text(label, style = MaterialTheme.typography.labelLarge)
@@ -138,7 +149,17 @@ internal fun NeoAction(
             enabled = enabled,
             interactionSource = interactionSource,
             shape = NeoShapes.row,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = NeoDisabled.LABEL),
+            ),
+            // The border fades with the label. Passing it explicitly is what used to keep it at full
+            // strength while the text faded, so a disabled outlined button looked like a live one
+            // with missing text.
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = if (enabled) 1f else NeoDisabled.BORDER),
+            ),
         ) {
             Text(label, style = MaterialTheme.typography.labelLarge)
         }

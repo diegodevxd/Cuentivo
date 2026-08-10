@@ -87,6 +87,7 @@ import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
+import com.cuentivo.app.ui.NeoLayout
 import com.cuentivo.app.ui.NeoSpacing
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.ui.transaction.DueOption
@@ -165,7 +166,7 @@ fun CustomersScreen(
                 start = layout.horizontalPaddingDp.dp,
                 top = NeoSpacing.md,
                 end = layout.horizontalPaddingDp.dp,
-                bottom = 88.dp,
+                bottom = NeoLayout.bottomBarClearance,
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {

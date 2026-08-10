@@ -2,7 +2,9 @@ package com.cuentivo.app.ui.account
 
 import android.app.Activity
 import android.os.Build
-import androidx.compose.foundation.background
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -89,6 +91,8 @@ private fun LanguageChoice(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    // A list row with a radio, not a card. Three stacked surfaces made three equal-weight choices
+    // and never said which one was live; the whole job of this sheet is to answer that at a glance.
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -99,12 +103,19 @@ private fun LanguageChoice(
                 this.selected = selected
             }
             .clickable(onClick = onClick)
-            .background(
-                color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
-                shape = NeoShapes.row,
-            )
-            .padding(horizontal = NeoSpacing.md, vertical = NeoSpacing.sm),
+            .padding(horizontal = NeoSpacing.xs, vertical = NeoSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NeoSpacing.md),
     ) {
+        RadioButton(
+            selected = selected,
+            // The whole row is the target already; a second one would let a tap land on neither.
+            onClick = null,
+            colors = RadioButtonDefaults.colors(
+                selectedColor = MaterialTheme.colorScheme.primary,
+                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        )
         Text(
             text = stringResource(option.labelRes),
             style = MaterialTheme.typography.bodyLarge,

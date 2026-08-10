@@ -51,6 +51,7 @@ import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoPanel
 import com.cuentivo.app.ui.NeoSectionHeader
 import com.cuentivo.app.ui.NeoShapes
+import com.cuentivo.app.ui.NeoLayout
 import com.cuentivo.app.ui.NeoSpacing
 import java.text.DateFormat
 import java.time.LocalDate
@@ -86,7 +87,7 @@ fun DashboardScreen(
                 start = layout.horizontalPaddingDp.dp,
                 top = NeoSpacing.md,
                 end = layout.horizontalPaddingDp.dp,
-                bottom = NeoSpacing.lg,
+                bottom = NeoLayout.bottomBarClearance,
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
         ) {

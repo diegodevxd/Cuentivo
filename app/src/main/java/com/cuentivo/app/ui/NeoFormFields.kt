@@ -8,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -76,7 +78,24 @@ internal fun FormDialog(
                 content = content,
             )
         },
-        confirmButton = { TextButton(onClick = onConfirm, enabled = confirmEnabled) { Text(stringResource(R.string.form_save)) } },
+        // Filled, not a text button: this is the action the whole dialog exists for, and as plain
+        // text it was indistinguishable from Cancelar. Disabled it dims to the same tokens every
+        // other action uses, so "not ready yet" never reads as "broken".
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = confirmEnabled,
+                shape = NeoShapes.row,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = NeoDisabled.SURFACE),
+                    disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = NeoDisabled.LABEL),
+                ),
+            ) {
+                Text(stringResource(R.string.form_save), style = MaterialTheme.typography.labelLarge)
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.form_cancel)) } },
     )
 }
