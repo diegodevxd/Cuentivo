@@ -10,6 +10,37 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Dónde estamos
 
+- 🆕 **Pasada de UI/UX, fases 0–2** (2026-08-09, retro de diseño tras revisar en dispositivo real).
+  **Ninguna toca lógica de negocio.** Commits `f91f45c` (transversal) y `81dd3a0` (Nueva venta).
+  - ✅ **Fase 0: lo del modo cliente quedó verificado en el teléfono.** Venta con dos líneas escritas
+    a mano ($80 + $45.50 = $125.50) a "prueba" → buscar "Trape" en el catálogo devuelve **"No
+    encontramos ese producto"**. El saldo subió exactamente $125.50. Esa venta de prueba **sigue en
+    los datos de Diego** por si se quiere cancelar.
+  - **Los botones deshabilitados tenían UNA causa raíz.** `NeoAction` pasaba
+    `ButtonDefaults.buttonColors` sin `disabledContainerColor`/`disabledContentColor`, y Material
+    rellena con `onSurface` al 12 % y 38 %: sobre el grafito `#0D0F11` no queda nada en pantalla.
+    Como todos los CTA pasan por ahí, "Guardar producto", "Agregar al carrito" y "Guardar abono" se
+    veían rotos por el mismo default. Los valores viven en **`NeoDisabled`**; la regla es que un
+    disabled conserva superficie y texto legible y sólo baja el contraste.
+  - **La barra de abajo tapaba contenido porque cada pantalla elegía su propio espacio**: 16 dp en
+    Inicio, 20 en Productos, 88 en Clientes, 96 en Nueva venta y Abonos. Ahora sale de
+    **`NeoLayout.bottomBarClearance`**, uno solo, o el bug vuelve con cada pantalla nueva.
+  - El "Guardar" de los modales pasó de `TextButton` a botón relleno; el idioma pasó de tres
+    tarjetas a lista con `RadioButton`; el botón de cuenta del header se recorta a `NeoShapes.row`.
+  - **Nueva venta se lee por pasos**: encabezados `NeoSectionHeader` (CLIENTE / PRODUCTOS / CARRITO /
+    CONDICIONES DE PAGO), `NeoSegmentedControl` para catálogo-vs-a mano, `NeoQuantityStepper`
+    `[− 1 +]`, carrito vacío de una línea, y el TOTAL con superficie rellena + monto a `displaySmall`
+    + "Registrar venta" debajo. Donde el encabezado ya nombra el control, `NeoSelectorField` recibe
+    `showLabel = false`.
+  - ⚠️ El menos del stepper es **texto `"−"`, no icono**: el set base de Material no trae `Remove` y
+    traer el extendido por un glifo mete miles de vectores al APK. Su descripción va en el botón.
+  - **322 pruebas JVM**, `assembleDebug` + instrumentadas compilando, puerta del idioma limpia,
+    paridad **352 = 352**. Todo verificado con capturas en el teléfono de Diego.
+- ⚠️ **Norton 360 en el teléfono de Diego marca Cuentivo como "app sospechosa"** y ofrece
+  desinstalarla en cada instalación de la build **debug** (se canceló siempre). Es falso positivo por
+  firma de depuración instalada de lado. **Falta confirmar que no le pase a la build de Play**: si le
+  pasara a un tester, es grave.
+
 - 🆕 **La app dejó de estar atada al catálogo** (2026-08-09, retro de tester: la gente que vende
   como los independientes de catálogo piensa por cliente, no por producto). **Sin migración de Room
   ni cambio a `firestore.rules`**: `sale_items.productId` ya era nullable en los dos lados, y
@@ -211,11 +242,14 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Qué sigue, en orden de valor
 
-0. **Probar en dispositivo lo del 2026-08-09**, que es lo único que valida la ruta remota: venta con
-   línea a mano (y que **no** aparezca producto nuevo en el catálogo); "Guardar y agregar productos";
-   saldo anterior y que se le pueda abonar; libreta con un nombre repetido → se pega al que ya existía.
-   Con cuenta **Pro**, ver en Firestore `sales`, `items` con `productId: null` y `movements`.
-   En **Gratis**, que los dos límites frenen antes de escribir: ni cliente a medias ni libreta a medias.
+0. **Seguir la pasada de UI/UX en las fases 3, 4 y 5**, descritas en
+   `~/.claude/plans/ok-codex-no-hizo-idempotent-river.md`: Home y detalle de cliente; Productos,
+   modal de producto y Abonos; "Corregir" e Historial. Las fases 0–2 ya están.
+0b. **Probar en dispositivo lo que falta del modo cliente**: "Guardar y agregar productos"; saldo
+   anterior y que se le pueda abonar; libreta con un nombre repetido → se pega al que ya existía.
+   (La línea a mano ya quedó verificada.) Con cuenta **Pro**, ver en Firestore `sales`, `items` con
+   `productId: null` y `movements`. En **Gratis**, que los dos límites frenen antes de escribir: ni
+   cliente a medias ni libreta a medias.
 1. **Esperar la retro de la 1.15.2 / vc24**, ya subida y anunciada. Si alguien reporta algo raro
    **sin señal**, mirar primero el restore de Pro (ver Pendientes de fondo): es el único hueco de esa
    familia que queda abierto. Aviso que sigue vigente: "gana el más antiguo" puede hacer que un
