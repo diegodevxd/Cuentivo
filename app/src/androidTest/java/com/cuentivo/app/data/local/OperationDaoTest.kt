@@ -388,6 +388,19 @@ class OperationDaoTest {
         assertEquals(0, dao.searchActive("business-1", "ana", "555").size)
     }
 
+    @Test fun archived_customer_does_not_reserve_its_normalized_name() = runBlocking {
+        val dao = database.customerDao()
+        val archived = CustomerEntity("customer-archived", "business-1", "Diego", "diego", null, null, null, null, null, true, 1, 1, null)
+        val replacement = CustomerEntity("customer-new", "business-1", "DIEGO", "diego", null, null, null, null, null, true, 3, 3, null)
+
+        dao.insert(archived)
+        dao.archive(archived.id, 2)
+        dao.insert(replacement)
+
+        assertEquals(listOf(replacement.id), dao.searchActive("business-1", "diego", "").map { it.id })
+        assertEquals(2, dao.allForBackfill("business-1").size)
+    }
+
     @Test fun product_search_and_archive_keep_catalog_entries_without_deleting_them() = runBlocking {
         val dao = database.productDao()
         val product = ProductEntity("product-1", "business-1", "Cuaderno", null, "CUA-1", "Papeler?a", 2_500, null, null, null, true, 1, 1, null)

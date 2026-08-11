@@ -6,7 +6,10 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "customers",
-    indices = [Index(value = ["businessId", "normalizedName"], unique = true)],
+    // A name is a search aid, never an identity. In particular an archived "Diego" must not
+    // prevent creating another customer called Diego. Keep the index for lookups, but do not make
+    // it unique: customer.id is the identity used by Room, Firestore and financial records.
+    indices = [Index(value = ["businessId", "normalizedName"])],
 )
 data class CustomerEntity(
     @PrimaryKey val id: String,

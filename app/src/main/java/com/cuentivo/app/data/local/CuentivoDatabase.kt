@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OperationEntity::class, CustomerEntity::class, ProductEntity::class, SaleEntity::class, SaleItemEntity::class, PaymentEntity::class, PaymentAllocationEntity::class, AccountMovementEntity::class, BusinessEntity::class, BusinessMemberEntity::class, AuditLogEntity::class, SyncOperationEntity::class, SyncStateEntity::class], version = 4, exportSchema = true)
+@Database(entities = [OperationEntity::class, CustomerEntity::class, ProductEntity::class, SaleEntity::class, SaleItemEntity::class, PaymentEntity::class, PaymentAllocationEntity::class, AccountMovementEntity::class, BusinessEntity::class, BusinessMemberEntity::class, AuditLogEntity::class, SyncOperationEntity::class, SyncStateEntity::class], version = 5, exportSchema = true)
 abstract class CuentivoDatabase : RoomDatabase() {
     abstract fun operationDao(): OperationDao
     abstract fun financialDao(): FinancialDao
@@ -36,4 +36,18 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
-val CUENTIVO_MIGRATIONS = arrayOf(MIGRATION_3_4)
+/**
+ * Customer names were incorrectly promoted to an identity by a unique SQLite index. The row itself
+ * remains untouched; only the constraint changes, so IDs and financial history stay intact.
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("DROP INDEX IF EXISTS `index_customers_businessId_normalizedName`")
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_customers_businessId_normalizedName` " +
+                "ON `customers` (`businessId`, `normalizedName`)"
+        )
+    }
+}
+
+val CUENTIVO_MIGRATIONS = arrayOf(MIGRATION_3_4, MIGRATION_4_5)

@@ -1044,11 +1044,16 @@ class MainActivity : ComponentActivity() {
                             return@launch
                         }
                         val now = System.currentTimeMillis()
-                        database.customerDao().archive(row.customer.id, now)
-                        // Soft delete, so it travels as an ordinary update: firestore.rules allows no
-                        // delete from any client, in any collection.
                         val archived = row.customer.copy(isActive = false, deletedAtEpochMillis = now, updatedAtEpochMillis = now)
-                        syncQueue.enqueue(businessId, "CUSTOMER", archived.id, now, SyncPayloads.customer(archived))
+                        // The local tombstone and its durable outbox row are one SQLite transaction.
+                        // If the process dies after hiding the row, a later reinstall must not pull
+                        // the still-active cloud copy and resurrect it.
+                        database.withTransaction {
+                            database.customerDao().archive(row.customer.id, now)
+                            // Soft delete travels as an ordinary update: firestore.rules forbids
+                            // client-side deletes in every collection.
+                            syncQueue.enqueue(businessId, "CUSTOMER", archived.id, now, SyncPayloads.customer(archived))
+                        }
                         refreshKey++
                         uiMessage = "${row.customer.name} eliminado"
                     }
@@ -1111,11 +1116,16 @@ class MainActivity : ComponentActivity() {
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
-                        database.productDao().archive(product.id, now)
                         // No balance guard here: sale_items keeps the name and price charged on each
                         // past sale, so removing the product from the catalog rewrites nothing.
                         val archived = product.copy(isActive = false, deletedAtEpochMillis = now, updatedAtEpochMillis = now)
-                        syncQueue.enqueue(businessId, "PRODUCT", archived.id, now, SyncPayloads.product(archived))
+                        // Keep the archive tombstone and its outbox row atomic. Otherwise a process
+                        // death between these calls leaves Firestore active and a clean reinstall
+                        // can legitimately download the old catalog entry again.
+                        database.withTransaction {
+                            database.productDao().archive(product.id, now)
+                            syncQueue.enqueue(businessId, "PRODUCT", archived.id, now, SyncPayloads.product(archived))
+                        }
                         refreshKey++
                         uiMessage = "${product.name} eliminado"
                     }

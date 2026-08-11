@@ -7,7 +7,6 @@ import com.cuentivo.app.domain.CustomerNameNormalizer
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,20 +50,13 @@ class CustomerCreationDaoTest {
         assertEquals(listOf("ana"), dao.activeWithBalances(BUSINESS).map { it.customer.id })
     }
 
-    /**
-     * The refusal the create path has to turn into words. `CustomerNameNormalizer` folds accents
-     * and case, so these two names collide on the unique index even though they do not look alike —
-     * which is exactly why the message has to be shown rather than swallowed.
-     */
-    @Test fun a_name_that_normalises_the_same_is_rejected_by_the_index() = runBlocking {
+    /** Names are normalized for search only; `CustomerEntity.id` remains the sole identity. */
+    @Test fun customers_with_the_same_normalized_name_are_both_allowed() = runBlocking {
         val dao = database.customerDao()
         dao.insert(customer("first", "José Pérez"))
+        dao.insert(customer("second", "jose perez"))
 
-        val failure = runCatching { dao.insert(customer("second", "jose perez")) }.exceptionOrNull()
-
-        assertTrue("expected the unique index to refuse, got $failure", failure != null)
-        // The first one is still there and still readable.
-        assertEquals(listOf("first"), dao.activeWithBalances(BUSINESS).map { it.customer.id })
+        assertEquals(listOf("first", "second"), dao.activeWithBalances(BUSINESS).map { it.customer.id })
     }
 
     private fun customer(id: String, name: String, businessId: String = BUSINESS) = CustomerEntity(
