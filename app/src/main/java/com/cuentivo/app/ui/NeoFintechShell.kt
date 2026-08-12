@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -50,6 +51,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -221,25 +223,77 @@ private fun CompactBottomNavigation(
             .navigationBarsPadding()
             .padding(horizontal = NeoClay.inset),
     ) {
+        BoxWithConstraints {
+            // The width that actually reaches the bar and the system font scale the user asked
+            // for decide together whether every label can keep its own line. When either runs out,
+            // the shell falls back to a compact column that gives Nueva venta the whole width.
+            when (NavigationLayoutPolicy.modeFor(maxWidth, LocalDensity.current.fontScale)) {
+                NavigationLayoutMode.LABELLED -> LabelledNavigationRow(destination, onDestination, onNewSale)
+                NavigationLayoutMode.COMPACT -> CompactNavigationColumn(destination, onDestination, onNewSale)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LabelledNavigationRow(
+    destination: MainDestination,
+    onDestination: (MainDestination) -> Unit,
+    onNewSale: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            // The domed rim: a light edge along the top fading into the surface, which is what
+            // makes a flat rectangle read as a thick slab of clay rather than a panel.
+            .background(
+                Brush.verticalGradient(
+                    0f to MaterialTheme.colorScheme.onSurface.copy(alpha = NeoClay.HIGHLIGHT_ALPHA),
+                    0.35f to Color.Transparent,
+                ),
+            )
+            .heightIn(min = 68.dp)
+            .padding(horizontal = NeoSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        ShellDestination.HOME.item(destination, onDestination, Modifier.weight(1f))
+        ShellDestination.CUSTOMERS.item(destination, onDestination, Modifier.weight(1f))
+        NewSaleNavigationAction(onClick = onNewSale, modifier = Modifier.weight(1f))
+        ShellDestination.PRODUCTS.item(destination, onDestination, Modifier.weight(1f))
+        ShellDestination.PAYMENTS.item(destination, onDestination, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun CompactNavigationColumn(
+    destination: MainDestination,
+    onDestination: (MainDestination) -> Unit,
+    onNewSale: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    0f to MaterialTheme.colorScheme.onSurface.copy(alpha = NeoClay.HIGHLIGHT_ALPHA),
+                    0.35f to Color.Transparent,
+                ),
+            )
+            .padding(horizontal = NeoSpacing.xs),
+    ) {
+        // Nueva venta keeps the whole bar width so its label can stay on one line even at the
+        // font scales that forced the compact layout in the first place.
+        NewSaleNavigationAction(onClick = onNewSale, modifier = Modifier.fillMaxWidth())
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                // The domed rim: a light edge along the top fading into the surface, which is what
-                // makes a flat rectangle read as a thick slab of clay rather than a panel.
-                .background(
-                    Brush.verticalGradient(
-                        0f to MaterialTheme.colorScheme.onSurface.copy(alpha = NeoClay.HIGHLIGHT_ALPHA),
-                        0.35f to Color.Transparent,
-                    ),
-                )
-                .heightIn(min = 68.dp)
-                .padding(horizontal = NeoSpacing.xs),
+                .padding(bottom = NeoSpacing.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             ShellDestination.HOME.item(destination, onDestination, Modifier.weight(1f))
             ShellDestination.CUSTOMERS.item(destination, onDestination, Modifier.weight(1f))
-            NewSaleNavigationAction(onClick = onNewSale, modifier = Modifier.weight(1f))
             ShellDestination.PRODUCTS.item(destination, onDestination, Modifier.weight(1f))
             ShellDestination.PAYMENTS.item(destination, onDestination, Modifier.weight(1f))
         }
@@ -264,6 +318,7 @@ private enum class ShellDestination(
         modifier: Modifier,
     ) {
         val isSelected = selectedDestination == destination
+        val label = stringResource(labelRes)
         // Clay does not highlight, it dents. The selected tab sinks into the bar: darker at the top
         // where the material would fall away from the light, lighter at the bottom where it catches
         // it again. Animated through alpha so the press reads as pressure, not as a lamp switching
@@ -282,9 +337,14 @@ private enum class ShellDestination(
         Column(
             modifier = modifier
                 .testTag("main-destination-${destination.name.lowercase()}")
-                .semantics {
+                // Merged so the label below reads as one control: TalkBack and the UI tests see the
+                // destination as a single Tab whose name is both its text and its description. The
+                // description is set here explicitly because merging text into a parent does not by
+                // itself produce one.
+                .semantics(mergeDescendants = true) {
                     selected = isSelected
                     role = Role.Tab
+                    contentDescription = label
                 }
                 .padding(horizontal = 2.dp, vertical = NeoSpacing.xs)
                 .clip(NeoClay.tabShape)
@@ -310,9 +370,15 @@ private enum class ShellDestination(
 
 @Composable
 private fun NewSaleNavigationAction(onClick: () -> Unit, modifier: Modifier) {
+    val label = stringResource(R.string.nav_new_sale)
     Column(
         modifier = modifier
             .heightIn(min = 56.dp)
+            // The description lives on the clickable parent, exactly once, so TalkBack announces
+            // the action instead of its chrome.
+            .semantics(mergeDescendants = true) {
+                contentDescription = label
+            }
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -324,9 +390,9 @@ private fun NewSaleNavigationAction(onClick: () -> Unit, modifier: Modifier) {
             modifier = Modifier.size(30.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.nav_new_sale), modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
             }
         }
-        Text(stringResource(R.string.nav_new_sale), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
 }
