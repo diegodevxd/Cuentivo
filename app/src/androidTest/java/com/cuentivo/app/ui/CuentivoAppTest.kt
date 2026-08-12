@@ -84,8 +84,16 @@ class CuentivoAppTest {
     }
 
     @Test fun large_system_text_keeps_every_navigation_action_accessible() {
+        compactNavigationStaysAccessible(fontScale = 1.3f)
+    }
+
+    @Test fun very_large_system_text_keeps_every_navigation_action_accessible() {
+        compactNavigationStaysAccessible(fontScale = 2.0f)
+    }
+
+    private fun compactNavigationStaysAccessible(fontScale: Float) {
         composeRule.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1.3f)) {
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = fontScale)) {
                 CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
             }
         }
@@ -98,5 +106,11 @@ class CuentivoAppTest {
         // label text living on that same node prove the shell exposes it once.
         composeRule.onAllNodesWithContentDescription("Nueva venta").assertCountEquals(1)
         composeRule.onNodeWithContentDescription("Nueva venta").assertTextEquals("Nueva venta")
+        // Compact destinations are icon-only by design: their localized names reach TalkBack and
+        // the tests through the content description, never through a visual label that could
+        // truncate at these font scales.
+        listOf("Inicio", "Clientes", "Productos", "Abonos").forEach { label ->
+            composeRule.onAllNodesWithText(label).assertCountEquals(0)
+        }
     }
 }

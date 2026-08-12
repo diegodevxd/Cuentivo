@@ -257,11 +257,11 @@ private fun LabelledNavigationRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        ShellDestination.HOME.item(destination, onDestination, Modifier.weight(1f))
-        ShellDestination.CUSTOMERS.item(destination, onDestination, Modifier.weight(1f))
+        ShellDestination.HOME.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
+        ShellDestination.CUSTOMERS.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
         NewSaleNavigationAction(onClick = onNewSale, modifier = Modifier.weight(1f))
-        ShellDestination.PRODUCTS.item(destination, onDestination, Modifier.weight(1f))
-        ShellDestination.PAYMENTS.item(destination, onDestination, Modifier.weight(1f))
+        ShellDestination.PRODUCTS.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
+        ShellDestination.PAYMENTS.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
     }
 }
 
@@ -292,10 +292,12 @@ private fun CompactNavigationColumn(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            ShellDestination.HOME.item(destination, onDestination, Modifier.weight(1f))
-            ShellDestination.CUSTOMERS.item(destination, onDestination, Modifier.weight(1f))
-            ShellDestination.PRODUCTS.item(destination, onDestination, Modifier.weight(1f))
-            ShellDestination.PAYMENTS.item(destination, onDestination, Modifier.weight(1f))
+            // Destinations are icon-only here: at the font scales that selected this column a
+            // visible label would truncate, and the content description still names each Tab.
+            ShellDestination.HOME.item(destination, onDestination, Modifier.weight(1f), showLabel = false)
+            ShellDestination.CUSTOMERS.item(destination, onDestination, Modifier.weight(1f), showLabel = false)
+            ShellDestination.PRODUCTS.item(destination, onDestination, Modifier.weight(1f), showLabel = false)
+            ShellDestination.PAYMENTS.item(destination, onDestination, Modifier.weight(1f), showLabel = false)
         }
     }
 }
@@ -316,6 +318,7 @@ private enum class ShellDestination(
         selectedDestination: MainDestination,
         onDestination: (MainDestination) -> Unit,
         modifier: Modifier,
+        showLabel: Boolean,
     ) {
         val isSelected = selectedDestination == destination
         val label = stringResource(labelRes)
@@ -337,10 +340,10 @@ private enum class ShellDestination(
         Column(
             modifier = modifier
                 .testTag("main-destination-${destination.name.lowercase()}")
-                // Merged so the label below reads as one control: TalkBack and the UI tests see the
-                // destination as a single Tab whose name is both its text and its description. The
-                // description is set here explicitly because merging text into a parent does not by
-                // itself produce one.
+                // Merged so the destination reads as one control: TalkBack and the UI tests see a
+                // single Tab whose name is the content description. The description is set here
+                // explicitly because merging a child's text into a parent does not by itself
+                // produce one.
                 .semantics(mergeDescendants = true) {
                     selected = isSelected
                     role = Role.Tab
@@ -363,7 +366,11 @@ private enum class ShellDestination(
         ) {
             // 22 dp rather than 19: beside 13 sp labels a 19 dp glyph looks undernourished.
             Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(22.dp))
-            Text(stringResource(labelRes), style = MaterialTheme.typography.labelSmall, color = contentColor, maxLines = 1)
+            // The compact bar drops the visual label so a huge system font can never truncate it;
+            // the localized description above keeps the destination fully announced either way.
+            if (showLabel) {
+                Text(stringResource(labelRes), style = MaterialTheme.typography.labelSmall, color = contentColor, maxLines = 1)
+            }
         }
     }
 }
