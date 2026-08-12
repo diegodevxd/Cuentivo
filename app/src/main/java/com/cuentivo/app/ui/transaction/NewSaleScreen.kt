@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,7 +53,7 @@ import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
-import com.cuentivo.app.ui.NeoLayout
+import com.cuentivo.app.ui.NavigationLayoutPolicy
 import com.cuentivo.app.ui.NeoSpacing
 import java.time.LocalDate
 import java.util.UUID
@@ -176,7 +177,9 @@ fun NewSaleScreen(
                 end = layout.horizontalPaddingDp.dp,
                 // Room for the bottom bar and the gesture inset, so the action is never the thing
                 // sitting under the system's own handle.
-                bottom = NeoLayout.bottomBarClearance,
+                bottom = NavigationLayoutPolicy.bottomBarClearanceFor(
+                    NavigationLayoutPolicy.modeFor(maxWidth, LocalDensity.current.fontScale),
+                ),
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {

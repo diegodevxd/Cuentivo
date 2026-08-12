@@ -41,20 +41,6 @@ internal object NeoDisabled {
     const val BORDER = 0.45f
 }
 
-/** Layout distances that exist because of the shell, not because of any one screen. */
-internal object NeoLayout {
-    /**
-     * How much room a scrolling screen must leave at the bottom so the clay navigation bar never
-     * covers its last row.
-     *
-     * One value, used by every scrolling screen. Each screen used to pick its own — 16 dp on Inicio,
-     * 20 dp on Productos, 88 dp on Clientes, 96 dp on Nueva venta and Abonos — so the same bar
-     * covered the last row on two of them and the bug came back with every screen added. It has to
-     * clear the bar itself, [NeoClay.inset] beneath it, and the system gesture handle under that.
-     */
-    val bottomBarClearance = 104.dp
-}
-
 internal object NeoShapes {
     val row = RoundedCornerShape(10.dp)
     val card = RoundedCornerShape(14.dp)

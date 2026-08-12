@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.cuentivo.app.R
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
@@ -35,7 +36,7 @@ import com.cuentivo.app.ui.MoneyField
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoShapes
-import com.cuentivo.app.ui.NeoLayout
+import com.cuentivo.app.ui.NavigationLayoutPolicy
 import com.cuentivo.app.ui.NeoSpacing
 import com.cuentivo.app.ui.pesosToCents
 
@@ -85,7 +86,9 @@ fun PaymentScreen(
             contentPadding = PaddingValues(
                 start = layout.horizontalPaddingDp.dp,
                 end = layout.horizontalPaddingDp.dp,
-                bottom = NeoLayout.bottomBarClearance,
+                bottom = NavigationLayoutPolicy.bottomBarClearanceFor(
+                    NavigationLayoutPolicy.modeFor(maxWidth, LocalDensity.current.fontScale),
+                ),
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {

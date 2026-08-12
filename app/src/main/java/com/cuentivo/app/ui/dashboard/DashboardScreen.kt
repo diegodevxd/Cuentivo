@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -51,7 +52,7 @@ import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoPanel
 import com.cuentivo.app.ui.NeoSectionHeader
 import com.cuentivo.app.ui.NeoShapes
-import com.cuentivo.app.ui.NeoLayout
+import com.cuentivo.app.ui.NavigationLayoutPolicy
 import com.cuentivo.app.ui.NeoSpacing
 import java.text.DateFormat
 import java.time.LocalDate
@@ -87,7 +88,9 @@ fun DashboardScreen(
                 start = layout.horizontalPaddingDp.dp,
                 top = NeoSpacing.md,
                 end = layout.horizontalPaddingDp.dp,
-                bottom = NeoLayout.bottomBarClearance,
+                bottom = NavigationLayoutPolicy.bottomBarClearanceFor(
+                    NavigationLayoutPolicy.modeFor(maxWidth, LocalDensity.current.fontScale),
+                ),
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
         ) {

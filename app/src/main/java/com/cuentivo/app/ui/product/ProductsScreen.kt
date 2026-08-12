@@ -52,6 +52,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,7 +67,7 @@ import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
-import com.cuentivo.app.ui.NeoLayout
+import com.cuentivo.app.ui.NavigationLayoutPolicy
 import com.cuentivo.app.ui.NeoSpacing
 import com.cuentivo.app.ui.pesosToCents
 import java.util.UUID
@@ -153,7 +154,9 @@ fun ProductsScreen(
                 start = layout.horizontalPaddingDp.dp,
                 top = NeoSpacing.md,
                 end = layout.horizontalPaddingDp.dp,
-                bottom = NeoLayout.bottomBarClearance,
+                bottom = NavigationLayoutPolicy.bottomBarClearanceFor(
+                    NavigationLayoutPolicy.modeFor(maxWidth, LocalDensity.current.fontScale),
+                ),
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {

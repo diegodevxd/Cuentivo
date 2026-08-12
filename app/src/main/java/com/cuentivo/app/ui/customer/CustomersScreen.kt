@@ -80,6 +80,7 @@ import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.ui.product.ProductPhotoDraftPolicy
 import com.cuentivo.app.ui.product.ProductPhotoPicker
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import java.util.UUID
 import com.cuentivo.app.ui.FormDialog
@@ -87,7 +88,7 @@ import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoShapes
-import com.cuentivo.app.ui.NeoLayout
+import com.cuentivo.app.ui.NavigationLayoutPolicy
 import com.cuentivo.app.ui.NeoSpacing
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.ui.transaction.DueOption
@@ -166,7 +167,9 @@ fun CustomersScreen(
                 start = layout.horizontalPaddingDp.dp,
                 top = NeoSpacing.md,
                 end = layout.horizontalPaddingDp.dp,
-                bottom = NeoLayout.bottomBarClearance,
+                bottom = NavigationLayoutPolicy.bottomBarClearanceFor(
+                    NavigationLayoutPolicy.modeFor(maxWidth, LocalDensity.current.fontScale),
+                ),
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {
