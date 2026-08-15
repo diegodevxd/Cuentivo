@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -49,11 +50,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
@@ -169,7 +172,9 @@ internal fun <T> NeoSelectorField(
             .testTag(selectorTag(label)),
         shape = NeoShapes.row,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        // An interactive selector is a control: its boundary uses the 3:1 outline role, not the
+        // soft decorative outlineVariant.
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
         Row(
             modifier = Modifier
@@ -232,6 +237,9 @@ internal fun <T> NeoSelectorField(
                         )
                     },
                     singleLine = true,
+                    // Filtering is live as the person types, so the keyboard's action key dismisses
+                    // the IME rather than pretending to run a separate search step.
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     shape = NeoShapes.row,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -322,7 +330,7 @@ internal fun NeoChoiceChip(
                 )
                 .border(
                     width = 1.dp,
-                    color = if (isSelected) accent else MaterialTheme.colorScheme.outlineVariant,
+                    color = if (isSelected) accent else MaterialTheme.colorScheme.outline,
                     shape = RoundedCornerShape(9.dp),
                 )
                 .padding(horizontal = NeoSpacing.sm),
@@ -375,7 +383,15 @@ private fun selectorTag(label: String) = "selector-${label.lowercase()}"
  * the edge costs one row and tells you where you are without splitting the flow into wizard pages.
  */
 @Composable
-internal fun NeoSectionHeader(title: String, modifier: Modifier = Modifier) {
+internal fun NeoSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    /**
+     * Form sections are structural steps and announce themselves as headings so TalkBack users can
+     * navigate the long sale form; pass `false` for decorative captions.
+     */
+    heading: Boolean = true,
+) {
     Row(
         modifier = modifier.fillMaxWidth().padding(top = NeoSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
@@ -385,6 +401,7 @@ internal fun NeoSectionHeader(title: String, modifier: Modifier = Modifier) {
             text = title.uppercase(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
+            modifier = if (heading) Modifier.semantics { heading() } else Modifier,
         )
         HorizontalDivider(
             modifier = Modifier.weight(1f),
@@ -412,7 +429,7 @@ internal fun <T> NeoSegmentedControl(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, NeoShapes.row)
+            .border(1.dp, MaterialTheme.colorScheme.outline, NeoShapes.row)
             .padding(3.dp),
     ) {
         options.forEach { option ->
@@ -466,7 +483,7 @@ internal fun NeoQuantityStepper(
     Row(
         modifier = modifier
             .heightIn(min = 48.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, NeoShapes.row),
+            .border(1.dp, MaterialTheme.colorScheme.outline, NeoShapes.row),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // One is the floor, not zero: a line of zero is not a line, and the add action already

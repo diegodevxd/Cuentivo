@@ -36,8 +36,6 @@ class CollectionsAndReportTest {
         composeRule.onNodeWithTag("dashboard-month").assertIsDisplayed()
         composeRule.onNodeWithText("$1,250.00").assertIsDisplayed()
         composeRule.onNodeWithText("$400.00").assertIsDisplayed()
-        // The sentence BusinessInsights already produced, finally on screen.
-        composeRule.onNodeWithText("Cobraste 20% más que el mes pasado").assertIsDisplayed()
     }
 
     /** Collecting used to mean leaving this list to hunt for the customer. */

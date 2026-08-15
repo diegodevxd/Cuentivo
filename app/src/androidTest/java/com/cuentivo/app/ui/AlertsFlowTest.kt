@@ -9,6 +9,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.platform.app.InstrumentationRegistry
+import com.cuentivo.app.R
 import com.cuentivo.app.domain.Alert
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import org.junit.Assert.assertEquals
@@ -39,9 +41,10 @@ class AlertsFlowTest {
         composeRule.setContent { Harness() }
         openAlerts()
 
-        composeRule.onNodeWithText("VENCIDO").assertIsDisplayed()
-        composeRule.onNodeWithText("POR VENCER").assertIsDisplayed()
-        composeRule.onNodeWithText("AVISO").assertIsDisplayed()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        composeRule.onNodeWithText(context.getString(R.string.alerts_severity_overdue)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.alerts_severity_due_soon)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.alerts_severity_info)).assertIsDisplayed()
     }
 
     @Test fun tapping_an_alert_opens_that_exact_customer() {

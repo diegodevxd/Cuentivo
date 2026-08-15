@@ -4,7 +4,6 @@ import android.provider.Settings
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -32,14 +31,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -115,7 +111,7 @@ internal fun NeoAction(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val motionEnabled = rememberMotionEnabled()
+    val motionEnabled = LocalMotionEnabled.current
     val scale by animateFloatAsState(
         targetValue = if (pressed && motionEnabled) NeoMotion.PRESSED_SCALE else 1f,
         animationSpec = tween(NeoMotion.QUICK_MS),
@@ -188,6 +184,11 @@ internal fun NeoSectionHeader(
     modifier: Modifier = Modifier,
     eyebrow: String? = null,
     trailing: (@Composable () -> Unit)? = null,
+    /**
+     * Structural screen sections announce themselves as headings so TalkBack users can navigate by
+     * them; a decorative caption that is not a section boundary should pass `false`.
+     */
+    heading: Boolean = true,
 ) {
     // Centred, not bottom-aligned: a trailing TextButton carries its own vertical padding, so
     // bottom alignment pushed the action visibly above the title's baseline.
@@ -205,7 +206,11 @@ internal fun NeoSectionHeader(
                 )
                 Spacer(Modifier.height(NeoSpacing.xs))
             }
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = if (heading) Modifier.semantics { heading() } else Modifier,
+            )
         }
         trailing?.invoke()
     }
@@ -227,139 +232,6 @@ internal fun NeoEmptyState(
             Spacer(Modifier.height(NeoSpacing.sm))
             NeoAction(actionLabel, onAction, Modifier.fillMaxWidth())
         }
-    }
-}
-
-/** A dense, reusable directory row for customers and products. */
-@Composable
-internal fun NeoDirectoryRow(
-    title: String,
-    subtitle: String,
-    modifier: Modifier = Modifier,
-    amountCents: Long? = null,
-    status: String? = null,
-    accent: Color = MaterialTheme.colorScheme.primary,
-    onClick: (() -> Unit)? = null,
-) {
-    val rowModifier = if (onClick == null) modifier else modifier.clickable(onClick = onClick)
-    NeoPanel(modifier = rowModifier, accent = accent) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                status?.let {
-                    Spacer(Modifier.height(NeoSpacing.xs))
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = accent, maxLines = 1)
-                }
-            }
-            amountCents?.let {
-                NeoMoney(
-                    amountCents = it,
-                    modifier = Modifier.padding(start = NeoSpacing.sm),
-                    color = accent,
-                )
-            }
-        }
-    }
-}
-
-/** Compatibility bridge while existing screens migrate to the dedicated primitives. */
-@Composable
-internal fun NeoResponsiveColumn(
-    modifier: Modifier = Modifier,
-    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(NeoSpacing.md),
-    content: @Composable ColumnScope.(NeoFintechLayout) -> Unit,
-) = NeoScreen(modifier, verticalArrangement, content)
-
-@Composable
-internal fun NeoSectionTitle(
-    title: String,
-    eyebrow: String? = null,
-    trailing: (@Composable () -> Unit)? = null,
-) = NeoSectionHeader(title = title, eyebrow = eyebrow, trailing = trailing)
-
-/** Aurora stays inside the hero bounds; the application backdrop itself remains still. */
-@Composable
-internal fun NeoBalanceHero(
-    label: String,
-    amountCents: Long,
-    supportingText: String,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 126.dp)
-            .drawBehind { drawNeoHeroAura() },
-        shape = NeoShapes.hero,
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
-    ) {
-        Column(Modifier.padding(horizontal = NeoSpacing.lg, vertical = NeoSpacing.md)) {
-            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(NeoSpacing.xs))
-            NeoMoney(
-                amountCents = amountCents,
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(NeoSpacing.sm))
-            Text(supportingText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-private fun DrawScope.drawNeoHeroAura() {
-    drawRoundRect(
-        brush = Brush.linearGradient(
-            colors = listOf(Color(0xFF10161A), Color(0xFF111318), Color(0xFF111319)),
-            start = Offset.Zero,
-            end = Offset(size.width, size.height),
-        ),
-        cornerRadius = CornerRadius(18.dp.toPx()),
-    )
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(MaterialThemeColorCyan.copy(alpha = 0.18f), Color.Transparent),
-            center = Offset(size.width * 0.16f, size.height * 0.12f),
-            radius = size.maxDimension * 0.68f,
-        ),
-        radius = size.maxDimension * 0.68f,
-        center = Offset(size.width * 0.16f, size.height * 0.12f),
-    )
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(MaterialThemeColorViolet.copy(alpha = 0.12f), Color.Transparent),
-            center = Offset(size.width * 0.94f, size.height),
-            radius = size.maxDimension * 0.58f,
-        ),
-        radius = size.maxDimension * 0.58f,
-        center = Offset(size.width * 0.94f, size.height),
-    )
-}
-
-private val MaterialThemeColorCyan = Color(0xFF21E6F3)
-private val MaterialThemeColorViolet = Color(0xFF9B7BFF)
-
-@Composable
-internal fun NeoPrimaryButton(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) = NeoAction(label, onClick, modifier, enabled)
-
-@Composable
-internal fun NeoMoneyPill(
-    label: String,
-    amountCents: Long,
-    accent: Color,
-    modifier: Modifier = Modifier,
-) {
-    NeoPanel(modifier = modifier, accent = accent) {
-        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(NeoSpacing.xs))
-        NeoMoney(amountCents, color = accent)
     }
 }
 

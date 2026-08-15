@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
@@ -87,6 +88,7 @@ import com.cuentivo.app.ui.FormDialog
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoEmptyState
 import com.cuentivo.app.ui.NeoMoney
+import com.cuentivo.app.ui.NeoSectionHeader
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NavigationLayoutPolicy
 import com.cuentivo.app.ui.NeoSpacing
@@ -142,10 +144,19 @@ fun CustomersScreen(
      * callback twice.
      */
     isSaving: Boolean = false,
+    /**
+     * A filter handed in from outside (a reminder notification tap). It is applied for as long as
+     * the screen is showing it; the host clears the request when the owner leaves Clientes, so a
+     * later visit returns to "Todos".
+     */
+    initialFilter: CustomerFilter? = null,
 ) {
     val customersNewCustomerDescription = stringResource(R.string.customers_new_customer_description)
     var query by remember { mutableStateOf("") }
-    var chip by remember { mutableStateOf(CustomerFilter.ALL) }
+    // Keyed on the incoming filter so the reminder tap lands with the overdue chip already
+    // chosen at first composition — no async round-trip. The host only clears the request when the
+    // owner leaves Clientes, so a later visit starts at "Todos" instead of re-applying.
+    var chip by remember(initialFilter) { mutableStateOf(initialFilter ?: CustomerFilter.ALL) }
     var editing by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     var archiving by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     var importingBalances by remember { mutableStateOf(false) }
@@ -465,6 +476,8 @@ private fun CustomerFormDialog(
             value = name,
             onValueChange = { name = it },
             label = { Text(nameLabel) },
+            // Next: the keyboard's action key walks into Teléfono instead of dismissing.
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("customer-name-field"),
         )
@@ -472,7 +485,7 @@ private fun CustomerFormDialog(
             value = phone,
             onValueChange = { raw -> phone = raw.filter { it.isDigit() || it == '+' }.take(15) },
             label = { Text(phoneLabel) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -490,16 +503,13 @@ private fun CustomerFormDialog(
                     else -> Text(creditHint.format(Money.format(creditLimitCents)))
                 }
             },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
             singleLine = true,
             shape = NeoShapes.row,
             modifier = Modifier.fillMaxWidth(),
         )
         if (quickSaleTargetId != null) {
-            Text(
-                stringResource(R.string.customers_form_opening_balance_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
+            NeoSectionHeader(title = stringResource(R.string.customers_form_opening_balance_title))
             OutlinedTextField(
                 value = openingBalanceText,
                 onValueChange = { raw -> openingBalanceText = raw.filter { it.isDigit() || it == '.' } },
@@ -527,10 +537,7 @@ private fun CustomerFormDialog(
                 shape = NeoShapes.row,
                 modifier = Modifier.fillMaxWidth().testTag("opening-balance-field"),
             )
-            Text(
-                stringResource(R.string.customers_form_quick_sale_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
+            NeoSectionHeader(title = stringResource(R.string.customers_form_quick_sale_title))
             Text(
                 stringResource(R.string.customers_form_quick_sale_hint),
                 style = MaterialTheme.typography.labelMedium,

@@ -2,15 +2,20 @@ package com.cuentivo.app
 
 import android.content.Context
 import android.content.Intent
+import android.Manifest
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.os.LocaleList
+import android.os.Build
 import android.app.LocaleManager
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import com.cuentivo.app.settings.LanguagePreference
 import java.util.Locale
 import androidx.room.Room
@@ -97,6 +102,11 @@ import com.cuentivo.app.ui.PaymentRefundFactory
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.dashboard.DashboardViewModel
 import com.cuentivo.app.auth.FirebaseAuthenticationGateway
+import com.cuentivo.app.auth.GoogleAuthenticationResult
+import com.cuentivo.app.notifications.CollectionReminderScheduler
+import com.cuentivo.app.observability.CrashEvent
+import com.cuentivo.app.observability.CrashReporterFactory
+import com.cuentivo.app.settings.CollectionReminderPreferences
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.cuentivo.app.auth.LocalSessionGuard
 import com.cuentivo.app.backup.BackupException
@@ -119,9 +129,12 @@ import com.cuentivo.app.sync.CloudRestore
 import com.cuentivo.app.sync.OutboxBackfill
 import com.cuentivo.app.sync.CloudRestoreResult
 import com.cuentivo.app.sync.FirestoreSyncGateway
+import com.cuentivo.app.sync.FirestoreDeletionGateway
+import com.cuentivo.app.domain.AccountDeletionFailure
 import com.cuentivo.app.sync.OwnerMembershipBootstrap
 import com.cuentivo.app.sync.SyncPayloads
 import com.cuentivo.app.sync.SyncQueue
+import com.google.firebase.auth.FirebaseAuthException
 
 private const val TAG = "MainActivity"
 
@@ -134,6 +147,14 @@ private const val TAG = "MainActivity"
 private const val ENTITLEMENT_WAIT_MILLIS = 8_000L
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        /**
+         * What the collection reminder's notification carries: just the action. The intent holds no
+         * customer, balance or business data — the host navigates and lets Room answer the who.
+         */
+        const val ACTION_OPEN_OVERDUE_CUSTOMERS = "com.cuentivo.app.OPEN_OVERDUE_CUSTOMERS"
+    }
+
     /**
      * Below API 33, the private preference is applied before the Activity sees its resources. On
      * API 33+, LocaleManager owns the selection and this context mirrors its application locales;
@@ -172,6 +193,26 @@ class MainActivity : ComponentActivity() {
     private val tierState = mutableStateOf(SubscriptionTier.FREE)
 
     /**
+     * A reminder notification was tapped and the navigation is still owed. Held as a state so the
+     * host can consume it once through CuentivoApp; the intent's action itself is nulled at read
+     * time so a rotation cannot re-fire the navigation.
+     */
+    private val openOverdueCustomersState = mutableStateOf(false)
+
+    /**
+     * Messages raised while the Account sheet is open (e.g. the notification permission being
+     * denied). Separate from the branch-local [uiMessage] because the permission callback is
+     * declared outside that branch.
+     */
+    private val accountMessageState = mutableStateOf<String?>(null)
+
+    /**
+     * Release-only, fixed technical events. Debug and emulator sessions are a no-op; nothing with
+     * PII, balances or ids ever reaches Crashlytics — see [CrashReporterFactory].
+     */
+    private val crashReporter = CrashReporterFactory.create()
+
+    /**
      * Pro's price as Play formats it, null until Play answers. Held here rather than read on demand
      * because the query is asynchronous and finishes after the composition that wants it.
      */
@@ -202,6 +243,23 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * A tapped reminder arrives here when the activity is already at the top of the task
+     * (singleTop). Consumed the same way as in [onCreate].
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleOverdueCustomersAction(intent)
+    }
+
+    /** Reads the reminder tap exactly once; the action is nulled so a recreate cannot re-fire. */
+    private fun handleOverdueCustomersAction(intent: Intent?) {
+        if (intent?.action == ACTION_OPEN_OVERDUE_CUSTOMERS) {
+            intent.action = null
+            openOverdueCustomersState.value = true
+        }
+    }
+
+    /**
      * Relaunches the app after its database file was swapped underneath it.
      *
      * `exit(0)` rather than just recreating the Activity: a Worker or a Room connection created
@@ -223,7 +281,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            // The app draws edge-to-edge over its own graphite ground. The system bars stay dark
+            // with light icons so the clock, battery and navigation hints remain legible on every
+            // device, regardless of the device's own light/dark preference.
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
+        CrashReporterFactory.install()
+        handleOverdueCustomersAction(intent)
         // Before any Firestore or Auth call, so the first request already carries an attestation.
         AppCheckInstaller.installOnce()
         // Before any Firestore or Auth call: useEmulator throws once the instance has been used.
@@ -245,6 +311,7 @@ class MainActivity : ComponentActivity() {
         // Built here rather than lazily: it has to be ready before the "create a business" button can
         // be reached, since taking that offer is what strands the cloud copy under an unreachable id.
         val firestoreGateway = FirestoreSyncGateway()
+        val deletionGateway = FirestoreDeletionGateway()
         val cloudRestore = CloudRestore(database, firestoreGateway, firestoreGateway, membershipBootstrap)
         val dashboardRepository = DashboardRepository(database.businessDao(), database.financialDao())
         val sessionGuard = LocalSessionGuard(applicationContext, database)
@@ -291,7 +358,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             },
-            onMessage = { billingMessageState.value = it },
+            onMessage = { billingMessageState.value = it
+                // Every current onMessage is a purchase failure (backing out is silent elsewhere),
+                // so the fixed technical event rides along without any message content.
+                crashReporter.report(CrashEvent.BILLING_FAILURE)
+            },
         )
         billingGateway = billing
         // Started for whoever is signed in right now — usually nobody on a cold start, in which case
@@ -308,6 +379,29 @@ class MainActivity : ComponentActivity() {
                 // Bumped whenever the account is re-read, so the access decision below recomposes
                 // the moment somebody comes back from clicking the link in their inbox.
                 var verificationKey by remember { mutableIntStateOf(0) }
+                // The daily reminder is a local, per-phone preference. State mirrors preferences so
+                // the Account sheet reflects changes immediately; the permission launcher only asks
+                // on API 33+ and only after the owner tries to turn the setting on.
+                val reminderPreferences = remember { CollectionReminderPreferences(this@MainActivity) }
+                var reminderEnabled by remember { mutableStateOf(reminderPreferences.enabled) }
+                var reminderHour by remember { mutableStateOf(reminderPreferences.hourOfDay) }
+                val applyReminderEnabled: (Boolean) -> Unit = { value ->
+                    reminderPreferences.enabled = value
+                    reminderEnabled = value
+                    if (value) CollectionReminderScheduler.sync(this@MainActivity)
+                    else CollectionReminderScheduler.cancel(this@MainActivity)
+                }
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission(),
+                ) { granted ->
+                    if (granted) {
+                        applyReminderEnabled(true)
+                    } else {
+                        // The setting stays off. Android decides when the system dialog may be
+                        // asked again, so this never becomes a request loop.
+                        accountMessageState.value = getString(R.string.reminder_permission_denied)
+                    }
+                }
                 val emailAccess = remember(authenticatedUserId, verificationKey) {
                     EmailVerificationPolicy.access(
                         isSignedIn = authenticatedUserId != null,
@@ -319,6 +413,22 @@ class MainActivity : ComponentActivity() {
                     val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
                     val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
                     val emailInUseMessage = stringResource(R.string.auth_email_in_use)
+                    val googleFailedMessage = stringResource(R.string.auth_google_failed)
+                    val googleManualPasswordMessage = stringResource(R.string.auth_google_manual_password_needed)
+                    val handleGoogleResult: (GoogleAuthenticationResult) -> Unit = { result ->
+                        isAuthenticating = false
+                        when (result) {
+                            is GoogleAuthenticationResult.SignedIn -> authenticatedUserId = result.userId
+                            GoogleAuthenticationResult.ManualAccountNeedsPassword ->
+                                authenticationMessage = googleManualPasswordMessage
+                            GoogleAuthenticationResult.Failed -> {
+                                authenticationMessage = googleFailedMessage
+                                crashReporter.report(CrashEvent.AUTH_FAILURE)
+                            }
+                            // Cancellation: nothing happened, nothing to say, session untouched.
+                            GoogleAuthenticationResult.Cancelled -> Unit
+                        }
+                    }
                     AuthenticationScreen(
                         isWorking = isAuthenticating,
                         message = authenticationMessage,
@@ -328,7 +438,10 @@ class MainActivity : ComponentActivity() {
                             authenticationGateway.signIn(email, password) { result ->
                                 isAuthenticating = false
                                 result.onSuccess { authenticatedUserId = it }
-                                    .onFailure { authenticationMessage = signInFailedMessage }
+                                    .onFailure {
+                                        authenticationMessage = signInFailedMessage
+                                        crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                    }
                             }
                         },
                         onSignUp = { email, password ->
@@ -351,7 +464,10 @@ class MainActivity : ComponentActivity() {
                                     // discloses it. Everything else stays generic.
                                     authenticationMessage =
                                         if (error is FirebaseAuthUserCollisionException) emailInUseMessage
-                                        else signUpFailedMessage
+                                        else {
+                                            crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                            signUpFailedMessage
+                                        }
                                 }
                             }
                         },
@@ -361,6 +477,19 @@ class MainActivity : ComponentActivity() {
                             // either way, so a stranger cannot use this to discover who has an
                             // account here.
                             authenticationGateway.sendPasswordReset(email) { }
+                        },
+                        onGoogleSignIn = {
+                            isAuthenticating = true
+                            authenticationMessage = null
+                            // Signed out: Google creates or signs into the session. Signed in (a
+                            // race, since this screen only renders without a session): linking
+                            // adds Google to the existing account, preserving its UID instead of
+                            // minting a second one.
+                            if (authenticationGateway.currentUserId == null) {
+                                authenticationGateway.signInWithGoogle(this@MainActivity, handleGoogleResult)
+                            } else {
+                                authenticationGateway.linkGoogle(this@MainActivity, handleGoogleResult)
+                            }
                         },
                     )
                 } else if (emailAccess == EmailVerificationAccess.MUST_VERIFY) {
@@ -394,6 +523,8 @@ class MainActivity : ComponentActivity() {
                         },
                         onUseAnotherAccount = {
                             authenticationGateway.signOut()
+                            authenticationGateway.clearGoogleCredentialState { }
+                            CollectionReminderScheduler.cancel(this@MainActivity)
                             authenticationMessage = null
                             authenticatedUserId = null
                         },
@@ -461,6 +592,10 @@ class MainActivity : ComponentActivity() {
                     // Backfills the owner membership for businesses created before it was published,
                     // whose queued rows are otherwise parked on PERMISSION_DENIED forever.
                     database.businessDao().firstOwnedBy(currentUserId)?.let { membershipBootstrap.ensure(it) }
+                    // Sign-out cancels the reminder work; signing back in restores whatever the
+                    // owner had chosen, so a toggle never silently stops working after a session
+                    // change. Idempotent: disabled cancels, enabled re-schedules at the right hour.
+                    CollectionReminderScheduler.sync(this@MainActivity)
                     sessionReady = true
                 }
 
@@ -568,8 +703,10 @@ class MainActivity : ComponentActivity() {
                         // discarded a cause that was already in hand and cost three rounds of
                         // guessing at a failure logcat was not reporting either. The full text and
                         // stack trace stay in the log; only this short code reaches the screen.
-                        is CloudRestoreResult.Failed ->
+                        is CloudRestoreResult.Failed -> {
+                            crashReporter.report(CrashEvent.CLOUD_RESTORE_FAILURE)
                             uiMessage = "No pudimos traer tu información de la nube. Revisa tu conexión y vuelve a abrir la app (${result.stage}/${result.failure.message.substringBefore(":").take(40)})"
+                        }
                     }
                     isRestoring = false
                 }
@@ -588,6 +725,8 @@ class MainActivity : ComponentActivity() {
                         onRetry = { claimAttempt++ },
                         onUseAnotherAccount = {
                             authenticationGateway.signOut()
+                            authenticationGateway.clearGoogleCredentialState { }
+                            CollectionReminderScheduler.cancel(this@MainActivity)
                             signedUpUserId = null
                             authenticationMessage = null
                             authenticatedUserId = null
@@ -1531,21 +1670,31 @@ class MainActivity : ComponentActivity() {
                     billing.launchPurchase(this@MainActivity, currentUserId)
                 }, onSignOut = {
                     authenticationGateway.signOut()
+                    authenticationGateway.clearGoogleCredentialState { }
+                    // A sign-out must never leave the previous owner's reminder job behind.
+                    CollectionReminderScheduler.cancel(this@MainActivity)
                     authenticatedUserId = null
                 }, onDeleteAccount = {
                     val businessToErase = (state as? DashboardUiState.Content)?.businessId
-                    // Local data goes first: if the account delete fails, the person is still signed
-                    // in and can retry, rather than being locked out of rows that outlived them.
                     lifecycleScope.launch {
-                        // The cloud request goes before anything else. Once the Auth account is gone
-                        // there is no credential left to write with, and the rules forbid deleting
-                        // from the client at all, so this is the only window in which the copy in
-                        // Firestore can be marked for erasure. Blocking call, so off the main thread.
-                        var cloudRequested = true
-                        if (businessToErase != null) {
-                            cloudRequested = withContext(Dispatchers.IO) {
-                                firestoreGateway.requestBusinessDeletion(businessToErase, System.currentTimeMillis())
-                            }.isSuccess
+                        // The remote erasure is the gate everything else hangs on. The flag write is
+                        // awaited, then the cascade deletes every subcollection (children first,
+                        // batches of at most 500) and the business document last. Only when the cloud
+                        // copy is verifiably gone does the phone wipe itself; a remote failure leaves
+                        // local data, session, entitlement and the Auth account untouched so the
+                        // person can retry with everything intact.
+                        val remoteErased = withContext(Dispatchers.IO) {
+                            if (businessToErase == null) {
+                                // Nothing ever reached the cloud; nothing to erase remotely.
+                                true
+                            } else {
+                                val requested = firestoreGateway.requestBusinessDeletion(businessToErase, System.currentTimeMillis())
+                                requested.isSuccess && deletionGateway.deleteBusiness(businessToErase).isSuccess
+                            }
+                        }
+                        if (!AccountDeletionFailure.mayWipeLocal(remoteErased)) {
+                            uiMessage = getString(R.string.message_account_delete_cloud_failed)
+                            return@launch
                         }
                         // clearAllTables() is a blocking Room call and Room refuses to run one on the
                         // main thread; lifecycleScope launches on Main, so this used to crash the app
@@ -1557,19 +1706,46 @@ class MainActivity : ComponentActivity() {
                         entitlementStore.forget()
                         authenticationGateway.deleteAccount { result ->
                             result.onSuccess {
+                                authenticationGateway.clearGoogleCredentialState { }
+                                // A deleted account must not leave a reminder job for it behind.
+                                CollectionReminderScheduler.cancel(this@MainActivity)
                                 authenticatedUserId = null
-                                // Said out loud rather than swallowed: the phone is wiped either
-                                // way, but if the request never reached the server the person is
-                                // owed the truth about their copy in the cloud.
-                                if (!cloudRequested) {
-                                    uiMessage = getString(R.string.message_account_delete_cloud_pending)
+                            }.onFailure { error ->
+                                val messageKey = AccountDeletionFailure.messageKeyForAuth(
+                                    (error as? FirebaseAuthException)?.errorCode
+                                )
+                                uiMessage = when (messageKey) {
+                                    AccountDeletionFailure.MessageKey.RECENT_LOGIN_REQUIRED ->
+                                        getString(R.string.message_account_delete_recent_login)
+                                    else ->
+                                        getString(R.string.message_account_delete_failed)
                                 }
-                            }.onFailure {
-                                uiMessage = getString(R.string.message_account_delete_failed)
                             }
                         }
                     }
-                }, message = uiMessage, onMessageShown = { uiMessage = null })
+                }, reminderEnabled = reminderEnabled, reminderHour = reminderHour,
+                onReminderEnabledChange = { wanted ->
+                    if (wanted) {
+                        // Only Android 13+ has a notification permission to ask for; below it the
+                        // reminder just works. A denial keeps the setting off and explains why.
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            applyReminderEnabled(true)
+                        }
+                    } else {
+                        applyReminderEnabled(false)
+                    }
+                }, onReminderHourChange = { hour ->
+                    reminderPreferences.hourOfDay = hour
+                    reminderHour = hour
+                    CollectionReminderScheduler.sync(this@MainActivity)
+                }, openOverdueCustomers = openOverdueCustomersState.value,
+                onOpenOverdueCustomersConsumed = { openOverdueCustomersState.value = false },
+                message = uiMessage ?: accountMessageState.value, onMessageShown = {
+                    uiMessage = null
+                    accountMessageState.value = null
+                })
                 }
                 }
             }

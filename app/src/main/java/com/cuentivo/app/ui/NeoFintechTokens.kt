@@ -1,6 +1,7 @@
 package com.cuentivo.app.ui
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.dp
 
 /**
@@ -89,3 +90,10 @@ internal object NeoMotion {
     /** Screen and sheet entrances. Long enough to be felt, short enough never to be waited on. */
     const val ENTRANCE_MS = 260
 }
+
+/**
+ * Whether the system allows animations, resolved once by the theme from the animator duration scale
+ * and read by every animated primitive — press scaling, navigation entrances — so that disabling
+ * animations system-wide disables them everywhere, in one place.
+ */
+internal val LocalMotionEnabled = staticCompositionLocalOf { true }

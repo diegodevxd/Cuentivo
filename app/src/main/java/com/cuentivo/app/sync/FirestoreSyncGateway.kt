@@ -3,11 +3,13 @@ package com.cuentivo.app.sync
 import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.cuentivo.app.domain.BusinessClaimPolicy
+import com.cuentivo.app.domain.DeletionRequestPolicy
 import com.cuentivo.app.domain.RemoteBusiness
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
 import org.json.JSONObject
 
@@ -56,16 +58,36 @@ class FirestoreSyncGateway(
      * account — after which there is no credential left to authenticate that job, so the request
      * would fail permanently and silently. It has to land while the account still exists.
      *
-     * It only asks. The client cannot erase anything: every collection is `delete: if false` in
-     * `firestore.rules`, on purpose. The actual erasure is done out of band against this flag; see
-     * `docs/borrado-de-cuenta.md`.
+     * This step only asks — and it must be safe to ask again. The flag is read from the server
+     * ([Source.SERVER], never the cache, for the same reason the rest of this class does) and
+     * [DeletionRequestPolicy] decides what to do: a business document that no longer exists is an
+     * erasure a prior attempt already finished, a flag that is already on the document means the
+     * request already landed (the rules make it immutable, so rewriting it with a fresh timestamp
+     * would be denied and strand the erasure forever), and only an absent flag is written — once,
+     * as a merge so no other field is touched.
+     *
+     * Once the flag is on the document, the deletion rules open up: the same verified owner may then
+     * delete the entire business through [FirestoreDeletionGateway], which runs the subcollection
+     * cascade (children first, batches of at most 500, business document last). Setting the flag is
+     * what the server watches for — it is the one-way door.
      */
     fun requestBusinessDeletion(businessId: String, nowEpochMillis: Long): Result<Unit> = try {
-        Tasks.await(
-            firestore.collection("businesses")
-                .document(businessId)
-                .update("deletionRequestedAtEpochMillis", nowEpochMillis)
-        )
+        val document = firestore.collection("businesses").document(businessId)
+        // The decision hangs on whether the server already holds the flag, and the flag is
+        // immutable: a stale cache could make a retry rewrite the timestamp and get denied forever.
+        val snapshot = Tasks.await(document.get(Source.SERVER))
+        when (DeletionRequestPolicy.decide(snapshot.exists(), snapshot.getLong("deletionRequestedAtEpochMillis"))) {
+            // The business document is gone: a prior cascade already erased it. Nothing to write.
+            DeletionRequestPolicy.Outcome.AlreadyGone -> Unit
+            // The owner already asked: the flag is immutable, so a retry must not rewrite it. The
+            // original marker stays, and the retry proceeds to the cascade.
+            is DeletionRequestPolicy.Outcome.AlreadyRequested -> Unit
+            // First request: write the flag once. A merge, not update and not a full set, so no
+            // other field of the business document is touched.
+            DeletionRequestPolicy.Outcome.NeedsWrite -> Tasks.await(
+                document.set(mapOf("deletionRequestedAtEpochMillis" to nowEpochMillis), SetOptions.merge())
+            )
+        }
         Result.success(Unit)
     } catch (error: Exception) {
         // Never rethrown into the delete flow: a phone with no signal must still be able to wipe

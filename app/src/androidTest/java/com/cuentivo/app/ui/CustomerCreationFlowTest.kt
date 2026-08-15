@@ -4,16 +4,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasImeAction
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.text.input.ImeAction
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -78,6 +82,19 @@ class CustomerCreationFlowTest {
         composeRule.onNodeWithText("Nombre del cliente").performTextInput("Ana López")
 
         composeRule.onNodeWithText("Guardar").assertIsEnabled()
+    }
+
+    @Test fun form_sections_are_headings_and_fields_advance_via_the_keyboard() {
+        composeRule.setContent { Harness() }
+        openForm()
+
+        // The long create form groups its fields under section headings TalkBack can navigate by.
+        composeRule.onNodeWithText("¿Ya te debía de antes?").assert(isHeading())
+        composeRule.onNodeWithText("¿Se llevó algo?").assert(isHeading())
+        // And the keyboard moves through it: Next walks name → phone → credit, Done finishes.
+        composeRule.onNodeWithText("Nombre del cliente").assert(hasImeAction(ImeAction.Next))
+        composeRule.onNodeWithText("Teléfono (opcional)").assert(hasImeAction(ImeAction.Next))
+        composeRule.onNodeWithText("Cupo de crédito (opcional)").assert(hasImeAction(ImeAction.Done))
     }
 
     private fun openForm() {

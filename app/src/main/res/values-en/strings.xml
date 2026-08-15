@@ -22,6 +22,18 @@
     <string name="dashboard_recent_activity">Recent activity</string>
     <string name="dashboard_no_activity_title">No movements yet</string>
     <string name="dashboard_no_activity_detail">Your sales and payments will show up here.</string>
+    <!-- Critical-customer reasons on the dashboard. The day-count one is a plural so "1 day" and
+         "3 days" both read naturally. -->
+    <plurals name="dashboard_critical_days_overdue">
+        <item quantity="one">%1$d day overdue</item>
+        <item quantity="other">%1$d days overdue</item>
+    </plurals>
+    <string name="dashboard_critical_overdue_balance">Overdue balance</string>
+    <string name="dashboard_critical_balance_pending">Balance pending</string>
+    <!-- Alerts severity words, uppercase as eyebrows on every alert row. -->
+    <string name="alerts_severity_overdue">OVERDUE</string>
+    <string name="alerts_severity_due_soon">DUE SOON</string>
+    <string name="alerts_severity_info">NOTICE</string>
 
     <!-- Customers directory (CustomersScreen) -->
     <string name="customers_title">Customers</string>
@@ -207,8 +219,9 @@
     <string name="message_sale_cancel_failed">The sale could not be cancelled</string>
     <string name="message_payment_canceled">Payment cancelled; the debt increased by %1$s</string>
     <string name="message_credit_limit_updated">Credit limit for %1$s updated to %2$s</string>
-    <string name="message_account_delete_cloud_pending">Your phone is wiped, but we could not reach the server. Write to us to finish deleting your cloud copy.</string>
-    <string name="message_account_delete_failed">Sign in again to delete the account</string>
+    <string name="message_account_delete_cloud_failed">We could not delete your information in the cloud, so nothing on your phone was erased. Check your connection and try again.</string>
+    <string name="message_account_delete_failed">The account could not be deleted. Try again.</string>
+    <string name="message_account_delete_recent_login">Your session is too old to delete the account. Sign out, sign in again and repeat the deletion.</string>
 
     <!-- Alerts (AlertsSheet) -->
     <string name="alerts_title">Alerts</string>
@@ -251,9 +264,25 @@
     <string name="account_sign_out_title">Sign out?</string>
     <string name="account_sign_out_detail">Your information stays here if you sign back in with this same account. But if someone else signs in on this phone, anything not yet synced will be erased.</string>
     <string name="account_delete_title">Delete your account?</string>
-    <string name="account_delete_detail">Your account and everything stored on this phone will be erased: customers, sales and payments. This cannot be undone.</string>
+    <string name="account_delete_detail">Your account and all your business information will be erased, both in the cloud and on this phone: customers, sales and payments. This cannot be undone.</string>
     <string name="account_delete_confirm">Yes, delete everything</string>
     <string name="subscription_play_note">Your subscription is managed from Google Play.</string>
+
+    <!-- Collection reminders (CollectionReminderWorker / AccountSheet) -->
+    <string name="reminder_notification_title">Payment reminder</string>
+    <string name="reminder_notification_single">%1$s owes %2$s</string>
+    <string name="reminder_notification_grouped">%1$d customers owe %2$s</string>
+    <string name="reminder_channel_name">Payment reminders</string>
+    <string name="reminder_channel_description">Daily notice of overdue sales</string>
+    <string name="reminder_setting_title">Payment reminders</string>
+    <string name="reminder_setting_explanation">We will notify you once a day if someone has an overdue sale. Everything stays on this phone: no message is ever sent to your customers.</string>
+    <string name="reminder_setting_time">Time of the notice</string>
+    <string name="reminder_setting_enable">Turn on the notice</string>
+    <string name="reminder_permission_denied">Android blocked notifications from Cuentivo. Turn them on in the system settings to receive reminders.</string>
+    <string name="reminder_scheduled">Reminder scheduled for %1$s</string>
+    <string name="reminder_hour_option">%1$02d:00</string>
+    <string name="reminder_hour_earlier">Notice time, one hour earlier</string>
+    <string name="reminder_hour_later">Notice time, one hour later</string>
 
     <!-- Authentication (AuthenticationScreen) -->
     <string name="auth_email_label">Email</string>
@@ -355,6 +384,10 @@
     <string name="auth_switch_to_sign_up">No account yet? Create one</string>
     <string name="auth_forgot_password">Forgot your password?</string>
     <string name="auth_reset_sent">If that account exists, you will get an email to change the password.</string>
+    <string name="auth_google_continue">Continue with Google</string>
+    <string name="auth_google_or">or</string>
+    <string name="auth_google_manual_password_needed">That email already has an account with a password. Sign in with your password, then you can link your Google account.</string>
+    <string name="auth_google_failed">Could not sign in with Google. Try again.</string>
     <string name="verify_title">Verify your email</string>
     <string name="verify_detail">We sent an email to %1$s. Open it, tap the link, and come back here.</string>
     <string name="verify_detail_no_email">We sent you a verification email. Open it, tap the link, and come back here.</string>

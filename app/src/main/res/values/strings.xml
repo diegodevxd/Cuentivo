@@ -22,6 +22,18 @@
     <string name="dashboard_recent_activity">Actividad reciente</string>
     <string name="dashboard_no_activity_title">Aún no hay movimientos</string>
     <string name="dashboard_no_activity_detail">Aquí aparecerán tus ventas y abonos.</string>
+    <!-- Critical-customer reasons on the dashboard. The day-count one is a plural so "1 día" and
+         "3 días" both read naturally. -->
+    <plurals name="dashboard_critical_days_overdue">
+        <item quantity="one">%1$d día vencido</item>
+        <item quantity="other">%1$d días vencido</item>
+    </plurals>
+    <string name="dashboard_critical_overdue_balance">Saldo vencido</string>
+    <string name="dashboard_critical_balance_pending">Saldo pendiente</string>
+    <!-- Alerts severity words, uppercase as eyebrows on every alert row. -->
+    <string name="alerts_severity_overdue">VENCIDO</string>
+    <string name="alerts_severity_due_soon">POR VENCER</string>
+    <string name="alerts_severity_info">AVISO</string>
 
     <!-- Customers directory (CustomersScreen) -->
     <string name="customers_title">Cartera</string>
@@ -207,8 +219,9 @@
     <string name="message_sale_cancel_failed">No fue posible cancelar la venta</string>
     <string name="message_payment_canceled">Abono cancelado; la deuda subió %1$s</string>
     <string name="message_credit_limit_updated">Cupo de %1$s actualizado a %2$s</string>
-    <string name="message_account_delete_cloud_pending">Tu teléfono quedó limpio, pero no pudimos avisar al servidor. Escríbenos para terminar de borrar tu copia en la nube.</string>
-    <string name="message_account_delete_failed">Vuelve a iniciar sesión para poder eliminar la cuenta</string>
+    <string name="message_account_delete_cloud_failed">No pudimos borrar tu información en la nube, así que no se borró nada de tu teléfono. Revisa tu conexión y vuelve a intentarlo.</string>
+    <string name="message_account_delete_failed">No se pudo eliminar la cuenta. Inténtalo de nuevo.</string>
+    <string name="message_account_delete_recent_login">Tu sesión es demasiado antigua para eliminar la cuenta. Cierra sesión, vuelve a entrar y repite el borrado.</string>
 
     <!-- Alerts (AlertsSheet) -->
     <string name="alerts_title">Avisos</string>
@@ -251,9 +264,25 @@
     <string name="account_sign_out_title">¿Cerrar sesión?</string>
     <string name="account_sign_out_detail">Tu información seguirá aquí si vuelves a entrar con esta misma cuenta. Pero si alguien más inicia sesión en este teléfono, lo que todavía no se haya sincronizado se borrará.</string>
     <string name="account_delete_title">¿Eliminar tu cuenta?</string>
-    <string name="account_delete_detail">Se borrará tu cuenta y toda la información guardada en este teléfono: clientes, ventas y abonos. Esta acción no se puede deshacer.</string>
+    <string name="account_delete_detail">Se borrará tu cuenta y toda la información de tu negocio, tanto en la nube como en este teléfono: clientes, ventas y abonos. Esta acción no se puede deshacer.</string>
     <string name="account_delete_confirm">Sí, eliminar todo</string>
     <string name="subscription_play_note">Tu suscripción se administra desde Google Play.</string>
+
+    <!-- Collection reminders (CollectionReminderWorker / AccountSheet) -->
+    <string name="reminder_notification_title">Recordatorio de cobro</string>
+    <string name="reminder_notification_single">%1$s debe %2$s</string>
+    <string name="reminder_notification_grouped">%1$d clientes deben %2$s</string>
+    <string name="reminder_channel_name">Recordatorios de cobro</string>
+    <string name="reminder_channel_description">Aviso diario de las ventas vencidas</string>
+    <string name="reminder_setting_title">Recordatorios de cobro</string>
+    <string name="reminder_setting_explanation">Te avisamos una vez al día si alguien tiene una venta vencida. Todo queda en este teléfono: no se envía ningún mensaje a tus clientes.</string>
+    <string name="reminder_setting_time">Hora del aviso</string>
+    <string name="reminder_setting_enable">Activar aviso</string>
+    <string name="reminder_permission_denied">Android bloqueó las notificaciones de Cuentivo. Actívalas en los ajustes del sistema para recibir recordatorios.</string>
+    <string name="reminder_scheduled">Recordatorio programado a las %1$s</string>
+    <string name="reminder_hour_option">%1$02d:00</string>
+    <string name="reminder_hour_earlier">Hora del aviso, una hora antes</string>
+    <string name="reminder_hour_later">Hora del aviso, una hora después</string>
 
     <!-- Authentication (AuthenticationScreen) -->
     <string name="auth_email_label">Correo electrónico</string>
@@ -355,6 +384,10 @@
     <string name="auth_switch_to_sign_up">¿No tienes cuenta? Crear una</string>
     <string name="auth_forgot_password">¿Olvidaste tu contraseña?</string>
     <string name="auth_reset_sent">Si esa cuenta existe, te llegará un correo para cambiar la contraseña.</string>
+    <string name="auth_google_continue">Continuar con Google</string>
+    <string name="auth_google_or">o</string>
+    <string name="auth_google_manual_password_needed">Ese correo ya tiene una cuenta con contraseña. Inicia sesión con tu contraseña y después podrás vincular tu cuenta de Google.</string>
+    <string name="auth_google_failed">No fue posible iniciar sesión con Google. Inténtalo de nuevo.</string>
     <string name="verify_title">Verifica tu correo</string>
     <string name="verify_detail">Te enviamos un correo a %1$s. Ábrelo, toca el enlace y regresa aquí.</string>
     <string name="verify_detail_no_email">Te enviamos un correo de verificación. Ábrelo, toca el enlace y regresa aquí.</string>

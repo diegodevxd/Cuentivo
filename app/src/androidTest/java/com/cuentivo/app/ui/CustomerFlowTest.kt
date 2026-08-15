@@ -134,15 +134,18 @@ class CustomerFlowTest {
         openCustomers()
         composeRule.onNodeWithText("Juan Pérez").performClick()
 
-        scrollDetailTo("Corregir")
-        composeRule.onNodeWithText("Corregir").assertIsDisplayed()
+        // Corrections start collapsed behind their own "Ver" toggle; reaching them proves the
+        // section exists, expands, and explains itself without claiming data is deleted.
+        scrollDetailTo("Correcciones y ajustes")
+        composeRule.onNodeWithText("Correcciones y ajustes").assertIsDisplayed()
+        composeRule.onNodeWithText("Ver").performClick()
         composeRule
             .onNodeWithText(
                 "Nada se borra: se registra un movimiento que compensa el error y queda en el historial."
             )
             .assertIsDisplayed()
-        scrollDetailTo("Venta del 14 jul")
-        composeRule.onNodeWithText("Venta del 14 jul").assertIsDisplayed()
+        scrollDetailTo("Venta registrada")
+        composeRule.onNodeWithText("Venta registrada").assertIsDisplayed()
     }
 
     @Test fun registrar_abono_from_the_detail_preselects_that_customer() {
@@ -222,14 +225,15 @@ class CustomerFlowTest {
         openCustomers()
         composeRule.onNodeWithText("Juan Pérez").performClick()
 
-        scrollDetailTo("Venta del 14 jul")
+        expandCorrections()
+        scrollDetailTo("Venta registrada")
         composeRule.onAllNodesWithText("Cancelar")[0].performClick()
         // The dialog is up but nothing has been written yet.
         composeRule.runOnIdle { assertEquals(emptyList<String>(), canceled) }
         composeRule.onNodeWithText("No").performClick()
         composeRule.runOnIdle { assertEquals(emptyList<String>(), canceled) }
 
-        scrollDetailTo("Venta del 14 jul")
+        scrollDetailTo("Venta registrada")
         composeRule.onAllNodesWithText("Cancelar")[0].performClick()
         composeRule.onNodeWithText("Sí, cancelar").performClick()
 
@@ -291,6 +295,7 @@ class CustomerFlowTest {
         composeRule.setContent { Harness(candidates = payments) }
         openCustomers()
         composeRule.onNodeWithText("Juan Pérez").performClick()
+        expandCorrections()
         scrollDetailTo("Abono 2 de 2")
         composeRule.onNodeWithText("Abono 2 de 2").assertIsDisplayed()
         composeRule.onAllNodesWithText("Abono 1 de 2").assertCountEquals(1)
@@ -305,6 +310,7 @@ class CustomerFlowTest {
         }
         openCustomers()
         composeRule.onNodeWithText("Juan Pérez").performClick()
+        expandCorrections()
         scrollDetailTo("Abono 1 de 1")
         composeRule.onNodeWithText("Abono 1 de 1").assertIsDisplayed()
         composeRule.onNodeWithText("no se puede cancelar", substring = true).assertIsDisplayed()
@@ -320,6 +326,7 @@ class CustomerFlowTest {
         }
         openCustomers()
         composeRule.onNodeWithText("Juan Pérez").performClick()
+        expandCorrections()
         scrollDetailTo("Abono 1 de 1")
         composeRule.onAllNodesWithText("21 jul 2026", substring = true)[0].assertIsDisplayed()
         composeRule.onNodeWithText("Registrado", substring = true).assertIsDisplayed()
@@ -331,7 +338,8 @@ class CustomerFlowTest {
         }
         openCustomers()
         composeRule.onNodeWithText("Juan Pérez").performClick()
-        scrollDetailTo("V-2")
+        expandCorrections()
+        scrollDetailTo("Venta registrada")
         composeRule.onAllNodesWithText("Cancelar")[0].performClick()
         composeRule.onAllNodesWithText("$1,000.00", substring = true)[1].assertIsDisplayed()
         composeRule.onAllNodesWithText("$300.00", substring = true)[1].assertIsDisplayed()
@@ -349,7 +357,8 @@ class CustomerFlowTest {
         }
         openCustomers()
         composeRule.onNodeWithText("Juan Pérez").performClick()
-        scrollDetailTo("V-2")
+        expandCorrections()
+        scrollDetailTo("Venta registrada")
 
         composeRule.onNodeWithContentDescription("Editar la venta V-2").performClick()
 
@@ -362,6 +371,12 @@ class CustomerFlowTest {
     /** Lazy lists only compose what is near the viewport, so the list itself must be scrolled. */
     private fun scrollDetailTo(text: String) {
         composeRule.onNodeWithTag(DETAIL_LIST_TAG).performScrollToNode(hasText(text))
+    }
+
+    /** Corrections start collapsed behind their "Ver" toggle; correction-row assertions expand first. */
+    private fun expandCorrections() {
+        scrollDetailTo("Correcciones y ajustes")
+        composeRule.onNodeWithText("Ver").performClick()
     }
 
     private fun openCustomers() {

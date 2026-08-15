@@ -4,7 +4,7 @@ Este archivo dice **dónde está el proyecto hoy y qué sigue**. No es un diario
 sustituyendo, no añadiendo. Lo que deja de estar vigente baja a `docs/historia-del-proyecto.md`.
 La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
-**Última actualización:** 2026-08-10
+**Última actualización:** 2026-08-11
 
 ---
 
@@ -31,19 +31,32 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 - 🆕 **1.16 / versionCode 25 lista para prueba cerrada**, y **auditoría de seguridad de la app**
   (2026-08-10). AAB construido desde `7fc40c7`, firmado con la llave de subida (SHA-256 `7845EC3E…`,
   `jar verified`), en `app/build/outputs/bundle/release/app-release.aab`.
-- 🔴 **RESUELTO A MEDIAS — borrar la cuenta no alcanzaba la nube** (commit `6ff19e9`).
+- 🆕 **Borrado de cuenta efectivo, sin Blaze** (2026-08-11, rama `codex/neo-fintech`). Ya no se
+  borra a mano con la CLI: el cliente borra la copia de la nube completo. La puerta en
+  `firestore.rules` es de **un solo sentido** (`canDeleteForDeletion`): solo el dueño verificado, y
+  solo con `deletionRequestedAtEpochMillis` puesta, que es **inmutable** (`deletionFlagImmutable`).
+  Orden de la cascada y lotes de ≤ 500 los decide `domain/BusinessDeletionPlanner` (puro, con
+  pruebas); los ejecuta `sync/FirestoreDeletionGateway`. **Si falla la nube no se borra nada local**:
+  antes se borraba el teléfono igual. Sesión vieja → mensaje claro (`requires-recent-login`). URL
+  pública de solicitud en Vercel (**https://eliminacion-cuentivo.vercel.app/**, fuera de este repo);
+  ver `docs/borrado-de-cuenta.md`. Sin Firebase Hosting.
+- ✅ **El reintento de borrado ya es idempotente** (2026-08-11, mismo día). La solicitud (Android
+  `FirestoreSyncGateway.requestBusinessDeletion`) **leía y reescribía la llave
+  con un timestamp nuevo en cada intento**, y `deletionFlagImmutable` deniega cualquier update que
+  la cambie: tras un fallo parcial, el reintento quedaba atorado para siempre. Ahora ambas leen el
+  negocio de `Source.SERVER` y solo escriben la llave si no existe (`domain/DeletionRequestPolicy`,
+  puro); si ya está puesta reanudan la cascada sin tocar el marcador, y si el negocio ya no existe
+  lo dan por borrado. Pruebas nuevas: `DeletionRequestPolicyTest` (3) y
+  `DeletionRequestClientContractTest` (7). Reglas sin cambios.
+- 🔴 **RESUELTO (2026-08-10): borrar la cuenta no alcanzaba la nube** (commit `6ff19e9`).
   `onDeleteAccount` borraba Room y la cuenta de Auth y **nada más**: el negocio entero se quedaba en
   Firestore para siempre, incluidos **nombre y teléfono de los clientes del usuario** — terceros que
   nunca aceptaron nada. No se podía arreglar desde el cliente a propósito: las reglas tienen
   `allow delete: if false` en todo.
   Ahora la app **pide** el borrado: escribe `deletionRequestedAtEpochMillis` en el documento del
-  negocio y **espera al servidor antes de tocar nada más**, porque en cuanto muere la cuenta de Auth
+  negocio y **espera al servidor** antes de tocar nada más, porque en cuanto muere la cuenta de Auth
   ya no hay credencial. Por eso **no va por el outbox**: se drena después y fallaría en silencio.
-  Sin señal el borrado local sigue y la app lo dice.
-  ⚠️ **La eliminación en la nube se procesa A MANO** — ver `docs/borrado-de-cuenta.md`, al menos una
-  vez al mes. **Esto NO cumple del todo con Play**: falta borrado efectivo y una **URL de solicitud
-  accesible en web**. Cerrarlo antes de salir de prueba cerrada a producción; la solución real es
-  Blaze + Cloud Function (hoy el proyecto está en Spark, donde no se despliegan funciones).
+  Sin señal **ya no se borra el local** — se avisa y se reintenta.
   `deletionRequestedAtEpochMillis` es **la única llave opcional del esquema**: `hasOnly` la admite,
   `hasAll` no la exige, o los negocios viejos dejarían de validar. Reglas validadas contra Firebase.
 - ✅ **Lo que la auditoría encontró BIEN** (verificado, no asumido): ningún `Log.*` lleva PII, saldos
@@ -371,8 +384,10 @@ La arquitectura y las reglas del proyecto viven en `CLAUDE.md`.
 
 ## Pendientes de fondo
 
-- 🔴 **URL de solicitud de borrado en web + borrado efectivo**, antes de salir de prueba cerrada a
-  producción. Ver `docs/borrado-de-cuenta.md`.
+- ✅ **Borrado de cuenta efectivo + URL web hecho** (2026-08-11): el cliente borra la copia en la
+  nube completo (cascada en lotes ≤ 500, hijos primero, negocio al final) y la URL pública de
+  solicitud vive en **Vercel** (`https://eliminacion-cuentivo.vercel.app/`, fuera de este repo; sin
+  Firebase Hosting). Ver `docs/borrado-de-cuenta.md`.
 - **PBKDF2 en 120 000 iteraciones** (`BackupCrypto.ITERATIONS`), por debajo de las 600 000 que se
   recomiendan hoy. Las iteraciones viajan en la cabecera, así que subirlas **no rompe respaldos
   viejos**; medir antes en un teléfono lento, que es el usuario objetivo.

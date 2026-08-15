@@ -22,10 +22,12 @@ import androidx.compose.ui.test.performTextInput
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.domain.Money
+import com.cuentivo.app.R
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.transaction.PAYMENT_BALANCE_TAG
 import com.cuentivo.app.ui.transaction.PAYMENT_LIST_TAG
 import com.cuentivo.app.ui.transaction.PAYMENT_RESULT_TAG
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -63,7 +65,7 @@ class PaymentFlowTest {
         composeRule.onNodeWithText("Registrar abono").performClick()
 
         composeRule.onNodeWithText("Juan Pérez").assertIsDisplayed()
-        composeRule.onNodeWithText("Saldo actual").assertIsDisplayed()
+        composeRule.onNodeWithText(currentBalanceLabel()).assertIsDisplayed()
         composeRule.onNodeWithTag(PAYMENT_BALANCE_TAG).assertTextEquals(Money.format(480_050))
     }
 
@@ -150,8 +152,12 @@ class PaymentFlowTest {
         composeRule.onNodeWithText("Toca para elegir al cliente").assertIsDisplayed()
         composeRule.onNodeWithText("Escribe el monto en pesos, por ejemplo 150.50").assertIsDisplayed()
         // With nobody chosen there is no balance panel to show.
-        composeRule.onAllNodesWithText("Saldo actual").assertCountEquals(0)
+        composeRule.onAllNodesWithText(currentBalanceLabel()).assertCountEquals(0)
     }
+
+    /** The balance panel label, read from resources so the assertion stays aligned with the UI. */
+    private fun currentBalanceLabel(): String =
+        InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.payment_current_balance)
 
     private fun openPayments() {
         composeRule.onNodeWithText("Abonos").performClick()

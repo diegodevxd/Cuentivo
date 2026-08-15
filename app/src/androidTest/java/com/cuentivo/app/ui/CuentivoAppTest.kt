@@ -2,10 +2,13 @@ package com.cuentivo.app.ui
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -13,6 +16,9 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.unit.Density
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import org.junit.Rule
@@ -49,9 +55,41 @@ class CuentivoAppTest {
         composeRule.onNodeWithText("Registrar abono").assertIsDisplayed()
         composeRule.onNodeWithText("Clientes críticos").assertIsDisplayed()
         composeRule.onNodeWithText("Actividad reciente").assertIsDisplayed()
-        composeRule.onAllNodesWithText("Tu cuenta").assertCountEquals(0)
+        // The top bar intentionally carries the "Tu cuenta" entry (shell), so the account sheet's
+        // own marker is the check that it is not open on the dashboard.
+        composeRule.onAllNodesWithText("Plan Gratis").assertCountEquals(0)
         composeRule.onNodeWithText("Registrar abono").performClick()
         composeRule.onNodeWithTag("main-destination-payments").assertIsSelected()
+    }
+
+    @Test fun dashboard_structural_sections_are_announced_as_headings() {
+        composeRule.setContent {
+            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+        }
+
+        // TalkBack users navigate by headings; the dashboard's structural sections must expose
+        // themselves as such instead of reading as one undifferentiated wall of text.
+        composeRule.onNodeWithText("Clientes críticos").assert(isHeading())
+        composeRule.onNodeWithText("Este mes").assert(isHeading())
+        composeRule.onNodeWithText("Actividad reciente").assert(isHeading())
+        // The shell reports the current destination as selected on the same tree.
+        composeRule.onNodeWithTag("main-destination-home").assertIsSelected()
+    }
+
+    @Test fun dashboard_keeps_hero_payment_action_and_task_sections_reachable() {
+        composeRule.setContent {
+            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+        }
+
+        // The hierarchy stays reachable: dominant receivable hero, its payment action, then the
+        // task-oriented sections.
+        composeRule.onNodeWithText("Saldo total por cobrar").assertIsDisplayed()
+        composeRule.onNodeWithText("Registrar abono").assertIsDisplayed()
+        composeRule.onNodeWithText("Clientes críticos").assertIsDisplayed()
+        composeRule.onNodeWithText("Actividad reciente").assertIsDisplayed()
+        // "Nueva venta" is permanently offered by the bottom bar; the dashboard does not duplicate
+        // it with a second affordance of its own.
+        composeRule.onAllNodesWithText("Nueva venta").assertCountEquals(1)
     }
 
     @Test fun compact_shell_has_four_destinations_sale_action_and_account_entry() {
@@ -85,6 +123,36 @@ class CuentivoAppTest {
 
     @Test fun large_system_text_keeps_every_navigation_action_accessible() {
         compactNavigationStaysAccessible(fontScale = 1.3f)
+    }
+
+    @Test fun reminder_setting_is_accessible_and_disabled_by_default() {
+        composeRule.setContent {
+            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+        }
+
+        composeRule.onNodeWithContentDescription("Cuenta").performClick()
+
+        // The reminder section sits below the subscription card, inside the sheet's own scroller.
+        // The sheet's popup window is display-fragile when a previous test disposed it mid-open, so
+        // the assertions pin semantics (reachable + off) rather than pixel visibility.
+        composeRule.onNodeWithTag("account-sheet-scroll")
+            .performScrollToNode(hasText("Recordatorios de cobro"))
+        composeRule.onNodeWithText("Recordatorios de cobro").assertExists()
+        composeRule.onNodeWithTag("reminder-enabled-switch").assertIsOff()
+    }
+
+    @Test fun reminder_deep_link_opens_customers_with_debt_filter() {
+        composeRule.setContent {
+            CuentivoApp(
+                DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2),
+                openOverdueCustomers = true,
+                onOpenOverdueCustomersConsumed = {},
+            )
+        }
+
+        composeRule.onNodeWithTag("main-destination-customers").assertIsSelected()
+        // The notification tap lands on Clientes with the overdue chip already chosen.
+        composeRule.onNodeWithText("En mora").assertIsSelected()
     }
 
     @Test fun very_large_system_text_keeps_every_navigation_action_accessible() {

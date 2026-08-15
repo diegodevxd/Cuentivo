@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 room {
@@ -27,8 +28,8 @@ android {
         targetSdk = 36
         // Play refuses an AAB whose versionCode was already uploaded, so this goes up on every
         // upload even when versionName does not.
-        versionCode = 27
-        versionName = "1.16.2"
+        versionCode = 31
+        versionName = "1.16.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -104,9 +105,18 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+    // Crash reporting for release only: fixed technical event names, never PII, amounts or ids.
+    // The reporter abstraction keeps debug/emulator sessions from sending anything at all.
+    implementation("com.google.firebase:firebase-crashlytics")
     // App Check proves the request came from this app, not from a script holding the API key that
     // ships inside every APK. The rules already prove *who* is calling; this proves *from where*.
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
+    // Google sign-in via AndroidX Credential Manager + Google ID. The legacy Google Sign-In APIs
+    // are deliberately not used: Credential Manager is the supported path and the only one that
+    // returns an ID token the Firebase GoogleAuthProvider can exchange without a Play games client.
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     // Debug only. Play Integrity attests a binary installed by Play, which an emulator is not, so
     // the debug provider is what lets instrumented tests get a token at all. Deliberately NOT
     // `implementation`: shipping a provider that hands out tokens on request would undo the whole
