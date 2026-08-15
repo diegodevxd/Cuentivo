@@ -1,0 +1,68 @@
+package com.cuentivo.app.ai
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Test
+
+class AiContractsTest {
+
+    @Test
+    fun `interpret request holds text and requestId`() {
+        val request = AiInterpretRequest(text = "Diego me pagó 500", requestId = "req-1")
+
+        assertEquals("Diego me pagó 500", request.text)
+        assertEquals("req-1", request.requestId)
+    }
+
+    @Test
+    fun `payment draft money is Long cents`() {
+        val draft = AiIntent.Draft.RecordPaymentDraft(customerName = "Diego", amountCents = 500L)
+
+        // Compile-time gate: the property must be assignable to Long.
+        val amount: Long = draft.amountCents
+        assertEquals(500L, amount)
+        // Runtime gate: the value boxes as java.lang.Long, never Double/Float/Int.
+        assertEquals(java.lang.Long::class.java, (draft.amountCents as Any).javaClass)
+    }
+
+    @Test
+    fun `sale draft quantities are Int and money is Long cents`() {
+        val draft = AiIntent.Draft.CreateSaleDraft(
+            customerName = "Diego",
+            lines = listOf(AiSaleLineDraft(productName = "perfume", quantity = 2, unitPriceCents = 300L)),
+            declaredPaymentCents = 200L,
+        )
+        val line = draft.lines.single()
+
+        val quantity: Int = line.quantity
+        val unitPrice: Long = line.unitPriceCents
+        val declaredPayment: Long = draft.declaredPaymentCents
+
+        assertEquals(2, quantity)
+        assertEquals(300L, unitPrice)
+        assertEquals(200L, declaredPayment)
+        assertEquals(java.lang.Integer::class.java, (line.quantity as Any).javaClass)
+        assertEquals(java.lang.Long::class.java, (line.unitPriceCents as Any).javaClass)
+        assertEquals(java.lang.Long::class.java, (draft.declaredPaymentCents as Any).javaClass)
+    }
+
+    @Test
+    fun `drafts are immutable and copy produces an independent instance`() {
+        val original = AiIntent.Draft.RecordPaymentDraft(customerName = "Diego", amountCents = 500L)
+        val changed = original.copy(amountCents = 600L)
+
+        assertNotSame(original, changed)
+        assertEquals(500L, original.amountCents)
+        assertEquals("Diego", changed.customerName)
+        assertEquals(600L, changed.amountCents)
+    }
+
+    @Test
+    fun `provider result carries an intent or an unavailability reason`() {
+        val interpreted = AiProviderResult.Interpreted(AiIntent.NeedClarification)
+        val unavailable = AiProviderResult.Unavailable("provider down")
+
+        assertEquals(AiIntent.NeedClarification, interpreted.intent)
+        assertEquals("provider down", unavailable.reason)
+    }
+}
