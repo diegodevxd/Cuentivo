@@ -220,7 +220,8 @@ Regla objetiva de escalamiento: Flash/Qwen → V4 Pro al primer contacto con din
 ## 8. Fases pequeñas y reversibles
 
 ### Fase 0 — Preparación interna y gate post-lanzamiento
-- Estado: iniciada el 2026-08-15 por autorización explícita del propietario. Referencia actual: AAB `31 / 1.16.6` en prueba cerrada de Play Console con 12 testers y 13 días; todavía no constituye lanzamiento público ni baseline Git congelado.
+- Estado: iniciada el 2026-08-15 por autorización explícita del propietario; readiness interno registrado el 2026-08-15 con tres documentos y sus commits: `docs/superpowers/operations/2026-08-15-cuentivoai-closed-test-gate.md` (`717db89`), `docs/superpowers/operations/2026-08-15-cuentivoai-observability-threat-model.md` (`068632c`) y `docs/superpowers/operations/2026-08-15-cuentivoai-owner-debug-apk-protocol.md` (`810ebbe`). Referencia actual: AAB `31 / 1.16.6` en prueba cerrada de Play Console con 12 testers y 13 días; todavía no constituye lanzamiento público ni baseline Git congelado.
+- Gate de cierre: **no hay GO público ni veredicto GO/NO-GO posible sin métricas agregadas** de la prueba cerrada; **Fase 1 continúa bloqueada hasta aprobación explícita del propietario y baseline Git inmutable de `31 / 1.16.6` congelado**. El registro de readiness no autoriza Fase 1 ni declara DONE: el gate final lo emite el propietario.
 - Objetivo: freeze verificable de release, inventario de evidencia de prueba cerrada, matriz de datos, contratos de observabilidad/flags, modelo de amenazas, criterios de rollback y estrategia de APK debug para el propietario, sin UI disponible para usuarios.
 - Dependencias: alcance estrictamente sin proveedor mientras no exista evidencia suficiente de estabilidad; antes de cambios compatibles con release, `31 / 1.16.6` debe identificarse por commit/tag inmutable.
 - Modelo: Flash para documentación/inventario de bajo riesgo; Sol auditoría. V4 Pro sólo se asignará cuando una fase posterior aprobada toque gateway, seguridad, cuotas, idempotencia o backend.
@@ -436,6 +437,7 @@ No crear ahora cuenta/API key DeepSeek, gateway AI, Cloud Functions/Cloud Run, S
 | 2026-08-14 | Fotos cloud se separan de CuentivoAI; actualmente son locales. | Aprobada como separación; capacidad cloud pendiente |
 | 2026-08-14 | Fase 0A ejecutada en rama aislada: contratos locales, gate off-by-default, `FakeAiProvider` determinista y validador de drafts; sin red, proveedor ni costo. | Ejecutada con evidencia RED→GREEN; preview/confirmación diferidos |
 | 2026-08-15 | Propietario autorizó Fase 0 como pista interna aislada: APK debug para prueba personal, sin AAB/Play público, proveedor, secretos, mutaciones IA ni autorización automática de fases posteriores. AAB `31 / 1.16.6` permanece en prueba cerrada con 12 testers durante 13 días. | Aprobada; requiere evidencia del gate y baseline Git inmutable antes de compatibilidad/release |
+| 2026-08-15 | Fase 0: readiness interno cerrado con tres documentos de operaciones — gate de prueba cerrada (`717db89`), observabilidad y modelo de amenazas (`068632c`) y protocolo de APK debug del propietario (`810ebbe`). No hay GO público sin métricas agregadas; Fase 1 bloqueada hasta aprobación explícita y baseline `31 / 1.16.6` congelado. | Registro cerrado; gate final del propietario pendiente |
 
 ## 17. HANDOFF A ORCA — FASE 0 INTERNA AUTORIZADA
 
