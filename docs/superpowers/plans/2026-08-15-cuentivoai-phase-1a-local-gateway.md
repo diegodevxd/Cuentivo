@@ -12,6 +12,7 @@
 
 - Trabajar sólo en `diegodevxd/feature-cuentivo-ai`; baseline: `v1.16.6-31` / `e40eb4e04404a63f9fa0d15e330834780961cd63`.
 - Prohibidos deploy, cambios a `.firebaserc`, recursos remotos, proveedor IA, HTTP saliente, Secret Manager, `.env`, credenciales, secretos, Firestore Admin, Room, Billing, Sync y WorkManager.
+- `firebase.json` debe declarar localmente `"functions": { "source": "functions" }` además del puerto `emulators.functions: { "port": 5001 }`; es configuración de descubrimiento del emulador, no un despliegue ni un recurso remoto.
 - No modificar Android, reglas Firestore, `applicationId`, `versionCode`, `versionName` ni la baseline.
 - El único payload válido es `{ contractVersion: 1, requestId: UUID, action: "interpret_text" }`; campos extra se rechazan.
 - El endpoint usa `enforceAppCheck: true`, exige Auth y responde sólo `{ contractVersion: 1, requestId, status: "AI_NOT_CONFIGURED" }`.
@@ -41,7 +42,7 @@ export function createInterpretAiHandler(request: CallableLikeRequest): Interpre
 
 - [ ] Escribir `functions/test/config.test.ts` que haga `await expect(import("../src/index.js")).resolves.toBeDefined()`; ejecutar `npm test -- --run test/config.test.ts` desde `functions` y comprobar RED porque aún no existe paquete ni entrypoint.
 - [ ] Crear `package.json` CommonJS, `main: "lib/index.js"`, `engines: { "node": "22" }`; scripts exactos: `build: tsc -p tsconfig.json`, `test: vitest run`, `test:watch: vitest`, `lint: tsc -p tsconfig.json --noEmit`. Instalar `firebase-functions` como producción y `typescript`, `vitest`, `@types/node` como desarrollo. No instalar `firebase-admin`, SDK IA, axios ni librería de secretos.
-- [ ] Crear `tsconfig.json` estricto con `target: ES2022`, `module: CommonJS`, `rootDir: src`, `outDir: lib`, `esModuleInterop`, `skipLibCheck`, `noUncheckedIndexedAccess`. Configurar Vitest para `test/**/*.test.ts` bajo node. Añadir `/functions/lib/`, `/functions/node_modules/`, `/functions/coverage/` a `.gitignore`; añadir sólo `functions: { port: 5001 }` a `firebase.json.emulators`, preservando Auth/Firestore/UI; crear `src/index.ts` con `export {};`.
+- [ ] Crear `tsconfig.json` estricto con `target: ES2022`, `module: CommonJS`, `rootDir: src`, `outDir: lib`, `esModuleInterop`, `skipLibCheck`, `noUncheckedIndexedAccess`. Configurar Vitest para `test/**/*.test.ts` bajo node. Añadir `/functions/lib/`, `/functions/node_modules/`, `/functions/coverage/` a `.gitignore`; añadir `"functions": { "source": "functions" }` a la raíz de `firebase.json` y `functions: { port: 5001 }` a `firebase.json.emulators`, preservando Auth/Firestore/UI; crear `src/index.ts` con `export {};`.
 - [ ] Ejecutar GREEN: `npm test -- --run test/config.test.ts`, `npm run lint`, `npm run build`; borrar el test temporal y confirmar exit code 0.
 - [ ] Commit: `git add -- .gitignore firebase.json functions/package.json functions/package-lock.json functions/tsconfig.json functions/vitest.config.ts functions/src/index.ts` y `git commit -m "build(ai): scaffold local functions gateway"`.
 
