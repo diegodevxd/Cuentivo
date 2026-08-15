@@ -1,6 +1,6 @@
 # CuentivoAI — arquitectura, seguridad y plan de ejecución
 
-> **Estado:** arquitectura base aprobada; implementación en **NO-GO**, con una sola excepción: **Fase 0A — fundaciones locales off-by-default** ejecutada en rama aislada `diegodevxd/feature-cuentivo-ai` (registro en §8). Fuera de esa fase, no autoriza implementación.
+> **Estado:** el lanzamiento público y cualquier AAB/activación para usuarios permanecen en **NO-GO**. Excepciones aprobadas: **Fase 0A — fundaciones locales off-by-default**, ya cerrada; y desde 2026-08-15, **Fase 0 — preparación interna para APK debug**, únicamente en la rama aislada `diegodevxd/feature-cuentivo-ai` y para pruebas del propietario. La excepción interna no autoriza proveedor, secretos, operaciones financieras IA, AAB, Play ni el inicio automático de fases posteriores.
 >
 > **Source of truth:** este documento prevalece para CuentivoAI hasta que el propietario apruebe una fase explícitamente. Las decisiones y supuestos deben actualizarse aquí antes de cambiar producción.
 >
@@ -59,7 +59,7 @@ Invariantes no negociables:
 
 Las siguientes decisiones están **aprobadas** y solo cambian por una nueva decisión explícita del propietario:
 
-1. CuentivoAI es posterior al lanzamiento y estabilización de Cuentivo actual; este documento mantiene el **NO-GO de implementación**.
+1. CuentivoAI es posterior al lanzamiento y estabilización de Cuentivo actual; el **NO-GO público** se mantiene. El propietario autorizó una pista interna, reversible y aislada de APK debug para preparar y probar CuentivoAI sin AAB ni activación para usuarios; cada fase posterior requiere aprobación explícita y conserva sus propios gates.
 2. Precio objetivo experimental: $299 MXN/mes; deberá revisarse con uso, costo y conversión reales.
 3. Jerarquía prevista: Gratis → Pro $199 → CuentivoAI $299. CuentivoAI **incluye Pro**; no son suscripciones acumulativas.
 4. Cuota inicial de referencia: aproximadamente 500 acciones IA/mes, configurable en servidor y no compromiso comercial definitivo.
@@ -219,12 +219,13 @@ Regla objetiva de escalamiento: Flash/Qwen → V4 Pro al primer contacto con din
 
 ## 8. Fases pequeñas y reversibles
 
-### Fase 0 — Preparación post-lanzamiento
-- Objetivo: freeze de release, baseline de uso/costo, matriz de datos y feature flags sin UI para usuarios.
-- Dependencias: producción estable y decisión comercial inicial.
-- Modelo: Flash documentación/inventario; Sol auditoría.
-- Done: métricas base, presupuesto/alertas y kill-switch documentados; cero endpoint AI público.
-- Rollback: no hay cambio funcional.
+### Fase 0 — Preparación interna y gate post-lanzamiento
+- Estado: iniciada el 2026-08-15 por autorización explícita del propietario. Referencia actual: AAB `31 / 1.16.6` en prueba cerrada de Play Console con 12 testers y 13 días; todavía no constituye lanzamiento público ni baseline Git congelado.
+- Objetivo: freeze verificable de release, inventario de evidencia de prueba cerrada, matriz de datos, contratos de observabilidad/flags, modelo de amenazas, criterios de rollback y estrategia de APK debug para el propietario, sin UI disponible para usuarios.
+- Dependencias: alcance estrictamente sin proveedor mientras no exista evidencia suficiente de estabilidad; antes de cambios compatibles con release, `31 / 1.16.6` debe identificarse por commit/tag inmutable.
+- Modelo: Flash para documentación/inventario de bajo riesgo; Sol auditoría. V4 Pro sólo se asignará cuando una fase posterior aprobada toque gateway, seguridad, cuotas, idempotencia o backend.
+- Done: evidencia de prueba cerrada inventariada, métricas/alertas y kill-switch definidos sin PII, modelo de amenazas y plan de APK debug revisados, y cero endpoint AI público/secretos/proveedor.
+- Rollback: documentación y contratos sin cambio funcional se revierten por commit; cualquier futuro APK debug se desinstala sin tocar datos de la app estable.
 
 ### Fase 0A — Fundaciones locales CuentivoAI (cerrada 2026-08-15)
 
@@ -434,19 +435,20 @@ No crear ahora cuenta/API key DeepSeek, gateway AI, Cloud Functions/Cloud Run, S
 | 2026-08-14 | Flash es candidato inicial; Barcode Pro/on-device; OCR local primero; voz experimental sin promesa offline universal. | Aprobada |
 | 2026-08-14 | Fotos cloud se separan de CuentivoAI; actualmente son locales. | Aprobada como separación; capacidad cloud pendiente |
 | 2026-08-14 | Fase 0A ejecutada en rama aislada: contratos locales, gate off-by-default, `FakeAiProvider` determinista y validador de drafts; sin red, proveedor ni costo. | Ejecutada con evidencia RED→GREEN; preview/confirmación diferidos |
+| 2026-08-15 | Propietario autorizó Fase 0 como pista interna aislada: APK debug para prueba personal, sin AAB/Play público, proveedor, secretos, mutaciones IA ni autorización automática de fases posteriores. AAB `31 / 1.16.6` permanece en prueba cerrada con 12 testers durante 13 días. | Aprobada; requiere evidencia del gate y baseline Git inmutable antes de compatibilidad/release |
 
-## 17. HANDOFF A ORCA — NO EJECUTAR TODAVÍA
+## 17. HANDOFF A ORCA — FASE 0 INTERNA AUTORIZADA
 
 ### Punto de partida
 
 - **Fuente de verdad:** este archivo.
 - **Estado actual:** Cuentivo Android local-first con Room, Firebase Auth/Firestore, WorkManager, Billing FREE/PRO y fotos locales. No existe gateway AI, proveedor AI, Cloud Functions/Run ni Storage cloud de fotos para CuentivoAI.
 - **Aprobado:** sección 2 y changelog. CuentivoAI es posterior, incluye Pro; $299 y ~500 acciones son hipótesis experimentales.
-- **Pendiente:** GO/NO-GO con datos reales, backend/región/proveedor, presupuesto/cohorte, precio final, documentación de privacidad y decisión independiente de fotos cloud.
+- **Pendiente:** inventariar evidencia de prueba cerrada, congelar referencia Git de `31 / 1.16.6`, y evaluar el GO/NO-GO público. Backend/región/proveedor, presupuesto/cohorte comercial, precio final, documentación de privacidad y fotos cloud siguen pendientes.
 
 ### Entrada y salida de la siguiente fase
 
-La próxima fase es **Fase 0: contratos, flags, modelo de amenazas y observabilidad mínima**, no conexión inmediata a DeepSeek. Sólo inicia con orden explícita posterior al lanzamiento, gate revisado sin bloqueadores absolutos y presupuesto/cohorte o alcance estrictamente sin proveedor. Su salida exige contratos revisables, flags/rollback, telemetría mínima sin PII innecesaria, modelo de amenazas y plan de pruebas; no maneja aún una API key ni operaciones financieras.
+La fase actual es **Fase 0: contratos, flags, modelo de amenazas y observabilidad mínima**, no conexión inmediata a DeepSeek. Fue autorizada como alcance interno sin proveedor para una futura APK debug del propietario. Su salida exige contratos revisables, flags/rollback, telemetría mínima sin PII innecesaria, modelo de amenazas y plan de pruebas; no maneja API key, operaciones financieras ni habilitación pública. Su cierre no autoriza Fase 1: ésta requiere nueva aprobación explícita, gate revisado y baseline Git de release congelado.
 
 ### Roles, escalamiento y pruebas
 
