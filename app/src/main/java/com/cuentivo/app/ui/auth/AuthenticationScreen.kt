@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,7 +20,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,9 +36,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
@@ -46,9 +50,6 @@ import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoPanel
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
-
-/** The launcher icon's own backdrop, so the mark here is the one on the home screen. */
-private val BrandInk = Color(0xFF001D26)
 
 /**
  * Sign-in and sign-up as one compact panel with a link between the two modes.
@@ -70,6 +71,12 @@ fun AuthenticationScreen(
     onResetPassword: (String) -> Unit = {},
     /** Clears whatever the host was showing. A failure from one mode is not news in the other. */
     onModeChange: () -> Unit = {},
+    /**
+     * Google sign-in, invoked from the outlined action under the manual one. The host owns the
+     * Firebase exchange; this screen only needs to know that a tap happened and that it is disabled
+     * while [isWorking], so the credential selector never appears twice.
+     */
+    onGoogleSignIn: () -> Unit = {},
 ) {
     var isSignUp by remember { mutableStateOf(false) }
     var resetRequested by remember { mutableStateOf(false) }
@@ -168,6 +175,38 @@ fun AuthenticationScreen(
                 }
             }
 
+            // Google sits apart from the manual path, so the two are told apart by the divider the
+            // moment they are scanned: one primary action, a localized "o", then the outlined one.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = NeoSpacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                HorizontalDivider(modifier = Modifier.weight(1f))
+                Text(
+                    text = stringResource(R.string.auth_google_or),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = NeoSpacing.md),
+                )
+                HorizontalDivider(modifier = Modifier.weight(1f))
+            }
+
+            // 48 dp minimum, like every action on this screen, so the elderly target audience can
+            // land on it. The description repeats the label on purpose: tests and TalkBack must see
+            // one unambiguous "Continue with Google" action.
+            val googleContinueLabel = stringResource(R.string.auth_google_continue)
+            OutlinedButton(
+                onClick = onGoogleSignIn,
+                enabled = !isWorking,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("auth-google")
+                    .semantics { contentDescription = googleContinueLabel },
+            ) {
+                Text(googleContinueLabel)
+            }
+
             TextButton(
                 onClick = {
                     isSignUp = !isSignUp
@@ -215,7 +254,9 @@ private fun BrandHeader(isSignUp: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         Surface(
             shape = NeoShapes.card,
-            color = BrandInk,
+            // The tile is a neutral brand surface behind the launcher mark, not a hard-coded ink:
+            // it adapts with the theme's stepped surfaces.
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)),
             modifier = Modifier.size(56.dp),
         ) {

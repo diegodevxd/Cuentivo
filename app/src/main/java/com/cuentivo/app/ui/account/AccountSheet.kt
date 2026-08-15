@@ -2,7 +2,9 @@ package com.cuentivo.app.ui.account
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -11,6 +13,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,9 +21,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
 import com.cuentivo.app.domain.SubscriptionTier
@@ -39,6 +45,12 @@ fun AccountSheet(
     onDismiss: () -> Unit,
     /** Backup and restore, supplied by the host because it needs the database and the file picker. */
     backupSection: @androidx.compose.runtime.Composable () -> Unit = {},
+    /** Whether the daily overdue reminder is on; owned by the host's preferences. */
+    reminderEnabled: Boolean = false,
+    /** The chosen local hour (0..23); owned by the host's preferences. */
+    reminderHour: Int = 9,
+    onReminderEnabledChange: (Boolean) -> Unit = {},
+    onReminderHourChange: (Int) -> Unit = {},
 ) {
     var confirmSignOut by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -69,6 +81,76 @@ fun AccountSheet(
             )
 
             SubscriptionContent(tier = tier, onUpgrade = onUpgrade, proPrice = proPrice)
+
+            // Reminders sit above the account's exit points: turning them on or off is a decision
+            // about the phone, and the sign-out and delete buttons are the doors this sheet exists
+            // to guard. The whole section is purely local — no network, no customer contact.
+            Text(
+                stringResource(R.string.reminder_setting_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                stringResource(R.string.reminder_setting_explanation),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.reminder_setting_time),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        stringResource(R.string.reminder_hour_option, reminderHour),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (reminderEnabled) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // One hour forward or back, wrapping at midnight. Disabled while reminders are off,
+                // because choosing an hour for a reminder that will not run is setting nothing.
+                val hourEarlierDescription = stringResource(R.string.reminder_hour_earlier)
+                val hourLaterDescription = stringResource(R.string.reminder_hour_later)
+                TextButton(
+                    onClick = { onReminderHourChange((reminderHour - 1 + 24) % 24) },
+                    enabled = reminderEnabled,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .semantics { contentDescription = hourEarlierDescription },
+                ) {
+                    Text("−")
+                }
+                TextButton(
+                    onClick = { onReminderHourChange((reminderHour + 1) % 24) },
+                    enabled = reminderEnabled,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .semantics { contentDescription = hourLaterDescription },
+                ) {
+                    Text("+")
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val reminderSwitchDescription = stringResource(R.string.reminder_setting_title)
+                Text(
+                    stringResource(R.string.reminder_setting_enable),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = reminderEnabled,
+                    onCheckedChange = onReminderEnabledChange,
+                    modifier = Modifier
+                        .testTag("reminder-enabled-switch")
+                        .semantics { contentDescription = reminderSwitchDescription },
+                )
+            }
 
             OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.account_sign_out))

@@ -7,6 +7,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -47,6 +49,23 @@ class ProductFlowTest {
         composeRule.onNodeWithText("Café molido 500 g").assertIsDisplayed()
         composeRule.onNodeWithText("$125.00").assertIsDisplayed()
         composeRule.onNodeWithText("SKU CAF-500 · Abarrotes").assertIsDisplayed()
+    }
+
+    @Test fun rows_expose_name_price_and_metadata_only_when_present() {
+        composeRule.setContent { Harness() }
+        openProducts()
+
+        // The row with imported metadata reads name + price + the SKU/category line.
+        composeRule.onNodeWithText("Café molido 500 g").assertIsDisplayed()
+        composeRule.onNodeWithText("$125.00").assertIsDisplayed()
+        composeRule.onNodeWithText("SKU CAF-500 · Abarrotes").assertIsDisplayed()
+
+        // The row without SKU/category still reads name + price, and renders no metadata line at
+        // all — not even an empty one that TalkBack would tab into as a blank element. The search
+        // field's empty editable text is a real input, so it is excluded.
+        composeRule.onNodeWithText("Aceite vegetal 1 L").assertIsDisplayed()
+        composeRule.onNodeWithText("$48.00").assertIsDisplayed()
+        composeRule.onAllNodes(hasText("") and !hasSetTextAction()).assertCountEquals(0)
     }
 
     @Test fun the_import_action_stays_visible_with_a_48_dp_target() {

@@ -2,26 +2,31 @@ package com.cuentivo.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/** The stable graphite ground and functional accents sampled from the approved Stitch captures. */
-val NeoGraphite = Color(0xFF0D0F11)
-val NeoGraphiteRaised = Color(0xFF1B1D1F)
-val NeoGraphiteHigh = Color(0xFF232629)
-val NeoHairline = Color(0xFF303438)
-val NeoText = Color(0xFFF2F5F4)
-val NeoMuted = Color(0xFFA9B0B4)
+/**
+ * The stable graphite ground and functional accents sampled from the approved Stitch captures.
+ *
+ * Every value is derived from [CuentivoPalette] so the scheme and the accessibility floors over it
+ * can never drift apart.
+ */
+val NeoGraphite = Color(CuentivoPalette.Dark.background)
+val NeoGraphiteRaised = Color(CuentivoPalette.Dark.surface)
+val NeoGraphiteHigh = Color(CuentivoPalette.Dark.surfaceVariant)
+val NeoHairline = Color(CuentivoPalette.Dark.outlineVariant)
+val NeoText = Color(CuentivoPalette.Dark.onSurface)
+val NeoMuted = Color(CuentivoPalette.Dark.onSurfaceVariant)
 
-/** Cyan is the only primary/receivable colour. */
-val NeoCyan = Color(0xFF18D8E6)
+/** Cyan is the dark scheme's primary/receivable colour. */
+val NeoCyan = Color(CuentivoPalette.Dark.primary)
 
 /** Green is reserved for money collected and positive payment status. */
-val NeoPayment = Color(0xFFB7FF35)
+val NeoPayment = Color(CuentivoPalette.Dark.secondary)
 val NeoAcid = NeoPayment
 
-/** Violet appears only in the restrained hero aura and secondary highlights. */
-val NeoViolet = Color(0xFFA98BFA)
+/** Violet is the dark scheme's tertiary role, muted and sober. */
+val NeoViolet = Color(CuentivoPalette.Dark.tertiary)
 
 /** Red is reserved for overdue, destructive, and error states. */
-val NeoOverdue = Color(0xFFFF7B82)
+val NeoOverdue = Color(CuentivoPalette.Dark.error)
 
 /**
  * The middle of the payment traffic light: pays, but late.
@@ -29,4 +34,4 @@ val NeoOverdue = Color(0xFFFF7B82)
  * Amber rather than a paler red, because "chase this one" and "this one is a loss" have to be
  * distinguishable at a glance on a phone held at arm's length behind a counter.
  */
-val NeoSlow = Color(0xFFFFC65C)
+val NeoSlow = Color(CuentivoPalette.Dark.warning)

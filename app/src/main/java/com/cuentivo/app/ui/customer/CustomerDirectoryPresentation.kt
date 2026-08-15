@@ -40,7 +40,7 @@ internal fun PaymentReliability.labelRes(): Int? = when (this) {
     PaymentReliability.NO_HISTORY -> null
 }
 
-internal enum class CustomerFilter(val labelRes: Int) {
+enum class CustomerFilter(val labelRes: Int) {
     ALL(com.cuentivo.app.R.string.customer_filter_all),
     OWING(com.cuentivo.app.R.string.customer_filter_owing),
     OVERDUE(com.cuentivo.app.R.string.customer_filter_overdue),

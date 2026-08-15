@@ -6,7 +6,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,11 +19,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,12 +29,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,7 +73,6 @@ import com.cuentivo.app.domain.AccessDecision
 import com.cuentivo.app.domain.Alert
 import com.cuentivo.app.domain.CustomerScore
 import com.cuentivo.app.domain.Insight
-import com.cuentivo.app.domain.Money
 import com.cuentivo.app.domain.NewCustomerDraft
 import com.cuentivo.app.domain.OpeningBalanceRow
 import com.cuentivo.app.domain.SaleDraft
@@ -92,6 +83,7 @@ import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.account.AccountSheet
 import com.cuentivo.app.ui.account.LanguageSheet
 import com.cuentivo.app.ui.customer.CustomerDetailSheet
+import com.cuentivo.app.ui.customer.CustomerFilter
 import com.cuentivo.app.ui.customer.CustomersScreen
 import com.cuentivo.app.ui.dashboard.DashboardScreen
 import com.cuentivo.app.ui.product.ProductsScreen
@@ -243,6 +235,18 @@ fun CuentivoApp(
     proPrice: String? = null,
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
+    /** Whether the owner wants the daily overdue reminder, from the host's preferences. */
+    reminderEnabled: Boolean = false,
+    /** The chosen local hour (0..23), from the host's preferences. */
+    reminderHour: Int = 9,
+    onReminderEnabledChange: (Boolean) -> Unit = {},
+    onReminderHourChange: (Int) -> Unit = {},
+    /**
+     * A reminder notification was tapped: the host wants Clientes with the overdue filter. Consumed
+     * once through [onOpenOverdueCustomersConsumed], so the navigation cannot re-fire.
+     */
+    openOverdueCustomers: Boolean = false,
+    onOpenOverdueCustomersConsumed: () -> Unit = {},
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
@@ -254,6 +258,8 @@ fun CuentivoApp(
     var showCustomerForm by remember { mutableStateOf(false) }
     var showProductForm by remember { mutableStateOf(false) }
     var showAlerts by remember { mutableStateOf(false) }
+    // The overdue filter a tapped reminder asked for, handed to Clientes exactly once.
+    var pendingOverdueFilter by remember { mutableStateOf(false) }
     // Which customer a directly-launched sale or payment should start on. Held here because the
     // shell owns navigation; the task screens stay free of routing state.
     var saleCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
@@ -288,6 +294,25 @@ fun CuentivoApp(
     // System Back closes the sale task and nothing else — and it must drop the preselection with
     // it, or the next sale would silently inherit a customer nobody chose for it.
     BackHandler(enabled = showNewSale) { showNewSale = false; saleCustomer = null }
+    // The tapped reminder navigates to Clientes with the overdue chip. Only the action travels —
+    // the host consumed the intent, and Room answers the "who owes" from here.
+    LaunchedEffect(openOverdueCustomers) {
+        if (openOverdueCustomers) {
+            destination = MainDestination.CUSTOMERS
+            showNewSale = false
+            saleCustomer = null
+            paymentCustomer = null
+            pendingOverdueFilter = true
+            onOpenOverdueCustomersConsumed()
+        }
+    }
+    // The overdue filter stays applied for as long as Clientes is showing it; leaving the
+    // destination consumes the request, so the next visit starts at "Todos".
+    LaunchedEffect(destination, pendingOverdueFilter) {
+        if (pendingOverdueFilter && destination != MainDestination.CUSTOMERS) {
+            pendingOverdueFilter = false
+        }
+    }
     NeoFintechShell(
         destination = destination,
         onDestination = { selected ->
@@ -390,6 +415,7 @@ fun CuentivoApp(
                 onArchiveCustomer = onArchiveCustomer,
                 onOpen = onShowStatement,
                 isSaving = isSavingCustomer,
+                initialFilter = if (pendingOverdueFilter) CustomerFilter.OVERDUE else null,
             )
             MainDestination.PRODUCTS -> ProductsScreen(
                 products = products,
@@ -465,197 +491,13 @@ fun CuentivoApp(
             onDeleteAccount = onDeleteAccount,
             onDismiss = { showAccount = false },
             backupSection = backupSection,
+            reminderEnabled = reminderEnabled,
+            reminderHour = reminderHour,
+            onReminderEnabledChange = onReminderEnabledChange,
+            onReminderHourChange = onReminderHourChange,
         )
     }
     if (showLanguage) {
         LanguageSheet(onDismiss = { showLanguage = false })
     }
 }
-
-/**
- * A product photo, or a placeholder when there is none — and when the file is simply not here.
- *
- * A product adopted from another device carries a file name only its author's phone has, so a
- * missing file is expected, not an error worth shouting about.
- */
-private enum class DebtorFilter(val label: String) {
-    OWING("Con deuda"),
-    ALL("Todos"),
-}
-
-/**
- * Home: the money totals, then who actually owes it.
- *
- * The list is the point — a dashboard of four numbers tells the owner nothing about who to call
- * today.
- */
-@Composable
-private fun LegacyDashboardScreen(
-    state: DashboardUiState,
-    customers: List<CustomerBalanceRow>,
-    padding: PaddingValues,
-    onCreateBusiness: () -> Unit,
-    onNewSale: () -> Unit,
-    onShowStatement: (CustomerBalanceRow) -> Unit,
-    onShareDebtorList: () -> Unit,
-) {
-    var filter by remember { mutableStateOf(DebtorFilter.OWING) }
-    NeoResponsiveColumn(
-        modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
-    ) { layout ->
-        Spacer(Modifier.height(8.dp))
-        when (state) {
-            DashboardUiState.NoBusiness -> {
-                Text(stringResource(R.string.app_welcome_title), style = MaterialTheme.typography.headlineSmall)
-                Text(stringResource(R.string.app_welcome_detail))
-                FilledTonalButton(onClick = onCreateBusiness, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.app_create_business)) }
-            }
-            is DashboardUiState.Content -> {
-                // No "Nueva venta" button here any more: the floating button does it, and two ways
-                // to start the same thing on one screen is clutter.
-                Text(state.businessName, style = MaterialTheme.typography.headlineSmall)
-                NeoBalanceHero(
-                    label = stringResource(R.string.dashboard_receivable_short),
-                    amountCents = state.receivableCents,
-                    supportingText = if (state.overdueCents > 0) {
-                        "${formatMoney(state.overdueCents)} requieren atención"
-                    } else {
-                        "Tu cartera está al día"
-                    },
-                )
-                state.insights.forEach { InsightCard(it) }
-                if (layout.stackPrimaryActions) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        NeoMoneyPill("Vendido este mes", state.soldCents, MaterialTheme.colorScheme.primary, Modifier.fillMaxWidth())
-                        NeoMoneyPill("Cobrado este mes", state.collectedCents, MaterialTheme.colorScheme.secondary, Modifier.fillMaxWidth())
-                    }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        NeoMoneyPill("Vendido este mes", state.soldCents, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                        NeoMoneyPill("Cobrado este mes", state.collectedCents, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
-                    }
-                }
-                if (state.overdueCents > 0) {
-                    Card(
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(stringResource(R.string.app_overdue_payments), style = MaterialTheme.typography.labelLarge)
-                            Text(
-                                formatMoney(state.overdueCents),
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                }
-
-                NeoSectionTitle(
-                    title = stringResource(R.string.app_who_owes_me),
-                    eyebrow = stringResource(R.string.customers_title),
-                    trailing = {
-                        AssistChip(onClick = onShareDebtorList, label = { Text(stringResource(R.string.app_share)) })
-                    },
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DebtorFilter.entries.forEach { option ->
-                        FilterChip(
-                            selected = filter == option,
-                            onClick = { filter = option },
-                            label = { Text(option.label) },
-                        )
-                    }
-                }
-                val listed = when (filter) {
-                    DebtorFilter.OWING -> customers.filter { it.balanceCents > 0 }
-                    DebtorFilter.ALL -> customers
-                }.sortedByDescending { it.balanceCents }
-                if (listed.isEmpty()) {
-                    Text(
-                        if (customers.isEmpty()) "Agrega tu primer cliente en la pestaña Clientes"
-                        else "Nadie tiene saldo pendiente. Todo cobrado."
-                    )
-                }
-                listed.forEach { row ->
-                    Card(
-                onClick = { onShowStatement(row) },
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                        if (layout.stackLedgerAmounts) {
-                            Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                                Text(row.customer.name, style = MaterialTheme.typography.titleMedium)
-                                row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
-                                Spacer(Modifier.height(8.dp))
-                                Text(formatMoney(row.balanceCents), style = MaterialTheme.typography.titleMedium)
-                            }
-                        } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(row.customer.name, style = MaterialTheme.typography.titleMedium)
-                                    row.customer.phone?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
-                                }
-                                Text(
-                                    formatMoney(row.balanceCents),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = if (row.balanceCents > 0) MaterialTheme.colorScheme.onSurface
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
-
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-    }
-}
-
-/**
- * How the business is actually doing, in one sentence.
- *
- * The tone comes from the number, not from a wish to be encouraging: a bad month is tinted like bad
- * news. And it never leans on colour alone — the accent bar on the left plus the wording carry the
- * meaning, because at arm's length in the sun a coloured tint is the first thing to disappear.
- */
-@Composable
-private fun InsightCard(insight: Insight) {
-    val accent = when (insight.tone) {
-        Insight.Tone.GOOD -> MaterialTheme.colorScheme.primary
-        Insight.Tone.BAD -> MaterialTheme.colorScheme.error
-        Insight.Tone.NEUTRAL -> MaterialTheme.colorScheme.secondary
-    }
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(5.dp).height(56.dp).background(accent))
-            Text(
-                insight.text,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun MetricCard(label: String, cents: Long) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(label, style = MaterialTheme.typography.labelLarge)
-            Text(formatMoney(cents), style = MaterialTheme.typography.headlineSmall)
-        }
-    }
-}
-
-private fun formatMoney(cents: Long): String = Money.format(cents)

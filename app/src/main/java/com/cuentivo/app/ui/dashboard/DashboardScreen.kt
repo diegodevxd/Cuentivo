@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.cuentivo.app.R
 import androidx.compose.ui.text.font.FontFamily
@@ -72,6 +73,10 @@ fun DashboardScreen(
     customers: List<CustomerBalanceRow>,
     modifier: Modifier = Modifier,
     onCreateBusiness: () -> Unit = {},
+    /**
+     * Retained as part of the screen's contract: the bottom bar owns "Nueva venta" permanently, so
+     * this screen does not render it, but the host keeps passing the handler.
+     */
     onNewSale: () -> Unit,
     onRegisterPayment: () -> Unit,
     onCustomer: (CustomerBalanceRow) -> Unit,
@@ -125,28 +130,51 @@ private fun LazyListScope.dashboardContent(
     onCustomer: (CustomerBalanceRow) -> Unit,
     onSeeAllCustomers: () -> Unit,
 ) {
+    // One dominant receivable hero, then the two secondary month figures paired beneath it, then
+    // the task-oriented sections. Moderate bento inside the mobile rail: hierarchy through size and
+    // spacing, not a web-like grid.
     item {
         DashboardHero(state)
     }
+
+    // The month, in the two numbers a shopkeeper actually asks about. Both were already being
+    // computed and carried this far; until now nothing drew them.
+    item { NeoSectionHeader(title = stringResource(R.string.dashboard_month_title)) }
     item {
-        // Both next steps are visible at the same glance: cobrar resolves the debt, vender grows it.
-        // Equal width prevents the secondary outline from disappearing beneath a full-width cyan CTA.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("dashboard-month"),
+            shape = NeoShapes.card,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
-            NeoAction(
-                stringResource(R.string.detail_register_payment),
-                onRegisterPayment,
-                Modifier.weight(1f),
-            )
-            NeoAction(
-                stringResource(R.string.nav_new_sale),
-                onNewSale,
-                Modifier.weight(1f),
-                primary = false,
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(NeoSpacing.md),
+                verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
+            ) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    MonthFigure(
+                        label = stringResource(R.string.dashboard_month_sold),
+                        amountCents = state.soldCents,
+                        modifier = Modifier.weight(1f),
+                    )
+                    MonthFigure(
+                        label = stringResource(R.string.dashboard_month_collected),
+                        amountCents = state.collectedCents,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
+    }
+
+    // The payment action the dashboard owns. "Nueva venta" lives permanently in the bottom bar, so
+    // this screen keeps only the action the bar does not offer as a dedicated control.
+    item {
+        NeoAction(
+            stringResource(R.string.detail_register_payment),
+            onRegisterPayment,
+            Modifier.fillMaxWidth(),
+        )
     }
 
     val today = LocalDate.now().toEpochDay()
@@ -185,39 +213,6 @@ private fun LazyListScope.dashboardContent(
         }
     }
 
-    // The month, in the two numbers a shopkeeper actually asks about. Both were already being
-    // computed and carried this far; until now nothing drew them.
-    item { NeoSectionHeader(title = stringResource(R.string.dashboard_month_title)) }
-    item {
-        Card(
-            modifier = Modifier.fillMaxWidth().testTag("dashboard-month"),
-            shape = NeoShapes.card,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(NeoSpacing.md),
-                verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
-            ) {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    MonthFigure(
-                        label = stringResource(R.string.dashboard_month_sold),
-                        amountCents = state.soldCents,
-                        modifier = Modifier.weight(1f),
-                    )
-                    MonthFigure(
-                        label = stringResource(R.string.dashboard_month_collected),
-                        amountCents = state.collectedCents,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                // The BusinessInsights sentences were dropped on purpose: the two figures already
-                // say it, and the paragraph under them was the explanatory text this card had too
-                // much of.
-            }
-        }
-    }
-
     item { NeoSectionHeader(title = stringResource(R.string.dashboard_recent_activity)) }
     if (state.recentActivity.isEmpty()) {
         item {
@@ -251,13 +246,16 @@ private fun DashboardMetric(label: String, amountCents: Long, modifier: Modifier
  * The reference keeps `Vence hoy` and `Vencido` inside the receivable card rather than as a
  * separate strip below it, and carries no supporting sentence under the amount. Both details matter
  * for density: together they were costing about 55 dp and pushing recent activity off the screen.
+ *
+ * Only a minimum height is enforced: the hero grows with its content instead of capping it, so the
+ * dominant metric can never be clipped at large text scales.
  */
 @Composable
 private fun DashboardHero(state: DashboardUiState.Content) {
     NeoPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 142.dp),
+            .heightIn(min = 142.dp),
         accent = MaterialTheme.colorScheme.primary,
     ) {
         Text(
@@ -343,7 +341,11 @@ private fun CriticalCustomerRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = status.label,
+                text = if (status.quantity != null) {
+                    pluralStringResource(status.labelRes, status.quantity, status.quantity)
+                } else {
+                    stringResource(status.labelRes)
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = if (status.urgent) accent else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -436,7 +438,13 @@ private fun SectionRowSurface(
     }
 }
 
-private data class CriticalStatus(val label: String, val urgent: Boolean)
+private data class CriticalStatus(
+    /** String resource for the reason label. */
+    val labelRes: Int,
+    val urgent: Boolean,
+    /** Day count for the plural day-overdue label; null for plain-string labels. */
+    val quantity: Int? = null,
+)
 
 /**
  * The reason a customer is critical, worded like the reference ("15 días vencido"). The day count
@@ -453,13 +461,22 @@ private fun criticalCustomerStatus(
             .filter { it.customerId == customerId && it.dueDateEpochDay < today }
             .minOfOrNull { it.dueDateEpochDay }
         val days = oldestDue?.let { today - it } ?: 0L
-        return CriticalStatus(
-            label = if (days >= 1L) "$days ${if (days == 1L) "día" else "días"} vencido" else "Saldo vencido",
-            urgent = true,
-        )
+        return if (days >= 1L) {
+            CriticalStatus(
+                labelRes = R.plurals.dashboard_critical_days_overdue,
+                urgent = true,
+                quantity = days.toInt(),
+            )
+        } else {
+            CriticalStatus(labelRes = R.string.dashboard_critical_overdue_balance, urgent = true)
+        }
     }
     val dueToday = state.dueSales.any { it.customerId == customerId && it.dueDateEpochDay == today }
-    return CriticalStatus(if (dueToday) "Vence hoy" else "Saldo pendiente", urgent = false)
+    return if (dueToday) {
+        CriticalStatus(labelRes = R.string.dashboard_due_today, urgent = false)
+    } else {
+        CriticalStatus(labelRes = R.string.dashboard_critical_balance_pending, urgent = false)
+    }
 }
 
 internal fun initialOf(name: String): String =

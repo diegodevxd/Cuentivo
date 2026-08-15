@@ -177,6 +177,9 @@ fun ProductsScreen(
                             if (canImportProducts) importLauncher.launch(arrayOf("*/*")) else onImportBlocked()
                         },
                         enabled = !isImportingProducts,
+                        // The row's own 48 dp target: a bare TextButton measures 40 dp, below the
+                        // Android floor.
+                        modifier = Modifier.heightIn(min = 48.dp),
                     ) {
                         Text(
                             if (isImportingProducts) stringResource(R.string.products_importing)
@@ -486,15 +489,23 @@ private fun ProductRow(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = secondaryLine(product).orEmpty(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(NeoSpacing.sm))
+                    val metadata = secondaryLine(product)
+                    // Only imported SKU/category earns the second line. Without it there is nothing
+                    // to say, and a blank text element would leave TalkBack tabbing into nothing —
+                    // the spacer keeps the price right-aligned instead.
+                    if (metadata != null) {
+                        Text(
+                            text = metadata,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(NeoSpacing.sm))
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
                     NeoMoney(
                         amountCents = product.salePriceCents,
                         style = MaterialTheme.typography.labelLarge,

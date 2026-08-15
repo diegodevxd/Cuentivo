@@ -18,7 +18,13 @@ import java.io.File
  * only its author's phone has, so [load] returns null there and the screen shows the placeholder.
  * Uploading them needs Firebase Storage, which needs the Blaze plan.
  */
-class ProductImageStore(context: Context) {
+class ProductImageStore(
+    context: Context,
+    private val cache: BoundedImageCache<Bitmap> = BoundedImageCache(
+        maxBytes = CACHE_BYTES,
+        sizeOf = { it.byteCount.toLong() },
+    ),
+) {
     private val directory = File(context.applicationContext.filesDir, DIRECTORY)
     private val resolver = context.applicationContext.contentResolver
 
@@ -40,12 +46,25 @@ class ProductImageStore(context: Context) {
         fileName
     }.getOrNull()
 
+    /**
+     * Loads a display-sized decode of the photo, served from a bounded memory cache when possible.
+     *
+     * A product list scrolls rows in and out constantly; decoding the stored master (up to 1024 px)
+     * on every entry is what made cheap phones stutter. The cache keeps the most recently used
+     * bitmaps in memory under a fixed byte budget, and [load] itself decodes sampled so a single
+     * frame never pulls more than a thumbnail-sized image off disk.
+     */
     fun load(fileName: String): Bitmap? = runCatching {
+        cache.get(fileName)?.let { return it }
         val file = File(directory, fileName)
-        if (file.exists()) BitmapFactory.decodeFile(file.path) else null
+        if (!file.exists()) return null
+        val bitmap = decodeDisplay(file) ?: return null
+        cache.put(fileName, bitmap)
+        bitmap
     }.getOrNull()
 
     fun delete(fileName: String) {
+        cache.remove(fileName)
         runCatching { File(directory, fileName).delete() }
     }
 
@@ -64,18 +83,45 @@ class ProductImageStore(context: Context) {
         measured.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-        var sampleSize = 1
-        while (bounds.outWidth / sampleSize > MAX_EDGE_PX || bounds.outHeight / sampleSize > MAX_EDGE_PX) {
-            sampleSize *= 2
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight, MAX_EDGE_PX)
         }
-
-        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
         return resolver.openInputStream(source)?.use { BitmapFactory.decodeStream(it, null, options) }
     }
 
-    private companion object {
-        const val DIRECTORY = "product-images"
-        const val MAX_EDGE_PX = 1024
-        const val QUALITY = 85
+    /** Decodes a stored master sampled to the display edge, so a row never holds a full-size image. */
+    private fun decodeDisplay(file: File): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight, MAX_DISPLAY_EDGE_PX)
+        }
+        return BitmapFactory.decodeFile(file.path, options)
+    }
+
+    companion object {
+        /** The power-of-two factor that keeps both decoded edges at or below [maxEdgePx]. */
+        internal fun sampleSizeFor(width: Int, height: Int, maxEdgePx: Int): Int {
+            if (width <= 0 || height <= 0) return 1
+            var sampleSize = 1
+            while (width / sampleSize > maxEdgePx || height / sampleSize > maxEdgePx) {
+                sampleSize *= 2
+            }
+            return sampleSize
+        }
+
+        private const val DIRECTORY = "product-images"
+
+        /** Master copy edge for the saved file. */
+        private const val MAX_EDGE_PX = 1024
+
+        /** Display decode edge: comfortably above every photo surface the app draws (<= 96 dp at 4x). */
+        private const val MAX_DISPLAY_EDGE_PX = 512
+
+        /** Roughly a dozen display bitmaps at 512 px; bounded so scrolling cannot grow memory forever. */
+        private const val CACHE_BYTES = 6L * 1024 * 1024
+
+        private const val QUALITY = 85
     }
 }

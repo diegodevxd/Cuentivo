@@ -199,6 +199,29 @@ class AuthenticationFlowTest {
         composeRule.onAllNodesWithText("No fue posible iniciar sesión").assertCountEquals(0)
     }
 
+    @Test fun Google_action_is_accessible_and_calls_its_callback() {
+        composeRule.setContent { Harness(onGoogleSignIn = { calls += "google" }) }
+
+        composeRule.onNodeWithContentDescription("Continuar con Google").performScrollTo().performClick()
+
+        composeRule.runOnIdle { assertEquals(listOf("google"), calls) }
+    }
+
+    @Test fun Google_action_is_disabled_while_authentication_is_working() {
+        composeRule.setContent { Harness(isWorking = true) }
+
+        composeRule.onNodeWithContentDescription("Continuar con Google").performScrollTo().assertIsNotEnabled()
+    }
+
+    @Test fun Google_action_stays_enabled_when_credentials_are_invalid() {
+        composeRule.setContent { Harness() }
+
+        type("Correo electrónico", "no-es-un-correo")
+        type("Contraseña", "corta")
+
+        composeRule.onNodeWithContentDescription("Continuar con Google").performScrollTo().assertIsEnabled()
+    }
+
     private fun switchToCreate(label: String = "¿No tienes cuenta? Crear una") {
         composeRule.onNodeWithText(label, useUnmergedTree = true)
             .performScrollTo().performClick()
@@ -219,6 +242,7 @@ class AuthenticationFlowTest {
         isWorking: Boolean = false,
         message: String? = null,
         localeTag: String = "es-MX",
+        onGoogleSignIn: () -> Unit = {},
     ) {
         val baseContext = LocalContext.current
         val configuration = Configuration(LocalConfiguration.current).apply {
@@ -235,6 +259,7 @@ class AuthenticationFlowTest {
                 message = message,
                 onSignIn = { email, password -> calls += "signIn:$email:$password" },
                 onSignUp = { email, password -> calls += "signUp:$email:$password" },
+                onGoogleSignIn = onGoogleSignIn,
             )
         }
         }

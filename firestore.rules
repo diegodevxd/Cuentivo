@@ -33,15 +33,43 @@ service cloud.firestore {
     function canAdministerBusiness(businessId) { return isMember(businessId) && role(businessId) in ['OWNER', 'ADMIN']; }
     function isBusinessOwner(businessId) { return isAuthenticated() && exists(/databases/$(database)/documents/businesses/$(businessId)) && get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerUserId == request.auth.uid; }
 
+    // The one-way door opened by `deletionRequestedAtEpochMillis` on the business document.
+    //
+    // Normal records stay append-only: every other `delete` below is `if false`. The sole exception
+    // is a business whose verified owner asked for it to be erased. Once the flag is present:
+    //   - Only that same owner may delete anything under the business, and
+    //   - the flag itself is immutable (`deletionFlagImmutable` on update), so the door cannot be
+    //     closed again to hide that the request happened.
+    // `exists()` guards `get()`: rules abort on get() of a missing document, and every delete of a
+    // subcollection document happens while the business document still exists (the client deletes
+    // children first, the business document last).
+    function deletionRequested(businessId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+        'deletionRequestedAtEpochMillis' in get(/databases/$(database)/documents/businesses/$(businessId)).data;
+    }
+    function canDeleteForDeletion(businessId) {
+      return isBusinessOwner(businessId) && deletionRequested(businessId);
+    }
+    // Once the owner has requested erasure, the flag can be neither removed nor changed. An update
+    // that drops it, or moves the timestamp, is rejected outright.
+    function deletionFlagImmutable(requestData, resourceData) {
+      return !('deletionRequestedAtEpochMillis' in resourceData) ||
+        (requestData.deletionRequestedAtEpochMillis == resourceData.deletionRequestedAtEpochMillis);
+    }
+
     // The only document in the schema with an OPTIONAL key, and deliberately so.
     // `deletionRequestedAtEpochMillis` is the owner asking for their business to be erased. It cannot
     // be required, because every business written before this rule existed has six keys and would
     // stop validating; and it cannot be left out of hasOnly, because then anything could be smuggled
     // onto the document. So: the six stay mandatory, the seventh is allowed and validated if present.
     //
-    // It exists because the client cannot delete anything — every collection here is `delete: if
-    // false` — so "borrar mi cuenta" had no way to reach the cloud copy at all. This is the request;
-    // the erasure itself is done out of band. See docs/borrado-de-cuenta.md.
+    // It is also a one-way door. Setting it opens the only `delete` path that exists anywhere in
+    // these rules: once the verified owner has asked for erasure, the same owner may delete every
+    // document under the business — the subcollections first, the business document last. Nothing
+    // short of that may ever delete: the flag can be set only by an owner update, and
+    // `deletionFlagImmutable` makes it impossible to remove or change once present, so a flag can
+    // never be cleared to pretend the request never happened. See docs/borrado-de-cuenta.md.
     function validBusiness(data) {
       return data.keys().hasAll(['name', 'ownerUserId', 'currency', 'timezone', 'createdAtEpochMillis', 'updatedAtEpochMillis']) &&
         data.keys().hasOnly(['name', 'ownerUserId', 'currency', 'timezone', 'createdAtEpochMillis', 'updatedAtEpochMillis', 'deletionRequestedAtEpochMillis']) &&
@@ -117,9 +145,19 @@ service cloud.firestore {
       // made the recovery query die once the account owned six businesses: 6 x 2 = 12 > 10, and the
       // whole query was denied. With isOwner() first the || short-circuits and the owner's own
       // documents cost nothing.
-      allow read: if isOwner(resource.data.ownerUserId) || canReadBusiness(businessId);
-      allow update: if isBusinessOwner(businessId) && validBusiness(request.resource.data) && request.resource.data.ownerUserId == resource.data.ownerUserId && request.resource.data.createdAtEpochMillis == resource.data.createdAtEpochMillis;
-      allow delete: if false;
+      // The `resource == null` arm exists for one caller: the deletion retry. The cascade erases
+      // the business document last, and a retry must be able to *see* that the document is gone
+      // (an empty snapshot) — otherwise "already deleted" arrives as PERMISSION_DENIED and the
+      // account can never finish deleting itself. Reading a missing document reveals nothing, and
+      // the arm still demands a verified session; `resource == null` is false for every existing
+      // document, whose read keeps requiring ownership or an ACTIVE membership below. Using
+      // `resource == null` instead of `!exists(...)` costs no extra document reads, which the
+      // recovery query below depends on staying within Firestore's ten-call budget.
+      allow read: if (resource == null && isAuthenticated()) || isOwner(resource.data.ownerUserId) || canReadBusiness(businessId);
+      allow update: if isBusinessOwner(businessId) && validBusiness(request.resource.data) && deletionFlagImmutable(request.resource.data, resource.data) && request.resource.data.ownerUserId == resource.data.ownerUserId && request.resource.data.createdAtEpochMillis == resource.data.createdAtEpochMillis;
+      // The one deletion the schema allows anywhere: a verified owner erasing the business they
+      // asked to be erased. Everything else stays `delete: if false`.
+      allow delete: if canDeleteForDeletion(businessId);
 
       match /members/{memberUserId} {
         allow read: if canReadBusiness(businessId);
@@ -127,39 +165,46 @@ service cloud.firestore {
           ((request.resource.data.role == 'OWNER' && request.resource.data.status == 'ACTIVE' && isOwner(memberUserId) && getAfter(/databases/$(database)/documents/businesses/$(businessId)).data.ownerUserId == memberUserId) ||
            (isBusinessOwner(businessId) && request.resource.data.role != 'OWNER'));
         allow update: if isBusinessOwner(businessId) && validMember(request.resource.data) && uidUnchanged() && uidNotModified() && request.resource.data.businessId == resource.data.businessId && resource.data.role != 'OWNER' && request.resource.data.role != 'OWNER';
-        allow delete: if isBusinessOwner(businessId) && resource.data.role != 'OWNER';
+        // Removing a member is the owner's normal right — except the OWNER document itself, which
+        // only the erasure cascade may take, because the cascade must be able to delete every member
+        // including the owner's own.
+        allow delete: if canDeleteForDeletion(businessId) || (isBusinessOwner(businessId) && resource.data.role != 'OWNER');
       }
 
       match /customers/{customerId} {
         allow read: if canReadBusiness(businessId);
         allow create: if canWriteOperationalData(businessId) && validCustomer(request.resource.data) && request.resource.data.businessId == businessId;
         allow update: if canWriteOperationalData(businessId) && validCustomer(request.resource.data) && request.resource.data.businessId == resource.data.businessId && request.resource.data.createdAtEpochMillis == resource.data.createdAtEpochMillis;
-        allow delete: if false;
+        allow delete: if canDeleteForDeletion(businessId);
       }
       match /products/{productId} {
         allow read: if canReadBusiness(businessId);
         allow create: if canWriteOperationalData(businessId) && validProduct(request.resource.data) && request.resource.data.businessId == businessId;
         allow update: if canWriteOperationalData(businessId) && validProduct(request.resource.data) && request.resource.data.businessId == resource.data.businessId && request.resource.data.createdAtEpochMillis == resource.data.createdAtEpochMillis;
-        allow delete: if false;
+        allow delete: if canDeleteForDeletion(businessId);
       }
       match /sales/{saleId} {
         allow read: if canReadBusiness(businessId);
         allow create: if canWriteOperationalData(businessId) && validSale(request.resource.data, businessId) && exists(/databases/$(database)/documents/businesses/$(businessId)/customers/$(request.resource.data.customerId));
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if canDeleteForDeletion(businessId);
         match /items/{itemId} {
           allow read: if canReadBusiness(businessId);
           allow create: if canWriteOperationalData(businessId) && validSaleItem(request.resource.data, saleId);
-          allow update, delete: if false;
+          allow update: if false;
+          allow delete: if canDeleteForDeletion(businessId);
         }
       }
       match /payments/{paymentId} {
         allow read: if canReadBusiness(businessId);
         allow create: if canWriteOperationalData(businessId) && validPayment(request.resource.data, businessId) && exists(/databases/$(database)/documents/businesses/$(businessId)/customers/$(request.resource.data.customerId));
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if canDeleteForDeletion(businessId);
         match /allocations/{allocationId} {
           allow read: if canReadBusiness(businessId);
           allow create: if canWriteOperationalData(businessId) && validAllocation(request.resource.data, paymentId);
-          allow update, delete: if false;
+          allow update: if false;
+          allow delete: if canDeleteForDeletion(businessId);
         }
       }
       match /movements/{movementId} {
@@ -171,11 +216,14 @@ service cloud.firestore {
         allow create: if canWriteOperationalData(businessId) && validMovement(request.resource.data, businessId) &&
           (request.resource.data.type in ['CHARGE', 'PAYMENT'] || canAdministerBusiness(businessId)) &&
           exists(/databases/$(database)/documents/businesses/$(businessId)/customers/$(request.resource.data.customerId));
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if canDeleteForDeletion(businessId);
       }
       match /auditLogs/{auditId} {
         allow read: if canAdministerBusiness(businessId);
-        allow write: if false;
+        // Ordinary writes stay forbidden; only the erasure cascade may remove audit rows.
+        allow create, update: if false;
+        allow delete: if canDeleteForDeletion(businessId);
       }
     }
   }

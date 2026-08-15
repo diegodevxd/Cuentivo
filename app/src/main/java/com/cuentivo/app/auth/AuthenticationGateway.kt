@@ -1,6 +1,23 @@
 package com.cuentivo.app.auth
 
+import android.app.Activity
+import android.content.Context
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
+import com.cuentivo.app.R
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.auth.GoogleAuthProvider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 interface AuthenticationGateway {
     val currentUserId: String?
@@ -38,6 +55,27 @@ interface AuthenticationGateway {
      * show rather than swallow, because a delete that silently did nothing is worse than an error.
      */
     fun deleteAccount(onComplete: (Result<Unit>) -> Unit)
+
+    /**
+     * Google sign-in for a signed-out screen, through AndroidX Credential Manager.
+     *
+     * [GoogleAuthenticationResult] is the only vocabulary the UI ever sees — a silent cancellation,
+     * an instruction to use the manual password, or one generic failure. Raw Firebase or Credential
+     * Manager exceptions never reach the screen.
+     */
+    fun signInWithGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit)
+
+    /**
+     * Links Google to the signed-in session, preserving its Firebase UID. Never merges two UIDs: a
+     * Google account whose email already belongs to another account is surfaced, not adopted.
+     */
+    fun linkGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit)
+
+    /**
+     * Forgets the credential the last Google flow left in Credential Manager. Called after every
+     * sign-out so the next account picker is not pre-selected for a session that no longer exists.
+     */
+    fun clearGoogleCredentialState(onComplete: () -> Unit)
 }
 
 class FirebaseAuthenticationGateway(
@@ -153,6 +191,115 @@ class FirebaseAuthenticationGateway(
                             ?: IllegalStateException()
                     )
                 )
+            }
+        }
+    }
+
+    // Captured from the last Google flow: clearing the credential state needs a Context, and the
+    // gateway is constructed without one so SyncWorker and billing refresh keep using it as-is.
+    private var lastGoogleContext: Context? = null
+
+    override fun signInWithGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit) {
+        googleIdToken(activity, onComplete = onComplete) { idToken ->
+            auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null))
+                .addOnCompleteListener { task ->
+                    onComplete(
+                        if (task.isSuccessful) {
+                            val userId = task.result?.user?.uid
+                            if (userId != null) GoogleAuthenticationResult.SignedIn(userId)
+                            else GoogleAuthenticationResult.Failed
+                        } else {
+                            GoogleAuthenticationResult.fromFirebaseErrorCode(
+                                (task.exception as? FirebaseAuthException)?.errorCode
+                            )
+                        }
+                    )
+                }
+        }
+    }
+
+    override fun linkGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit) {
+        googleIdToken(activity, onComplete = onComplete) { idToken ->
+            val user = auth.currentUser
+            if (user == null) {
+                onComplete(GoogleAuthenticationResult.Failed)
+                return@googleIdToken
+            }
+            user.linkWithCredential(GoogleAuthProvider.getCredential(idToken, null))
+                .addOnCompleteListener { task ->
+                    onComplete(
+                        if (task.isSuccessful) {
+                            val userId = task.result?.user?.uid
+                            if (userId != null) GoogleAuthenticationResult.SignedIn(userId)
+                            else GoogleAuthenticationResult.Failed
+                        } else {
+                            GoogleAuthenticationResult.fromFirebaseErrorCode(
+                                (task.exception as? FirebaseAuthException)?.errorCode
+                            )
+                        }
+                    )
+                }
+        }
+    }
+
+    override fun clearGoogleCredentialState(onComplete: () -> Unit) {
+        val context = lastGoogleContext
+        if (context == null) {
+            onComplete()
+            return
+        }
+        CoroutineScope(Dispatchers.Main.immediate).launch {
+            try {
+                CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
+            } catch (_: Exception) {
+                // Best effort: the Firebase session is already gone, and a stale picker preference
+                // must not turn sign-out into a failure.
+            }
+            onComplete()
+        }
+    }
+
+    /**
+     * Asks Credential Manager for a Google ID token. Cancellation maps to [GoogleAuthenticationResult.Cancelled]
+     * and reaches no error message; every other failure is generic. The client id comes from the
+     * generated google-services resource, never copied by hand.
+     */
+    private fun googleIdToken(
+        activity: Activity,
+        onComplete: (GoogleAuthenticationResult) -> Unit,
+        onIdToken: (String) -> Unit,
+    ) {
+        lastGoogleContext = activity.applicationContext
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(
+                GetGoogleIdOption.Builder()
+                    .setServerClientId(activity.getString(R.string.default_web_client_id))
+                    .setFilterByAuthorizedAccounts(false)
+                    .build()
+            )
+            .build()
+        CoroutineScope(Dispatchers.Main.immediate).launch {
+            try {
+                val response = CredentialManager.create(activity).getCredential(activity, request)
+                // Parsed rather than cast: GoogleIdTokenCredential.createFrom validates the JSON the
+                // selector returned, so a credential of any other type cannot masquerade as a token.
+                val idToken = try {
+                    GoogleIdTokenCredential.createFrom(response.credential.data).idToken
+                } catch (_: Exception) {
+                    null
+                }
+                if (idToken == null) onComplete(GoogleAuthenticationResult.Failed)
+                else onIdToken(idToken)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: GetCredentialCancellationException) {
+                // The person closed the selector: nothing happened, nothing to say.
+                onComplete(GoogleAuthenticationResult.Cancelled)
+            } catch (_: NoCredentialException) {
+                // No saved credential and no selector to show, e.g. a device with no Google account.
+                onComplete(GoogleAuthenticationResult.Failed)
+            } catch (_: GetCredentialException) {
+                onComplete(GoogleAuthenticationResult.Failed)
             }
         }
     }

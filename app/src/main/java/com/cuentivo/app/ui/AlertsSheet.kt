@@ -178,7 +178,7 @@ private data class AlertTone(val label: String, val accent: Color)
  */
 @Composable
 private fun Alert.Severity.tone(): AlertTone = when (this) {
-    Alert.Severity.OVERDUE -> AlertTone("VENCIDO", MaterialTheme.colorScheme.error)
-    Alert.Severity.DUE_SOON -> AlertTone("POR VENCER", MaterialTheme.colorScheme.primary)
-    Alert.Severity.INFO -> AlertTone("AVISO", MaterialTheme.colorScheme.onSurfaceVariant)
+    Alert.Severity.OVERDUE -> AlertTone(stringResource(R.string.alerts_severity_overdue), MaterialTheme.colorScheme.error)
+    Alert.Severity.DUE_SOON -> AlertTone(stringResource(R.string.alerts_severity_due_soon), MaterialTheme.colorScheme.primary)
+    Alert.Severity.INFO -> AlertTone(stringResource(R.string.alerts_severity_info), MaterialTheme.colorScheme.onSurfaceVariant)
 }

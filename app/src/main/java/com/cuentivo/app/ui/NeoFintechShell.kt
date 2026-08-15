@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,18 +59,25 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
 
-private val GlobeIcon: ImageVector = ImageVector.Builder(
-    name = "Language",
-    defaultWidth = 24.dp,
-    defaultHeight = 24.dp,
-    viewportWidth = 24f,
-    viewportHeight = 24f,
-).addPath(
-    pathData = PathParser().parsePathString(
-        "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4.06 13h3.98c.1 2.3.63 4.48 1.52 6.31A8.03 8.03 0 0 1 4.06 13zM8.04 11H4.06a8.03 8.03 0 0 1 5.5-6.31A18.2 18.2 0 0 0 8.04 11zM12 19.96c-1.23-1.78-2.08-4.26-2.15-6.96h4.3c-.07 2.7-.92 5.18-2.15 6.96zM9.85 11C9.92 8.3 10.77 5.82 12 4.04 13.23 5.82 14.08 8.3 14.15 11h-4.3zM14.44 19.31c.89-1.83 1.42-4.01 1.52-6.31h3.98a8.03 8.03 0 0 1-5.5 6.31zM15.96 11a18.2 18.2 0 0 0-1.52-6.31A8.03 8.03 0 0 1 19.94 11h-3.98z",
-    ).toNodes(),
-    fill = SolidColor(Color.Black),
-).build()
+/** The language globe, filled with the current theme's text colour rather than a hard-coded black. */
+@Composable
+private fun globeIcon(): ImageVector {
+    val fill = SolidColor(MaterialTheme.colorScheme.onSurface)
+    return remember(fill) {
+        ImageVector.Builder(
+            name = "Language",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).addPath(
+            pathData = PathParser().parsePathString(
+                "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4.06 13h3.98c.1 2.3.63 4.48 1.52 6.31A8.03 8.03 0 0 1 4.06 13zM8.04 11H4.06a8.03 8.03 0 0 1 5.5-6.31A18.2 18.2 0 0 0 8.04 11zM12 19.96c-1.23-1.78-2.08-4.26-2.15-6.96h4.3c-.07 2.7-.92 5.18-2.15 6.96zM9.85 11C9.92 8.3 10.77 5.82 12 4.04 13.23 5.82 14.08 8.3 14.15 11h-4.3zM14.44 19.31c.89-1.83 1.42-4.01 1.52-6.31h3.98a8.03 8.03 0 0 1-5.5 6.31zM15.96 11a18.2 18.2 0 0 0-1.52-6.31A8.03 8.03 0 0 1 19.94 11h-3.98z",
+            ).toNodes(),
+            fill = fill,
+        ).build()
+    }
+}
 
 /** The four places in the app. Nueva venta deliberately remains an action, not a destination. */
 enum class MainDestination {
@@ -165,7 +173,7 @@ fun NeoFintechShell(
                         .testTag("global-language-action"),
                 ) {
                     Icon(
-                        imageVector = GlobeIcon,
+                        imageVector = globeIcon(),
                         contentDescription = stringResource(R.string.account_language),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
@@ -196,16 +204,22 @@ fun NeoFintechShell(
         // transition both halves would draw the *new* screen, and cross-fading something with
         // itself is motion that costs frames and communicates nothing.
         content = { padding ->
-            AnimatedContent(
-                targetState = destination,
-                transitionSpec = {
-                    (fadeIn(tween(NeoMotion.ENTRANCE_MS)) +
-                        slideInVertically(tween(NeoMotion.ENTRANCE_MS)) { it / 14 })
-                        .togetherWith(ExitTransition.None)
-                },
-                label = "destination entrance",
-            ) { targetDestination ->
-                key(targetDestination) { content(padding) }
+            // Respect the system animator setting: with animations disabled the destination swaps
+            // instantly instead of animating an entrance nobody asked for.
+            if (LocalMotionEnabled.current) {
+                AnimatedContent(
+                    targetState = destination,
+                    transitionSpec = {
+                        (fadeIn(tween(NeoMotion.ENTRANCE_MS)) +
+                            slideInVertically(tween(NeoMotion.ENTRANCE_MS)) { it / 14 })
+                            .togetherWith(ExitTransition.None)
+                    },
+                    label = "destination entrance",
+                ) { targetDestination ->
+                    key(targetDestination) { content(padding) }
+                }
+            } else {
+                content(padding)
             }
         },
     )
