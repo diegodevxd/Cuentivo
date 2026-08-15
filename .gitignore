@@ -46,3 +46,8 @@ backup-cuentivo-*/
 *.aab
 /dist/
 /artifacts/
+
+# Firebase Functions local scaffold: compiled output and installed dependencies.
+/functions/lib/
+/functions/node_modules/
+/functions/coverage/
