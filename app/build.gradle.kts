@@ -105,6 +105,8 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+    // Debug-only callable transport to the us-south1 gateway; the v1 contract carries no text.
+    implementation("com.google.firebase:firebase-functions")
     // Crash reporting for release only: fixed technical event names, never PII, amounts or ids.
     // The reporter abstraction keeps debug/emulator sessions from sending anything at all.
     implementation("com.google.firebase:firebase-crashlytics")
