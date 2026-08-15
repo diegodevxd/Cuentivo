@@ -226,16 +226,17 @@ Regla objetiva de escalamiento: Flash/Qwen → V4 Pro al primer contacto con din
 - Done: métricas base, presupuesto/alertas y kill-switch documentados; cero endpoint AI público.
 - Rollback: no hay cambio funcional.
 
-### Fase 0A — Fundaciones locales CuentivoAI (ejecutada 2026-08-14)
+### Fase 0A — Fundaciones locales CuentivoAI (cerrada 2026-08-15)
 
 - Objetivo: seam local off-by-default sin proveedor: contratos inmutables, `FakeAiProvider` determinista y validador de drafts puro.
-- Rama: `diegodevxd/feature-cuentivo-ai`. Alcance: únicamente `com.cuentivo.app.ai` + tests JVM + este registro. Sin UI, Room/DAO, Firebase, Billing, red, secretos, permisos, versión, dependencias ni cambios a comportamiento existente.
+- Rama: `diegodevxd/feature-cuentivo-ai`. Alcance: únicamente `com.cuentivo.app.ai` + tests JVM + este registro, con una excepción de UI mínima autorizada el 2026-08-15 para corregir el lint existente en `NeoFintechShell.kt`. Sin Room/DAO, Firebase, Billing, red, secretos, permisos, versión, dependencias ni cambios financieros.
 - Commits (en orden): `35ab790 docs(ai): plan Fase 0A local foundation`; `8d35b54 feat(ai): add local experiment contracts`; `b535517 feat(ai): add deterministic fake provider`; `0dea240 feat(ai): validate local drafts safely`; `8de067d fix(ai): isolate sale draft lines from caller mutation`; `98cedaf fix(ai): make sale draft lines truly unmodifiable`.
-- Evidencia RED→GREEN (TDD, una suite por unidad): cada clase de prueba compiló primero con error por API ausente (`Unresolved reference`) y pasó completa tras implementar; `:app:testDebugUnitTest` completo verde; `:app:assembleDebug` verde; `git diff --check` limpio. `:app:lintDebug` reporta 1 error preexistente fuera de alcance (`ui/NeoFintechShell.kt:206`, `UnusedContentLambdaTargetStateParameter`, introducido en `938b296`) y cero problemas en `com/cuentivo/app/ai`; no se tocó UI ajena. Auditoría 0A: tres pruebas nuevas en `AiContractsTest` demostraron RED que las líneas del draft eran mutables (referencia del llamador y cast a `MutableList`); la clase final congela cada construcción con `Collections.unmodifiableList` de una copia — la mutación del llamador no tiene efecto y la mutación directa del draft se rechaza con `UnsupportedOperationException` — y quedaron GREEN.
+- Evidencia RED→GREEN (TDD, una suite por unidad): cada clase de prueba compiló primero con error por API ausente (`Unresolved reference`) y pasó completa tras implementar; `:app:testDebugUnitTest` completo verde; `:app:assembleDebug` verde; `git diff --check` limpio. Auditoría 0A: tres pruebas nuevas en `AiContractsTest` demostraron RED que las líneas del draft eran mutables (referencia del llamador y cast a `MutableList`); la clase final congela cada construcción con `Collections.unmodifiableList` de una copia — la mutación del llamador no tiene efecto y la mutación directa del draft se rechaza con `UnsupportedOperationException` — y quedaron GREEN. Remediación autorizada de lint: `NeoFintechShellSourceContractTest` fue RED al ignorarse el target de `AnimatedContent` y GREEN al asociar el subárbol a `key(targetDestination)`; `:app:lintDebug` finalmente quedó verde el 2026-08-15.
 - Sin GLM: la fase no roza dinero, backend, Auth, secretos, cuota, idempotencia, sync ni frontera de confianza; son contratos puros y un gate local. El gate adversarial GLM se mantiene para fases 1–3 y 8 según §7.
 - Costo de servicio: **$0**. No hay proveedor, red, cuota ni llamada a modelo; los fixtures son locales.
 - Apagado por defecto: `AiExperiment.isEnabled()` es `false`; nada en Gratis/Pro invoca un `AiProvider`.
 - Diferido: preview/confirmación, resolución de candidatos contra Room, `BusinessQuery` y cualquier proveedor real quedan fuera de 0A.
+- Cierre: todos los criterios DONE de 0A están verificados; no autoriza iniciar una fase posterior.
 
 ### Fase 1 — Fundaciones server-side
 - Crear Functions v2, Auth/App Check, Secret Manager, config por entorno, emulator tests y `AIProvider` desacoplado.

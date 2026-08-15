@@ -36,7 +36,7 @@
 - [x] Write failing tests for a valid payment, zero amount, invalid sale and refusal/clarification.
 - [x] Run `./gradlew.bat :app:testDebugUnitTest --tests com.cuentivo.app.ai.AiDraftSafetyTest`; confirm RED because validator is absent.
 - [x] Implement minimum pure validation; rerun GREEN.
-- [x] Run `./gradlew.bat :app:testDebugUnitTest`, `./gradlew.bat :app:assembleDebug`, `./gradlew.bat :app:lintDebug`, and `git diff --check`. Lint: 1 error preexistente fuera de alcance (`ui/NeoFintechShell.kt:206`, `UnusedContentLambdaTargetStateParameter`, introducido en `938b296`); cero problemas en `com/cuentivo/app/ai`.
+- [x] Run `./gradlew.bat :app:testDebugUnitTest`, `./gradlew.bat :app:assembleDebug`, `./gradlew.bat :app:lintDebug`, and `git diff --check`. The initial lint error in `ui/NeoFintechShell.kt:206` was remedied with the owner-authorized, regression-tested `AnimatedContent` target-state key on 2026-08-15; all four commands are green.
 - [x] Update the source of truth with Fase 0A, branch, commits, RED→GREEN evidence, no-GLM rationale, $0 service cost and deferred preview/confirmation; commit `feat(ai): validate local drafts safely`.
 
 ## Done Criteria
