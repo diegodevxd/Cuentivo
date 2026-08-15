@@ -440,6 +440,7 @@ No crear ahora cuenta/API key DeepSeek, gateway AI, Cloud Functions/Cloud Run, S
 | 2026-08-15 | Fase 0: readiness interno documentado con tres documentos de operaciones — gate de prueba cerrada (`717db89`), observabilidad y modelo de amenazas (`068632c`) y protocolo de APK debug del propietario (`810ebbe`). No hay GO público sin métricas agregadas; Fase 1 bloqueada hasta aprobación explícita y baseline `31 / 1.16.6` congelado. | Readiness documentado; pendiente gate final de Sol/propietario |
 | 2026-08-15 | Se congeló la fuente de compatibilidad `31 / 1.16.6` en `release/1.16.6-baseline` / `e40eb4e` con tag anotado `v1.16.6-31`. | Referencia histórica local; `lintDebug` falla por `AnimatedContent`; no equivale a GO público ni a validación completa |
 | 2026-08-15 | Se integró la baseline en `diegodevxd/feature-cuentivo-ai` por merge `6224399`; único conflicto `NeoFintechShell.kt`, resuelto conservando `LocalMotionEnabled` y `key(targetDestination)`. | Auditada: JVM, assemble, lint y diff-check verdes; no inicia Fase 1 server-side ni habilita usuarios |
+| 2026-08-15 | Fase 1A implementada localmente en `functions/` (scaffold `7b968f6`, contrato fail-closed `ab75d3b`, callable v2 Auth/App Check `24323a1`): `interpretAiRequest` con `enforceAppCheck: true` responde sólo `AI_NOT_CONFIGURED` al contrato v1 válido. Sin deploy, proveedor, secretos, Firestore, Android ni datos financieros. | Pendiente auditoría Sol; no marca Fase 1 completa ni GO público |
 
 ## 17. HANDOFF A ORCA — FASE 0 INTERNA AUTORIZADA
 
