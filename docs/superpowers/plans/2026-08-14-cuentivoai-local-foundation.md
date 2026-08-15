@@ -12,10 +12,10 @@
 
 **Produces:** `AiExperiment.isEnabled(localOverride: Boolean = false): Boolean`; `AiInterpretRequest(text, requestId)`; sealed `AiProviderResult`; sealed `AiIntent` restricted to `RecordPaymentDraft`, `CreateSaleDraft`, `NeedClarification`, `Refuse`. Names are display candidates only; no entity IDs.
 
-- [ ] Write test-first cases proving the experiment is false by default, true only for explicit local override, and money is `Long` cents.
-- [ ] Run `./gradlew.bat :app:testDebugUnitTest --tests com.cuentivo.app.ai.AiExperimentTest --tests com.cuentivo.app.ai.AiContractsTest`; confirm it fails because the API is absent.
-- [ ] Implement only immutable Kotlin contracts and the local gate.
-- [ ] Rerun the test command and commit only these files with `feat(ai): add local experiment contracts`.
+- [x] Write test-first cases proving the experiment is false by default, true only for explicit local override, and money is `Long` cents.
+- [x] Run `./gradlew.bat :app:testDebugUnitTest --tests com.cuentivo.app.ai.AiExperimentTest --tests com.cuentivo.app.ai.AiContractsTest`; confirm it fails because the API is absent.
+- [x] Implement only immutable Kotlin contracts and the local gate.
+- [x] Rerun the test command and commit only these files with `feat(ai): add local experiment contracts`.
 
 ### Task 2: Provider boundary and deterministic fake
 
@@ -23,9 +23,9 @@
 
 **Produces:** `interface AiProvider { suspend fun interpret(request: AiInterpretRequest): AiProviderResult }`. The fake recognizes only `Diego me pagó 500` and `Diego se llevó dos perfumes de 300 y pagó 200`; every other input yields `NeedClarification`. It neither calculates final totals nor reads/persists entities.
 
-- [ ] Write failing fixture and unsupported-text tests first.
-- [ ] Run `./gradlew.bat :app:testDebugUnitTest --tests com.cuentivo.app.ai.FakeAiProviderTest`; confirm RED because the fake is absent.
-- [ ] Implement only the interface and deterministic fixture map; rerun GREEN and commit `feat(ai): add deterministic fake provider`.
+- [x] Write failing fixture and unsupported-text tests first.
+- [x] Run `./gradlew.bat :app:testDebugUnitTest --tests com.cuentivo.app.ai.FakeAiProviderTest`; confirm RED because the fake is absent.
+- [x] Implement only the interface and deterministic fixture map; rerun GREEN and commit `feat(ai): add deterministic fake provider`.
 
 ### Task 3: Safety validator and phase evidence
 
@@ -33,11 +33,11 @@
 
 **Produces:** `AiDraftSafety.validate(result): AiDraftSafetyResult`. Only nonblank names and positive quantities/centavos become `ReadyForHumanPreview`; `NeedClarification`, `Refused`, zero/negative values and blank names never do. This result has no execute, confirm, DAO, repository, idempotency or persistence callback.
 
-- [ ] Write failing tests for a valid payment, zero amount, invalid sale and refusal/clarification.
-- [ ] Run `./gradlew.bat :app:testDebugUnitTest --tests com.cuentivo.app.ai.AiDraftSafetyTest`; confirm RED because validator is absent.
-- [ ] Implement minimum pure validation; rerun GREEN.
-- [ ] Run `./gradlew.bat :app:testDebugUnitTest`, `./gradlew.bat :app:assembleDebug`, `./gradlew.bat :app:lintDebug`, and `git diff --check`.
-- [ ] Update the source of truth with Fase 0A, branch, commits, RED→GREEN evidence, no-GLM rationale, $0 service cost and deferred preview/confirmation; commit `feat(ai): validate local drafts safely`.
+- [x] Write failing tests for a valid payment, zero amount, invalid sale and refusal/clarification.
+- [x] Run `./gradlew.bat :app:testDebugUnitTest --tests com.cuentivo.app.ai.AiDraftSafetyTest`; confirm RED because validator is absent.
+- [x] Implement minimum pure validation; rerun GREEN.
+- [x] Run `./gradlew.bat :app:testDebugUnitTest`, `./gradlew.bat :app:assembleDebug`, `./gradlew.bat :app:lintDebug`, and `git diff --check`. Lint: 1 error preexistente fuera de alcance (`ui/NeoFintechShell.kt:206`, `UnusedContentLambdaTargetStateParameter`, introducido en `938b296`); cero problemas en `com/cuentivo/app/ai`.
+- [x] Update the source of truth with Fase 0A, branch, commits, RED→GREEN evidence, no-GLM rationale, $0 service cost and deferred preview/confirmation; commit `feat(ai): validate local drafts safely`.
 
 ## Done Criteria
 

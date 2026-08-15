@@ -1,6 +1,6 @@
 # CuentivoAI — arquitectura, seguridad y plan de ejecución
 
-> **Estado:** arquitectura base aprobada; implementación en **NO-GO**. No autoriza implementación.
+> **Estado:** arquitectura base aprobada; implementación en **NO-GO**, con una sola excepción: **Fase 0A — fundaciones locales off-by-default** ejecutada en rama aislada `diegodevxd/feature-cuentivo-ai` (registro en §8). Fuera de esa fase, no autoriza implementación.
 >
 > **Source of truth:** este documento prevalece para CuentivoAI hasta que el propietario apruebe una fase explícitamente. Las decisiones y supuestos deben actualizarse aquí antes de cambiar producción.
 >
@@ -226,6 +226,17 @@ Regla objetiva de escalamiento: Flash/Qwen → V4 Pro al primer contacto con din
 - Done: métricas base, presupuesto/alertas y kill-switch documentados; cero endpoint AI público.
 - Rollback: no hay cambio funcional.
 
+### Fase 0A — Fundaciones locales CuentivoAI (ejecutada 2026-08-14)
+
+- Objetivo: seam local off-by-default sin proveedor: contratos inmutables, `FakeAiProvider` determinista y validador de drafts puro.
+- Rama: `diegodevxd/feature-cuentivo-ai`. Alcance: únicamente `com.cuentivo.app.ai` + tests JVM + este registro. Sin UI, Room/DAO, Firebase, Billing, red, secretos, permisos, versión, dependencias ni cambios a comportamiento existente.
+- Commits (en orden): `35ab790 docs(ai): plan Fase 0A local foundation`; `8d35b54 feat(ai): add local experiment contracts`; `b535517 feat(ai): add deterministic fake provider`; `feat(ai): validate local drafts safely` (este registro vive en el último; SHA en `git log`).
+- Evidencia RED→GREEN (TDD, una suite por unidad): cada clase de prueba compiló primero con error por API ausente (`Unresolved reference`) y pasó completa tras implementar; `:app:testDebugUnitTest` completo verde; `:app:assembleDebug` verde; `git diff --check` limpio. `:app:lintDebug` reporta 1 error preexistente fuera de alcance (`ui/NeoFintechShell.kt:206`, `UnusedContentLambdaTargetStateParameter`, introducido en `938b296`) y cero problemas en `com/cuentivo/app/ai`; no se tocó UI ajena.
+- Sin GLM: la fase no roza dinero, backend, Auth, secretos, cuota, idempotencia, sync ni frontera de confianza; son contratos puros y un gate local. El gate adversarial GLM se mantiene para fases 1–3 y 8 según §7.
+- Costo de servicio: **$0**. No hay proveedor, red, cuota ni llamada a modelo; los fixtures son locales.
+- Apagado por defecto: `AiExperiment.isEnabled()` es `false`; nada en Gratis/Pro invoca un `AiProvider`.
+- Diferido: preview/confirmación, resolución de candidatos contra Room, `BusinessQuery` y cualquier proveedor real quedan fuera de 0A.
+
 ### Fase 1 — Fundaciones server-side
 - Crear Functions v2, Auth/App Check, Secret Manager, config por entorno, emulator tests y `AIProvider` desacoplado.
 - Modelo: V4 Pro; GLM seguridad; Sol auditoría.
@@ -421,6 +432,7 @@ No crear ahora cuenta/API key DeepSeek, gateway AI, Cloud Functions/Cloud Run, S
 | 2026-08-14 | Gateway seguro e AIProvider intercambiable antes de proveedor; jamás key en APK/AAB. | Aprobada |
 | 2026-08-14 | Flash es candidato inicial; Barcode Pro/on-device; OCR local primero; voz experimental sin promesa offline universal. | Aprobada |
 | 2026-08-14 | Fotos cloud se separan de CuentivoAI; actualmente son locales. | Aprobada como separación; capacidad cloud pendiente |
+| 2026-08-14 | Fase 0A ejecutada en rama aislada: contratos locales, gate off-by-default, `FakeAiProvider` determinista y validador de drafts; sin red, proveedor ni costo. | Ejecutada con evidencia RED→GREEN; preview/confirmación diferidos |
 
 ## 17. HANDOFF A ORCA — NO EJECUTAR TODAVÍA
 
