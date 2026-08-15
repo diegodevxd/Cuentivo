@@ -65,4 +65,34 @@ class AiContractsTest {
         assertEquals(AiIntent.NeedClarification, interpreted.intent)
         assertEquals("provider down", unavailable.reason)
     }
+
+    @Test
+    fun `sale draft isolates its lines from the caller's mutable list`() {
+        val callerLines = mutableListOf(AiSaleLineDraft("perfume", 2, 300L))
+        val draft = AiIntent.Draft.CreateSaleDraft(
+            customerName = "Diego",
+            lines = callerLines,
+            declaredPaymentCents = 200L,
+        )
+
+        callerLines.add(AiSaleLineDraft("crema", 1, 150L))
+
+        assertEquals(listOf(AiSaleLineDraft("perfume", 2, 300L)), draft.lines)
+    }
+
+    @Test
+    fun `copy of a sale draft also isolates its lines from caller mutation`() {
+        val original = AiIntent.Draft.CreateSaleDraft(
+            customerName = "Diego",
+            lines = listOf(AiSaleLineDraft("perfume", 2, 300L)),
+            declaredPaymentCents = 200L,
+        )
+        val callerLines = mutableListOf(AiSaleLineDraft("crema", 1, 150L))
+        val changed = original.copy(lines = callerLines)
+
+        callerLines.add(AiSaleLineDraft("gel", 3, 90L))
+
+        assertEquals(listOf(AiSaleLineDraft("crema", 1, 150L)), changed.lines)
+        assertEquals(listOf(AiSaleLineDraft("perfume", 2, 300L)), original.lines)
+    }
 }

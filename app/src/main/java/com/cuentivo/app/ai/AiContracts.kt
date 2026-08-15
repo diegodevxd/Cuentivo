@@ -25,12 +25,58 @@ sealed interface AiIntent {
             val amountCents: Long,
         ) : Draft
 
-        /** Candidate sale: display names only, raw lines and the declared payment; no totals. */
-        data class CreateSaleDraft(
+        /**
+         * Candidate sale: display names only, raw lines and the declared payment; no totals.
+         * Plain final class (not a data class) so that both construction and [copy] can
+         * defensively copy [lines]: no caller can keep a mutable reference into a draft.
+         */
+        class CreateSaleDraft private constructor(
             val customerName: String,
             val lines: List<AiSaleLineDraft>,
             val declaredPaymentCents: Long,
-        ) : Draft
+        ) : Draft {
+
+            companion object {
+                /** Defensive copy: construction never retains a caller's mutable list reference. */
+                operator fun invoke(
+                    customerName: String,
+                    lines: List<AiSaleLineDraft>,
+                    declaredPaymentCents: Long,
+                ): CreateSaleDraft = CreateSaleDraft(
+                    customerName = customerName,
+                    lines = lines.toList(),
+                    declaredPaymentCents = declaredPaymentCents,
+                )
+            }
+
+            /** Also defensively copies [lines], unlike a generated data class copy. */
+            fun copy(
+                customerName: String = this.customerName,
+                lines: List<AiSaleLineDraft> = this.lines,
+                declaredPaymentCents: Long = this.declaredPaymentCents,
+            ): CreateSaleDraft = CreateSaleDraft(
+                customerName = customerName,
+                lines = lines.toList(),
+                declaredPaymentCents = declaredPaymentCents,
+            )
+
+            override fun equals(other: Any?): Boolean =
+                this === other ||
+                    (other is CreateSaleDraft &&
+                        customerName == other.customerName &&
+                        lines == other.lines &&
+                        declaredPaymentCents == other.declaredPaymentCents)
+
+            override fun hashCode(): Int {
+                var result = customerName.hashCode()
+                result = 31 * result + lines.hashCode()
+                result = 31 * result + declaredPaymentCents.hashCode()
+                return result
+            }
+
+            override fun toString(): String =
+                "CreateSaleDraft(customerName=$customerName, lines=$lines, declaredPaymentCents=$declaredPaymentCents)"
+        }
     }
 
     /** The input was not interpretable; a human must clarify. Never preview-ready. */
