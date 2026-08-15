@@ -2,6 +2,7 @@ package com.cuentivo.app.ai
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class AiContractsTest {
@@ -94,5 +95,26 @@ class AiContractsTest {
 
         assertEquals(listOf(AiSaleLineDraft("crema", 1, 150L)), changed.lines)
         assertEquals(listOf(AiSaleLineDraft("perfume", 2, 300L)), original.lines)
+    }
+
+    @Test
+    fun `sale draft lines reject mutation through a MutableList cast`() {
+        val draft = AiIntent.Draft.CreateSaleDraft(
+            customerName = "Diego",
+            lines = listOf(
+                AiSaleLineDraft("perfume", 2, 300L),
+                AiSaleLineDraft("crema", 1, 150L),
+            ),
+            declaredPaymentCents = 200L,
+        )
+
+        assertThrows(UnsupportedOperationException::class.java) {
+            (draft.lines as MutableList<AiSaleLineDraft>).add(AiSaleLineDraft("gel", 3, 90L))
+        }
+
+        assertEquals(
+            listOf(AiSaleLineDraft("perfume", 2, 300L), AiSaleLineDraft("crema", 1, 150L)),
+            draft.lines,
+        )
     }
 }

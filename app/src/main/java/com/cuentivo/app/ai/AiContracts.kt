@@ -1,5 +1,7 @@
 package com.cuentivo.app.ai
 
+import java.util.Collections
+
 /**
  * Immutable, versioned contracts for CuentivoAI interpretation.
  *
@@ -28,35 +30,38 @@ sealed interface AiIntent {
         /**
          * Candidate sale: display names only, raw lines and the declared payment; no totals.
          * Plain final class (not a data class) so that both construction and [copy] can
-         * defensively copy [lines]: no caller can keep a mutable reference into a draft.
+         * freeze [lines]: every construction stores an unmodifiable copy, so neither the
+         * original reference nor a [MutableList] cast can mutate a draft on the JVM.
          */
         class CreateSaleDraft private constructor(
             val customerName: String,
-            val lines: List<AiSaleLineDraft>,
+            rawLines: List<AiSaleLineDraft>,
             val declaredPaymentCents: Long,
         ) : Draft {
 
+            /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
+            val lines: List<AiSaleLineDraft> = Collections.unmodifiableList(rawLines.toMutableList())
+
             companion object {
-                /** Defensive copy: construction never retains a caller's mutable list reference. */
                 operator fun invoke(
                     customerName: String,
                     lines: List<AiSaleLineDraft>,
                     declaredPaymentCents: Long,
                 ): CreateSaleDraft = CreateSaleDraft(
                     customerName = customerName,
-                    lines = lines.toList(),
+                    rawLines = lines,
                     declaredPaymentCents = declaredPaymentCents,
                 )
             }
 
-            /** Also defensively copies [lines], unlike a generated data class copy. */
+            /** Also freezes [lines], unlike a generated data class copy. */
             fun copy(
                 customerName: String = this.customerName,
                 lines: List<AiSaleLineDraft> = this.lines,
                 declaredPaymentCents: Long = this.declaredPaymentCents,
             ): CreateSaleDraft = CreateSaleDraft(
                 customerName = customerName,
-                lines = lines.toList(),
+                rawLines = lines,
                 declaredPaymentCents = declaredPaymentCents,
             )
 
