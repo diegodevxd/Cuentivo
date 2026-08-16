@@ -58,3 +58,56 @@ export function createNotConfiguredResponse(request: InterpretAiRequest): Interp
     status: "AI_NOT_CONFIGURED",
   };
 }
+
+import type { AiAuthorizationDecision, AiProviderId } from "./ai/controlPlane";
+
+export type AuthorizeAiActionRequest = Readonly<{
+  contractVersion: 1;
+  requestId: string;
+  action: "authorize_text";
+}>;
+
+export type AuthorizeAiActionResponse = Readonly<{
+  contractVersion: 1;
+  requestId: string;
+  decision: AiAuthorizationDecision;
+  provider: AiProviderId | null;
+  fallbackUsed: false;
+}>;
+
+export type AuthorizeAiActionValidation =
+  | Readonly<{ ok: true; value: AuthorizeAiActionRequest }>
+  | Readonly<{ ok: false; reason: "invalid-request" }>;
+
+const AUTHORIZE_ACTION = "authorize_text";
+
+/**
+ * Same allow-list validation pattern as the interpret contract: a plain non-null object whose only
+ * keys are contractVersion, requestId and action, with version 1, action "authorize_text" and a
+ * 36-character UUID. Every failure returns the same fixed rejection; never throws, never logs.
+ */
+export function validateAuthorizeAiActionRequest(input: unknown): AuthorizeAiActionValidation {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { ok: false, reason: "invalid-request" };
+  }
+  const record = input as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (keys.length !== ALLOWED_KEYS.length || !ALLOWED_KEYS.every((key) => key in record)) {
+    return { ok: false, reason: "invalid-request" };
+  }
+  if (record["contractVersion"] !== 1 || record["action"] !== AUTHORIZE_ACTION) {
+    return { ok: false, reason: "invalid-request" };
+  }
+  const requestId = record["requestId"];
+  if (
+    typeof requestId !== "string" ||
+    requestId.length !== 36 ||
+    !UUID_V1_TO_V5.test(requestId)
+  ) {
+    return { ok: false, reason: "invalid-request" };
+  }
+  return {
+    ok: true,
+    value: { contractVersion: 1, requestId, action: AUTHORIZE_ACTION },
+  };
+}
