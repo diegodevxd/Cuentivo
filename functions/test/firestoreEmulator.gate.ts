@@ -109,8 +109,7 @@ describe("firestore emulator concurrency gate", () => {
     );
 
     const authorized = results.filter((r) => r.decision === "AI_AUTHORIZED");
-    expect(authorized.length).toBe(1);
-    expect(authorized[0]?.provider).toBe("DEEPSEEK");
+    expect(authorized.length).toBe(1);    expect(authorized[0]?.provider).toBe("DEEPSEEK");
     expect(authorized[0]?.fallbackUsed).toBe(false);
 
     const denied = results.filter((r) => r.decision !== "AI_AUTHORIZED");
