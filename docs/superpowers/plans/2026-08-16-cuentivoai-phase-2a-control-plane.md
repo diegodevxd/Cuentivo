@@ -256,12 +256,16 @@ Do not declare Phase 2A DONE. Sol must inspect the diff, repeat the relevant tes
 ### Task 5: Concurrencia real con Firestore Emulator
 
 **Files:**
-- Create: `functions/test/firestoreControlPlane.emulator.test.ts`
+- Create: `functions/test/firestoreEmulator.gate.ts`
+- Create: `functions/test/firestoreCleanupGuard.test.ts`
+- Create: `functions/scripts/runFirestoreEmulatorTests.js`
+- Create: `functions/vitest.gate.config.ts`
 - Modify: `functions/package.json`
+- Modify: `functions/vitest.config.ts`
 
 **Interfaces:**
 
-Use `createFirestoreControlPlaneRepository(getFirestore(app))` against `FIRESTORE_EMULATOR_HOST`. The test owns only uniquely prefixed `aiControl`, `aiEntitlements`, `aiUsage`, `aiRateWindows` and `aiRequestLedger` documents for its generated test uid; it performs no delete against non-test paths.
+Use `createFirestoreControlPlaneRepository(getFirestore(app))` against `FIRESTORE_EMULATOR_HOST`. The test owns only uniquely prefixed `aiEntitlements`, `aiUsage`, `aiRateWindows` and `aiRequestLedger` documents for its generated test uid, plus `aiControl/global` in the dedicated `demo-cuentivoai-phase2a` project. It performs no listing or delete against non-test paths; the normal-suite cleanup guard enforces that invariant.
 
 - [ ] **Step 1: Write a real concurrent transaction test**
 
