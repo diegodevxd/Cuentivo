@@ -116,11 +116,11 @@ aiRateWindows/{uid}_{YYYYMMDDHHmm}
 aiRequestLedger/{uid}_{requestId}
 ```
 
-The global configuration has exactly `enabled`, `providers`, `monthlyActionLimit`, `perMinuteLimit`. Entitlement has exactly `enabled`, `expiresAtEpochMillis`. Usage/rate documents store only `usedActions` and server timestamps. Ledger stores request metadata only: `uid`, `requestId`, `decision`, `provider`, `fallbackUsed`, `createdAtEpochMillis`; never input payload or provider output.
+The global configuration has exactly `enabled`, `providers`, `monthlyActionLimit`, `perMinuteLimit`. Entitlement has exactly `enabled`, `expiresAtEpochMillis`. Usage/rate documents store only `usedActions` and server timestamps. A ledger is created only for `AI_AUTHORIZED` and stores request metadata only: `uid`, `requestId`, `decision`, `provider`, `fallbackUsed`, `createdAtEpochMillis`; never input payload or provider output. Denials create no document, preventing disabled, non-entitled, quota-exhausted and rate-limited callers from creating Firestore write cost.
 
 - [ ] **Step 1: Add failing transactional tests with an injected Firestore-like transaction fake**
 
-Tests must model two concurrent calls with the same uid/requestId and assert one ledger decision and one quota/rate increment; a repeat reads and returns the original result. Model concurrent distinct request IDs at quota/rate boundaries and assert no limit is exceeded. Model a missing config, missing entitlement and expired entitlement with zero writes to usage/rate documents.
+Tests must model two concurrent calls with the same uid/requestId and assert one ledger decision and one quota/rate increment; a repeat reads and returns the original result. Model concurrent distinct request IDs at quota/rate boundaries and assert no limit is exceeded. Model a missing config, disabled provider, missing/expired entitlement, quota exhaustion and rate limiting with zero writes to usage, rate and ledger documents.
 
 - [ ] **Step 2: Run tests to verify failure**
 
@@ -134,7 +134,7 @@ Add `firebase-admin` as a runtime dependency using npm in `functions/`; commit t
 
 - [ ] **Step 4: Implement one Firestore transaction per authorization**
 
-Within `runTransaction`, read ledger first. If it exists and exactly belongs to `uid`/`requestId`, return its stored result without incrementing. Otherwise read global config, entitlement, month usage and minute rate window; call `decideAuthorization`; write ledger for every decision. Only `AI_AUTHORIZED` increments both usage and rate by exactly one in the same transaction. Any malformed stored document, missing config, transaction error or ownership mismatch returns `AI_DISABLED` and must not increment counters.
+Within `runTransaction`, read ledger first. If it exists and exactly belongs to `uid`/`requestId`, return its stored authorized result without incrementing. Otherwise read global config, entitlement, month usage and minute rate window; call `decideAuthorization`. Only `AI_AUTHORIZED` writes a ledger and increments both usage and rate by exactly one in the same transaction. Every denial returns without any write. Any malformed stored document, missing config, transaction error or ownership mismatch returns `AI_DISABLED` and must not increment counters or create a ledger.
 
 - [ ] **Step 5: Verify repository tests and all Functions tests**
 
