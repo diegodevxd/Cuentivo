@@ -98,7 +98,7 @@ describe("authorizeInTransaction", () => {
     expect(third.decision).toBe("AI_QUOTA_EXHAUSTED");
     expect(third.provider).toBeNull();
     expect(store.get(usagePath("user-1"))).toEqual({ usedActions: 2 });
-    expect(store.get(ledgerPath("user-1", "r3"))?.decision).toBe("AI_QUOTA_EXHAUSTED");
+    expect(store.has(ledgerPath("user-1", "r3"))).toBe(false);
   });
 
   test("rate boundary: distinct requestIds never exceed the per-minute limit", async () => {
@@ -111,77 +111,88 @@ describe("authorizeInTransaction", () => {
 
     expect(second.decision).toBe("AI_RATE_LIMITED");
     expect(store.get(ratePath("user-1"))).toEqual({ usedActions: 1 });
-    expect(store.get(ledgerPath("user-1", "r2"))?.decision).toBe("AI_RATE_LIMITED");
+    expect(store.has(ledgerPath("user-1", "r2"))).toBe(false);
   });
 
-  test("missing configuration denies with zero usage and rate writes", async () => {
+  test("missing configuration denies with zero writes of any kind", async () => {
     const store: Store = new Map();
     store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
+    const initialSize = store.size;
 
     const result = await authorizeInTransaction(fakeTransaction(store), input("r1"));
 
     expect(result.decision).toBe("AI_DISABLED");
+    expect(store.size).toBe(initialSize);
     expect(store.has(usagePath("user-1"))).toBe(false);
     expect(store.has(ratePath("user-1"))).toBe(false);
-    expect(store.get(ledgerPath("user-1", "r1"))?.decision).toBe("AI_DISABLED");
+    expect(store.has(ledgerPath("user-1", "r1"))).toBe(false);
   });
 
-  test("missing entitlement denies with zero usage and rate writes", async () => {
+  test("missing entitlement denies with zero writes of any kind", async () => {
     const store: Store = new Map();
     store.set("aiControl/global", config(2, 100));
+    const initialSize = store.size;
 
     const result = await authorizeInTransaction(fakeTransaction(store), input("r1"));
 
     expect(result.decision).toBe("AI_ENTITLEMENT_REQUIRED");
+    expect(store.size).toBe(initialSize);
     expect(store.has(usagePath("user-1"))).toBe(false);
     expect(store.has(ratePath("user-1"))).toBe(false);
-    expect(store.get(ledgerPath("user-1", "r1"))?.decision).toBe("AI_ENTITLEMENT_REQUIRED");
+    expect(store.has(ledgerPath("user-1", "r1"))).toBe(false);
   });
 
-  test("expired entitlement denies with zero usage and rate writes", async () => {
+  test("expired entitlement denies with zero writes of any kind", async () => {
     const store: Store = new Map();
     store.set("aiControl/global", config(2, 100));
     store.set("aiEntitlements/user-1", entitlement(NOW - 1));
+    const initialSize = store.size;
 
     const result = await authorizeInTransaction(fakeTransaction(store), input("r1"));
 
     expect(result.decision).toBe("AI_ENTITLEMENT_REQUIRED");
+    expect(store.size).toBe(initialSize);
     expect(store.has(usagePath("user-1"))).toBe(false);
     expect(store.has(ratePath("user-1"))).toBe(false);
+    expect(store.has(ledgerPath("user-1", "r1"))).toBe(false);
   });
 
-  test("ledger owned by another uid denies", async () => {
+  test("ledger owned by another uid denies and leaves it untouched", async () => {
     const store: Store = new Map();
     store.set("aiControl/global", config(2, 100));
     store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
-    store.set(ledgerPath("user-1", "r1"), {
+    const foreign = {
       uid: "user-2",
       requestId: "r1",
       decision: "AI_AUTHORIZED",
       provider: "DEEPSEEK",
       fallbackUsed: false,
       createdAtEpochMillis: NOW,
-    });
+    };
+    store.set(ledgerPath("user-1", "r1"), foreign);
 
     const result = await authorizeInTransaction(fakeTransaction(store), input("r1"));
 
     expect(result.decision).toBe("AI_DISABLED");
+    expect(store.get(ledgerPath("user-1", "r1"))).toEqual(foreign);
     expect(store.has(usagePath("user-1"))).toBe(false);
   });
 
-  test("malformed stored ledger denies without writes", async () => {
+  test("malformed stored ledger denies and leaves it untouched", async () => {
     const store: Store = new Map();
     store.set("aiControl/global", config(2, 100));
     store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
-    store.set(ledgerPath("user-1", "r1"), { unexpected: "shape" });
+    const malformed = { unexpected: "shape" };
+    store.set(ledgerPath("user-1", "r1"), malformed);
 
     const result = await authorizeInTransaction(fakeTransaction(store), input("r1"));
 
     expect(result.decision).toBe("AI_DISABLED");
+    expect(store.get(ledgerPath("user-1", "r1"))).toEqual(malformed);
     expect(store.has(usagePath("user-1"))).toBe(false);
   });
 
-  test("malformed usage document denies", async () => {
+  test("malformed usage document denies with zero ledger writes", async () => {
     const store: Store = new Map();
     store.set("aiControl/global", config(2, 100));
     store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
@@ -190,6 +201,7 @@ describe("authorizeInTransaction", () => {
     const result = await authorizeInTransaction(fakeTransaction(store), input("r1"));
 
     expect(result.decision).toBe("AI_DISABLED");
+    expect(store.has(ledgerPath("user-1", "r1"))).toBe(false);
   });
 
   test("transaction error fails closed to AI_DISABLED", async () => {
@@ -205,5 +217,54 @@ describe("authorizeInTransaction", () => {
     const result = await authorizeInTransaction(failing, input("r1"));
 
     expect(result).toEqual({ decision: "AI_DISABLED", provider: null, fallbackUsed: false });
+  });
+
+  test("every denial leaves zero new documents", async () => {
+    const scenarios: Array<{ name: string; store: Store }> = [
+      { name: "missing config", store: new Map() },
+      {
+        name: "disabled config",
+        store: new Map([
+          ["aiControl/global", { ...config(2, 100), enabled: false }],
+          ["aiEntitlements/user-1", entitlement(NOW + 3_600_000)],
+        ]),
+      },
+      { name: "missing entitlement", store: new Map([["aiControl/global", config(2, 100)]]) },
+      {
+        name: "expired entitlement",
+        store: new Map([
+          ["aiControl/global", config(2, 100)],
+          ["aiEntitlements/user-1", entitlement(NOW - 1)],
+        ]),
+      },
+      {
+        name: "quota exhausted",
+        store: new Map([
+          ["aiControl/global", config(2, 100)],
+          ["aiEntitlements/user-1", entitlement(NOW + 3_600_000)],
+          [usagePath("user-1"), { usedActions: 2 }],
+        ]),
+      },
+      {
+        name: "rate exhausted",
+        store: new Map([
+          ["aiControl/global", config(100, 1)],
+          ["aiEntitlements/user-1", entitlement(NOW + 3_600_000)],
+          [ratePath("user-1"), { usedActions: 1 }],
+        ]),
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const initialSize = scenario.store.size;
+      const result = await authorizeInTransaction(fakeTransaction(scenario.store), input("r1"));
+      expect(result.fallbackUsed).toBe(false);
+      expect(result.decision).not.toBe("AI_AUTHORIZED");
+      expect(
+        scenario.store.size,
+        `scenario "${scenario.name}" must not create or modify any document`,
+      ).toBe(initialSize);
+      expect(scenario.store.has(ledgerPath("user-1", "r1"))).toBe(false);
+    }
   });
 });

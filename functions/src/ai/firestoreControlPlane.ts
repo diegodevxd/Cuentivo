@@ -104,12 +104,14 @@ function usedActionsOf(doc: Record<string, unknown> | null): number | null {
 }
 
 /**
- * One authorization per Firestore transaction. Reads the ledger first: an existing entry that
- * exactly belongs to uid/requestId is returned without increments. Otherwise the global config,
- * entitlement, month usage and minute rate window are read, the pure policy decides, and the
- * ledger is written for every decision. Only AI_AUTHORIZED increments usage and rate by exactly
- * one inside the same transaction. Any malformed document, ownership mismatch or storage error
- * fails closed to AI_DISABLED with no counter writes.
+ * One authorization per Firestore transaction. Reads the ledger first: only an existing entry
+ * that exactly belongs to uid/requestId AND records an authorized decision is returned without
+ * increments. Any other stored ledger (malformed, foreign or denied) fails closed untouched.
+ * Every denial — disabled config, missing or expired entitlement, quota/rate exhausted, malformed
+ * documents, ownership mismatch or storage error — returns WITHOUT creating or modifying ledger,
+ * usage or rate documents, so attackers cannot generate documents or cost while AI is off. Only
+ * AI_AUTHORIZED writes the ledger and increments usage and rate by exactly one in the same
+ * transaction.
  */
 export async function authorizeInTransaction(
   tx: AiTransaction,
@@ -119,7 +121,10 @@ export async function authorizeInTransaction(
     const existingLedger = await tx.get(ledgerPath(input.uid, input.requestId));
     if (existingLedger !== null) {
       const stored = storedResultOf(existingLedger, input.uid, input.requestId);
-      return stored ?? DENIED("AI_DISABLED");
+      if (stored !== null && stored.decision === "AI_AUTHORIZED") {
+        return stored;
+      }
+      return DENIED("AI_DISABLED");
     }
 
     const config = await tx.get(CONFIG_PATH);
@@ -132,16 +137,7 @@ export async function authorizeInTransaction(
     const usedMonthly = usedActionsOf(usageDoc);
     const usedPerMinute = usedActionsOf(rateDoc);
     if (usedMonthly === null || usedPerMinute === null) {
-      const decision: AiAuthorizationDecision = "AI_DISABLED";
-      await tx.set(ledgerPath(input.uid, input.requestId), {
-        uid: input.uid,
-        requestId: input.requestId,
-        decision,
-        provider: null,
-        fallbackUsed: false,
-        createdAtEpochMillis: input.nowEpochMillis,
-      });
-      return DENIED(decision);
+      return DENIED("AI_DISABLED");
     }
 
     const configProviders = (config?.["providers"] ?? {}) as Record<string, unknown>;
@@ -173,6 +169,11 @@ export async function authorizeInTransaction(
       { usedActions: usedPerMinute },
     );
 
+    if (result.decision !== "AI_AUTHORIZED") {
+      // Denials never write: no ledger, no usage, no rate documents.
+      return result;
+    }
+
     await tx.set(ledgerPath(input.uid, input.requestId), {
       uid: input.uid,
       requestId: input.requestId,
@@ -181,13 +182,10 @@ export async function authorizeInTransaction(
       fallbackUsed: false,
       createdAtEpochMillis: input.nowEpochMillis,
     });
-
-    if (result.decision === "AI_AUTHORIZED") {
-      await tx.set(usagePath(input.uid, input.nowEpochMillis), { usedActions: usedMonthly + 1 });
-      await tx.set(rateWindowPath(input.uid, input.nowEpochMillis), {
-        usedActions: usedPerMinute + 1,
-      });
-    }
+    await tx.set(usagePath(input.uid, input.nowEpochMillis), { usedActions: usedMonthly + 1 });
+    await tx.set(rateWindowPath(input.uid, input.nowEpochMillis), {
+      usedActions: usedPerMinute + 1,
+    });
 
     return result;
   } catch {
