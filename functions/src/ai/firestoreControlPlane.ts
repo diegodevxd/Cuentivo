@@ -1,6 +1,8 @@
 import type * as FirebaseFirestore from "firebase-admin/firestore";
 import {
   decideAuthorization,
+  isControlAllowed,
+  isEntitlementValid,
   type AiAuthorizationDecision,
   type AiProviderId,
   type AuthorizeAiInput,
@@ -104,20 +106,61 @@ function usedActionsOf(doc: Record<string, unknown> | null): number | null {
 }
 
 /**
- * One authorization per Firestore transaction. Reads the ledger first: only an existing entry
- * that exactly belongs to uid/requestId AND records an authorized decision is returned without
- * increments. Any other stored ledger (malformed, foreign or denied) fails closed untouched.
- * Every denial — disabled config, missing or expired entitlement, quota/rate exhausted, malformed
- * documents, ownership mismatch or storage error — returns WITHOUT creating or modifying ledger,
- * usage or rate documents, so attackers cannot generate documents or cost while AI is off. Only
- * AI_AUTHORIZED writes the ledger and increments usage and rate by exactly one in the same
- * transaction.
+ * One authorization per Firestore transaction with a strict read short-circuit, so abuse cannot
+ * generate Firestore read cost while AI is off:
+ *
+ * 1. `aiControl/global` is read first. Absent, malformed, disabled or provider-less config returns
+ *    AI_DISABLED immediately — no further reads, no writes.
+ * 2. Only when the config allows AI, the entitlement is read. Absent, malformed or expired
+ *    entitlement returns AI_ENTITLEMENT_REQUIRED without touching ledger, usage or rate.
+ * 3. Only with a valid entitlement the ledger is read. An existing authorized entry owned by
+ *    uid/requestId returns the original result without reading counters or writing. Any other
+ *    stored ledger fails closed to AI_DISABLED with zero writes.
+ * 4. Only a new eligible authorization reads usage and rate, and only AI_AUTHORIZED writes the
+ *    ledger plus the two incremented counters in the same transaction. Denials never write.
  */
 export async function authorizeInTransaction(
   tx: AiTransaction,
   input: AuthorizeAiInput,
 ): Promise<AuthorizeAiResult> {
   try {
+    // 1. Control configuration first: nothing else is read unless AI can run.
+    const config = await tx.get(CONFIG_PATH);
+    const configProviders = (config?.["providers"] ?? {}) as Record<string, unknown>;
+    const typedConfig = {
+      enabled: typeof config?.["enabled"] === "boolean" ? config["enabled"] : false,
+      providers: {
+        DEEPSEEK: configProviders["DEEPSEEK"] === true,
+        GEMINI: configProviders["GEMINI"] === true,
+      },
+      monthlyActionLimit:
+        typeof config?.["monthlyActionLimit"] === "number"
+          ? (config["monthlyActionLimit"] as number)
+          : 0,
+      perMinuteLimit:
+        typeof config?.["perMinuteLimit"] === "number" ? (config["perMinuteLimit"] as number) : 0,
+    };
+    if (!isControlAllowed(typedConfig)) {
+      return DENIED("AI_DISABLED");
+    }
+
+    // 2. Entitlement second: without a valid entitlement nothing else is read or written.
+    const entitlement = await tx.get(entitlementPath(input.uid));
+    const typedEntitlement =
+      entitlement === null
+        ? null
+        : {
+            enabled: entitlement["enabled"] === true,
+            expiresAtEpochMillis:
+              typeof entitlement["expiresAtEpochMillis"] === "number"
+                ? (entitlement["expiresAtEpochMillis"] as number)
+                : 0,
+          };
+    if (!isEntitlementValid(typedEntitlement, input.nowEpochMillis)) {
+      return DENIED("AI_ENTITLEMENT_REQUIRED");
+    }
+
+    // 3. Ledger third: an existing authorized entry short-circuits without reading counters.
     const existingLedger = await tx.get(ledgerPath(input.uid, input.requestId));
     if (existingLedger !== null) {
       const stored = storedResultOf(existingLedger, input.uid, input.requestId);
@@ -127,11 +170,9 @@ export async function authorizeInTransaction(
       return DENIED("AI_DISABLED");
     }
 
-    const config = await tx.get(CONFIG_PATH);
-    const entitlement = await tx.get(entitlementPath(input.uid));
+    // 4. Counters last, only for a new eligible authorization.
     const usage = await tx.get(usagePath(input.uid, input.nowEpochMillis));
     const rate = await tx.get(rateWindowPath(input.uid, input.nowEpochMillis));
-
     const usageDoc = usage === null ? { usedActions: 0 } : usage;
     const rateDoc = rate === null ? { usedActions: 0 } : rate;
     const usedMonthly = usedActionsOf(usageDoc);
@@ -140,31 +181,10 @@ export async function authorizeInTransaction(
       return DENIED("AI_DISABLED");
     }
 
-    const configProviders = (config?.["providers"] ?? {}) as Record<string, unknown>;
     const result = decideAuthorization(
       input,
-      {
-        enabled: typeof config?.["enabled"] === "boolean" ? config["enabled"] : false,
-        providers: {
-          DEEPSEEK: configProviders["DEEPSEEK"] === true,
-          GEMINI: configProviders["GEMINI"] === true,
-        },
-        monthlyActionLimit:
-          typeof config?.["monthlyActionLimit"] === "number"
-            ? (config["monthlyActionLimit"] as number)
-            : 0,
-        perMinuteLimit:
-          typeof config?.["perMinuteLimit"] === "number" ? (config["perMinuteLimit"] as number) : 0,
-      },
-      entitlement === null
-        ? null
-        : {
-            enabled: entitlement["enabled"] === true,
-            expiresAtEpochMillis:
-              typeof entitlement["expiresAtEpochMillis"] === "number"
-                ? (entitlement["expiresAtEpochMillis"] as number)
-                : 0,
-          },
+      typedConfig,
+      typedEntitlement,
       { usedActions: usedMonthly },
       { usedActions: usedPerMinute },
     );

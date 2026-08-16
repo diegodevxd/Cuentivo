@@ -87,6 +87,16 @@ function pickProvider(config: AiControlConfig): AiProviderId | null {
   return null;
 }
 
+/** True only when the control configuration is present, enabled, well-formed and has a provider. */
+export function isControlAllowed(config: AiControlConfig | null): boolean {
+  return isValidConfig(config) && pickProvider(config) !== null;
+}
+
+/** True only when the entitlement is enabled, well-formed and strictly unexpired at `nowEpochMillis`. */
+export function isEntitlementValid(entitlement: AiEntitlement | null, nowEpochMillis: number): boolean {
+  return isValidEntitlement(entitlement) && nowEpochMillis < entitlement.expiresAtEpochMillis;
+}
+
 /**
  * Pure provider-agnostic allow-list policy. Never throws; every denial returns no provider.
  * Configuration must be present, enabled, and carry positive safe-integer limits. The entitlement

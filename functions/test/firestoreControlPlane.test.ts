@@ -28,12 +28,23 @@ function input(requestId: string, nowEpochMillis: number = NOW): AuthorizeAiInpu
 
 type Store = Map<string, Record<string, unknown>>;
 
-function fakeTransaction(store: Store): AiTransaction {
+type RecordingTransaction = AiTransaction & {
+  reads: string[];
+  writes: string[];
+};
+
+function fakeTransaction(store: Store): RecordingTransaction {
+  const reads: string[] = [];
+  const writes: string[] = [];
   return {
+    reads,
+    writes,
     async get(path) {
+      reads.push(path);
       return store.get(path) ?? null;
     },
     async set(path, data) {
+      writes.push(path);
       store.set(path, { ...data });
     },
   };
@@ -49,6 +60,13 @@ function ratePath(uid: string, minute: string = MINUTE) {
 
 function ledgerPath(uid: string, requestId: string) {
   return `aiRequestLedger/${uid}_${requestId}`;
+}
+
+function authorizedStore(): Store {
+  const store: Store = new Map();
+  store.set("aiControl/global", config(2, 100));
+  store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
+  return store;
 }
 
 describe("authorizeInTransaction", () => {
@@ -217,6 +235,156 @@ describe("authorizeInTransaction", () => {
     const result = await authorizeInTransaction(failing, input("r1"));
 
     expect(result).toEqual({ decision: "AI_DISABLED", provider: null, fallbackUsed: false });
+  });
+
+  test("missing config short-circuits to a single read and zero writes", async () => {
+    const store: Store = new Map();
+    const tx = fakeTransaction(store);
+
+    const result = await authorizeInTransaction(tx, input("r1"));
+
+    expect(result.decision).toBe("AI_DISABLED");
+    expect(tx.reads).toEqual(["aiControl/global"]);
+    expect(tx.writes).toEqual([]);
+  });
+
+  test("disabled config short-circuits after the config read", async () => {
+    const store: Store = new Map();
+    store.set("aiControl/global", { ...config(2, 100), enabled: false });
+    const tx = fakeTransaction(store);
+
+    const result = await authorizeInTransaction(tx, input("r1"));
+
+    expect(result.decision).toBe("AI_DISABLED");
+    expect(tx.reads).toEqual(["aiControl/global"]);
+    expect(tx.writes).toEqual([]);
+  });
+
+  test("no provider short-circuits after the config read", async () => {
+    const store: Store = new Map();
+    store.set("aiControl/global", {
+      ...config(2, 100),
+      providers: { DEEPSEEK: false, GEMINI: false },
+    });
+    const tx = fakeTransaction(store);
+
+    const result = await authorizeInTransaction(tx, input("r1"));
+
+    expect(result.decision).toBe("AI_DISABLED");
+    expect(tx.reads).toEqual(["aiControl/global"]);
+    expect(tx.writes).toEqual([]);
+  });
+
+  test("missing entitlement reads only config and entitlement", async () => {
+    const store: Store = new Map();
+    store.set("aiControl/global", config(2, 100));
+    const tx = fakeTransaction(store);
+
+    const result = await authorizeInTransaction(tx, input("r1"));
+
+    expect(result.decision).toBe("AI_ENTITLEMENT_REQUIRED");
+    expect(tx.reads).toEqual(["aiControl/global", "aiEntitlements/user-1"]);
+    expect(tx.writes).toEqual([]);
+  });
+
+  test("expired entitlement reads only config and entitlement", async () => {
+    const store: Store = new Map();
+    store.set("aiControl/global", config(2, 100));
+    store.set("aiEntitlements/user-1", entitlement(NOW - 1));
+    const tx = fakeTransaction(store);
+
+    const result = await authorizeInTransaction(tx, input("r1"));
+
+    expect(result.decision).toBe("AI_ENTITLEMENT_REQUIRED");
+    expect(tx.reads).toEqual(["aiControl/global", "aiEntitlements/user-1"]);
+    expect(tx.writes).toEqual([]);
+  });
+
+  test("authorized ledger retry reads config, entitlement and ledger only", async () => {
+    const store = authorizedStore();
+    store.set(ledgerPath("user-1", "r1"), {
+      uid: "user-1",
+      requestId: "r1",
+      decision: "AI_AUTHORIZED",
+      provider: "DEEPSEEK",
+      fallbackUsed: false,
+      createdAtEpochMillis: NOW,
+    });
+    const tx = fakeTransaction(store);
+
+    const result = await authorizeInTransaction(tx, input("r1"));
+
+    expect(result.decision).toBe("AI_AUTHORIZED");
+    expect(tx.reads).toEqual([
+      "aiControl/global",
+      "aiEntitlements/user-1",
+      "aiRequestLedger/user-1_r1",
+    ]);
+    expect(tx.writes).toEqual([]);
+  });
+
+  test("foreign ledger stops at the ledger read and writes nothing", async () => {
+    const store = authorizedStore();
+    store.set(ledgerPath("user-1", "r1"), {
+      uid: "user-2",
+      requestId: "r1",
+      decision: "AI_AUTHORIZED",
+      provider: "DEEPSEEK",
+      fallbackUsed: false,
+      createdAtEpochMillis: NOW,
+    });
+    const tx = fakeTransaction(store);
+
+    const result = await authorizeInTransaction(tx, input("r1"));
+
+    expect(result.decision).toBe("AI_DISABLED");
+    expect(tx.reads).toEqual([
+      "aiControl/global",
+      "aiEntitlements/user-1",
+      "aiRequestLedger/user-1_r1",
+    ]);
+    expect(tx.writes).toEqual([]);
+  });
+
+  test("new authorization reads all five paths and writes the three authorized documents", async () => {
+    const store = authorizedStore();
+    const tx = fakeTransaction(store);
+
+    const result = await authorizeInTransaction(tx, input("r1"));
+
+    expect(result.decision).toBe("AI_AUTHORIZED");
+    expect(tx.reads).toEqual([
+      "aiControl/global",
+      "aiEntitlements/user-1",
+      "aiRequestLedger/user-1_r1",
+      "aiUsage/user-1_202608",
+      "aiRateWindows/user-1_202608161200",
+    ]);
+    expect(tx.writes).toEqual([
+      "aiRequestLedger/user-1_r1",
+      "aiUsage/user-1_202608",
+      "aiRateWindows/user-1_202608161200",
+    ]);
+  });
+
+  test("quota denial reads the five paths and writes nothing", async () => {
+    const store: Store = new Map();
+    store.set("aiControl/global", config(2, 100));
+    store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
+    store.set(usagePath("user-1"), { usedActions: 2 });
+    const tx = fakeTransaction(store);
+
+    const result = await authorizeInTransaction(tx, input("r1"));
+
+    expect(result.decision).toBe("AI_QUOTA_EXHAUSTED");
+    expect(tx.reads).toEqual([
+      "aiControl/global",
+      "aiEntitlements/user-1",
+      "aiRequestLedger/user-1_r1",
+      "aiUsage/user-1_202608",
+      "aiRateWindows/user-1_202608161200",
+    ]);
+    expect(tx.writes).toEqual([]);
   });
 
   test("every denial leaves zero new documents", async () => {
