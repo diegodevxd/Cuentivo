@@ -120,7 +120,7 @@ The global configuration has exactly `enabled`, `providers`, `monthlyActionLimit
 
 - [ ] **Step 1: Add failing transactional tests with an injected Firestore-like transaction fake**
 
-Tests must model two concurrent calls with the same uid/requestId and assert one ledger decision and one quota/rate increment; a repeat reads and returns the original result. Model concurrent distinct request IDs at quota/rate boundaries and assert no limit is exceeded. Model a missing config, disabled provider, missing/expired entitlement, quota exhaustion and rate limiting with zero writes to usage, rate and ledger documents.
+Tests must model two concurrent calls with the same uid/requestId and assert one ledger decision and one quota/rate increment; a repeat reads and returns the original result. Model concurrent distinct request IDs at quota/rate boundaries and assert no limit is exceeded. The transaction must read global config first, then entitlement; a missing/disabled/malformed config must stop after the config read, and a missing/expired entitlement must stop before any ledger, usage or rate read. Model those cases plus quota exhaustion and rate limiting with zero writes to usage, rate and ledger documents.
 
 - [ ] **Step 2: Run tests to verify failure**
 
@@ -134,7 +134,7 @@ Add `firebase-admin` as a runtime dependency using npm in `functions/`; commit t
 
 - [ ] **Step 4: Implement one Firestore transaction per authorization**
 
-Within `runTransaction`, read ledger first. If it exists and exactly belongs to `uid`/`requestId`, return its stored authorized result without incrementing. Otherwise read global config, entitlement, month usage and minute rate window; call `decideAuthorization`. Only `AI_AUTHORIZED` writes a ledger and increments both usage and rate by exactly one in the same transaction. Every denial returns without any write. Any malformed stored document, missing config, transaction error or ownership mismatch returns `AI_DISABLED` and must not increment counters or create a ledger.
+Within `runTransaction`, read global config first and return `AI_DISABLED` without further reads if it is missing, malformed, disabled or has no enabled provider. Then read entitlement and return `AI_ENTITLEMENT_REQUIRED` without reading ledger/counters if it is missing or expired. Only then read the ledger; a matching authorized ledger returns its stored result without counter reads or increments. A new eligible authorization reads month usage and minute rate window and calls `decideAuthorization`. Only `AI_AUTHORIZED` writes a ledger and increments both usage and rate by exactly one in the same transaction. Every denial returns without any write. Any malformed stored document, transaction error or ownership mismatch returns `AI_DISABLED` and must not increment counters or create a ledger.
 
 - [ ] **Step 5: Verify repository tests and all Functions tests**
 
