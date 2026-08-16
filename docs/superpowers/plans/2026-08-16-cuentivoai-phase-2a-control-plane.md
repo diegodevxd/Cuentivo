@@ -252,3 +252,47 @@ Expected: all pass. Report exact command outputs, commit IDs, changed files and 
 - [ ] **Step 3: Stop for Sol audit**
 
 Do not declare Phase 2A DONE. Sol must inspect the diff, repeat the relevant tests, review transaction semantics and obtain an adversarial GLM review before a DONE decision. A separate owner authorization is required for deploy or device test.
+
+### Task 5: Concurrencia real con Firestore Emulator
+
+**Files:**
+- Create: `functions/test/firestoreControlPlane.emulator.test.ts`
+- Modify: `functions/package.json`
+
+**Interfaces:**
+
+Use `createFirestoreControlPlaneRepository(getFirestore(app))` against `FIRESTORE_EMULATOR_HOST`. The test owns only uniquely prefixed `aiControl`, `aiEntitlements`, `aiUsage`, `aiRateWindows` and `aiRequestLedger` documents for its generated test uid; it performs no delete against non-test paths.
+
+- [ ] **Step 1: Write a real concurrent transaction test**
+
+Seed a valid config with monthly/per-minute limits of `1` and an unexpired entitlement. Call `repository.authorize` concurrently at least ten times with distinct UUID request IDs and a fixed clock minute. Assert exactly one `AI_AUTHORIZED`, exactly one ledger document, `usedActions == 1` in both counter documents, and every other result is `AI_QUOTA_EXHAUSTED` or `AI_RATE_LIMITED` with no ledger. Then repeat the authorized request ID concurrently and assert its stored result is returned without increasing either counter.
+
+- [ ] **Step 2: Verify RED and run with the Firestore emulator**
+
+Add a script that starts only Firestore Emulator through Firebase CLI and passes `FIRESTORE_EMULATOR_HOST` to Vitest. Use the existing local CA configuration when needed. The test must fail when the emulator is unavailable rather than silently using production Firestore.
+
+- [ ] **Step 3: Implement the smallest emulator-only harness**
+
+Initialize Firebase Admin once with project id `demo-cuentivoai-phase2a` only when `FIRESTORE_EMULATOR_HOST` is set. Keep the emulator test outside normal `npm test`; invoke it only from the explicit emulator script. Do not add credentials, deploy, or production project identifiers.
+
+- [ ] **Step 4: Verify all gates**
+
+Run from `functions/`:
+
+```bash
+npm test
+npm run lint
+npm run build
+npm run test:firestore-emulator
+```
+
+Expected: normal suite and emulator concurrency suite pass. Then run Android JVM, assemble and lint plus `git diff --check` from repository root.
+
+- [ ] **Step 5: Commit and stop for Sol/GLM audit**
+
+```bash
+git add functions/package.json functions/test/firestoreControlPlane.emulator.test.ts
+git commit -m "test(ai): verify control plane concurrency with firestore emulator"
+```
+
+Do not deploy, invoke production Firebase, install an APK or declare Phase 2A DONE.
