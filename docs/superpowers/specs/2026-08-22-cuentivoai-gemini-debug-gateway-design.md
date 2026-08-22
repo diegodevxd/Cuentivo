@@ -24,7 +24,7 @@ Android debug APK
   -> draft/intent response only
 ```
 
-Any failure before or during Gemini returns a typed fail-closed AI result and leaves normal Cuentivo/Pro flows operational. An authorized request ID must never invoke Gemini twice. A provider timeout is ambiguous only for interpretation, never for money; it produces no mutation and the user can retry with the same request ID.
+Any failure before or during Gemini returns a typed fail-closed AI result and leaves normal Cuentivo/Pro flows operational. An authorized request ID must never invoke Gemini twice: before the provider call, the server durably claims a non-sensitive provider-invocation state in the existing request ledger. A retry after a claimed timeout returns `AI_UNAVAILABLE`, not a second provider call. The state stores neither user text nor model output. A provider timeout is ambiguous only for interpretation, never for money; it produces no mutation and the user can submit a new request ID deliberately.
 
 ## Capability and schema boundary
 
