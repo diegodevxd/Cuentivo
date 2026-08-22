@@ -41,12 +41,20 @@ const UUID_V1_TO_V5 =
  * rejection. Never throws, normalizes, generates ids, stores or logs.
  */
 export function validateInterpretAiRequest(input: unknown): ContractValidation {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    Array.isArray(input) ||
+    Object.getOwnPropertySymbols(input).length > 0
+  ) {
     return { ok: false, reason: "invalid-request" };
   }
   const record = input as Record<string, unknown>;
   const keys = Object.keys(record);
-  if (keys.length !== INTERPRET_KEYS.length || !INTERPRET_KEYS.every((key) => key in record)) {
+  if (
+    keys.length !== INTERPRET_KEYS.length ||
+    !INTERPRET_KEYS.every((key) => Object.prototype.hasOwnProperty.call(record, key))
+  ) {
     return { ok: false, reason: "invalid-request" };
   }
   if (record["contractVersion"] !== 1 || record["action"] !== "interpret_text") {
@@ -118,12 +126,20 @@ const AUTHORIZE_KEYS = ["contractVersion", "requestId", "action"] as const;
  * 36-character UUID. Every failure returns the same fixed rejection; never throws, never logs.
  */
 export function validateAuthorizeAiActionRequest(input: unknown): AuthorizeAiActionValidation {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    Array.isArray(input) ||
+    Object.getOwnPropertySymbols(input).length > 0
+  ) {
     return { ok: false, reason: "invalid-request" };
   }
   const record = input as Record<string, unknown>;
   const keys = Object.keys(record);
-  if (keys.length !== AUTHORIZE_KEYS.length || !AUTHORIZE_KEYS.every((key) => key in record)) {
+  if (
+    keys.length !== AUTHORIZE_KEYS.length ||
+    !AUTHORIZE_KEYS.every((key) => Object.prototype.hasOwnProperty.call(record, key))
+  ) {
     return { ok: false, reason: "invalid-request" };
   }
   if (record["contractVersion"] !== 1 || record["action"] !== AUTHORIZE_ACTION) {
