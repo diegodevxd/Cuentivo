@@ -1,6 +1,6 @@
 # CuentivoAI — arquitectura, seguridad y plan de ejecución
 
-> **Estado:** el lanzamiento público y cualquier AAB/activación para usuarios permanecen en **NO-GO**. Excepciones aprobadas: **Fase 0A — fundaciones locales off-by-default**, ya cerrada; y desde 2026-08-15, **Fase 0 — preparación interna para APK debug**, únicamente en la rama aislada `diegodevxd/feature-cuentivo-ai` y para pruebas del propietario. La excepción interna no autoriza proveedor, secretos, operaciones financieras IA, AAB, Play ni el inicio automático de fases posteriores.
+> **Estado:** el lanzamiento público y cualquier AAB/activación para usuarios permanecen en **NO-GO**. En la rama aislada `diegodevxd/feature-cuentivo-ai`, Fase 0A y Fase 1B (gateway fail-closed) están cerradas. **Fase 2A está implementada localmente pero abierta en auditoría; no tiene autorización de deploy ni proveedor real.** La excepción interna no autoriza operaciones financieras IA, AAB, Play ni el inicio automático de fases posteriores.
 >
 > **Source of truth:** este documento prevalece para CuentivoAI hasta que el propietario apruebe una fase explícitamente. Las decisiones y supuestos deben actualizarse aquí antes de cambiar producción.
 >
@@ -48,7 +48,7 @@ Invariantes no negociables:
 
 | Hallazgo | Evidencia | Consecuencia para AI |
 |---|---|---|
-| No hay backend de ejecución | `firebase.json` solo Firestore/Auth/emuladores | Crear backend mínimo protegido, no exponer DeepSeek desde Android. |
+| Gateway server-side inicial | `functions/`, `interpretAiRequest` callable v2 fail-closed desplegada en `us-south1`; `authorizeAiAction` permanece local y no desplegada | Nunca exponer Gemini desde Android; todo proveedor queda detrás del gateway. |
 | Billing es client-side | `BillingGateway`, `EntitlementStore` | Insuficiente para vender cuota AI; servidor debe verificar/autorizar. |
 | Hay base para confirmación segura | `OperationEntity`, DAOs transaccionales, auditoría | Reutilizarla; no inventar un ledger paralelo. |
 | Fotos no son cloud | `ProductImageStore` | OCR debe procesar temporalmente en dispositivo; no asumir archivo remoto. |
@@ -63,9 +63,9 @@ Las siguientes decisiones están **aprobadas** y solo cambian por una nueva deci
 2. Precio objetivo experimental: $299 MXN/mes; deberá revisarse con uso, costo y conversión reales.
 3. Jerarquía prevista: Gratis → Pro $199 → CuentivoAI $299. CuentivoAI **incluye Pro**; no son suscripciones acumulativas.
 4. Cuota inicial de referencia: aproximadamente 500 acciones IA/mes, configurable en servidor y no compromiso comercial definitivo.
-5. DeepSeek V4 Flash es el candidato inicial de inferencia de producción, detrás de `AIProvider` intercambiable.
+5. **Gemini 2.5 Flash-Lite es el único proveedor de inferencia previsto para la primera producción**, detrás de `AIProvider` intercambiable. DeepSeek V4 Pro se usa para desarrollo mediante OpenCode, no dentro de CuentivoAI.
 6. El modelo nunca tiene autoridad financiera: interpretación → schema → validación → lógica determinista → preview → confirmación → operación idempotente → DB.
-7. La key de DeepSeek jamás reside en APK/AAB; un gateway seguro es requisito previo a todo proveedor real.
+7. La key de Gemini jamás reside en APK/AAB; un gateway seguro es requisito previo a todo proveedor real.
 8. OCR intenta primero ejecución local/on-device; voz inicia experimentalmente y no promete offline universal.
 9. Barcode se considera inicialmente Pro, no exclusivo de CuentivoAI.
 10. Apagar CuentivoAI no puede afectar Gratis ni Pro.
@@ -79,7 +79,7 @@ Barcode no usa IA ni tiene costo marginal de modelo. Mantenerlo como Pro evita m
 Android (UI/captura) -- Firebase Auth ID token + App Check --> Cuentivo AI Gateway
                                                                |-- verifica uid, App Check, rol, entitlement y cuota
                                                                |-- rate limit + idempotency + telemetría sin PII cruda
-                                                               |-- AIProvider (DeepSeek inicialmente; intercambiable)
+                                                               |-- AIProvider (Gemini 2.5 Flash-Lite inicialmente; intercambiable)
                                                                '-- devuelve AiDraft o QueryIntent firmado por requestId
 
 Android -- validación de dominio + preview + confirmación --> Room transaction existente
@@ -91,7 +91,7 @@ Android -- validación de dominio + preview + confirmación --> Room transaction
 
 Usar **Cloud Functions for Firebase v2 (callable/HTTP) en el proyecto Firebase existente**, con Secret Manager para la key del proveedor. Es el mínimo que reutiliza Auth, App Check, Firestore, emuladores y observabilidad. Alternativa aceptable si la carga/streaming exige más control: Cloud Run detrás de Firebase Auth/App Check; no se decide ni se crea hasta medir beta.
 
-El gateway no escribe operaciones financieras. Sus únicas colecciones nuevas propuestas son de control: `aiEntitlements/{uid}`, `aiUsage/{uid}/{period}`, `aiRequests/{requestId}` y métricas agregadas. Toda lectura/escritura queda con Admin SDK y reglas Firestore niegan acceso directo del cliente a esas rutas.
+El gateway no escribe operaciones financieras. La implementación local de Fase 2A propone sólo documentos de control Admin SDK: `aiControl/global`, `aiEntitlements/{uid}`, `aiUsage/{uid}_{YYYYMM}`, `aiRateWindows/{uid}_{YYYYMMDDHHmm}` y `aiRequestLedger/{uid}_{requestId}`. Las reglas de cliente no se han modificado y niegan acceso directo a esas rutas. Esta implementación no está desplegada ni concede entitlement real.
 
 ### Interfaces propuestas
 
@@ -117,7 +117,7 @@ sealed interface AiIntent {
 
 1. Usuario escribe texto y elige “interpretar”.
 2. Cliente limita tamaño, adjunta solo contexto mínimo permitido (por ejemplo candidatos locales, nunca la base completa) y llama Gateway.
-3. Gateway autoriza, debita/reserva una acción idempotente y llama proveedor en JSON mode, sin pensamiento/streaming para este caso.
+3. Gateway autoriza y llama a Gemini con **Structured Outputs/JSON Schema** estricto para el tipo de intent permitido; nunca acepta texto libre como contrato. La reserva/consumo exacto se decidirá sólo cuando la política de reintentos y coste esté cerrada.
 4. App resuelve candidatos contra Room; si hay 0 o >1 coincidencias pide selección/aclaración.
 5. App usa factories/DAOs existentes para cálculo, muestra venta/pago y saldo resultante.
 6. Confirmar ejecuta una transacción Room una sola vez, guarda `OperationEntity`/`AuditLog`, encola sync. Cancelar no muta dinero.
@@ -132,7 +132,7 @@ sealed interface AiIntent {
 ### Voz → operación
 
 1. Solicitar `RECORD_AUDIO` solo al tocar micrófono y explicar uso.
-2. Preferir `SpeechRecognizer.createOnDeviceSpeechRecognizer` únicamente donde esté disponible; el API estándar puede depender de un servicio/red del dispositivo, por lo que no se promete offline ni se envía audio a DeepSeek.
+2. Preferir `SpeechRecognizer.createOnDeviceSpeechRecognizer` únicamente donde esté disponible; el API estándar puede depender de un servicio/red del dispositivo, por lo que no se promete offline. Un fallback multimodal a Gemini requiere consentimiento, límites y una fase posterior.
 3. Mostrar transcripción editable; únicamente el texto confirmado llega al gateway y continúa como Texto → operación.
 4. Si no existe reconocimiento on-device, ofrecer escribir o activar explícitamente el reconocedor del dispositivo; no contratar STT remoto en v1.
 
@@ -148,7 +148,7 @@ ML Kit Barcode Scanning on-device → normalizar código → buscar `Product.sku
 
 ### Controles obligatorios
 
-- Secret de DeepSeek solo en Secret Manager; jamás `BuildConfig`, APK, repositorio, Crashlytics o logs.
+- Secret de Gemini solo en Secret Manager; jamás `BuildConfig`, APK, repositorio, Crashlytics o logs.
 - Callable endpoint exige Firebase Auth, App Check válido, uid verificado, miembro activo y rol que pueda proponer la operación. Mutación final aún se somete a las reglas actuales de Firestore.
 - Server-side entitlement verifica compra con Google Play Developer API antes de conceder/renovar AI. No confiar en `SharedPreferences` ni en una flag de UI.
 - Cuota mensual transaccional por uid/periodo, máximo por solicitud, rate limits uid+IP/App Check, concurrencia baja, timeouts, máximo de reintentos y hard cap monetario diario/mensual configurado en servidor.
@@ -180,22 +180,9 @@ No se puede saber desde Git si el proyecto está Spark o Blaze, región Firestor
 
 Supuesto base de sync: 30 operaciones financieras/usuario/mes × 4 documentos escritos y 400 lecturas/usuario/mes. No incluye fotos ni varios miembros. A 10/100/1k/10k usuarios: 1.2k/12k/120k/1.2M writes al mes y 4k/40k/400k/4M reads al mes. Promediado: 10k usuarios (~40k writes/día, ~133k reads/día) supera Spark; 1k normalmente no bajo este supuesto. Medir antes de convertir esta tabla en presupuesto.
 
-### DeepSeek V4 Flash — costo de modelo
+### Gemini 2.5 Flash-Lite — costo de modelo
 
-La documentación oficial a fecha de auditoría publica cache miss $0.14/M input y $0.28/M output (USD), con precios sujetos a cambio. Modelo normal conservador: 2,000 input + 500 output por acción = **$0.00042 USD/acción**. Intensivo: 8,000 + 1,000 = **$0.00140 USD/acción**. Multiplicar USD por el tipo de cambio que el propietario confirme; no se fija uno en código.
-
-| Acciones AI por usuario/mes | Normal USD | Intensivo USD |
-|---:|---:|---:|
-| 100 | 0.042 | 0.140 |
-| 500 | 0.210 | 0.700 |
-| 1,000 | 0.420 | 1.400 |
-
-| Usuarios todos CuentivoAI, 500 acciones | Acciones/mes | modelo normal USD | modelo intensivo USD |
-|---:|---:|---:|---:|
-| 10 | 5,000 | 2.10 | 7.00 |
-| 100 | 50,000 | 21.00 | 70.00 |
-| 1,000 | 500,000 | 210.00 | 700.00 |
-| 10,000 | 5,000,000 | 2,100.00 | 7,000.00 |
+No reutilizar estimaciones ni precios de DeepSeek. Antes de beta/producción se verificará el precio vigente de Gemini 2.5 Flash-Lite, modalidad de facturación, región y límites oficiales; entonces se calculará costo por acción con tokens y telemetría reales. OCR/Barcode local y consultas deterministas siguen sin costo de modelo.
 
 OCR/Barcode local y consultas deterministas cuestan $0 de modelo. Cloud Functions/Run, Firestore de control, egress y Storage futuro se presupuestan separadamente por región en Google Cloud Pricing Calculator al elegir región; no están inventados aquí.
 
@@ -253,7 +240,7 @@ Regla objetiva de escalamiento: Flash/Qwen → V4 Pro al primer contacto con din
 - Done: 500 es configuración remota, no literal cliente; reintentos no duplican consumo; usuario sin AI no llega a proveedor.
 
 ### Fase 3 — Texto a draft seguro
-- Contrato de intent versionado, proveedor DeepSeek Flash, schema, candidates, preview y confirmación usando dominio/Room existentes.
+- Contrato de intent versionado, Gemini 2.5 Flash-Lite mediante Structured Outputs/JSON Schema, candidates, preview y confirmación usando dominio/Room existentes.
 - Tests adversariales de mutación nula antes de confirmar y cálculo local después.
 - Done: venta/pago de textos permitidos solo en beta; ambiguo/incorrecto pide aclaración.
 
@@ -447,7 +434,9 @@ No crear ahora cuenta/API key DeepSeek, gateway AI, Cloud Functions/Cloud Run, S
 | 2026-08-15 | Tras confirmación visual de Blaze en `organitazionlabs`, Sol desplegó exclusivamente `interpretAiRequest`: callable Functions v2 `us-south1`, Node.js 22 y 256 MiB. No se desplegaron otras Functions. Artifact Registry `gcf-artifacts` en `us-south1` recibió política de limpieza de imágenes antiguas a 1 día. | Despliegue remoto verificado por `functions:list`; permanece fail-closed (`AI_NOT_CONFIGURED`) y sin DeepSeek, secreto, Firestore Admin, cuota, entitlement, UI ni mutación financiera. **Fase 1B no está DONE** hasta comprobar en APK debug los rechazos de App Check/Auth y la respuesta válida autenticada, y auditar esa evidencia. |
 | 2026-08-16 | Auditoría Sol cerró la verificación física de Fase 1B en A059P con APK debug descartable: la callable `us-south1` devolvió el contrato v1 exacto `AI_NOT_CONFIGURED` con Firebase Auth + token App Check debug registrado; una petición con ID token válido pero sin `X-Firebase-AppCheck` recibió HTTP 401 exacto. Los tests no enviaron texto, datos financieros ni secretos, y no alteraron Room/Firestore. Commits de prueba `e12255e` y `d713005`; JVM, assemble, lint, Functions Node 22 (15), diff-check y `functions:list` verificados. | **Fase 1B DONE, sólo gateway fail-closed.** El dispositivo de prueba es descartable y puede instalar/desinstalar APK debug por autorización explícita del propietario. No habilita proveedor, key, prompts, rol, entitlement, cuota, idempotencia de operación, UI productiva, mutación financiera ni GO público; esas capacidades siguen sujetas a sus fases y gates propios. |
 
-| 2026-08-16 | Arquitectura multi-provider aprobada: DeepSeek V4 Flash es principal para texto; Gemini es multimodal y fallback condicionado. `AIProvider` y routing desacoplado seleccionan un único proveedor según capacidad, disponibilidad, costo y flags; los dos proveedores permanecen opcionales e independientes. | Aprobada. Fase 2A adopta control plane agnóstico de proveedor sin secretos ni llamadas a modelos; Fase 3 implementará contrato/router y proveedores textuales. Imagen/audio Gemini quedan condicionados a Fases 6/7. Diseño: `docs/superpowers/specs/2026-08-16-cuentivoai-multi-provider-routing-design.md`. |
+| 2026-08-16 | Arquitectura multi-provider aprobada: DeepSeek V4 Flash es principal para texto; Gemini es multimodal y fallback condicionado. | **Supersedida el 2026-08-21** por Gemini-only para la primera producción; se conserva `AIProvider`, no se implementa routing multi-provider. |
+| 2026-08-21 | Decisión de producción: Gemini 2.5 Flash-Lite es el único proveedor inicial. DeepSeek V4 Pro continúa sólo como implementador/revisor de desarrollo en OpenCode. Toda salida de Gemini deberá usar Structured Outputs/JSON Schema y sólo proponer intents/drafts; no muta dinero, Room, Firestore, outbox ni inventario. | Aprobada. Requiere reconciliar los enums/configuración DeepSeek+Gemini locales antes de cualquier integración real; no autoriza secret, SDK Gemini, llamada externa ni deploy. |
+| 2026-08-21 | Auditoría de reanudación: `HEAD 4744fb2`, rama `diegodevxd/feature-cuentivo-ai`; Functions 64/64, lint, build y diff-check pasan. Fase 1B es el último incremento cerrado. Fase 2A contiene control plane local y un commit de throttle transaccional rechazado: después del límite todavía realiza 4 lecturas por petición distinta y `maxAttempts: 50` puede amplificar coste/latencia. | **Fase 2A NOT DONE.** No desplegar `authorizeAiAction`; definir primero defensa de borde y semántica de coste/retry. `docs/superpowers/handoffs/` no rastreado se preserva. |
 
 ## 17. HANDOFF A ORCA — FASE 0 INTERNA AUTORIZADA
 
