@@ -33,4 +33,12 @@ describe("parseSafeInterpretation", () => {
   ] as const)("rejects %s with null", (_name, value) => {
     expect(parseSafeInterpretation(value)).toBeNull();
   });
+
+  test("rejects object with inherited kind and code and two arbitrary own keys with null", () => {
+    const proto = { kind: "unsupported", code: "UNSAFE" };
+    const obj = Object.create(proto) as Record<string, unknown>;
+    obj["first"] = true;
+    obj["second"] = true;
+    expect(parseSafeInterpretation(obj)).toBeNull();
+  });
 });

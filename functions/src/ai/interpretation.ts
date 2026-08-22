@@ -24,7 +24,11 @@ export function parseSafeInterpretation(value: unknown): SafeInterpretation | nu
   }
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record);
-  if (keys.length !== 2 || !("kind" in record) || !("code" in record)) {
+  if (
+    keys.length !== 2 ||
+    !Object.prototype.hasOwnProperty.call(record, "kind") ||
+    !Object.prototype.hasOwnProperty.call(record, "code")
+  ) {
     return null;
   }
   const kind = record["kind"];
