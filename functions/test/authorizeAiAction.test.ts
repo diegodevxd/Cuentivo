@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { createAuthorizeAiHandler } from "../src/authorizeAiAction.js";
+import { createAiEdgeRequestGuard } from "../src/ai/edgeRequestGuard.js";
 import type { AiControlPlaneRepository } from "../src/ai/firestoreControlPlane.js";
 import type { AuthorizeAiInput, AuthorizeAiResult } from "../src/ai/controlPlane.js";
 
@@ -12,6 +13,11 @@ const VALID_DATA = {
   requestId: "123e4567-e89b-12d3-a456-426614174000",
   action: "authorize_text",
 } as const;
+
+/** Guard wide open for tests that do not exercise the edge semantics. */
+function openGuard() {
+  return createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 1_000, maxTrackedUids: 1_000 });
+}
 
 function repositoryWith(
   onAuthorize: (input: AuthorizeAiInput) => Promise<AuthorizeAiResult> | AuthorizeAiResult,
@@ -27,7 +33,7 @@ describe("createAuthorizeAiHandler", () => {
   test("without auth returns unauthenticated", async () => {
     const handler = createAuthorizeAiHandler(repositoryWith(async () => {
       throw new Error("must not be called");
-    }), () => FAKE_NOW);
+    }), () => FAKE_NOW, openGuard());
 
     expect(await handler({ data: VALID_DATA })).toEqual({ code: "unauthenticated" });
   });
@@ -35,7 +41,7 @@ describe("createAuthorizeAiHandler", () => {
   test("extra contract field returns invalid-argument", async () => {
     const handler = createAuthorizeAiHandler(repositoryWith(async () => {
       throw new Error("must not be called");
-    }), () => FAKE_NOW);
+    }), () => FAKE_NOW, openGuard());
 
     expect(
       await handler({ auth: { uid: "test-user" }, data: { ...VALID_DATA, text: "hola" } }),
@@ -45,7 +51,7 @@ describe("createAuthorizeAiHandler", () => {
   test("wrong action returns invalid-argument", async () => {
     const handler = createAuthorizeAiHandler(repositoryWith(async () => {
       throw new Error("must not be called");
-    }), () => FAKE_NOW);
+    }), () => FAKE_NOW, openGuard());
 
     expect(
       await handler({
@@ -58,7 +64,7 @@ describe("createAuthorizeAiHandler", () => {
   test("missing requestId returns invalid-argument", async () => {
     const handler = createAuthorizeAiHandler(repositoryWith(async () => {
       throw new Error("must not be called");
-    }), () => FAKE_NOW);
+    }), () => FAKE_NOW, openGuard());
 
     expect(
       await handler({
@@ -73,7 +79,7 @@ describe("createAuthorizeAiHandler", () => {
     const handler = createAuthorizeAiHandler(repositoryWith(async (input) => {
       received = input;
       return { decision: "AI_AUTHORIZED", provider: "DEEPSEEK", fallbackUsed: false };
-    }), () => FAKE_NOW);
+    }), () => FAKE_NOW, openGuard());
 
     const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
 
@@ -95,7 +101,7 @@ describe("createAuthorizeAiHandler", () => {
   test("denied repository result mirrors exactly", async () => {
     const handler = createAuthorizeAiHandler(repositoryWith(async () => {
       return { decision: "AI_RATE_LIMITED", provider: null, fallbackUsed: false };
-    }), () => FAKE_NOW);
+    }), () => FAKE_NOW, openGuard());
 
     expect(await handler({ auth: { uid: "test-user" }, data: VALID_DATA })).toEqual({
       contractVersion: 1,
@@ -109,7 +115,7 @@ describe("createAuthorizeAiHandler", () => {
   test("repository failure fails closed to AI_DISABLED", async () => {
     const handler = createAuthorizeAiHandler(repositoryWith(async () => {
       throw new Error("storage down");
-    }), () => FAKE_NOW);
+    }), () => FAKE_NOW, openGuard());
 
     expect(await handler({ auth: { uid: "test-user" }, data: VALID_DATA })).toEqual({
       contractVersion: 1,
@@ -118,6 +124,58 @@ describe("createAuthorizeAiHandler", () => {
       provider: null,
       fallbackUsed: false,
     });
+  });
+
+  test("exhausted warm guard never calls the repository", async () => {
+    let calls = 0;
+    const repository = repositoryWith(async () => {
+      calls += 1;
+      return { decision: "AI_AUTHORIZED", provider: "DEEPSEEK", fallbackUsed: false };
+    });
+    const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 1, maxTrackedUids: 10 });
+    const handler = createAuthorizeAiHandler(repository, () => FAKE_NOW, guard);
+
+    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    expect(first.decision).toBe("AI_AUTHORIZED");
+    expect(calls).toBe(1);
+
+    const secondData = {
+      contractVersion: 1,
+      requestId: "223e4567-e89b-12d3-a456-426614174000",
+      action: "authorize_text",
+    } as const;
+    const second = await handler({ auth: { uid: "test-user" }, data: secondData });
+    expect(second).toEqual({
+      contractVersion: 1,
+      requestId: secondData.requestId,
+      decision: "AI_RATE_LIMITED",
+      provider: null,
+      fallbackUsed: false,
+    });
+    expect(calls).toBe(1);
+  });
+
+  test("remembered authorized result replays without repository access", async () => {
+    let calls = 0;
+    const repository = repositoryWith(async () => {
+      calls += 1;
+      return { decision: "AI_AUTHORIZED", provider: "DEEPSEEK", fallbackUsed: false };
+    });
+    const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 10, maxTrackedUids: 10 });
+    const handler = createAuthorizeAiHandler(repository, () => FAKE_NOW, guard);
+
+    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const replay = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+
+    expect(replay).toEqual(first);
+    expect(replay).toEqual({
+      contractVersion: 1,
+      requestId: VALID_DATA.requestId,
+      decision: "AI_AUTHORIZED",
+      provider: "DEEPSEEK",
+      fallbackUsed: false,
+    });
+    expect(calls).toBe(1);
   });
 
   test("boundary source has no logger and no provider SDK dependency", () => {
