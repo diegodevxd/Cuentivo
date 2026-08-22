@@ -5,6 +5,7 @@ const VALID_DATA = {
   contractVersion: 1,
   requestId: "123e4567-e89b-12d3-a456-426614174000",
   action: "interpret_text",
+  text: "vendeme dos perfumes",
 } as const;
 
 describe("createInterpretAiHandler", () => {
@@ -16,7 +17,7 @@ describe("createInterpretAiHandler", () => {
     expect(
       createInterpretAiHandler({
         auth: { uid: "test-user" },
-        data: { ...VALID_DATA, text: "hola" },
+        data: { ...VALID_DATA, extra: true },
       }),
     ).toEqual({ code: "invalid-argument" });
   });

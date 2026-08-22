@@ -9,12 +9,18 @@ export type SafeInterpretation =
   | Readonly<{ kind: "requires_clarification"; code: "NEEDS_CONTEXT" | "AMBIGUOUS" }>
   | Readonly<{ kind: "unsupported"; code: "UNSUPPORTED" | "UNSAFE" }>;
 
-export type InterpretAiResponse = Readonly<{
-  contractVersion: 1;
-  requestId: string;
-  status: "AI_INTERPRETED" | "AI_UNAVAILABLE";
-  interpretation: SafeInterpretation | null;
-}>;
+export type InterpretAiResponse =
+  | Readonly<{
+      contractVersion: 1;
+      requestId: string;
+      status: "AI_INTERPRETED" | "AI_UNAVAILABLE";
+      interpretation: SafeInterpretation | null;
+    }>
+  | Readonly<{
+      contractVersion: 1;
+      requestId: string;
+      status: "AI_NOT_CONFIGURED";
+    }>;
 
 export type ContractValidation =
   | Readonly<{ ok: true; value: InterpretAiRequest }>
@@ -68,12 +74,15 @@ export function validateInterpretAiRequest(input: unknown): ContractValidation {
   };
 }
 
-export function createNotConfiguredResponse(request: InterpretAiRequest): InterpretAiResponse {
+export function createNotConfiguredResponse(request: InterpretAiRequest): Readonly<{
+  contractVersion: 1;
+  requestId: string;
+  status: "AI_NOT_CONFIGURED";
+}> {
   return {
     contractVersion: 1,
     requestId: request.requestId,
-    status: "AI_UNAVAILABLE",
-    interpretation: null,
+    status: "AI_NOT_CONFIGURED",
   };
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   MAX_INTERPRET_TEXT_LENGTH,
+  createNotConfiguredResponse,
   parseSafeInterpretation,
   validateInterpretAiRequest,
 } from "../src/contract.js";
@@ -73,5 +74,15 @@ describe("contract parseSafeInterpretation export", () => {
     expect(
       parseSafeInterpretation({ kind: "requires_clarification", code: "NEEDS_CONTEXT" }),
     ).toEqual({ kind: "requires_clarification", code: "NEEDS_CONTEXT" });
+  });
+});
+
+describe("createNotConfiguredResponse", () => {
+  test("returns the fixed AI_NOT_CONFIGURED response with the same requestId", () => {
+    expect(createNotConfiguredResponse(VALID_REQUEST)).toEqual({
+      contractVersion: 1,
+      requestId: VALID_REQUEST.requestId,
+      status: "AI_NOT_CONFIGURED",
+    });
   });
 });
