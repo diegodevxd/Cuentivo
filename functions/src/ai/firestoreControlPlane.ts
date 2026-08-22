@@ -106,8 +106,7 @@ function usedActionsOf(doc: Record<string, unknown> | null): number | null {
 }
 
 /**
- * One authorization per Firestore transaction with a strict read short-circuit and a request
- * throttle, so authenticated abuse cannot generate unbounded Firestore cost:
+ * One authorization per Firestore transaction with a strict read short-circuit:
  *
  * 1. `aiControl/global` is read first. Absent, malformed, disabled or provider-less config returns
  *    AI_DISABLED immediately — no further reads, no writes.
@@ -116,12 +115,13 @@ function usedActionsOf(doc: Record<string, unknown> | null): number | null {
  * 3. Only with a valid entitlement the ledger is read. An existing authorized entry owned by
  *    uid/requestId returns the original result without reading counters or writing. Any other
  *    stored ledger fails closed to AI_DISABLED with zero writes.
- * 4. The per-minute rate window is the request throttle: it counts REQUESTS with a valid
- *    entitlement, not just authorized actions. An exhausted window denies AI_RATE_LIMITED right
- *    here — before usage reads and with zero writes — which cuts off repeated distinct requests.
- *    Within the window capacity, the request consumes one slot transactionally before deciding.
- * 5. Only then is the month usage read. Quota exhaustion denies without ledger or usage writes.
- *    AI_AUTHORIZED writes the ledger and increments usage; the request slot was already consumed.
+ * 4. Only a new eligible authorization reads month usage and the minute window. Every denial
+ *    writes nothing. Only AI_AUTHORIZED writes the ledger, the monthly usage and the minute
+ *    window, exactly once, inside the same transaction.
+ *
+ * Durable guarantee: Firestore limits provider admissions only. It does not rate-limit ingress
+ * reads; the warm-instance edge guard in the callable boundary is the cost mitigation, and a
+ * deployed API Gateway/Cloud Armor design remains the future global ingress limit.
  */
 export async function authorizeInTransaction(
   tx: AiTransaction,
@@ -174,24 +174,14 @@ export async function authorizeInTransaction(
       return DENIED("AI_DISABLED");
     }
 
-    // 4. The request throttle: the per-minute window counts requests with a valid entitlement.
-    //    Reads only here: Firestore transactions require all reads before all writes.
-    const rate = await tx.get(rateWindowPath(input.uid, input.nowEpochMillis));
-    const rateDoc = rate === null ? { usedActions: 0 } : rate;
-    const usedPerMinute = usedActionsOf(rateDoc);
-    if (usedPerMinute === null) {
-      return DENIED("AI_DISABLED");
-    }
-    if (usedPerMinute >= typedConfig.perMinuteLimit) {
-      // Cutoff: an exhausted request window denies before any usage read and with zero writes.
-      return DENIED("AI_RATE_LIMITED");
-    }
-
-    // 5. Month usage, the last read, only for a request that fits the window.
+    // 4. Counters last, only for a new eligible authorization.
     const usage = await tx.get(usagePath(input.uid, input.nowEpochMillis));
+    const rate = await tx.get(rateWindowPath(input.uid, input.nowEpochMillis));
     const usageDoc = usage === null ? { usedActions: 0 } : usage;
+    const rateDoc = rate === null ? { usedActions: 0 } : rate;
     const usedMonthly = usedActionsOf(usageDoc);
-    if (usedMonthly === null) {
+    const usedPerMinute = usedActionsOf(rateDoc);
+    if (usedMonthly === null || usedPerMinute === null) {
       return DENIED("AI_DISABLED");
     }
 
@@ -204,19 +194,11 @@ export async function authorizeInTransaction(
     );
 
     if (result.decision !== "AI_AUTHORIZED") {
-      if (result.decision === "AI_QUOTA_EXHAUSTED") {
-        // The request consumed its window slot (request throttle); no ledger or usage writes.
-        await tx.set(rateWindowPath(input.uid, input.nowEpochMillis), {
-          usedActions: usedPerMinute + 1,
-        });
-      }
+      // Every denial writes nothing: no ledger, no usage, no rate documents.
       return result;
     }
 
-    // All writes happen after all reads, inside the same transaction.
-    await tx.set(rateWindowPath(input.uid, input.nowEpochMillis), {
-      usedActions: usedPerMinute + 1,
-    });
+    // Only AI_AUTHORIZED writes, exactly once, inside the same transaction.
     await tx.set(ledgerPath(input.uid, input.requestId), {
       uid: input.uid,
       requestId: input.requestId,
@@ -226,6 +208,9 @@ export async function authorizeInTransaction(
       createdAtEpochMillis: input.nowEpochMillis,
     });
     await tx.set(usagePath(input.uid, input.nowEpochMillis), { usedActions: usedMonthly + 1 });
+    await tx.set(rateWindowPath(input.uid, input.nowEpochMillis), {
+      usedActions: usedPerMinute + 1,
+    });
 
     return result;
   } catch {
@@ -240,26 +225,21 @@ export function createFirestoreControlPlaneRepository(
   return {
     authorize(input: AuthorizeAiInput): Promise<AuthorizeAiResult> {
       return firestore
-        .runTransaction(
-          async (tx) => {
-            const bridge: AiTransaction = {
-              get: (path) =>
-                tx.get(firestore.doc(path)).then((snapshot) =>
-                  snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null,
-                ),
-              set: (path, data, merge) => {
-                const typed = data as FirebaseFirestore.WithFieldValue<FirebaseFirestore.DocumentData>;
-                return merge
-                  ? tx.set(firestore.doc(path), typed, { merge: true })
-                  : tx.set(firestore.doc(path), typed);
-              },
-            };
-            return authorizeInTransaction(bridge, input);
-          },
-          // High contention on the shared request window (many concurrent callers) is expected
-          // for this throttle; a generous retry budget keeps the winner from being starved.
-          { maxAttempts: 50 },
-        )
+        .runTransaction(async (tx) => {
+          const bridge: AiTransaction = {
+            get: (path) =>
+              tx.get(firestore.doc(path)).then((snapshot) =>
+                snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null,
+              ),
+            set: (path, data, merge) => {
+              const typed = data as FirebaseFirestore.WithFieldValue<FirebaseFirestore.DocumentData>;
+              return merge
+                ? tx.set(firestore.doc(path), typed, { merge: true })
+                : tx.set(firestore.doc(path), typed);
+            },
+          };
+          return authorizeInTransaction(bridge, input);
+        })
         .catch(() => DENIED("AI_DISABLED"));
     },
   };

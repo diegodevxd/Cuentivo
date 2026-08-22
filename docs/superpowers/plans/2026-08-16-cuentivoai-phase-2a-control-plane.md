@@ -303,12 +303,13 @@ Do not deploy, invoke production Firebase, install an APK or declare Phase 2A DO
 
 ---
 
-## Politica de throttle de solicitudes (remediacion GLM 2026-08-16)
+## Semantica durable del control plane (reconciliacion 2026-08-21)
 
-Hallazgo adversarial reproducido: con entitlement valido, las solicitudes denegadas por cuota/rate no
-escribian ni consumian la ventana, permitiendo lecturas Firestore ilimitadas por repeticion. Politica
-elegida (analisis de coste/semantica): la ventana de minuto `aiRateWindows/{uid}_{YYYYMMDDHHmm}` es el
-throttle de SOLICITUDES autenticadas con entitlement, no solo de autorizaciones.
+Firestore es la autoridad durable para entitlement, cuota mensual, idempotencia y admision de
+provider. **Firestore limita SOLO las admisiones de provider; NO corta las lecturas de ingreso:**
+cada solicitud denegada por cuota/rate sigue leyendo config, entitlement, ledger, usage y rate.
+La mitigacion de coste de ingreso es el edge guard en memoria del callable (instancia caliente,
+acotado, no durable); el limite global de ingreso requiere API Gateway/Cloud Armor desplegado.
 
 Orden transaccional (todas las lecturas antes de todas las escrituras, requisito de Firestore):
 
@@ -316,16 +317,12 @@ Orden transaccional (todas las lecturas antes de todas las escrituras, requisito
 2. Entitlement — ausente/malformado/expirado -> `AI_ENTITLEMENT_REQUIRED`, 2 lecturas, 0 writes.
 3. Ledger — autorizado propio -> resultado original sin leer contadores (idempotencia); ajeno/malformado
    -> `AI_DISABLED`, 0 writes.
-4. Ventana de minuto (corte) — agotada -> `AI_RATE_LIMITED` sin leer usage y con 0 writes: corta el
-   bucle de lecturas de solicitudes repetidas.
-5. Usage mensual (ultima lectura) — malformado -> `AI_DISABLED`, 0 writes.
-6. Decision y escrituras (solo tras todas las lecturas, misma transaccion):
-   - `AI_AUTHORIZED`: escribe ventana+1, ledger y usage+1.
-   - `AI_QUOTA_EXHAUSTED`: consume solo la ventana+1 (la solicitud cuenta) sin ledger ni usage.
-   - `AI_RATE_LIMITED` (corte del paso 4): 0 writes.
+4. Usage mensual y ventana de minuto (ultimas lecturas, solo para autorizaciones nuevas elegibles).
+5. Decision y escrituras:
+   - `AI_AUTHORIZED`: escribe ledger, usage mensual y ventana de minuto, una vez, misma transaccion.
+   - TODA denegacion (`AI_DISABLED`, `AI_ENTITLEMENT_REQUIRED`, `AI_QUOTA_EXHAUSTED`,
+     `AI_RATE_LIMITED`): escribe NADA.
 
-Garantias: fail-closed; sin acciones extra; idempotencia del requestId autorizado (ledger antes del
-throttle); concurrencia validada en Firestore Emulator (10 concurrentes con limites 1/1 -> exactamente
-1 autorizada, counters/ledger exactos, repeats sin incremento). Riesgo residual documentado: el minimo
-de lecturas por solicitud denegada es 4 (config, entitlement, ledger, ventana); el corte real de
-lecturas solo ocurre con la config global apagada (1 lectura).
+Garantias: fail-closed; sin acciones extra; idempotencia del requestId autorizado; concurrencia
+validada en Firestore Emulator (10 concurrentes con limites 1/1 -> exactamente 1 autorizada,
+counters/ledger exactos, repeats sin incremento). Retry policy por defecto de Firebase Admin.

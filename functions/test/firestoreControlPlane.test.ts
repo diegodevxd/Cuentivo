@@ -357,17 +357,17 @@ describe("authorizeInTransaction", () => {
       "aiControl/global",
       "aiEntitlements/user-1",
       "aiRequestLedger/user-1_r1",
-      "aiRateWindows/user-1_202608161200",
       "aiUsage/user-1_202608",
+      "aiRateWindows/user-1_202608161200",
     ]);
     expect(tx.writes).toEqual([
-      "aiRateWindows/user-1_202608161200",
       "aiRequestLedger/user-1_r1",
       "aiUsage/user-1_202608",
+      "aiRateWindows/user-1_202608161200",
     ]);
   });
 
-  test("quota denial reads the five paths and consumes only the request window", async () => {
+  test("exhausted monthly quota returns AI_QUOTA_EXHAUSTED and writes neither rate, usage nor ledger", async () => {
     const store: Store = new Map();
     store.set("aiControl/global", config(2, 100));
     store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
@@ -377,38 +377,18 @@ describe("authorizeInTransaction", () => {
     const result = await authorizeInTransaction(tx, input("r1"));
 
     expect(result.decision).toBe("AI_QUOTA_EXHAUSTED");
+    expect(result.provider).toBeNull();
     expect(tx.reads).toEqual([
       "aiControl/global",
       "aiEntitlements/user-1",
       "aiRequestLedger/user-1_r1",
-      "aiRateWindows/user-1_202608161200",
       "aiUsage/user-1_202608",
-    ]);
-    // The request consumed its window slot (request throttle); no ledger or usage writes.
-    expect(tx.writes).toEqual(["aiRateWindows/user-1_202608161200"]);
-  });
-
-  test("second distinct request after window exhaustion is cut off without unlimited reads", async () => {
-    const store: Store = new Map();
-    store.set("aiControl/global", config(100, 1));
-    store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
-    store.set(ratePath("user-1"), { usedActions: 1 });
-    const tx = fakeTransaction(store);
-
-    const result = await authorizeInTransaction(tx, input("late-1"));
-
-    expect(result.decision).toBe("AI_RATE_LIMITED");
-    // Cutoff: the exhausted request window denies before usage reads and with zero writes.
-    expect(tx.reads).toEqual([
-      "aiControl/global",
-      "aiEntitlements/user-1",
-      "aiRequestLedger/user-1_late-1",
       "aiRateWindows/user-1_202608161200",
     ]);
     expect(tx.writes).toEqual([]);
   });
 
-  test("every denial outside the request window leaves zero new documents", async () => {
+  test("every denial leaves zero new documents", async () => {
     const scenarios: Array<{ name: string; store: Store }> = [
       { name: "missing config", store: new Map() },
       {
@@ -424,6 +404,14 @@ describe("authorizeInTransaction", () => {
         store: new Map([
           ["aiControl/global", config(2, 100)],
           ["aiEntitlements/user-1", entitlement(NOW - 1)],
+        ]),
+      },
+      {
+        name: "quota exhausted",
+        store: new Map([
+          ["aiControl/global", config(2, 100)],
+          ["aiEntitlements/user-1", entitlement(NOW + 3_600_000)],
+          [usagePath("user-1"), { usedActions: 2 }],
         ]),
       },
       {
@@ -447,21 +435,5 @@ describe("authorizeInTransaction", () => {
       ).toBe(initialSize);
       expect(scenario.store.has(ledgerPath("user-1", "r1"))).toBe(false);
     }
-  });
-
-  test("quota exhaustion still consumes exactly the request window and nothing else", async () => {
-    const store: Store = new Map();
-    store.set("aiControl/global", config(2, 100));
-    store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
-    store.set(usagePath("user-1"), { usedActions: 2 });
-    const initialSize = store.size;
-
-    const result = await authorizeInTransaction(fakeTransaction(store), input("r1"));
-
-    expect(result.decision).toBe("AI_QUOTA_EXHAUSTED");
-    expect(store.size).toBe(initialSize + 1);
-    expect(store.get(ratePath("user-1"))).toEqual({ usedActions: 1 });
-    expect(store.has(ledgerPath("user-1", "r1"))).toBe(false);
-    expect(store.get(usagePath("user-1"))).toEqual({ usedActions: 2 });
   });
 });
