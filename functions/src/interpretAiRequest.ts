@@ -1,27 +1,102 @@
 import {
-  createNotConfiguredResponse,
   validateInterpretAiRequest,
   type InterpretAiResponse,
+  type SafeInterpretation,
 } from "./contract";
+import type { TextInterpretationProvider } from "./ai/geminiTextProvider.js";
+import type { AuthorizeAiInput, AuthorizeAiResult } from "./ai/controlPlane";
 
 export type CallableLikeRequest = Readonly<{ auth?: Readonly<{ uid: string }>; data: unknown }>;
 
 export type CallableFailure = Readonly<{ code: "unauthenticated" | "invalid-argument" }>;
 
+export type InterpretAiCallableDeps = Readonly<{
+  authorize: (input: AuthorizeAiInput) => Promise<AuthorizeAiResult>;
+  claimProviderInvocation: (input: Readonly<{
+    uid: string;
+    requestId: string;
+    nowEpochMillis: number;
+  }>) => Promise<"CLAIMED" | "ALREADY_CLAIMED">;
+  provider: TextInterpretationProvider | null;
+  now: () => number;
+}>;
+
+const UNAVAILABLE = (requestId: string): InterpretAiResponse => ({
+  contractVersion: 1,
+  requestId,
+  status: "AI_UNAVAILABLE",
+  interpretation: null,
+});
+
 /**
- * Pure adapter boundary: requires a Firebase identity, then validates the payload with the
- * allow-list contract. Every rejection uses the fixed callable-safe code; the valid path
- * returns only the not-configured response. No storage, no logging, no external IO.
+ * Interpretation orchestration boundary. Sequence is fixed:
+ * authenticated uid -> strict v1 contract (bounded text) -> control plane authorization
+ * (capability TEXT) -> durable at-most-once provider claim -> provider invocation exactly once.
+ *
+ * Every denial, missing server configuration, storage failure, already-claimed request id or
+ * provider failure collapses to the fixed AI_UNAVAILABLE response with no interpretation and no
+ * financial mutation. The provider is never retried here, and authorization internals, decisions
+ * or costs are never exposed to the client.
  */
 export function createInterpretAiHandler(
-  request: CallableLikeRequest,
-): InterpretAiResponse | CallableFailure {
-  if (!request.auth?.uid) {
-    return { code: "unauthenticated" };
-  }
-  const validation = validateInterpretAiRequest(request.data);
-  if (!validation.ok) {
-    return { code: "invalid-argument" };
-  }
-  return createNotConfiguredResponse(validation.value);
+  deps: InterpretAiCallableDeps,
+): (request: CallableLikeRequest) => Promise<InterpretAiResponse | CallableFailure> {
+  return async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      return { code: "unauthenticated" };
+    }
+    const validation = validateInterpretAiRequest(request.data);
+    if (!validation.ok) {
+      return { code: "invalid-argument" };
+    }
+    const { requestId, text } = validation.value;
+    const nowEpochMillis = deps.now();
+
+    let authorization: AuthorizeAiResult;
+    try {
+      authorization = await deps.authorize({
+        uid,
+        requestId,
+        capability: "TEXT",
+        nowEpochMillis,
+      });
+    } catch {
+      return UNAVAILABLE(requestId);
+    }
+    if (authorization.decision !== "AI_AUTHORIZED") {
+      return UNAVAILABLE(requestId);
+    }
+
+    // A missing server-side configuration recovers without consuming the durable claim.
+    if (deps.provider === null) {
+      return UNAVAILABLE(requestId);
+    }
+
+    let claim: "CLAIMED" | "ALREADY_CLAIMED";
+    try {
+      claim = await deps.claimProviderInvocation({ uid, requestId, nowEpochMillis });
+    } catch {
+      return UNAVAILABLE(requestId);
+    }
+    if (claim !== "CLAIMED") {
+      // Already claimed (or fail-closed): the provider must never be invoked again.
+      return UNAVAILABLE(requestId);
+    }
+
+    try {
+      const interpretation = await deps.provider.interpret({ text });
+      if (interpretation === null) {
+        return UNAVAILABLE(requestId);
+      }
+      return {
+        contractVersion: 1,
+        requestId,
+        status: "AI_INTERPRETED",
+        interpretation,
+      };
+    } catch {
+      return UNAVAILABLE(requestId);
+    }
+  };
 }

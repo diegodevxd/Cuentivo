@@ -11,6 +11,11 @@ import {
 
 export interface AiControlPlaneRepository {
   authorize(input: AuthorizeAiInput): Promise<AuthorizeAiResult>;
+  claimProviderInvocation(input: Readonly<{
+    uid: string;
+    requestId: string;
+    nowEpochMillis: number;
+  }>): Promise<"CLAIMED" | "ALREADY_CLAIMED">;
 }
 
 /** Minimal transaction surface so the transactional logic is testable without a Firestore emulator. */
@@ -216,6 +221,47 @@ export async function authorizeInTransaction(
   }
 }
 
+/**
+ * Durable at-most-once provider invocation claim over the existing authorized ledger row
+ * `aiRequestLedger/{uid}_{requestId}`. The ledger must already exist, belong exactly to
+ * uid/requestId, and record AI_AUTHORIZED with the GEMINI provider and no fallback. The first
+ * valid claim adds ONLY an invocation state and timestamp to that row and returns CLAIMED; any
+ * repetition, malformed/foreign/denied ledger or storage error fails closed to ALREADY_CLAIMED
+ * without writing. Raw text, provider output, tokens and keys are never part of this row.
+ */
+export async function claimProviderInvocationInTransaction(
+  tx: AiTransaction,
+  input: Readonly<{ uid: string; requestId: string; nowEpochMillis: number }>,
+): Promise<"CLAIMED" | "ALREADY_CLAIMED"> {
+  try {
+    const ledger = await tx.get(ledgerPath(input.uid, input.requestId));
+    if (ledger === null) {
+      return "ALREADY_CLAIMED";
+    }
+    const stored = storedResultOf(ledger, input.uid, input.requestId);
+    if (stored === null || stored.decision !== "AI_AUTHORIZED" || stored.provider !== "GEMINI") {
+      return "ALREADY_CLAIMED";
+    }
+    const invocationState = ledger["providerInvocation"];
+    if (invocationState !== undefined && invocationState !== null) {
+      // Any recorded state (CLAIMED or unexpected) means the provider slot was already consumed.
+      return "ALREADY_CLAIMED";
+    }
+    await tx.set(
+      ledgerPath(input.uid, input.requestId),
+      {
+        ...ledger,
+        providerInvocation: "CLAIMED",
+        providerClaimedAtEpochMillis: input.nowEpochMillis,
+      },
+    );
+    return "CLAIMED";
+  } catch {
+    // Storage error: fail closed so the provider is never invoked twice.
+    return "ALREADY_CLAIMED";
+  }
+}
+
 /** Firestore composition root: one Admin SDK transaction per authorization, fail-closed on error. */
 export function createFirestoreControlPlaneRepository(
   firestore: FirebaseFirestore.Firestore,
@@ -239,6 +285,28 @@ export function createFirestoreControlPlaneRepository(
           return authorizeInTransaction(bridge, input);
         })
         .catch(() => DENIED("AI_DISABLED"));
+    },
+
+    claimProviderInvocation(
+      input: Readonly<{ uid: string; requestId: string; nowEpochMillis: number }>,
+    ): Promise<"CLAIMED" | "ALREADY_CLAIMED"> {
+      return firestore
+        .runTransaction(async (tx) => {
+          const bridge: AiTransaction = {
+            get: (path) =>
+              tx.get(firestore.doc(path)).then((snapshot) =>
+                snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null,
+              ),
+            set: (path, data, merge) => {
+              const typed = data as FirebaseFirestore.WithFieldValue<FirebaseFirestore.DocumentData>;
+              return merge
+                ? tx.set(firestore.doc(path), typed, { merge: true })
+                : tx.set(firestore.doc(path), typed);
+            },
+          };
+          return claimProviderInvocationInTransaction(bridge, input);
+        })
+        .catch(() => "ALREADY_CLAIMED");
     },
   };
 }

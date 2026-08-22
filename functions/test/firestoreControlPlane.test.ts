@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   authorizeInTransaction,
+  claimProviderInvocationInTransaction,
   type AiTransaction,
 } from "../src/ai/firestoreControlPlane.js";
 import type { AuthorizeAiInput } from "../src/ai/controlPlane.js";
@@ -458,5 +459,78 @@ describe("authorizeInTransaction", () => {
       ).toBe(initialSize);
       expect(scenario.store.has(ledgerPath("user-1", "r1"))).toBe(false);
     }
+  });
+});
+
+describe("claimProviderInvocationInTransaction", () => {
+  function authorizedLedger() {
+    return {
+      uid: "user-1",
+      requestId: "r1",
+      decision: "AI_AUTHORIZED",
+      provider: "GEMINI",
+      fallbackUsed: false,
+      createdAtEpochMillis: NOW,
+    };
+  }
+
+  test("first claim over an authorized ledger writes only invocation state and returns CLAIMED", async () => {
+    const store: Store = new Map();
+    store.set(ledgerPath("user-1", "r1"), authorizedLedger());
+
+    const outcome = await claimProviderInvocationInTransaction(fakeTransaction(store), input("r1"));
+
+    expect(outcome).toBe("CLAIMED");
+    const ledger = store.get(ledgerPath("user-1", "r1"));
+    expect(ledger?.["providerInvocation"]).toBe("CLAIMED");
+    expect(ledger?.["providerClaimedAtEpochMillis"]).toBe(NOW);
+    // Only invocation state + timestamp are added to the existing ledger row; never raw
+    // text, provider output, tokens or keys.
+    expect(Object.keys(ledger ?? {}).sort()).toEqual([
+      "createdAtEpochMillis",
+      "decision",
+      "fallbackUsed",
+      "provider",
+      "providerClaimedAtEpochMillis",
+      "providerInvocation",
+      "requestId",
+      "uid",
+    ]);
+  });
+
+  test("second claim returns ALREADY_CLAIMED without modification", async () => {
+    const store: Store = new Map();
+    store.set(ledgerPath("user-1", "r1"), authorizedLedger());
+    await claimProviderInvocationInTransaction(fakeTransaction(store), input("r1"));
+    const before = store.get(ledgerPath("user-1", "r1"));
+
+    const outcome = await claimProviderInvocationInTransaction(fakeTransaction(store), input("r1"));
+
+    expect(outcome).toBe("ALREADY_CLAIMED");
+    expect(store.get(ledgerPath("user-1", "r1"))).toEqual(before);
+  });
+
+  test("missing ledger fails closed without writing", async () => {
+    const store: Store = new Map();
+
+    const outcome = await claimProviderInvocationInTransaction(fakeTransaction(store), input("r1"));
+
+    expect(outcome).toBe("ALREADY_CLAIMED");
+    expect(store.has(ledgerPath("user-1", "r1"))).toBe(false);
+  });
+
+  test.each([
+    ["foreign uid", { ...authorizedLedger(), uid: "user-2" }],
+    ["malformed ledger", { unexpected: "shape" }],
+    ["denied decision", { ...authorizedLedger(), decision: "AI_DISABLED" }],
+    ["non-gemini provider", { ...authorizedLedger(), provider: "DEEPSEEK" }],
+  ] as const)("invalid stored ledger (%s) fails closed without writes", async (_name, ledger) => {
+    const store: Store = new Map();
+    store.set(ledgerPath("user-1", "r1"), { ...ledger });
+
+    const outcome = await claimProviderInvocationInTransaction(fakeTransaction(store), input("r1"));
+
+    expect(outcome).toBe("ALREADY_CLAIMED");
+    expect(store.get(ledgerPath("user-1", "r1"))).toEqual({ ...ledger });
   });
 });

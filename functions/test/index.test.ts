@@ -21,4 +21,33 @@ describe("regional callable gateway", () => {
       expect(SOURCE, `source must contain ${required}`).toContain(required);
     }
   });
+
+  test("declares the gemini secret param with the exact literal", () => {
+    expect(SOURCE).toContain('defineSecret("CUENTIVOAI_GEMINI_API_KEY")');
+  });
+
+  test("binds the secret only to interpretAiRequest", () => {
+    const interpretIndex = SOURCE.indexOf("export const interpretAiRequest");
+    const authorizeIndex = SOURCE.indexOf("export const authorizeAiAction");
+    expect(interpretIndex).toBeGreaterThanOrEqual(0);
+    expect(authorizeIndex).toBeGreaterThan(interpretIndex);
+
+    const interpretBlock = SOURCE.slice(interpretIndex, authorizeIndex);
+    expect(interpretBlock).toContain("secrets: [geminiApiKey]");
+
+    const authorizeBlock = SOURCE.slice(authorizeIndex);
+    expect(authorizeBlock).not.toContain("secrets:");
+  });
+
+  test("reads the secret value only inside the interpret handler", () => {
+    const interpretIndex = SOURCE.indexOf("export const interpretAiRequest");
+    const valueIndex = SOURCE.indexOf(".value()");
+    expect(valueIndex).toBeGreaterThan(interpretIndex);
+  });
+
+  test("composition root has no deepseek or direct provider urls", () => {
+    for (const forbidden of ["DEEPSEEK", "deepseek", "generativelanguage", "https://"]) {
+      expect(SOURCE).not.toContain(forbidden);
+    }
+  });
 });
