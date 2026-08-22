@@ -86,4 +86,32 @@ describe("createAiEdgeRequestGuard", () => {
 
     expect(guard.beforeRepository("u1", "r1", NOW + MINUTE)).toEqual({ kind: "ALLOW_NEW" });
   });
+
+  test("stale uid windows are evicted so new uids are not blocked", () => {
+    const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 5, maxTrackedUids: 1 });
+    expect(guard.beforeRepository("u1", "r1", NOW)).toEqual({ kind: "ALLOW_NEW" });
+
+    // Next minute: u1's window is stale; the map must evict it and admit the new uid.
+    expect(guard.beforeRepository("u2", "r1", NOW + MINUTE)).toEqual({ kind: "ALLOW_NEW" });
+  });
+
+  test("eviction removes only stale windows and keeps current-minute uids", () => {
+    const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 5, maxTrackedUids: 1 });
+    guard.beforeRepository("u1", "r1", NOW);
+    guard.beforeRepository("u2", "r1", NOW + MINUTE);
+
+    // u1 returns in the current minute: u2's window is current, so u1 fails closed.
+    expect(guard.beforeRepository("u1", "r2", NOW + MINUTE)).toEqual({ kind: "RATE_LIMITED" });
+    // u2 keeps working in its own window.
+    expect(guard.beforeRepository("u2", "r2", NOW + MINUTE)).toEqual({ kind: "ALLOW_NEW" });
+  });
+
+  test("remember with a non-admitted request id never creates a replay", () => {
+    const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 5, maxTrackedUids: 10 });
+    guard.beforeRepository("u1", "r1", NOW);
+    guard.remember("u1", "never-admitted", AUTHORIZED, NOW);
+
+    expect(guard.beforeRepository("u1", "never-admitted", NOW)).toEqual({ kind: "ALLOW_NEW" });
+    expect(guard.beforeRepository("u1", "never-admitted", NOW)).toEqual({ kind: "ALLOW_NEW" });
+  });
 });

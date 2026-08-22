@@ -72,12 +72,16 @@ export function createAiEdgeRequestGuard(options: Readonly<{
         return { kind: "ALLOW_NEW" };
       }
 
-      // New or expired window: evict any expired entry for this uid first.
-      if (windows.has(uid)) {
-        windows.delete(uid);
+      // New or expired window. First evict every stale window (any uid whose tracked minute is
+      // not the current one) so expired entries cannot let sybil UIDs pin the map until cold
+      // start. Bounded sweep: O(maxTrackedUids), no Firestore access.
+      for (const [trackedUid, tracked] of windows) {
+        if (tracked.minute !== minute) {
+          windows.delete(trackedUid);
+        }
       }
       if (windows.size >= maxTrackedUids) {
-        // Memory bound reached for unknown UIDs: fail closed without insertion.
+        // Memory bound reached with only current-minute windows: fail closed without insertion.
         return { kind: "RATE_LIMITED" };
       }
       windows.set(uid, { minute, newRequestIds: new Set([requestId]), replayed: new Map() });
@@ -89,7 +93,9 @@ export function createAiEdgeRequestGuard(options: Readonly<{
         return;
       }
       const entry = windowFor(uid, minuteOf(nowEpochMillis));
-      if (entry === undefined) {
+      if (entry === undefined || !entry.newRequestIds.has(requestId)) {
+        // Only ids admitted by this guard in the current window may be replayed; anything else
+        // would grow the map outside the admitted set.
         return;
       }
       entry.replayed.set(requestId, result);
