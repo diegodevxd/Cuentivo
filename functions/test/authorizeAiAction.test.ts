@@ -78,7 +78,7 @@ describe("createAuthorizeAiHandler", () => {
     let received: AuthorizeAiInput | null = null;
     const handler = createAuthorizeAiHandler(repositoryWith(async (input) => {
       received = input;
-      return { decision: "AI_AUTHORIZED", provider: "DEEPSEEK", fallbackUsed: false };
+      return { decision: "AI_AUTHORIZED", provider: "GEMINI", fallbackUsed: false };
     }), () => FAKE_NOW, openGuard());
 
     const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
@@ -93,7 +93,7 @@ describe("createAuthorizeAiHandler", () => {
       contractVersion: 1,
       requestId: VALID_DATA.requestId,
       decision: "AI_AUTHORIZED",
-      provider: "DEEPSEEK",
+      provider: "GEMINI",
       fallbackUsed: false,
     });
   });
@@ -130,7 +130,7 @@ describe("createAuthorizeAiHandler", () => {
     let calls = 0;
     const repository = repositoryWith(async () => {
       calls += 1;
-      return { decision: "AI_AUTHORIZED", provider: "DEEPSEEK", fallbackUsed: false };
+      return { decision: "AI_AUTHORIZED", provider: "GEMINI", fallbackUsed: false };
     });
     const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 1, maxTrackedUids: 10 });
     const handler = createAuthorizeAiHandler(repository, () => FAKE_NOW, guard);
@@ -159,7 +159,7 @@ describe("createAuthorizeAiHandler", () => {
     let calls = 0;
     const repository = repositoryWith(async () => {
       calls += 1;
-      return { decision: "AI_AUTHORIZED", provider: "DEEPSEEK", fallbackUsed: false };
+      return { decision: "AI_AUTHORIZED", provider: "GEMINI", fallbackUsed: false };
     });
     const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 10, maxTrackedUids: 10 });
     const handler = createAuthorizeAiHandler(repository, () => FAKE_NOW, guard);
@@ -172,7 +172,7 @@ describe("createAuthorizeAiHandler", () => {
       contractVersion: 1,
       requestId: VALID_DATA.requestId,
       decision: "AI_AUTHORIZED",
-      provider: "DEEPSEEK",
+      provider: "GEMINI",
       fallbackUsed: false,
     });
     expect(calls).toBe(1);

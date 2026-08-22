@@ -7,7 +7,7 @@ const NOW = 1_800_000_000;
 
 const AUTHORIZED: AuthorizeAiResult = {
   decision: "AI_AUTHORIZED",
-  provider: "DEEPSEEK",
+  provider: "GEMINI",
   fallbackUsed: false,
 };
 

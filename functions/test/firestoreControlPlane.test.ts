@@ -12,7 +12,7 @@ const MINUTE = "202608161200";
 function config(monthlyActionLimit: number, perMinuteLimit: number) {
   return {
     enabled: true,
-    providers: { DEEPSEEK: true, GEMINI: false },
+    geminiEnabled: true,
     monthlyActionLimit,
     perMinuteLimit,
   };
@@ -77,14 +77,14 @@ describe("authorizeInTransaction", () => {
 
     const result = await authorizeInTransaction(fakeTransaction(store), input("r1"));
 
-    expect(result).toEqual({ decision: "AI_AUTHORIZED", provider: "DEEPSEEK", fallbackUsed: false });
+    expect(result).toEqual({ decision: "AI_AUTHORIZED", provider: "GEMINI", fallbackUsed: false });
     expect(store.get(usagePath("user-1"))).toEqual({ usedActions: 1 });
     expect(store.get(ratePath("user-1"))).toEqual({ usedActions: 1 });
     expect(store.get(ledgerPath("user-1", "r1"))).toEqual({
       uid: "user-1",
       requestId: "r1",
       decision: "AI_AUTHORIZED",
-      provider: "DEEPSEEK",
+      provider: "GEMINI",
       fallbackUsed: false,
       createdAtEpochMillis: NOW,
     });
@@ -183,7 +183,7 @@ describe("authorizeInTransaction", () => {
       uid: "user-2",
       requestId: "r1",
       decision: "AI_AUTHORIZED",
-      provider: "DEEPSEEK",
+      provider: "GEMINI",
       fallbackUsed: false,
       createdAtEpochMillis: NOW,
     };
@@ -208,6 +208,29 @@ describe("authorizeInTransaction", () => {
     expect(result.decision).toBe("AI_DISABLED");
     expect(store.get(ledgerPath("user-1", "r1"))).toEqual(malformed);
     expect(store.has(usagePath("user-1"))).toBe(false);
+  });
+
+  test("persisted ledger with a non-gemini provider fails closed without reinterpretation", async () => {
+    const store: Store = new Map();
+    store.set("aiControl/global", config(2, 100));
+    store.set("aiEntitlements/user-1", entitlement(NOW + 3_600_000));
+    const legacy = {
+      uid: "user-1",
+      requestId: "r1",
+      decision: "AI_AUTHORIZED",
+      provider: "DEEPSEEK",
+      fallbackUsed: false,
+      createdAtEpochMillis: NOW,
+    };
+    store.set(ledgerPath("user-1", "r1"), legacy);
+
+    const result = await authorizeInTransaction(fakeTransaction(store), input("r1"));
+
+    expect(result.decision).toBe("AI_DISABLED");
+    expect(result.provider).toBeNull();
+    expect(store.get(ledgerPath("user-1", "r1"))).toEqual(legacy);
+    expect(store.has(usagePath("user-1"))).toBe(false);
+    expect(store.has(ratePath("user-1"))).toBe(false);
   });
 
   test("malformed usage document denies with zero ledger writes", async () => {
@@ -264,7 +287,7 @@ describe("authorizeInTransaction", () => {
     const store: Store = new Map();
     store.set("aiControl/global", {
       ...config(2, 100),
-      providers: { DEEPSEEK: false, GEMINI: false },
+      geminiEnabled: false,
     });
     const tx = fakeTransaction(store);
 
@@ -306,7 +329,7 @@ describe("authorizeInTransaction", () => {
       uid: "user-1",
       requestId: "r1",
       decision: "AI_AUTHORIZED",
-      provider: "DEEPSEEK",
+      provider: "GEMINI",
       fallbackUsed: false,
       createdAtEpochMillis: NOW,
     });
@@ -329,7 +352,7 @@ describe("authorizeInTransaction", () => {
       uid: "user-2",
       requestId: "r1",
       decision: "AI_AUTHORIZED",
-      provider: "DEEPSEEK",
+      provider: "GEMINI",
       fallbackUsed: false,
       createdAtEpochMillis: NOW,
     });

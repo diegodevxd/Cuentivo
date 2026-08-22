@@ -1,4 +1,4 @@
-export type AiProviderId = "DEEPSEEK" | "GEMINI";
+export type AiProviderId = "GEMINI";
 
 export type AiCapability = "TEXT";
 
@@ -11,7 +11,7 @@ export type AiAuthorizationDecision =
 
 export type AiControlConfig = Readonly<{
   enabled: boolean;
-  providers: Readonly<Record<AiProviderId, boolean>>;
+  geminiEnabled: boolean;
   monthlyActionLimit: number;
   perMinuteLimit: number;
 }>;
@@ -48,10 +48,7 @@ function isValidConfig(config: AiControlConfig | null): config is AiControlConfi
     config !== null &&
     typeof config === "object" &&
     config.enabled === true &&
-    typeof config.providers === "object" &&
-    config.providers !== null &&
-    typeof config.providers.DEEPSEEK === "boolean" &&
-    typeof config.providers.GEMINI === "boolean" &&
+    typeof config.geminiEnabled === "boolean" &&
     isPositiveSafeInteger(config.monthlyActionLimit) &&
     isPositiveSafeInteger(config.perMinuteLimit)
   );
@@ -78,10 +75,7 @@ function usedActionsOf(doc: AiUsage | AiRateWindow | null): number | null {
 }
 
 function pickProvider(config: AiControlConfig): AiProviderId | null {
-  if (config.providers.DEEPSEEK) {
-    return "DEEPSEEK";
-  }
-  if (config.providers.GEMINI) {
+  if (config.geminiEnabled) {
     return "GEMINI";
   }
   return null;
@@ -99,9 +93,9 @@ export function isEntitlementValid(entitlement: AiEntitlement | null, nowEpochMi
 
 /**
  * Pure provider-agnostic allow-list policy. Never throws; every denial returns no provider.
- * Configuration must be present, enabled, and carry positive safe-integer limits. The entitlement
- * must be enabled and strictly unexpired (now < expiresAt). Quota and rate denials happen at the
- * exact limit. When both providers are enabled, DEEPSEEK is chosen first; fallback is never used.
+ * Configuration must be present, enabled, carry geminiEnabled and positive safe-integer limits.
+ * The entitlement must be enabled and strictly unexpired (now < expiresAt). Quota and rate denials
+ * happen at the exact limit. The only provider is GEMINI; fallback is never used.
  */
 export function decideAuthorization(
   input: AuthorizeAiInput,

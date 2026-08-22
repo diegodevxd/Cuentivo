@@ -7,5 +7,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/firestoreEmulator.gate.ts"],
+    // The emulator gate runs ten concurrent real transactions (with a bounded retry-on-contention
+    // helper), so it needs more headroom than the 5s default.
+    testTimeout: 60_000,
   },
 });

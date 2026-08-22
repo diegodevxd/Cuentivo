@@ -69,7 +69,9 @@ function isStoredDecision(value: unknown): value is AiAuthorizationDecision {
 }
 
 function isStoredProvider(value: unknown): value is AiProviderId | null {
-  return value === null || value === "DEEPSEEK" || value === "GEMINI";
+  // Exactly GEMINI (or null) only: a persisted ledger with any other provider must fail closed
+  // instead of being reinterpreted.
+  return value === null || value === "GEMINI";
 }
 
 /** Returns the stored result when the ledger entry exactly belongs to uid/requestId, else null. */
@@ -130,13 +132,9 @@ export async function authorizeInTransaction(
   try {
     // 1. Control configuration first: nothing else is read unless AI can run.
     const config = await tx.get(CONFIG_PATH);
-    const configProviders = (config?.["providers"] ?? {}) as Record<string, unknown>;
     const typedConfig = {
       enabled: typeof config?.["enabled"] === "boolean" ? config["enabled"] : false,
-      providers: {
-        DEEPSEEK: configProviders["DEEPSEEK"] === true,
-        GEMINI: configProviders["GEMINI"] === true,
-      },
+      geminiEnabled: config?.["geminiEnabled"] === true,
       monthlyActionLimit:
         typeof config?.["monthlyActionLimit"] === "number"
           ? (config["monthlyActionLimit"] as number)

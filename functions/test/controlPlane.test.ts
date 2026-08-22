@@ -12,30 +12,23 @@ const input = {
   nowEpochMillis: 1_000_000,
 } as const;
 
+const geminiConfig: AiControlConfig = {
+  enabled: true,
+  geminiEnabled: true,
+  monthlyActionLimit: 100,
+  perMinuteLimit: 10,
+};
+
 const disabledConfig: AiControlConfig = {
   enabled: false,
-  providers: { DEEPSEEK: false, GEMINI: false },
+  geminiEnabled: true,
   monthlyActionLimit: 100,
   perMinuteLimit: 10,
 };
 
-const deepSeekOnlyConfig: AiControlConfig = {
+const geminiOffConfig: AiControlConfig = {
   enabled: true,
-  providers: { DEEPSEEK: true, GEMINI: false },
-  monthlyActionLimit: 100,
-  perMinuteLimit: 10,
-};
-
-const geminiOnlyConfig: AiControlConfig = {
-  enabled: true,
-  providers: { DEEPSEEK: false, GEMINI: true },
-  monthlyActionLimit: 100,
-  perMinuteLimit: 10,
-};
-
-const bothEnabledConfig: AiControlConfig = {
-  enabled: true,
-  providers: { DEEPSEEK: true, GEMINI: true },
+  geminiEnabled: false,
   monthlyActionLimit: 100,
   perMinuteLimit: 10,
 };
@@ -64,14 +57,22 @@ describe("decideAuthorization", () => {
     });
   });
 
-  test("both providers disabled denies", () => {
-    const noProviders: AiControlConfig = {
+  test("gemini disabled denies as AI_DISABLED", () => {
+    expect(decideAuthorization(input, geminiOffConfig, validEntitlement, noUsage, noUsage)).toEqual({
+      decision: "AI_DISABLED",
+      provider: null,
+      fallbackUsed: false,
+    });
+  });
+
+  test("malformed geminiEnabled value denies as AI_DISABLED", () => {
+    const malformed = {
       enabled: true,
-      providers: { DEEPSEEK: false, GEMINI: false },
+      geminiEnabled: "yes",
       monthlyActionLimit: 100,
       perMinuteLimit: 10,
-    };
-    expect(decideAuthorization(input, noProviders, validEntitlement, noUsage, noUsage)).toEqual({
+    } as unknown as AiControlConfig;
+    expect(decideAuthorization(input, malformed, validEntitlement, noUsage, noUsage)).toEqual({
       decision: "AI_DISABLED",
       provider: null,
       fallbackUsed: false,
@@ -79,7 +80,7 @@ describe("decideAuthorization", () => {
   });
 
   test("missing entitlement requires entitlement", () => {
-    expect(decideAuthorization(input, deepSeekOnlyConfig, null, noUsage, noUsage)).toEqual({
+    expect(decideAuthorization(input, geminiConfig, null, noUsage, noUsage)).toEqual({
       decision: "AI_ENTITLEMENT_REQUIRED",
       provider: null,
       fallbackUsed: false,
@@ -88,7 +89,7 @@ describe("decideAuthorization", () => {
 
   test("expired entitlement requires entitlement", () => {
     const expired: AiEntitlement = { enabled: true, expiresAtEpochMillis: 999_999 };
-    expect(decideAuthorization(input, deepSeekOnlyConfig, expired, noUsage, noUsage)).toEqual({
+    expect(decideAuthorization(input, geminiConfig, expired, noUsage, noUsage)).toEqual({
       decision: "AI_ENTITLEMENT_REQUIRED",
       provider: null,
       fallbackUsed: false,
@@ -97,7 +98,7 @@ describe("decideAuthorization", () => {
 
   test("entitlement disabled requires entitlement", () => {
     const off: AiEntitlement = { enabled: false, expiresAtEpochMillis: 2_000_000 };
-    expect(decideAuthorization(input, deepSeekOnlyConfig, off, noUsage, noUsage)).toEqual({
+    expect(decideAuthorization(input, geminiConfig, off, noUsage, noUsage)).toEqual({
       decision: "AI_ENTITLEMENT_REQUIRED",
       provider: null,
       fallbackUsed: false,
@@ -106,36 +107,20 @@ describe("decideAuthorization", () => {
 
   test("quota exactly at limit denies", () => {
     expect(
-      decideAuthorization(input, deepSeekOnlyConfig, validEntitlement, { usedActions: 100 }, noUsage),
+      decideAuthorization(input, geminiConfig, validEntitlement, { usedActions: 100 }, noUsage),
     ).toEqual({ decision: "AI_QUOTA_EXHAUSTED", provider: null, fallbackUsed: false });
   });
 
   test("rate exactly at limit denies", () => {
     expect(
-      decideAuthorization(input, deepSeekOnlyConfig, validEntitlement, noUsage, { usedActions: 10 }),
+      decideAuthorization(input, geminiConfig, validEntitlement, noUsage, { usedActions: 10 }),
     ).toEqual({ decision: "AI_RATE_LIMITED", provider: null, fallbackUsed: false });
   });
 
-  test("deepseek only authorizes deepseek", () => {
-    expect(decideAuthorization(input, deepSeekOnlyConfig, validEntitlement, noUsage, noUsage)).toEqual({
-      decision: "AI_AUTHORIZED",
-      provider: "DEEPSEEK",
-      fallbackUsed: false,
-    });
-  });
-
-  test("gemini only authorizes gemini", () => {
-    expect(decideAuthorization(input, geminiOnlyConfig, validEntitlement, noUsage, noUsage)).toEqual({
+  test("well-formed gemini config authorizes GEMINI", () => {
+    expect(decideAuthorization(input, geminiConfig, validEntitlement, noUsage, noUsage)).toEqual({
       decision: "AI_AUTHORIZED",
       provider: "GEMINI",
-      fallbackUsed: false,
-    });
-  });
-
-  test("both providers enabled chooses deepseek first", () => {
-    expect(decideAuthorization(input, bothEnabledConfig, validEntitlement, noUsage, noUsage)).toEqual({
-      decision: "AI_AUTHORIZED",
-      provider: "DEEPSEEK",
       fallbackUsed: false,
     });
   });
@@ -144,7 +129,7 @@ describe("decideAuthorization", () => {
     for (const monthlyActionLimit of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
       const config: AiControlConfig = {
         enabled: true,
-        providers: { DEEPSEEK: true, GEMINI: false },
+        geminiEnabled: true,
         monthlyActionLimit,
         perMinuteLimit: 10,
       };
@@ -160,7 +145,7 @@ describe("decideAuthorization", () => {
     for (const perMinuteLimit of [0, -3, 2.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
       const config: AiControlConfig = {
         enabled: true,
-        providers: { DEEPSEEK: true, GEMINI: false },
+        geminiEnabled: true,
         monthlyActionLimit: 100,
         perMinuteLimit,
       };
@@ -176,7 +161,7 @@ describe("decideAuthorization", () => {
     const shapes: unknown[] = [
       {},
       { enabled: true },
-      { enabled: "yes", providers: null, monthlyActionLimit: "x", perMinuteLimit: null },
+      { enabled: "yes", geminiEnabled: null, monthlyActionLimit: "x", perMinuteLimit: null },
       null,
       undefined,
     ];
