@@ -6,6 +6,8 @@
 
 **Architecture:** Firestore remains the durable authority for entitlement, monthly quota, authorization idempotency and provider-call admission. A small in-memory edge guard runs after Auth/App Check and request validation but before Firestore; it limits *new request IDs* on a warm callable instance and returns `AI_RATE_LIMITED` without repository access once full. It is a cost mitigation, not a durable security boundary: cold starts reset it. A future deployed API Gateway/Cloud Armor design remains required for a globally durable ingress limit.
 
+**Implemented and accepted on 2026-08-22:** Tasks 1-2 and their evidence/adversarial gate are complete locally in `57bc5bb`, `7424259`, and `8654b1b`. The last commit applies the verified GLM remediation: expired UID windows are swept before a new UID is denied for capacity, and replays may be remembered only for IDs the guard admitted. Codex independently verified Functions 75/75, lint, build, both diff checks, and the Firestore Emulator 2/2; GLM rechecked the remediation with no blocker. This marks only the abuse/cost increment accepted. **Task 3 and therefore Phase 2A/2 remain NOT DONE; nothing here is deployed.**
+
 **Tech Stack:** Node 22, TypeScript, Firebase Functions v2, Firebase Admin SDK, Vitest, Firestore Emulator.
 
 ## Global Constraints
