@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createGeminiTextProvider,
   SAFE_INTERPRETATION_JSON_SCHEMA,
+  type GeminiClientFactory,
   type GeminiClientSeam,
 } from "../src/ai/geminiTextProvider.js";
 
@@ -16,7 +17,35 @@ function createMockClient(
 }
 
 describe("createGeminiTextProvider", () => {
-  test("requests model gemini-2.5-flash-lite with temperature 0, max 64, application/json and schema", async () => {
+  test("configures HTTP timeout and strictly disables SDK retries (attempts: 1)", async () => {
+    let capturedFactoryOptions: any = null;
+    const mockClient = createMockClient(async () => ({
+      text: JSON.stringify({ kind: "requires_clarification", code: "NEEDS_CONTEXT" }),
+    }));
+
+    const mockFactory: GeminiClientFactory = (options) => {
+      capturedFactoryOptions = options;
+      return mockClient;
+    };
+
+    const provider = createGeminiTextProvider(
+      { apiKey: "test-fake-key", timeoutMillis: 5000 },
+      mockFactory,
+    );
+
+    await provider.interpret({ text: "vendo zapatos" });
+
+    expect(capturedFactoryOptions).toBeDefined();
+    expect(capturedFactoryOptions.apiKey).toBe("test-fake-key");
+    expect(capturedFactoryOptions.httpOptions).toEqual({
+      timeout: 5000,
+      retryOptions: {
+        attempts: 1,
+      },
+    });
+  });
+
+  test("requests model gemini-2.5-flash-lite with temperature 0, max 64, application/json and responseJsonSchema with additionalProperties:false", async () => {
     let capturedParams: any = null;
     const mockClient = createMockClient(async (params) => {
       capturedParams = params;
@@ -36,10 +65,14 @@ describe("createGeminiTextProvider", () => {
     expect(capturedParams.contents).toBe("vendo zapatos");
     expect(capturedParams.config).toMatchObject({
       responseMimeType: "application/json",
-      responseSchema: SAFE_INTERPRETATION_JSON_SCHEMA,
+      responseJsonSchema: SAFE_INTERPRETATION_JSON_SCHEMA,
       temperature: 0,
       maxOutputTokens: 64,
     });
+    expect(capturedParams.config.responseSchema).toBeUndefined();
+    expect(SAFE_INTERPRETATION_JSON_SCHEMA.additionalProperties).toBe(false);
+    expect(SAFE_INTERPRETATION_JSON_SCHEMA.required).toEqual(["kind", "code"]);
+    expect(SAFE_INTERPRETATION_JSON_SCHEMA.anyOf).toBeDefined();
     expect(result).toEqual({ kind: "requires_clarification", code: "NEEDS_CONTEXT" });
   });
 

@@ -17,6 +17,21 @@ export const SAFE_INTERPRETATION_JSON_SCHEMA = {
     },
   },
   required: ["kind", "code"],
+  additionalProperties: false,
+  anyOf: [
+    {
+      properties: {
+        kind: { enum: ["requires_clarification"] },
+        code: { enum: ["NEEDS_CONTEXT", "AMBIGUOUS"] },
+      },
+    },
+    {
+      properties: {
+        kind: { enum: ["unsupported"] },
+        code: { enum: ["UNSUPPORTED", "UNSAFE"] },
+      },
+    },
+  ],
 } as const;
 
 export interface GeminiClientSeam {
@@ -26,7 +41,7 @@ export interface GeminiClientSeam {
       contents: string;
       config?: {
         responseMimeType?: string;
-        responseSchema?: unknown;
+        responseJsonSchema?: unknown;
         temperature?: number;
         maxOutputTokens?: number;
         abortSignal?: AbortSignal;
@@ -34,6 +49,16 @@ export interface GeminiClientSeam {
     }): Promise<{ text?: string | null }>;
   };
 }
+
+export type GeminiClientFactory = (options: {
+  apiKey: string;
+  httpOptions: {
+    timeout: number;
+    retryOptions: {
+      attempts: number;
+    };
+  };
+}) => GeminiClientSeam;
 
 export interface TextInterpretationProvider {
   interpret(input: Readonly<{ text: string }>): Promise<SafeInterpretation | null>;
@@ -43,17 +68,9 @@ class GeminiTextProvider implements TextInterpretationProvider {
   private readonly client: GeminiClientSeam;
   private readonly timeoutMillis: number;
 
-  constructor(
-    options: Readonly<{ apiKey: string; timeoutMillis: number }>,
-    injectedClient?: GeminiClientSeam,
-  ) {
-    this.timeoutMillis = options.timeoutMillis;
-    this.client =
-      injectedClient ??
-      new GoogleGenAI({
-        apiKey: options.apiKey,
-        httpOptions: { timeout: options.timeoutMillis },
-      });
+  constructor(client: GeminiClientSeam, timeoutMillis: number) {
+    this.client = client;
+    this.timeoutMillis = timeoutMillis;
   }
 
   async interpret(input: Readonly<{ text: string }>): Promise<SafeInterpretation | null> {
@@ -70,7 +87,7 @@ class GeminiTextProvider implements TextInterpretationProvider {
         contents: input.text,
         config: {
           responseMimeType: "application/json",
-          responseSchema: SAFE_INTERPRETATION_JSON_SCHEMA,
+          responseJsonSchema: SAFE_INTERPRETATION_JSON_SCHEMA,
           temperature: 0,
           maxOutputTokens: 64,
           abortSignal: signal,
@@ -108,7 +125,27 @@ export function createGeminiTextProvider(
     apiKey: string;
     timeoutMillis: number;
   }>,
-  injectedClient?: GeminiClientSeam,
+  clientOrFactory?: GeminiClientSeam | GeminiClientFactory,
 ): TextInterpretationProvider {
-  return new GeminiTextProvider(options, injectedClient);
+  const clientFactory: GeminiClientFactory =
+    typeof clientOrFactory === "function"
+      ? clientOrFactory
+      : (clientOptions) =>
+          clientOrFactory ??
+          new GoogleGenAI({
+            apiKey: clientOptions.apiKey,
+            httpOptions: clientOptions.httpOptions,
+          });
+
+  const client = clientFactory({
+    apiKey: options.apiKey,
+    httpOptions: {
+      timeout: options.timeoutMillis,
+      retryOptions: {
+        attempts: 1,
+      },
+    },
+  });
+
+  return new GeminiTextProvider(client, options.timeoutMillis);
 }
