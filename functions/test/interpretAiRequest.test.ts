@@ -3,14 +3,14 @@ import { createInterpretAiHandler } from "../src/interpretAiRequest.js";
 import { createAiEdgeRequestGuard } from "../src/ai/edgeRequestGuard.js";
 import type { TextInterpretationProvider } from "../src/ai/geminiTextProvider.js";
 import type { AuthorizeAiInput, AuthorizeAiResult } from "../src/ai/controlPlane.js";
-import type { SafeInterpretation } from "../src/contract.js";
+import type { SafeAiProposal } from "../src/contract.js";
 
 const NOW = 1_000_000;
 
 const VALID_DATA = {
-  contractVersion: 1,
+  contractVersion: 2,
   requestId: "123e4567-e89b-12d3-a456-426614174000",
-  action: "interpret_text",
+  action: "interpret_text_proposal",
   text: "vendeme dos perfumes",
 } as const;
 
@@ -20,9 +20,10 @@ const AUTHORIZED: AuthorizeAiResult = {
   fallbackUsed: false,
 };
 
-const INTERPRETATION: SafeInterpretation = {
-  kind: "requires_clarification",
-  code: "NEEDS_CONTEXT",
+const PROPOSAL: SafeAiProposal = {
+  kind: "record_payment",
+  customerName: "María",
+  declaredAmountCents: "20000",
 };
 
 const OTHER_REQUEST_ID = "223e4567-e89b-12d3-a456-426614174000";
@@ -38,7 +39,7 @@ function recordingDeps(overrides?: {
   claimThrows?: boolean;
   provider?: TextInterpretationProvider | null;
   providerThrows?: boolean;
-  providerResult?: SafeInterpretation | null;
+  providerResult?: SafeAiProposal | null;
   guard?: ReturnType<typeof createAiEdgeRequestGuard>;
 }) {
   const authorizeInputs: AuthorizeAiInput[] = [];
@@ -74,7 +75,7 @@ function recordingDeps(overrides?: {
               const result =
                 overrides && "providerResult" in overrides
                   ? overrides.providerResult
-                  : INTERPRETATION;
+                  : PROPOSAL;
               return result;
             },
           }
@@ -133,10 +134,10 @@ describe("createInterpretAiHandler", () => {
     const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
 
     expect(result).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: VALID_DATA.requestId,
       status: "AI_UNAVAILABLE",
-      interpretation: null,
+      proposal: null,
     });
     expect(claimInputs).toHaveLength(0);
     expect(providerInputs).toHaveLength(0);
@@ -158,10 +159,10 @@ describe("createInterpretAiHandler", () => {
     const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
 
     expect(result).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: VALID_DATA.requestId,
       status: "AI_UNAVAILABLE",
-      interpretation: null,
+      proposal: null,
     });
     expect(claimInputs).toHaveLength(0);
     expect(providerInputs).toHaveLength(0);
@@ -180,10 +181,10 @@ describe("createInterpretAiHandler", () => {
     ]);
     expect(providerInputs).toEqual([{ text: VALID_DATA.text }]);
     expect(result).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: VALID_DATA.requestId,
-      status: "AI_INTERPRETED",
-      interpretation: INTERPRETATION,
+      status: "AI_PROPOSAL",
+      proposal: PROPOSAL,
     });
   });
 
@@ -193,10 +194,10 @@ describe("createInterpretAiHandler", () => {
     const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
 
     expect(result).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: VALID_DATA.requestId,
       status: "AI_UNAVAILABLE",
-      interpretation: null,
+      proposal: null,
     });
     expect(providerInputs).toHaveLength(0);
   });
@@ -216,10 +217,10 @@ describe("createInterpretAiHandler", () => {
     const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
 
     expect(result).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: VALID_DATA.requestId,
       status: "AI_UNAVAILABLE",
-      interpretation: null,
+      proposal: null,
     });
   });
 
@@ -229,10 +230,10 @@ describe("createInterpretAiHandler", () => {
     const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
 
     expect(result).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: VALID_DATA.requestId,
       status: "AI_UNAVAILABLE",
-      interpretation: null,
+      proposal: null,
     });
   });
 
@@ -241,17 +242,17 @@ describe("createInterpretAiHandler", () => {
     const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler({ guard });
 
     const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
-    expect(first.status).toBe("AI_INTERPRETED");
+    expect(first.status).toBe("AI_PROPOSAL");
 
     const second = await handler({
       auth: { uid: "test-user" },
       data: { ...VALID_DATA, requestId: OTHER_REQUEST_ID },
     });
     expect(second).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: OTHER_REQUEST_ID,
       status: "AI_UNAVAILABLE",
-      interpretation: null,
+      proposal: null,
     });
 
     // Only the first request reached the control plane, the claim and the provider.
@@ -279,18 +280,18 @@ describe("createInterpretAiHandler", () => {
 
     const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
     expect(first).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: VALID_DATA.requestId,
-      status: "AI_INTERPRETED",
-      interpretation: INTERPRETATION,
+      status: "AI_PROPOSAL",
+      proposal: PROPOSAL,
     });
 
     const second = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
     expect(second).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: VALID_DATA.requestId,
       status: "AI_UNAVAILABLE",
-      interpretation: null,
+      proposal: null,
     });
 
     expect(recorded.authorizeInputs).toHaveLength(1); // guard replay, no second authorize

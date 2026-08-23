@@ -2,15 +2,15 @@ import { describe, expect, test } from "vitest";
 import {
   MAX_INTERPRET_TEXT_LENGTH,
   createNotConfiguredResponse,
-  parseSafeInterpretation,
+  parseSafeAiProposal,
   validateAuthorizeAiActionRequest,
   validateInterpretAiRequest,
 } from "../src/contract.js";
 
 const VALID_REQUEST = {
-  contractVersion: 1,
+  contractVersion: 2,
   requestId: "123e4567-e89b-12d3-a456-426614174000",
-  action: "interpret_text",
+  action: "interpret_text_proposal",
   text: "vendeme dos perfumes",
 } as const;
 
@@ -21,7 +21,7 @@ const VALID_AUTHORIZE_REQUEST = {
 } as const;
 
 describe("validateInterpretAiRequest", () => {
-  test("accepts the exact v1 interpret_text contract with short non-blank text", () => {
+  test("accepts the exact v2 interpret_text_proposal contract with short non-blank text", () => {
     expect(validateInterpretAiRequest(VALID_REQUEST)).toEqual({
       ok: true,
       value: VALID_REQUEST,
@@ -42,20 +42,20 @@ describe("validateInterpretAiRequest", () => {
     ["empty object", {}],
     ["array", []],
     [
-      "future contract version",
-      { contractVersion: 2, requestId: VALID_REQUEST.requestId, action: "interpret_text", text: "x" },
+      "legacy v1 request",
+      { contractVersion: 1, requestId: VALID_REQUEST.requestId, action: "interpret_text", text: "x" },
     ],
     [
       "disallowed action",
-      { contractVersion: 1, requestId: VALID_REQUEST.requestId, action: "create_sale", text: "x" },
+      { contractVersion: 2, requestId: VALID_REQUEST.requestId, action: "create_sale", text: "x" },
     ],
     [
       "invalid uuid",
-      { contractVersion: 1, requestId: "not-a-uuid", action: "interpret_text", text: "x" },
+      { contractVersion: 2, requestId: "not-a-uuid", action: "interpret_text_proposal", text: "x" },
     ],
     [
       "uuid over length",
-      { contractVersion: 1, requestId: "123e4567-e89b-12d3-a456-4266141740000", action: "interpret_text", text: "x" },
+      { contractVersion: 2, requestId: "123e4567-e89b-12d3-a456-4266141740000", action: "interpret_text_proposal", text: "x" },
     ],
     ["missing text", { ...VALID_REQUEST, text: undefined }],
     ["blank text", { ...VALID_REQUEST, text: "   " }],
@@ -135,21 +135,22 @@ describe("validateAuthorizeAiActionRequest", () => {
   });
 });
 
-describe("contract parseSafeInterpretation export", () => {
-  test("re-exports parseSafeInterpretation function", () => {
-    expect(typeof parseSafeInterpretation).toBe("function");
+describe("contract parseSafeAiProposal export", () => {
+  test("re-exports parseSafeAiProposal function", () => {
+    expect(typeof parseSafeAiProposal).toBe("function");
     expect(
-      parseSafeInterpretation({ kind: "requires_clarification", code: "NEEDS_CONTEXT" }),
-    ).toEqual({ kind: "requires_clarification", code: "NEEDS_CONTEXT" });
+      parseSafeAiProposal({ kind: "record_payment", customerName: "A", declaredAmountCents: "0" }),
+    ).toEqual({ kind: "record_payment", customerName: "A", declaredAmountCents: "0" });
   });
 });
 
 describe("createNotConfiguredResponse", () => {
-  test("returns the fixed AI_NOT_CONFIGURED response with the same requestId", () => {
+  test("returns the fixed v2 unavailable response with the same requestId", () => {
     expect(createNotConfiguredResponse(VALID_REQUEST)).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       requestId: VALID_REQUEST.requestId,
-      status: "AI_NOT_CONFIGURED",
+      status: "AI_UNAVAILABLE",
+      proposal: null,
     });
   });
 });

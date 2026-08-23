@@ -1,7 +1,7 @@
 import {
   validateInterpretAiRequest,
   type InterpretAiResponse,
-  type SafeInterpretation,
+  type SafeAiProposal,
 } from "./contract";
 import type { TextInterpretationProvider } from "./ai/geminiTextProvider.js";
 import type { AiEdgeRequestGuard } from "./ai/edgeRequestGuard";
@@ -24,15 +24,15 @@ export type InterpretAiCallableDeps = Readonly<{
 }>;
 
 const UNAVAILABLE = (requestId: string): InterpretAiResponse => ({
-  contractVersion: 1,
+  contractVersion: 2,
   requestId,
   status: "AI_UNAVAILABLE",
-  interpretation: null,
+  proposal: null,
 });
 
 /**
  * Interpretation orchestration boundary. Sequence is fixed:
- * authenticated uid -> strict v1 contract (bounded text) -> warm-instance edge guard (single
+ * authenticated uid -> strict v2 proposal contract (bounded text) -> warm-instance edge guard (single
  * now()) -> control plane authorization (capability TEXT) -> durable at-most-once provider claim
  * -> provider invocation exactly once.
  *
@@ -43,7 +43,7 @@ const UNAVAILABLE = (requestId: string): InterpretAiResponse => ({
  * remembered only for an in-memory hot replay.
  *
  * Every denial, missing server configuration, storage failure, already-claimed request id or
- * provider failure collapses to the fixed AI_UNAVAILABLE response with no interpretation and no
+ * provider failure collapses to the fixed AI_UNAVAILABLE response with a null proposal and no
  * financial mutation. Authorization internals, decisions or costs are never exposed to the client.
  */
 export function createInterpretAiHandler(
@@ -104,15 +104,15 @@ export function createInterpretAiHandler(
     }
 
     try {
-      const interpretation = await deps.provider.interpret({ text });
-      if (interpretation === null) {
+      const proposal = await deps.provider.interpret({ text });
+      if (proposal === null) {
         return UNAVAILABLE(requestId);
       }
       return {
-        contractVersion: 1,
+        contractVersion: 2,
         requestId,
-        status: "AI_INTERPRETED",
-        interpretation,
+        status: "AI_PROPOSAL",
+        proposal,
       };
     } catch {
       return UNAVAILABLE(requestId);
