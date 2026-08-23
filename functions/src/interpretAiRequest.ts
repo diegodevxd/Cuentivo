@@ -4,6 +4,7 @@ import {
   type SafeInterpretation,
 } from "./contract";
 import type { TextInterpretationProvider } from "./ai/geminiTextProvider.js";
+import type { AiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import type { AuthorizeAiInput, AuthorizeAiResult } from "./ai/controlPlane";
 
 export type CallableLikeRequest = Readonly<{ auth?: Readonly<{ uid: string }>; data: unknown }>;
@@ -18,6 +19,7 @@ export type InterpretAiCallableDeps = Readonly<{
     nowEpochMillis: number;
   }>) => Promise<"CLAIMED" | "ALREADY_CLAIMED">;
   provider: TextInterpretationProvider | null;
+  guard: AiEdgeRequestGuard;
   now: () => number;
 }>;
 
@@ -30,13 +32,19 @@ const UNAVAILABLE = (requestId: string): InterpretAiResponse => ({
 
 /**
  * Interpretation orchestration boundary. Sequence is fixed:
- * authenticated uid -> strict v1 contract (bounded text) -> control plane authorization
- * (capability TEXT) -> durable at-most-once provider claim -> provider invocation exactly once.
+ * authenticated uid -> strict v1 contract (bounded text) -> warm-instance edge guard (single
+ * now()) -> control plane authorization (capability TEXT) -> durable at-most-once provider claim
+ * -> provider invocation exactly once.
+ *
+ * The edge guard is a cost mitigation shared with the authorization callable: a rate denial
+ * returns AI_UNAVAILABLE without any authorization, claim or provider access; an authorized
+ * replay is reused for the authorization step but STILL passes through the durable claim, which
+ * remains the sole authority preventing a second Gemini call. Successful authorization is
+ * remembered only for an in-memory hot replay.
  *
  * Every denial, missing server configuration, storage failure, already-claimed request id or
  * provider failure collapses to the fixed AI_UNAVAILABLE response with no interpretation and no
- * financial mutation. The provider is never retried here, and authorization internals, decisions
- * or costs are never exposed to the client.
+ * financial mutation. Authorization internals, decisions or costs are never exposed to the client.
  */
 export function createInterpretAiHandler(
   deps: InterpretAiCallableDeps,
@@ -53,19 +61,30 @@ export function createInterpretAiHandler(
     const { requestId, text } = validation.value;
     const nowEpochMillis = deps.now();
 
-    let authorization: AuthorizeAiResult;
-    try {
-      authorization = await deps.authorize({
-        uid,
-        requestId,
-        capability: "TEXT",
-        nowEpochMillis,
-      });
-    } catch {
+    const guardDecision = deps.guard.beforeRepository(uid, requestId, nowEpochMillis);
+    if (guardDecision.kind === "RATE_LIMITED") {
       return UNAVAILABLE(requestId);
     }
-    if (authorization.decision !== "AI_AUTHORIZED") {
-      return UNAVAILABLE(requestId);
+
+    let authorization: AuthorizeAiResult;
+    if (guardDecision.kind === "REPLAY") {
+      authorization = guardDecision.result;
+    } else {
+      try {
+        authorization = await deps.authorize({
+          uid,
+          requestId,
+          capability: "TEXT",
+          nowEpochMillis,
+        });
+      } catch {
+        return UNAVAILABLE(requestId);
+      }
+      if (authorization.decision !== "AI_AUTHORIZED") {
+        return UNAVAILABLE(requestId);
+      }
+      // Remember only after a successful authorization, before the null-provider/claim path.
+      deps.guard.remember(uid, requestId, authorization, nowEpochMillis);
     }
 
     // A missing server-side configuration recovers without consuming the durable claim.

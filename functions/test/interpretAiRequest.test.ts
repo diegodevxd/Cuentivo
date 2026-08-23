@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createInterpretAiHandler } from "../src/interpretAiRequest.js";
+import { createAiEdgeRequestGuard } from "../src/ai/edgeRequestGuard.js";
 import type { TextInterpretationProvider } from "../src/ai/geminiTextProvider.js";
 import type { AuthorizeAiInput, AuthorizeAiResult } from "../src/ai/controlPlane.js";
 import type { SafeInterpretation } from "../src/contract.js";
@@ -24,6 +25,12 @@ const INTERPRETATION: SafeInterpretation = {
   code: "NEEDS_CONTEXT",
 };
 
+const OTHER_REQUEST_ID = "223e4567-e89b-12d3-a456-426614174000";
+
+function openGuard() {
+  return createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 1_000, maxTrackedUids: 1_000 });
+}
+
 function recordingDeps(overrides?: {
   authorizeResult?: AuthorizeAiResult;
   authorizeThrows?: boolean;
@@ -32,6 +39,7 @@ function recordingDeps(overrides?: {
   provider?: TextInterpretationProvider | null;
   providerThrows?: boolean;
   providerResult?: SafeInterpretation | null;
+  guard?: ReturnType<typeof createAiEdgeRequestGuard>;
 }) {
   const authorizeInputs: AuthorizeAiInput[] = [];
   const claimInputs: Array<{ uid: string; requestId: string; nowEpochMillis: number }> = [];
@@ -71,6 +79,7 @@ function recordingDeps(overrides?: {
             },
           }
         : overrides.provider,
+    guard: overrides?.guard ?? openGuard(),
     now: () => NOW,
   };
   return { deps, authorizeInputs, claimInputs, providerInputs };
@@ -225,5 +234,64 @@ describe("createInterpretAiHandler", () => {
       status: "AI_UNAVAILABLE",
       interpretation: null,
     });
+  });
+
+  test("edge rate denial touches no authorization, claim nor provider", async () => {
+    const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 1, maxTrackedUids: 10 });
+    const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler({ guard });
+
+    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    expect(first.status).toBe("AI_INTERPRETED");
+
+    const second = await handler({
+      auth: { uid: "test-user" },
+      data: { ...VALID_DATA, requestId: OTHER_REQUEST_ID },
+    });
+    expect(second).toEqual({
+      contractVersion: 1,
+      requestId: OTHER_REQUEST_ID,
+      status: "AI_UNAVAILABLE",
+      interpretation: null,
+    });
+
+    // Only the first request reached the control plane, the claim and the provider.
+    expect(authorizeInputs).toHaveLength(1);
+    expect(claimInputs).toHaveLength(1);
+    expect(providerInputs).toHaveLength(1);
+  });
+
+  test("authorized replay from the guard still passes the durable claim", async () => {
+    const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 10, maxTrackedUids: 10 });
+    const { handler, authorizeInputs } = makeHandler({ guard });
+
+    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    expect(first.status).toBe("AI_INTERPRETED");
+
+    // Same request id again: the guard replays the remembered authorization; authorize is not
+    // called again, but the durable claim still gates the provider.
+    const replay = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    expect(replay).toEqual({
+      contractVersion: 1,
+      requestId: VALID_DATA.requestId,
+      status: "AI_INTERPRETED",
+      interpretation: INTERPRETATION,
+    });
+    expect(authorizeInputs).toHaveLength(1);
+  });
+
+  test("replay with already claimed durable state never invokes the provider", async () => {
+    const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 10, maxTrackedUids: 10 });
+    const { handler, providerInputs } = makeHandler({ guard, claim: "ALREADY_CLAIMED", authorizeResult: AUTHORIZED });
+
+    // First call: authorize AI_AUTHORIZED (remembered), but the durable claim says it was
+    // already claimed, so the provider is never invoked.
+    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    expect(first.status).toBe("AI_UNAVAILABLE");
+
+    // Second call: the guard replays the remembered authorization; ALREADY_CLAIMED still blocks
+    // the provider.
+    const replay = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    expect(replay.status).toBe("AI_UNAVAILABLE");
+    expect(providerInputs).toHaveLength(0);
   });
 });

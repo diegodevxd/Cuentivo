@@ -50,4 +50,11 @@ describe("regional callable gateway", () => {
       expect(SOURCE).not.toContain(forbidden);
     }
   });
+
+  test("injects the shared aiEdgeGuard into the interpret handler", () => {
+    const interpretIndex = SOURCE.indexOf("export const interpretAiRequest");
+    const authorizeIndex = SOURCE.indexOf("export const authorizeAiAction");
+    const interpretBlock = SOURCE.slice(interpretIndex, authorizeIndex);
+    expect(interpretBlock).toContain("guard: aiEdgeGuard");
+  });
 });

@@ -49,6 +49,7 @@ export const interpretAiRequest = onCall(
       authorize: (input) => repository.authorize(input),
       claimProviderInvocation: (input) => repository.claimProviderInvocation(input),
       provider,
+      guard: aiEdgeGuard,
       now: () => Date.now(),
     })({
       auth: request.auth ? { uid: request.auth.uid } : undefined,
