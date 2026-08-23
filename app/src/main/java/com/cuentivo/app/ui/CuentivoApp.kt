@@ -65,6 +65,9 @@ import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
+import com.cuentivo.app.ui.ai.AiDebugLabEntryButton
+import com.cuentivo.app.ui.ai.AiDebugLabScreen
+import com.cuentivo.app.ui.ai.debugAiTransport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -265,6 +268,9 @@ fun CuentivoApp(
     var saleCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     var paymentCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     val snackbar = remember { SnackbarHostState() }
+    // Debug-only, reversible AI lab: release builds resolve this to null and the entry disappears.
+    val debugAiLabTransport = remember { debugAiTransport() }
+    var showAiDebugLab by remember { mutableStateOf(false) }
     LaunchedEffect(message) {
         message?.let {
             snackbar.showSnackbar(it)
@@ -336,7 +342,8 @@ fun CuentivoApp(
         snackbarHost = { SnackbarHost(snackbar) },
         showBrandHeader = statementCustomer == null,
     ) { padding ->
-        if (saleCorrection != null && statementCustomer != null) {
+        Box(Modifier.fillMaxSize()) {
+            if (saleCorrection != null && statementCustomer != null) {
             // Ahead of the statement on purpose: the correction is the task the owner just opened,
             // and closing it drops them back onto the sheet they came from.
             NewSaleScreen(
@@ -437,6 +444,22 @@ fun CuentivoApp(
                 initialCustomer = paymentCustomer,
                 onCreatePayment = onCreatePayment,
             )
+        }
+        if (debugAiLabTransport != null) {
+            if (showAiDebugLab) {
+                AiDebugLabScreen(
+                    transport = debugAiLabTransport,
+                    onClose = { showAiDebugLab = false },
+                )
+            } else {
+                AiDebugLabEntryButton(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp),
+                    onOpen = { showAiDebugLab = true },
+                )
+            }
+        }
         }
     }
     blocked?.let { limit ->

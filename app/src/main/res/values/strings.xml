@@ -427,4 +427,20 @@
     <string name="claim_blocked_title">No pudimos confirmar tu negocio</string>
     <string name="claim_blocked_detail">Necesitamos revisar si esta cuenta ya tiene un negocio antes de crear uno. Revisa tu conexión e inténtalo de nuevo.</string>
     <string name="claim_blocked_retry">Reintentar</string>
+    <string name="ai_debug_lab_entry">AI</string>
+    <string name="ai_debug_lab_title">Prueba AI</string>
+    <string name="ai_debug_lab_warning">Borrador de prueba - no registra nada</string>
+    <string name="ai_debug_lab_close">Cerrar</string>
+    <string name="ai_debug_lab_input_hint">Describe la venta o el pago</string>
+    <string name="ai_debug_lab_send">Enviar</string>
+    <string name="ai_debug_lab_new">Nuevo</string>
+    <string name="ai_debug_lab_thinking">Pensando...</string>
+    <string name="ai_debug_lab_unavailable">Aun no disponible</string>
+    <string name="ai_debug_lab_clarification">Se necesita aclaracion</string>
+    <string name="ai_debug_lab_proposal_sale">Venta candidata</string>
+    <string name="ai_debug_lab_proposal_payment">Pago candidato</string>
+    <string name="ai_debug_lab_proposal_query">Consulta</string>
+    <string name="ai_debug_lab_line_format">%1$s x %2$d - %3$s</string>
+    <string name="ai_debug_lab_declared_payment">Pago declarado: %1$s</string>
+    <string name="ai_debug_lab_promised_date">Promesa: %1$s</string>
 </resources>
