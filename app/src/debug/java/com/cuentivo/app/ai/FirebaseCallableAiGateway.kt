@@ -4,60 +4,45 @@ import com.google.android.gms.tasks.Tasks
 import com.google.firebase.functions.FirebaseFunctions
 
 /**
- * Debug-only callable transport to the `us-south1` gateway.
- *
- * Deliberately not wired to any UI, ViewModel, Room or productive [AiProvider]. The v1 contract
- * carries no text, and every payload shape collapses to [AiProviderResult.Unavailable] with the
- * fixed technical reason; this transport can never produce an [AiIntent] or an [AiProviderResult.Interpreted].
+ * Debug-only callable transport to the `us-south1` `interpretAiRequest` gateway (v2 typed
+ * proposal contract). Not wired to any UI, ViewModel, Room or productive provider; it performs
+ * no execution, no financial mutation and exposes no error messages, ids, balances or raw text.
+ * The v1 non-text transport is intentionally gone: the remote deployed v1 endpoint is untouched.
  */
 
 private const val CALLABLE_NAME = "interpretAiRequest"
 
 private const val REGION = "us-south1"
 
-private const val NOT_CONFIGURED = "AI_NOT_CONFIGURED"
+private const val CONTRACT_VERSION_FIELD = 2
+
+private const val ACTION_VALUE = "interpret_text_proposal"
+
+/** Exact v2 request payload: contractVersion 2, requestId, action and the original text. */
+internal fun buildCallablePayload2(request: AiInterpretRequest): Map<String, Any> = mapOf(
+    "contractVersion" to CONTRACT_VERSION_FIELD,
+    "requestId" to request.requestId,
+    "action" to ACTION_VALUE,
+    "text" to request.text,
+)
 
 /**
- * Pure parser for the callable response. Accepts only the exact v1 response map — contractVersion 1,
- * the expected requestId and status AI_NOT_CONFIGURED — and collapses it, and everything else, to
- * [AiProviderResult.Unavailable]. Never returns an interpreted intent.
- */
-internal fun parseCallableData(data: Any?, expectedRequestId: String): AiProviderResult {
-    val map = data as? Map<*, *> ?: return AiProviderResult.Unavailable(NOT_CONFIGURED)
-    if (map.keys.map { it.toString() }.toSet() != setOf("contractVersion", "requestId", "status")) {
-        return AiProviderResult.Unavailable(NOT_CONFIGURED)
-    }
-    if ((map["contractVersion"] as? Number)?.toLong() != 1L) {
-        return AiProviderResult.Unavailable(NOT_CONFIGURED)
-    }
-    if (map["requestId"] != expectedRequestId) {
-        return AiProviderResult.Unavailable(NOT_CONFIGURED)
-    }
-    if (map["status"] != NOT_CONFIGURED) {
-        return AiProviderResult.Unavailable(NOT_CONFIGURED)
-    }
-    return AiProviderResult.Unavailable(NOT_CONFIGURED)
-}
-
-/**
- * Transport that calls the regional callable with the exact v1 request map (no text) and parses
- * the response with [parseCallableData]. Suspension uses the existing approved Tasks bridge only.
+ * Debug-only transport that calls the regional callable with the exact v2 payload and strictly
+ * parses the v2 response. Suspension uses the existing approved Tasks bridge only; every failure
+ * (call error, timeout, unexpected shape, malformed data) collapses to
+ * [CallableAiProposalResult.Unavailable] without logs.
  */
 class FirebaseCallableAiGateway(
     private val functions: FirebaseFunctions = FirebaseFunctions.getInstance(REGION),
 ) {
 
-    suspend fun callContractV1(requestId: String): AiProviderResult {
-        val payload = mapOf(
-            "contractVersion" to 1,
-            "requestId" to requestId,
-            "action" to "interpret_text",
-        )
+    suspend fun callContractV2(request: AiInterpretRequest): CallableAiProposalResult {
+        val payload = buildCallablePayload2(request)
         return try {
             val task = functions.getHttpsCallable(CALLABLE_NAME).call(payload)
-            parseCallableData(Tasks.await(task).data, requestId)
+            parseCallableProposalResponse(Tasks.await(task).data, request.requestId)
         } catch (_: Exception) {
-            AiProviderResult.Unavailable(NOT_CONFIGURED)
+            CallableAiProposalResult.Unavailable
         }
     }
 }
