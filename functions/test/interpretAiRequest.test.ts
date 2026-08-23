@@ -260,23 +260,42 @@ describe("createInterpretAiHandler", () => {
     expect(providerInputs).toHaveLength(1);
   });
 
-  test("authorized replay from the guard still passes the durable claim", async () => {
+  test("claimed replay provider isolation after the durable gate closes", async () => {
+    // Same uid + requestId, same shared guard, stateful durable claim: the first claim returns
+    // CLAIMED, the second (from the guard replay) returns ALREADY_CLAIMED.
     const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 10, maxTrackedUids: 10 });
-    const { handler, authorizeInputs } = makeHandler({ guard });
+    const recorded = recordingDeps({});
+    const claimCalls: Array<{ uid: string; requestId: string; nowEpochMillis: number }> = [];
+    let claimCount = 0;
+    const handler = createInterpretAiHandler({
+      ...recorded.deps,
+      guard,
+      claimProviderInvocation: async (input) => {
+        claimCalls.push(input);
+        claimCount += 1;
+        return claimCount === 1 ? "CLAIMED" : "ALREADY_CLAIMED";
+      },
+    });
 
     const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
-    expect(first.status).toBe("AI_INTERPRETED");
-
-    // Same request id again: the guard replays the remembered authorization; authorize is not
-    // called again, but the durable claim still gates the provider.
-    const replay = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
-    expect(replay).toEqual({
+    expect(first).toEqual({
       contractVersion: 1,
       requestId: VALID_DATA.requestId,
       status: "AI_INTERPRETED",
       interpretation: INTERPRETATION,
     });
-    expect(authorizeInputs).toHaveLength(1);
+
+    const second = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    expect(second).toEqual({
+      contractVersion: 1,
+      requestId: VALID_DATA.requestId,
+      status: "AI_UNAVAILABLE",
+      interpretation: null,
+    });
+
+    expect(recorded.authorizeInputs).toHaveLength(1); // guard replay, no second authorize
+    expect(claimCalls).toHaveLength(2); // the replay did reach the durable gate
+    expect(recorded.providerInputs).toHaveLength(1); // provider invoked exactly once
   });
 
   test("replay with already claimed durable state never invokes the provider", async () => {
