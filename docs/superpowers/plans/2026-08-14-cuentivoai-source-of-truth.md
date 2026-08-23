@@ -5,6 +5,14 @@
 > **Source of truth:** este documento prevalece para CuentivoAI hasta que el propietario apruebe una fase explícitamente. Las decisiones y supuestos deben actualizarse aquí antes de cambiar producción.
 >
 > **Fecha de auditoría:** 2026-08-14. **Rama inspeccionada:** `codex/neo-fintech`.
+>
+> **Reconciliación actual (2026-08-22):** la rama vigente es `diegodevxd/feature-cuentivo-ai`;
+> HEAD local de implementación en el momento del incremento documental Task 4: `4e04052`
+> (antes del commit documental de Task 4). El incremento local Gemini Debug Gateway está
+> **aceptado por Codex**, pendiente de autorización explícita de deploy, bootstrap del control
+> plane server-side (config/entitlement Admin-only) y revisión GLM diferida por instrucción del
+> propietario. No se marca producción, Fase 2 ni Fase 3 como completadas; el release/AAB público
+> sigue NO-GO.
 
 ## 0. Mandato y límites
 
@@ -439,6 +447,7 @@ No crear ahora cuenta/API key Gemini, gateway AI adicional, Cloud Run, Secret Ma
 | 2026-08-21 | Auditoría de reanudación: `HEAD 4744fb2`, rama `diegodevxd/feature-cuentivo-ai`; Functions 64/64, lint, build y diff-check pasan. Fase 1B es el último incremento cerrado. Fase 2A contiene control plane local y un commit de throttle transaccional rechazado: después del límite todavía realiza 4 lecturas por petición distinta y `maxAttempts: 50` puede amplificar coste/latencia. | **Fase 2A NOT DONE.** No desplegar `authorizeAiAction`; definir primero defensa de borde y semántica de coste/retry. `docs/superpowers/handoffs/` no rastreado se preserva. |
 | 2026-08-22 | Incremento de abuso/coste de Fase 2A auditado: `57bc5bb` restaura que sólo `AI_AUTHORIZED` escribe ledger/uso/rate y elimina `maxAttempts:50`; `7424259` agrega un guard cálido acotado antes de Firestore; `8654b1b` evacúa ventanas vencidas y restringe replay a IDs admitidos. Codex verificó Functions 75/75, lint, build, ambos diff checks y Firestore Emulator 2/2; GLM revisó el diff dos veces, el hallazgo medio de lockout vencido fue corregido y el recheck no halló bloqueos. | Incremento **aceptado localmente**. El guard es mitigación de costo por instancia, no rate limit durable: cold starts lo reinician y una saturación de UIDs activos del mismo minuto falla cerrada sólo para AI. Sin deploy, proveedor/SDK/secret, Android, Room, dinero, reglas ni AAB. **Fase 2A/2 siguen NOT DONE:** falta Task 3 Gemini-only y gates posteriores. |
 | 2026-08-22 | Task 3 Gemini-only local cerrada en `c435c31`: `AiProviderId` es exactamente `GEMINI`, `geminiEnabled:true` es la única configuración habilitante y ledger histórico no-Gemini falla cerrado. Codex verificó 75/75, lint, build, ambos diff checks y Emulator 2/2; GLM revisó seguridad, idempotencia y el retry acotado del gate de contención sin bloqueador. | **Fase 2A DONE localmente.** No hay deploy de `authorizeAiAction`, SDK/API key/Secret Manager/prompt/red Gemini, UI Android, Room, datos financieros ni release. Fase 2 de producción y Fase 3 siguen sujetas a autorización/gates propios. |
+| 2026-08-22 | Incremento local Gemini Debug Gateway — Tasks 1-3 aceptados por Codex (`9baefbd`, `12cb5ac`, `ab1f4fe`, `0753b07`, `8e659a3`, `4852510`, `ba5a615`, `430fe8b`, `4e04052`): contrato estricto de texto (máx. 1000 unidades UTF-16 tras trim); `SafeInterpretation` no-financiera de cuatro pares allow-listed; adapter server-only Gemini 2.5 Flash-Lite con JSON Schema, sin retry y con timeout; Secret Manager `CUENTIVOAI_GEMINI_API_KEY` enlazado sólo a `interpretAiRequest`; Auth/App Check preservados; claim durable Firestore antes del provider; edge guard de ingreso cálido; sin persistencia/logging de prompt ni salida; sin Android/Room/mutación financiera. | Incremento local **aceptado por Codex**; NO es lanzamiento producción/beta ni cierre de fase. **Revisión GLM diferida explícitamente por instrucción del propietario** (ahorro de tokens): no se afirma que ocurrió. Sin deploy de esta implementación, sin secret configurado, sin llamada Gemini y sin control-plane remoto; `interpretAiRequest` desplegado (Fase 1B) permanece fail-closed. Release/AAB/beta siguen **NO-GO**; Fase 2 producción y Fase 3 texto-a-draft-financiero siguen **NOT DONE**. Evidencia Task 4: `docs/superpowers/plans/2026-08-22-cuentivoai-gemini-debug-gateway-deploy-checklist.md`. |
 
 ## 17. HANDOFF A ORCA — FASE 0 INTERNA AUTORIZADA
 
