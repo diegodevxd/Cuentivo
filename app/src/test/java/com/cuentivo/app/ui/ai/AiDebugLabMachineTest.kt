@@ -88,6 +88,41 @@ class AiDebugLabMachineTest {
     }
 
     @Test
+    fun `ocr empty preserves existing text`() {
+        val editing = AiDebugLabModel(text = "texto previo")
+        val after = AiDebugLabMachine.onOcrResult(editing, "", editing.generation)
+        assertEquals("texto previo", after.text)
+    }
+
+    @Test
+    fun `ocr null preserves existing text`() {
+        val editing = AiDebugLabModel(text = "texto previo")
+        val after = AiDebugLabMachine.onOcrResult(editing, null, editing.generation)
+        assertEquals("texto previo", after.text)
+    }
+
+    @Test
+    fun `ocr success appends recognized text to editor`() {
+        val editing = AiDebugLabModel(text = "previo")
+        val after = AiDebugLabMachine.onOcrResult(editing, "línea reconocida", editing.generation)
+        assertEquals("previo\nlínea reconocida", after.text)
+    }
+
+    @Test
+    fun `ocr on fresh model sets text directly`() {
+        val editing = AiDebugLabModel(text = "")
+        val after = AiDebugLabMachine.onOcrResult(editing, "reconocido", editing.generation)
+        assertEquals("reconocido", after.text)
+    }
+
+    @Test
+    fun `ocr stale generation is ignored`() {
+        val editing = AiDebugLabModel(text = "original", generation = 5)
+        val after = AiDebugLabMachine.onOcrResult(editing, "nuevo texto", 3)
+        assertEquals("original", after.text)
+    }
+
+    @Test
     fun `valid safe proposal maps to proposal preview`() {
         val editing = AiDebugLabModel(text = "venta")
         val submitted = AiDebugLabMachine.onSubmit(editing) as AiDebugLabSubmitOutcome.Submitted

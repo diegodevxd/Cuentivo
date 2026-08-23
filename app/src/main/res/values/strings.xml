@@ -443,4 +443,5 @@
     <string name="ai_debug_lab_line_format">%1$s x %2$d - %3$s</string>
     <string name="ai_debug_lab_declared_payment">Pago declarado: %1$s</string>
     <string name="ai_debug_lab_promised_date">Promesa: %1$s</string>
+    <string name="ai_debug_lab_capture">Elegir imagen</string>
 </resources>

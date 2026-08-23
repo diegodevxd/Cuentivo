@@ -33,6 +33,16 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `main ai lab sources never reference MlKitOcrEngine`() {
+        for (source in sourcesOf(mainDir)) {
+            assertFalse(
+                "main must not reference MlKitOcrEngine directly",
+                source.contains("MlKitOcrEngine"),
+            )
+        }
+    }
+
+    @Test
     fun `main ai lab sources never expose an executable financial action`() {
         for (source in sourcesOf(mainDir)) {
             val imports = source.lines().filter { it.startsWith("import ") }.joinToString("\n")
@@ -64,6 +74,19 @@ class AiDebugLabGuardsTest {
             "submit must go through the safe policy",
             screenSource.contains("AiDebugLabSubmitPolicy.run"),
         )
+    }
+
+    @Test
+    fun `capture package has no Firebase network or Room imports`() {
+        val captureDir = File("src/main/java/com/cuentivo/app/ai/capture")
+        assertTrue("capture package must exist", captureDir.exists())
+        for (source in sourcesOf(captureDir)) {
+            val imports = source.lines().filter { it.startsWith("import ") }.joinToString("\n")
+            assertFalse("capture must not import Firebase: $source", imports.contains("firebase"))
+            assertFalse("capture must not import Firestore: $source", imports.contains("firestore"))
+            assertFalse("capture must not import Room: $source", imports.contains("room"))
+            assertFalse("capture must not import HTTP client: $source", imports.contains("okhttp") || imports.contains("retrofit") || imports.contains("axios"))
+        }
     }
 
     @Test

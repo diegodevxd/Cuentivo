@@ -11,3 +11,6 @@ private object AiDebugUnavailableTransport : AiDebugTransport {
 
 /** Source-set entry point: release builds have no AI lab (null hides the entry entirely). */
 fun debugAiTransport(): AiDebugTransport? = null
+
+/** Release builds have no OCR engine; the capture button is hidden. */
+fun debugAiOcrEngine(context: android.content.Context): com.cuentivo.app.ai.capture.AiOcrEngine? = null

@@ -93,6 +93,27 @@ object AiDebugLabMachine {
         }
     }
 
+    /**
+     * Applies an on-device OCR result to the editor text. A null/blank result preserves the
+     * existing text unchanged; a valid result appends the recognized text after a newline.
+     * The generation token prevents stale OCR results from overwriting a cancelled session.
+     */
+    fun onOcrResult(
+        model: AiDebugLabModel,
+        recognizedText: String?,
+        generation: Long,
+    ): AiDebugLabModel {
+        if (generation != model.generation) {
+            return model // cancelled or stale OCR result
+        }
+        val trimmed = recognizedText?.trim()
+        if (trimmed.isNullOrBlank()) {
+            return model // preserve existing editor text on empty/failed OCR
+        }
+        val separator = if (model.text.isNotBlank()) "\n" else ""
+        return model.copy(text = (model.text + separator + trimmed).trim())
+    }
+
     fun onCancel(model: AiDebugLabModel): AiDebugLabModel =
         model.copy(state = AiDebugLabState.TextEditing, generation = model.generation + 1)
 

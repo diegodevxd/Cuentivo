@@ -121,6 +121,9 @@ dependencies {
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    // On-device OCR for the AI debug lab (notebook/ticket text extraction). Bundled variant:
+    // no network, no Firebase, no Play Services model download at runtime.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     // Debug only. Play Integrity attests a binary installed by Play, which an emulator is not, so
     // the debug provider is what lets instrumented tests get a token at all. Deliberately NOT
     // `implementation`: shipping a provider that hands out tokens on request would undo the whole
