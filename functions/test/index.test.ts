@@ -57,4 +57,11 @@ describe("regional callable gateway", () => {
     const interpretBlock = SOURCE.slice(interpretIndex, authorizeIndex);
     expect(interpretBlock).toContain("guard: aiEdgeGuard");
   });
+
+  test("initializes default firebase admin app at module level and passes it to getFirestore", () => {
+    expect(SOURCE).toMatch(/const\s+adminApp\s*=\s*initializeApp\(\);/);
+    expect(SOURCE).toContain("getFirestore(adminApp)");
+    expect(SOURCE).not.toContain("getApps()");
+    expect(SOURCE).not.toContain("getApp()");
+  });
 });

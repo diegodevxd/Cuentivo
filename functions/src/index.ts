@@ -1,6 +1,6 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
-import { initializeApp, getApp, getApps } from "firebase-admin/app";
+import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createInterpretAiHandler } from "./interpretAiRequest";
 import { createAuthorizeAiHandler } from "./authorizeAiAction";
@@ -30,9 +30,10 @@ const aiEdgeGuard = createAiEdgeRequestGuard({
   maxTrackedUids: 200,
 });
 
+const adminApp = initializeApp();
+
 function controlPlaneRepository() {
-  const app = getApps().length > 0 ? getApp() : initializeApp();
-  return createFirestoreControlPlaneRepository(getFirestore(app));
+  return createFirestoreControlPlaneRepository(getFirestore(adminApp));
 }
 
 export const interpretAiRequest = onCall(
