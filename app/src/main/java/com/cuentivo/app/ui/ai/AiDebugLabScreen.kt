@@ -55,6 +55,10 @@ import com.cuentivo.app.ai.AiPaymentConfirmationRequest
 import com.cuentivo.app.ai.AiPaymentExecutionResult
 import com.cuentivo.app.ai.AiPaymentPreviewResult
 import com.cuentivo.app.ai.AiProposal
+import com.cuentivo.app.ai.AiSaleBlockReason
+import com.cuentivo.app.ai.AiSaleConfirmationRequest
+import com.cuentivo.app.ai.AiSaleExecutionResult
+import com.cuentivo.app.ai.AiSalePreviewResult
 import com.cuentivo.app.ai.BusinessQueryProposal
 import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.CreateSaleProposal
@@ -104,11 +108,11 @@ private val CaptureUriSaver = Saver<Uri?, String>(
 )
 
 /**
- * AI debug text lab with optional explicit payment confirmation. Edits text, sends ONE request
+ * AI debug text lab with optional explicit payment and sale confirmation. Edits text, sends ONE request
  * through the injected transport and shows the safe result: unavailable, clarification, proposal,
- * or a typed payment preview.
+ * or a typed preview.
  *
- * Confirmation is human-initiated and explicit: [confirmPayment] is an injected host callback;
+ * Confirmation is human-initiated and explicit: [confirmPayment] and [confirmSale] are injected host callbacks;
  * this screen performs zero direct Room mutations, financial calculations, or model/transport
  * calls during confirmation. Generation tokens and single-flight states protect against replay
  * and late async responses. On release builds, the lab remains entirely disabled and unreachable.
@@ -121,8 +125,10 @@ fun AiDebugLabScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
+    salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal) -> AiSalePreviewResult)? = null,
     activeBusinessId: String? = null,
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
+    confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     var isHydrated by remember { mutableStateOf(false) }
@@ -283,14 +289,18 @@ fun AiDebugLabScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(model.messages) { message ->
-                    val isCurrentPreview = message is AiChatMessage.AssistantPaymentPreview && (
+                    val isCurrentPaymentPreview = message is AiChatMessage.AssistantPaymentPreview && (
                         (model.state as? AiDebugLabState.PaymentConfirmation)?.preview == message.preview ||
                             (model.state as? AiDebugLabState.PaymentConfirming)?.preview == message.preview
                     )
-                    val isConfirming = model.state is AiDebugLabState.PaymentConfirming
+                    val isCurrentSalePreview = message is AiChatMessage.AssistantSalePreview && (
+                        (model.state as? AiDebugLabState.SaleConfirmation)?.preview == message.preview ||
+                            (model.state as? AiDebugLabState.SaleConfirming)?.preview == message.preview
+                    )
+                    val isConfirming = model.state is AiDebugLabState.PaymentConfirming || model.state is AiDebugLabState.SaleConfirming
                     ChatMessageRow(
                         message = message,
-                        onConfirmPayment = if (isCurrentPreview && isHydrated && confirmPayment != null && activeBusinessId != null) {
+                        onConfirmPayment = if (isCurrentPaymentPreview && isHydrated && confirmPayment != null && activeBusinessId != null) {
                             {
                                 val outcome = AiDebugLabMachine.onConfirmPayment(model, activeBusinessId)
                                 if (outcome is AiPaymentConfirmOutcome.Started) {
@@ -311,7 +321,31 @@ fun AiDebugLabScreen(
                                 }
                             }
                         } else null,
-                        onCancelPayment = if (isCurrentPreview && isHydrated) {
+                        onCancelPayment = if (isCurrentPaymentPreview && isHydrated) {
+                            { model = AiDebugLabMachine.onCancel(model) }
+                        } else null,
+                        onConfirmSale = if (isCurrentSalePreview && isHydrated && confirmSale != null && activeBusinessId != null) {
+                            {
+                                val outcome = AiDebugLabMachine.onConfirmSale(model, activeBusinessId)
+                                if (outcome is AiSaleConfirmOutcome.Started) {
+                                    model = outcome.model
+                                    val token = outcome.generation
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            try {
+                                                confirmSale(outcome.request)
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (_: Exception) {
+                                                AiSaleExecutionResult.Unavailable
+                                            }
+                                        }
+                                        model = AiDebugLabMachine.onSaleExecutionResult(model, result, token)
+                                    }
+                                }
+                            }
+                        } else null,
+                        onCancelSale = if (isCurrentSalePreview && isHydrated) {
                             { model = AiDebugLabMachine.onCancel(model) }
                         } else null,
                         isConfirming = isConfirming,
@@ -384,6 +418,21 @@ fun AiDebugLabScreen(
                                                 AiPaymentPreviewResult.Unavailable
                                             }
                                             model = AiDebugLabMachine.onPaymentPreviewResult(model, resolutionResult, token)
+                                        } else if (result is CallableAiProposalResult.Proposal &&
+                                            result.proposal is CreateSaleProposal &&
+                                            nextModel.state is AiDebugLabState.ProposalPreview
+                                        ) {
+                                            val saleProposal = result.proposal
+                                            val resolutionResult = if (salePreviewResolver != null && activeBusinessId != null) {
+                                                withContext(Dispatchers.IO) {
+                                                    runCatching {
+                                                        salePreviewResolver(activeBusinessId, saleProposal)
+                                                    }.getOrDefault(AiSalePreviewResult.Unavailable)
+                                                }
+                                            } else {
+                                                AiSalePreviewResult.Unavailable
+                                            }
+                                            model = AiDebugLabMachine.onSalePreviewResult(model, resolutionResult, token)
                                         }
                                     }
                                 }
@@ -491,6 +540,8 @@ private fun ChatMessageRow(
     message: AiChatMessage,
     onConfirmPayment: (() -> Unit)? = null,
     onCancelPayment: (() -> Unit)? = null,
+    onConfirmSale: (() -> Unit)? = null,
+    onCancelSale: (() -> Unit)? = null,
     isConfirming: Boolean = false,
 ) {
     when (message) {
@@ -622,6 +673,144 @@ private fun ChatMessageRow(
         )
         AiChatMessage.AssistantPaymentRejected -> Text(
             text = stringResource(R.string.ai_payment_rejected_message),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        is AiChatMessage.AssistantSalePreview -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(R.string.ai_debug_chat_draft_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Text(
+                text = message.preview.customerName,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            message.preview.lines.forEach { line ->
+                Text(
+                    text = stringResource(
+                        R.string.ai_debug_lab_line_format,
+                        line.productName,
+                        line.quantity,
+                        formatCents(line.lineTotalCents),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Text(
+                text = stringResource(
+                    R.string.ai_sale_preview_total,
+                    formatCents(message.preview.totalCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (message.preview.initialPaymentCents > 0L) {
+                Text(
+                    text = stringResource(
+                        R.string.ai_sale_preview_initial_payment,
+                        formatCents(message.preview.initialPaymentCents),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.ai_sale_preview_remainder,
+                        formatCents(message.preview.remainderCents),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            message.preview.promisedPaymentCandidate?.let { promise ->
+                val date = promise as? com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate
+                if (date != null) {
+                    Text(
+                        stringResource(R.string.ai_debug_lab_promised_date, "${date.year}-${date.month}-${date.day}"),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            if (onConfirmSale != null && onCancelSale != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = onConfirmSale,
+                        enabled = !isConfirming,
+                    ) {
+                        Text(stringResource(R.string.ai_sale_confirm_action))
+                    }
+                    TextButton(
+                        onClick = onCancelSale,
+                        enabled = !isConfirming,
+                    ) {
+                        Text(stringResource(R.string.ai_sale_confirm_cancel))
+                    }
+                }
+            }
+        }
+        AiChatMessage.AssistantSaleCustomerNotFound -> Text(
+            text = stringResource(R.string.ai_payment_preview_customer_not_found),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        is AiChatMessage.AssistantSaleCustomerSelection -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(R.string.ai_payment_preview_selection_required),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            message.candidates.forEach { candidate ->
+                Text(
+                    text = "• " + candidate.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+        is AiChatMessage.AssistantSaleProductNotFound -> Text(
+            text = stringResource(R.string.ai_sale_preview_product_not_found, message.productName),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        is AiChatMessage.AssistantSaleProductSelection -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(R.string.ai_sale_preview_product_selection_required, message.requestedName),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            message.candidates.forEach { candidate ->
+                Text(
+                    text = "• " + candidate.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+        is AiChatMessage.AssistantSaleBlocked -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            when (message.reason) {
+                AiSaleBlockReason.INITIAL_PAYMENT_EXCEEDS_TOTAL -> {
+                    val initialFormatted = message.preview?.let { formatCents(it.initialPaymentCents) }.orEmpty()
+                    val totalFormatted = message.preview?.let { formatCents(it.totalCents) }.orEmpty()
+                    Text(
+                        text = stringResource(R.string.ai_sale_preview_blocked_overpayment, initialFormatted, totalFormatted),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                AiSaleBlockReason.ARITHMETIC_OVERFLOW -> Text(
+                    text = stringResource(R.string.ai_sale_preview_blocked_overflow),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                AiSaleBlockReason.INVALID_LINE_PRICE,
+                AiSaleBlockReason.INVALID_LINE_QUANTITY -> Text(
+                    text = stringResource(R.string.ai_sale_preview_blocked_invalid_line),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+        is AiChatMessage.AssistantSaleRecorded -> Text(
+            text = stringResource(R.string.ai_sale_recorded_success),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        AiChatMessage.AssistantSaleStale -> Text(
+            text = stringResource(R.string.ai_sale_stale_message),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        AiChatMessage.AssistantSaleRejected -> Text(
+            text = stringResource(R.string.ai_sale_rejected_message),
             style = MaterialTheme.typography.bodyMedium,
         )
     }

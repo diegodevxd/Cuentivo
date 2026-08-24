@@ -932,4 +932,272 @@ class AiDebugLabMachineTest {
 
         assertSame(started.model, edited)
     }
+
+    private val validSaleProposal = CreateSaleProposal(
+        customerName = "María Gómez",
+        lines = listOf(AiProposalSaleLine("Jabón", 2, 5000L)),
+        declaredInitialPaymentCents = 3000L,
+        promisedPaymentCandidate = com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate(2026, 8, 30),
+    )
+
+    private val sampleSalePreview = com.cuentivo.app.ai.AiResolvedSalePreview(
+        confirmationKey = "sale-key-1",
+        customerId = "cust-1",
+        customerName = "María Gómez",
+        rawLines = listOf(
+            com.cuentivo.app.ai.AiResolvedSaleLine(
+                productId = "prod-1",
+                productName = "Jabón",
+                quantity = 2,
+                unitPriceCents = 5000L,
+                lineTotalCents = 10000L,
+                sourceDeclaredPriceCents = 5000L,
+                sourceProductFingerprint = "prod-1:10000:5000",
+            ),
+        ),
+        totalCents = 10000L,
+        initialPaymentCents = 3000L,
+        remainderCents = 7000L,
+        promisedPaymentCandidate = com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate(2026, 8, 30),
+        sourceCustomerFingerprint = "cust-1:10000",
+    )
+
+    private fun saleProposalModel(generation: Long = 2L): AiDebugLabModel = AiDebugLabModel(
+        state = AiDebugLabState.ProposalPreview(validSaleProposal),
+        generation = generation,
+        messages = listOf(
+            AiChatMessage.UserText("Venta a María"),
+            AiChatMessage.AssistantProposal(validSaleProposal),
+        ),
+    )
+
+    private fun saleConfirmationModel(generation: Long = 4L): AiDebugLabModel = AiDebugLabModel(
+        state = AiDebugLabState.SaleConfirmation(sampleSalePreview),
+        generation = generation,
+        messages = listOf(
+            AiChatMessage.UserText("Venta a María"),
+            AiChatMessage.AssistantSalePreview(sampleSalePreview),
+        ),
+    )
+
+    @Test
+    fun `onSalePreviewResult transitions ProposalPreview to SaleConfirmation on Ready preview`() {
+        val model = saleProposalModel(generation = 3L)
+        val result = com.cuentivo.app.ai.AiSalePreviewResult.Ready(sampleSalePreview)
+
+        val updated = AiDebugLabMachine.onSalePreviewResult(model, result, generation = 3L)
+
+        assertEquals(AiDebugLabState.SaleConfirmation(sampleSalePreview), updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSalePreview(sampleSalePreview),
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
+    fun `onSalePreviewResult ignores stale generation`() {
+        val model = saleProposalModel(generation = 3L)
+        val result = com.cuentivo.app.ai.AiSalePreviewResult.Ready(sampleSalePreview)
+
+        val updated = AiDebugLabMachine.onSalePreviewResult(model, result, generation = 2L)
+        assertSame(model, updated)
+    }
+
+    @Test
+    fun `onSalePreviewResult maps all unresolved and blocked variants`() {
+        val model = saleProposalModel(generation = 3L)
+
+        // Customer not found
+        val notFound = AiDebugLabMachine.onSalePreviewResult(
+            model,
+            com.cuentivo.app.ai.AiSalePreviewResult.CustomerNotFound,
+            generation = 3L,
+        )
+        assertTrue(notFound.state is AiDebugLabState.SaleResolution)
+        assertEquals(listOf(AiChatMessage.UserText("Venta a María"), AiChatMessage.AssistantSaleCustomerNotFound), notFound.messages)
+
+        // Customer selection
+        val custCandidate = com.cuentivo.app.ai.AiSaleCustomerCandidate("c1", "María G.")
+        val custSelection = AiDebugLabMachine.onSalePreviewResult(
+            model,
+            com.cuentivo.app.ai.AiSalePreviewResult.CustomerSelectionRequired(listOf(custCandidate)),
+            generation = 3L,
+        )
+        assertTrue(custSelection.state is AiDebugLabState.SaleResolution)
+        assertTrue(custSelection.messages.last() is AiChatMessage.AssistantSaleCustomerSelection)
+
+        // Product not found
+        val prodNotFound = AiDebugLabMachine.onSalePreviewResult(
+            model,
+            com.cuentivo.app.ai.AiSalePreviewResult.ProductNotFound("Shampoo"),
+            generation = 3L,
+        )
+        assertTrue(prodNotFound.state is AiDebugLabState.SaleResolution)
+        assertEquals(listOf(AiChatMessage.UserText("Venta a María"), AiChatMessage.AssistantSaleProductNotFound("Shampoo")), prodNotFound.messages)
+
+        // Product selection
+        val prodCandidate = com.cuentivo.app.ai.AiSaleProductCandidate("p1", "Jabón Dove", 5000L)
+        val prodSelection = AiDebugLabMachine.onSalePreviewResult(
+            model,
+            com.cuentivo.app.ai.AiSalePreviewResult.ProductSelectionRequired("Jabón", listOf(prodCandidate)),
+            generation = 3L,
+        )
+        assertTrue(prodSelection.state is AiDebugLabState.SaleResolution)
+        assertTrue(prodSelection.messages.last() is AiChatMessage.AssistantSaleProductSelection)
+
+        // Blocked
+        val blocked = AiDebugLabMachine.onSalePreviewResult(
+            model,
+            com.cuentivo.app.ai.AiSalePreviewResult.Blocked(com.cuentivo.app.ai.AiSaleBlockReason.INITIAL_PAYMENT_EXCEEDS_TOTAL, sampleSalePreview),
+            generation = 3L,
+        )
+        assertTrue(blocked.state is AiDebugLabState.SaleResolution)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSaleBlocked(com.cuentivo.app.ai.AiSaleBlockReason.INITIAL_PAYMENT_EXCEEDS_TOTAL, sampleSalePreview),
+            ),
+            blocked.messages,
+        )
+
+        // Unavailable
+        val unavailable = AiDebugLabMachine.onSalePreviewResult(
+            model,
+            com.cuentivo.app.ai.AiSalePreviewResult.Unavailable,
+            generation = 3L,
+        )
+        assertEquals(AiDebugLabState.Unavailable, unavailable.state)
+        assertEquals(listOf(AiChatMessage.UserText("Venta a María"), AiChatMessage.AssistantUnavailable), unavailable.messages)
+    }
+
+    @Test
+    fun `onConfirmSale with valid state and business ID starts confirming with incremented generation and builds AiSaleConfirmationRequest`() {
+        val model = saleConfirmationModel(generation = 4L)
+
+        val outcome = AiDebugLabMachine.onConfirmSale(model, "biz-123")
+        assertTrue("outcome must be Started", outcome is AiSaleConfirmOutcome.Started)
+        val started = outcome as AiSaleConfirmOutcome.Started
+
+        assertEquals(5L, started.generation)
+        assertEquals(AiDebugLabState.SaleConfirming(sampleSalePreview), started.model.state)
+        assertEquals("sale-key-1", started.request.confirmationKey)
+        assertEquals("biz-123", started.request.businessId)
+        assertEquals("cust-1", started.request.customerId)
+        assertEquals("cust-1:10000", started.request.sourceCustomerFingerprint)
+        assertEquals(1, started.request.lines.size)
+        assertEquals("prod-1", started.request.lines[0].productId)
+        assertEquals("Jabón", started.request.lines[0].productNameSnapshot)
+        assertEquals(2, started.request.lines[0].quantity)
+        assertEquals(5000L, started.request.lines[0].unitPriceCents)
+        assertEquals(10000L, started.request.lines[0].lineTotalCents)
+        assertEquals("prod-1:10000:5000", started.request.lines[0].sourceProductFingerprint)
+        assertEquals(10000L, started.request.totalCents)
+        assertEquals(3000L, started.request.initialPaymentCents)
+        assertEquals(java.time.LocalDate.of(2026, 8, 30).toEpochDay(), started.request.promisedPaymentEpochDay)
+    }
+
+    @Test
+    fun `onConfirmSale ignores blank businessId, wrong state, or mismatched preview`() {
+        val model = saleConfirmationModel(generation = 4L)
+
+        // Blank businessId
+        assertEquals(AiSaleConfirmOutcome.Ignored, AiDebugLabMachine.onConfirmSale(model, ""))
+        assertEquals(AiSaleConfirmOutcome.Ignored, AiDebugLabMachine.onConfirmSale(model, "   "))
+
+        // Wrong state (TextEditing)
+        assertEquals(AiSaleConfirmOutcome.Ignored, AiDebugLabMachine.onConfirmSale(AiDebugLabModel(), "biz-123"))
+
+        // Mismatched preview in messages
+        val mismatched = model.copy(messages = listOf(AiChatMessage.UserText("hello")))
+        assertEquals(AiSaleConfirmOutcome.Ignored, AiDebugLabMachine.onConfirmSale(mismatched, "biz-123"))
+    }
+
+    @Test
+    fun `onSaleExecutionResult with Recorded transitions to TextEditing and appends AssistantSaleRecorded`() {
+        val model = saleConfirmationModel(generation = 4L)
+        val started = AiDebugLabMachine.onConfirmSale(model, "biz-123") as AiSaleConfirmOutcome.Started
+
+        val updated = AiDebugLabMachine.onSaleExecutionResult(
+            started.model,
+            com.cuentivo.app.ai.AiSaleExecutionResult.Recorded("sale-99", "pay-99"),
+            generation = 5L,
+        )
+
+        assertEquals(AiDebugLabState.TextEditing, updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSaleRecorded("sale-99", "pay-99"),
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
+    fun `onSaleExecutionResult with StalePreview, Rejected, and Unavailable`() {
+        val model = saleConfirmationModel(generation = 4L)
+        val started = AiDebugLabMachine.onConfirmSale(model, "biz-123") as AiSaleConfirmOutcome.Started
+
+        // StalePreview
+        val stale = AiDebugLabMachine.onSaleExecutionResult(
+            started.model,
+            com.cuentivo.app.ai.AiSaleExecutionResult.StalePreview,
+            generation = 5L,
+        )
+        assertEquals(AiDebugLabState.TextEditing, stale.state)
+        assertEquals(listOf(AiChatMessage.UserText("Venta a María"), AiChatMessage.AssistantSaleStale), stale.messages)
+
+        // Rejected
+        val rejected = AiDebugLabMachine.onSaleExecutionResult(
+            started.model,
+            com.cuentivo.app.ai.AiSaleExecutionResult.Rejected,
+            generation = 5L,
+        )
+        assertEquals(AiDebugLabState.TextEditing, rejected.state)
+        assertEquals(listOf(AiChatMessage.UserText("Venta a María"), AiChatMessage.AssistantSaleRejected), rejected.messages)
+
+        // Unavailable
+        val unavailable = AiDebugLabMachine.onSaleExecutionResult(
+            started.model,
+            com.cuentivo.app.ai.AiSaleExecutionResult.Unavailable,
+            generation = 5L,
+        )
+        assertEquals(AiDebugLabState.Unavailable, unavailable.state)
+        assertEquals(listOf(AiChatMessage.UserText("Venta a María"), AiChatMessage.AssistantUnavailable), unavailable.messages)
+    }
+
+    @Test
+    fun `onSaleExecutionResult ignores stale generation`() {
+        val model = saleConfirmationModel(generation = 4L)
+        val started = AiDebugLabMachine.onConfirmSale(model, "biz-123") as AiSaleConfirmOutcome.Started
+
+        val afterStale = AiDebugLabMachine.onSaleExecutionResult(
+            started.model,
+            com.cuentivo.app.ai.AiSaleExecutionResult.Recorded("s", null),
+            generation = 4L, // stale token
+        )
+        assertSame(started.model, afterStale)
+    }
+
+    @Test
+    fun `onCancel during SaleConfirming increments generation and returns to TextEditing`() {
+        val model = saleConfirmationModel(generation = 4L)
+        val started = AiDebugLabMachine.onConfirmSale(model, "biz-123") as AiSaleConfirmOutcome.Started
+        val cancelled = AiDebugLabMachine.onCancel(started.model)
+
+        assertEquals(AiDebugLabState.TextEditing, cancelled.state)
+        assertEquals(6L, cancelled.generation)
+    }
+
+    @Test
+    fun `text editing is ignored while in SaleConfirming state`() {
+        val model = saleConfirmationModel(generation = 4L)
+        val started = AiDebugLabMachine.onConfirmSale(model, "biz-123") as AiSaleConfirmOutcome.Started
+        val edited = AiDebugLabMachine.onTextChanged(started.model, "new typing")
+
+        assertSame(started.model, edited)
+    }
 }

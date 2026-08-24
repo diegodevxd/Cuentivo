@@ -9,12 +9,23 @@ import com.cuentivo.app.ai.AiPaymentPreviewResult
 import com.cuentivo.app.ai.AiProposal
 import com.cuentivo.app.ai.AiProposalValidationResult
 import com.cuentivo.app.ai.AiResolvedPaymentPreview
+import com.cuentivo.app.ai.AiResolvedSalePreview
+import com.cuentivo.app.ai.AiSaleBlockReason
+import com.cuentivo.app.ai.AiSaleConfirmationLine
+import com.cuentivo.app.ai.AiSaleConfirmationRequest
+import com.cuentivo.app.ai.AiSaleCustomerCandidate
+import com.cuentivo.app.ai.AiSaleExecutionResult
+import com.cuentivo.app.ai.AiSalePreviewResult
+import com.cuentivo.app.ai.AiSaleProductCandidate
 import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.ClarificationReason
+import com.cuentivo.app.ai.CreateSaleProposal
+import com.cuentivo.app.ai.PromisedPaymentCandidate
 import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.RequiresClarificationProposal
 import com.cuentivo.app.ai.SafeAiProposalValidator
 import com.cuentivo.app.ai.UnresolvedSlot
+import java.time.LocalDate
 import java.util.Collections
 
 /**
@@ -32,6 +43,11 @@ sealed interface AiDebugLabState {
     data class PaymentResolution(val result: com.cuentivo.app.ai.AiPaymentPreviewResult) : AiDebugLabState
     data class PaymentConfirmation(val preview: AiResolvedPaymentPreview) : AiDebugLabState
     data class PaymentConfirming(val preview: AiResolvedPaymentPreview) : AiDebugLabState
+
+    /** Non-executable resolved sale preview state; never triggers financial writes. */
+    data class SaleResolution(val result: AiSalePreviewResult) : AiDebugLabState
+    data class SaleConfirmation(val preview: AiResolvedSalePreview) : AiDebugLabState
+    data class SaleConfirming(val preview: AiResolvedSalePreview) : AiDebugLabState
 }
 
 /** Immutable lab view state; [generation] is the single-flight/cancellation token. */
@@ -102,6 +118,64 @@ sealed interface AiChatMessage {
     data class AssistantPaymentRecorded(val paymentId: String) : AiChatMessage
     data object AssistantPaymentStale : AiChatMessage
     data object AssistantPaymentRejected : AiChatMessage
+
+    data class AssistantSalePreview(val preview: AiResolvedSalePreview) : AiChatMessage
+    data object AssistantSaleCustomerNotFound : AiChatMessage
+    class AssistantSaleCustomerSelection private constructor(
+        rawCandidates: List<com.cuentivo.app.ai.AiSaleCustomerCandidate>,
+    ) : AiChatMessage {
+        val candidates: List<com.cuentivo.app.ai.AiSaleCustomerCandidate> =
+            Collections.unmodifiableList(rawCandidates.toList())
+
+        companion object {
+            operator fun invoke(
+                candidates: List<com.cuentivo.app.ai.AiSaleCustomerCandidate>,
+            ): AssistantSaleCustomerSelection = AssistantSaleCustomerSelection(rawCandidates = candidates)
+        }
+
+        override fun equals(other: Any?): Boolean =
+            this === other ||
+                (other is AssistantSaleCustomerSelection && candidates == other.candidates)
+
+        override fun hashCode(): Int = candidates.hashCode()
+
+        override fun toString(): String = "AssistantSaleCustomerSelection(candidates=$candidates)"
+    }
+    data class AssistantSaleProductNotFound(val productName: String) : AiChatMessage
+    class AssistantSaleProductSelection private constructor(
+        val requestedName: String,
+        rawCandidates: List<com.cuentivo.app.ai.AiSaleProductCandidate>,
+    ) : AiChatMessage {
+        val candidates: List<com.cuentivo.app.ai.AiSaleProductCandidate> =
+            Collections.unmodifiableList(rawCandidates.toList())
+
+        companion object {
+            operator fun invoke(
+                requestedName: String,
+                candidates: List<com.cuentivo.app.ai.AiSaleProductCandidate>,
+            ): AssistantSaleProductSelection = AssistantSaleProductSelection(
+                requestedName = requestedName,
+                rawCandidates = candidates,
+            )
+        }
+
+        override fun equals(other: Any?): Boolean =
+            this === other ||
+                (other is AssistantSaleProductSelection &&
+                    requestedName == other.requestedName &&
+                    candidates == other.candidates)
+
+        override fun hashCode(): Int = 31 * requestedName.hashCode() + candidates.hashCode()
+
+        override fun toString(): String = "AssistantSaleProductSelection(requestedName=$requestedName, candidates=$candidates)"
+    }
+    data class AssistantSaleBlocked(
+        val reason: AiSaleBlockReason,
+        val preview: AiResolvedSalePreview?,
+    ) : AiChatMessage
+    data class AssistantSaleRecorded(val saleId: String, val paymentId: String?) : AiChatMessage
+    data object AssistantSaleStale : AiChatMessage
+    data object AssistantSaleRejected : AiChatMessage
 }
 
 sealed interface AiPaymentConfirmOutcome {
@@ -111,6 +185,15 @@ sealed interface AiPaymentConfirmOutcome {
         val request: AiPaymentConfirmationRequest,
         val generation: Long,
     ) : AiPaymentConfirmOutcome
+}
+
+sealed interface AiSaleConfirmOutcome {
+    data object Ignored : AiSaleConfirmOutcome
+    data class Started(
+        val model: AiDebugLabModel,
+        val request: AiSaleConfirmationRequest,
+        val generation: Long,
+    ) : AiSaleConfirmOutcome
 }
 
 /** Result of a submit decision: [Ignored*] means the gateway is never invoked. */
@@ -132,7 +215,8 @@ object AiDebugLabMachine {
         when (model.state) {
             // Single-flight: editing is ignored while a request is in flight.
             AiDebugLabState.Sending,
-            is AiDebugLabState.PaymentConfirming -> model
+            is AiDebugLabState.PaymentConfirming,
+            is AiDebugLabState.SaleConfirming -> model
             AiDebugLabState.TextEditing -> model.copy(text = newText)
             // From a result state the next turn starts: accept text and return to editing.
             else -> model.copy(state = AiDebugLabState.TextEditing, text = newText)
@@ -400,6 +484,148 @@ object AiDebugLabMachine {
         }
 
         val messages = if (model.messages.isNotEmpty() && model.messages.last() is AiChatMessage.AssistantPaymentPreview) {
+            model.messages.dropLast(1) + assistantMessage
+        } else {
+            model.messages + assistantMessage
+        }
+        val newState = when (assistantMessage) {
+            AiChatMessage.AssistantUnavailable -> AiDebugLabState.Unavailable
+            else -> AiDebugLabState.TextEditing
+        }
+        return model.copy(
+            state = newState,
+            messages = messages,
+            text = "",
+        )
+    }
+
+    /**
+     * Generation-safe transition from a raw sale proposal to its resolved preview.
+     *
+     * Accepts only the current generation and only when the state is ProposalPreview whose
+     * proposal is a CreateSaleProposal AND the last message is the matching AssistantProposal.
+     * Replaces that last message with the resolved result; never appends duplicate UserText,
+     * persists anything or exposes confirmation. Fail-closed: any mismatch returns [model] unchanged.
+     */
+    fun onSalePreviewResult(
+        model: AiDebugLabModel,
+        result: AiSalePreviewResult,
+        generation: Long,
+    ): AiDebugLabModel {
+        if (generation != model.generation) return model
+        val currentState = model.state
+        if (currentState !is AiDebugLabState.ProposalPreview) return model
+        val currentProposal = currentState.proposal as? CreateSaleProposal ?: return model
+        val lastMessage = model.messages.lastOrNull() ?: return model
+        if (lastMessage !is AiChatMessage.AssistantProposal) return model
+        val lastAsSale = lastMessage.proposal as? CreateSaleProposal ?: return model
+        if (lastAsSale != currentProposal) return model
+
+        val assistantMessage: AiChatMessage = when (result) {
+            is AiSalePreviewResult.CustomerNotFound -> AiChatMessage.AssistantSaleCustomerNotFound
+            is AiSalePreviewResult.CustomerSelectionRequired ->
+                AiChatMessage.AssistantSaleCustomerSelection(result.candidates)
+            is AiSalePreviewResult.ProductNotFound ->
+                AiChatMessage.AssistantSaleProductNotFound(result.productName)
+            is AiSalePreviewResult.ProductSelectionRequired ->
+                AiChatMessage.AssistantSaleProductSelection(result.productName, result.candidates)
+            is AiSalePreviewResult.Ready ->
+                AiChatMessage.AssistantSalePreview(result.preview)
+            is AiSalePreviewResult.Blocked ->
+                AiChatMessage.AssistantSaleBlocked(result.reason, result.preview)
+            is AiSalePreviewResult.Unavailable -> AiChatMessage.AssistantUnavailable
+        }
+
+        val messages = if (model.messages.isNotEmpty() &&
+            model.messages.last() is AiChatMessage.AssistantProposal
+        ) {
+            model.messages.dropLast(1) + assistantMessage
+        } else {
+            model.messages
+        }
+        val newState: AiDebugLabState = when (assistantMessage) {
+            AiChatMessage.AssistantUnavailable -> AiDebugLabState.Unavailable
+            is AiChatMessage.AssistantSalePreview -> AiDebugLabState.SaleConfirmation(assistantMessage.preview)
+            else -> AiDebugLabState.SaleResolution(result)
+        }
+        return model.copy(state = newState, messages = messages, text = "")
+    }
+
+    /**
+     * Generation-safe confirmation start for a resolved sale preview.
+     *
+     * Accepts only when state is [AiDebugLabState.SaleConfirmation], the last message matches
+     * the active preview, and the business ID is non-blank. Transitions to [AiDebugLabState.SaleConfirming]
+     * with an incremented generation token. Fail-closed: any mismatch returns [AiSaleConfirmOutcome.Ignored].
+     */
+    fun onConfirmSale(model: AiDebugLabModel, businessId: String): AiSaleConfirmOutcome {
+        if (businessId.isBlank()) return AiSaleConfirmOutcome.Ignored
+        val state = model.state as? AiDebugLabState.SaleConfirmation ?: return AiSaleConfirmOutcome.Ignored
+        val preview = state.preview
+        val lastMessage = model.messages.lastOrNull() as? AiChatMessage.AssistantSalePreview ?: return AiSaleConfirmOutcome.Ignored
+        if (lastMessage.preview != preview) return AiSaleConfirmOutcome.Ignored
+
+        val nextGeneration = model.generation + 1
+        val nextModel = model.copy(
+            state = AiDebugLabState.SaleConfirming(preview),
+            generation = nextGeneration,
+        )
+        val promisedDay = (preview.promisedPaymentCandidate as? PromisedPaymentCandidate.DateCandidate)?.let {
+            runCatching {
+                LocalDate.of(it.year, it.month, it.day).toEpochDay()
+            }.getOrNull()
+        }
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = preview.confirmationKey,
+            businessId = businessId,
+            customerId = preview.customerId,
+            sourceCustomerFingerprint = preview.sourceCustomerFingerprint,
+            lines = preview.lines.map { line ->
+                AiSaleConfirmationLine(
+                    productId = line.productId,
+                    productNameSnapshot = line.productName,
+                    quantity = line.quantity,
+                    unitPriceCents = line.unitPriceCents,
+                    lineTotalCents = line.lineTotalCents,
+                    sourceProductFingerprint = line.sourceProductFingerprint,
+                )
+            },
+            totalCents = preview.totalCents,
+            initialPaymentCents = preview.initialPaymentCents,
+            promisedPaymentEpochDay = promisedDay,
+        )
+        return AiSaleConfirmOutcome.Started(
+            model = nextModel,
+            request = request,
+            generation = nextGeneration,
+        )
+    }
+
+    /**
+     * Applies the result of a confirmed sale execution.
+     *
+     * Accepts only matching [generation] and [AiDebugLabState.SaleConfirming] where the last
+     * message is the corresponding [AiChatMessage.AssistantSalePreview]. Replaces the preview
+     * message with the outcome; never leaves confirmation active or duplicate draft cards.
+     */
+    fun onSaleExecutionResult(
+        model: AiDebugLabModel,
+        result: AiSaleExecutionResult,
+        generation: Long,
+    ): AiDebugLabModel {
+        if (generation != model.generation) return model
+        val state = model.state as? AiDebugLabState.SaleConfirming ?: return model
+        val lastMessage = model.messages.lastOrNull() as? AiChatMessage.AssistantSalePreview ?: return model
+        if (lastMessage.preview != state.preview) return model
+
+        val assistantMessage: AiChatMessage = when (result) {
+            is AiSaleExecutionResult.Recorded -> AiChatMessage.AssistantSaleRecorded(result.saleId, result.paymentId)
+            is AiSaleExecutionResult.StalePreview -> AiChatMessage.AssistantSaleStale
+            is AiSaleExecutionResult.Rejected -> AiChatMessage.AssistantSaleRejected
+            is AiSaleExecutionResult.Unavailable -> AiChatMessage.AssistantUnavailable
+        }
+
+        val messages = if (model.messages.isNotEmpty() && model.messages.last() is AiChatMessage.AssistantSalePreview) {
             model.messages.dropLast(1) + assistantMessage
         } else {
             model.messages + assistantMessage

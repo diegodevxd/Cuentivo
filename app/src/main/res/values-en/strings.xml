@@ -468,4 +468,17 @@
     <string name="ai_payment_recorded_success">Payment recorded successfully.</string>
     <string name="ai_payment_stale_message">The customer\'s balance changed. Please request the payment again.</string>
     <string name="ai_payment_rejected_message">Could not record the payment. Check the details and try again.</string>
+    <string name="ai_sale_preview_product_not_found">Product \"%1$s\" not found. Check the name or register it in the catalog.</string>
+    <string name="ai_sale_preview_product_selection_required">Multiple products found for \"%1$s\". Please type the exact name:</string>
+    <string name="ai_sale_preview_total">Sale total: %1$s</string>
+    <string name="ai_sale_preview_initial_payment">Initial payment: %1$s</string>
+    <string name="ai_sale_preview_remainder">Remaining balance: %1$s</string>
+    <string name="ai_sale_preview_blocked_overpayment">The initial payment (%1$s) cannot exceed the sale total (%2$s).</string>
+    <string name="ai_sale_preview_blocked_overflow">The amount exceeds allowed limits.</string>
+    <string name="ai_sale_preview_blocked_invalid_line">Invalid product line.</string>
+    <string name="ai_sale_confirm_action">Confirm sale</string>
+    <string name="ai_sale_confirm_cancel">Cancel</string>
+    <string name="ai_sale_recorded_success">Sale recorded successfully.</string>
+    <string name="ai_sale_stale_message">Customer or product data changed. Please request the sale again.</string>
+    <string name="ai_sale_rejected_message">Could not record the sale. Check the details and try again.</string>
 </resources>

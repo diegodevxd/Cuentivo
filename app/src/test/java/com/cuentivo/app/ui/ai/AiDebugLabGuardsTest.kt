@@ -47,14 +47,12 @@ class AiDebugLabGuardsTest {
         for (source in sourcesOf(mainDir)) {
             val imports = source.lines().filter { it.startsWith("import ") }.joinToString("\n")
             assertFalse("no financial DAO imports in main", imports.contains("Dao") || imports.contains("Entity") || imports.contains("CuentivoDatabase"))
-            assertFalse("no financial repository in main", imports.contains("DashboardRepository"))
+            assertFalse("no financial repository in main", imports.contains("DashboardRepository") || imports.contains("SaleRepository"))
             assertFalse("no outbox or sync in main", imports.contains("sync") || imports.contains("SyncQueue"))
             assertFalse("no Room imports in main", imports.contains(".room."))
             assertFalse(
-                "no financial sale confirmation action in main",
-                source.contains("onConfirmSale") ||
-                    source.contains("onSaveSale") ||
-                    source.contains("onRecordPayment"),
+                "no direct unmediated save actions in main",
+                source.contains("onSaveSale") || source.contains("onRecordPayment"),
             )
         }
     }
@@ -162,7 +160,7 @@ class AiDebugLabGuardsTest {
         assertTrue("transcript must render user messages", source.contains("AiChatMessage.UserText"))
         assertTrue("capture sheet must offer camera", source.contains("ai_debug_chat_camera"))
         assertTrue("capture sheet must offer gallery", source.contains("ai_debug_chat_gallery"))
-        assertFalse("no sale confirmation action label", source.contains("Confirmar operación") || source.contains("Confirmar venta"))
+        assertFalse("no hardcoded raw sale action string", source.contains("\"Confirmar operación\"") || source.contains("\"Confirmar venta\""))
     }
 
     @Test
@@ -480,5 +478,76 @@ class AiDebugLabGuardsTest {
             assertTrue("Spanish strings must contain $key", esXml.contains("name=\"$key\""))
             assertTrue("English strings must contain $key", enXml.contains("name=\"$key\""))
         }
+    }
+
+    @Test
+    fun `sale preview string resources maintain key parity across spanish and english`() {
+        val esXml = File("src/main/res/values/strings.xml").readText()
+        val enXml = File("src/main/res/values-en/strings.xml").readText()
+        val requiredKeys = listOf(
+            "ai_sale_preview_product_not_found",
+            "ai_sale_preview_product_selection_required",
+            "ai_sale_preview_total",
+            "ai_sale_preview_initial_payment",
+            "ai_sale_preview_remainder",
+            "ai_sale_preview_blocked_overpayment",
+            "ai_sale_preview_blocked_overflow",
+            "ai_sale_preview_blocked_invalid_line",
+            "ai_sale_confirm_action",
+            "ai_sale_confirm_cancel",
+            "ai_sale_recorded_success",
+            "ai_sale_stale_message",
+            "ai_sale_rejected_message",
+        )
+        for (key in requiredKeys) {
+            assertTrue("Spanish strings must contain $key", esXml.contains("name=\"$key\""))
+            assertTrue("English strings must contain $key", enXml.contains("name=\"$key\""))
+        }
+    }
+
+    @Test
+    fun `confirmSale rethrows CancellationException and falls back to Unavailable only for other exceptions`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val confirmCallIndex = screenSource.indexOf("confirmSale(outcome.request)")
+        assertTrue("confirmSale is called", confirmCallIndex != -1)
+        val confirmationBlock = screenSource.substring(
+            screenSource.lastIndexOf("val result = withContext(Dispatchers.IO)", confirmCallIndex),
+            screenSource.indexOf("model = AiDebugLabMachine.onSaleExecutionResult", confirmCallIndex),
+        )
+        assertTrue("must explicitly catch CancellationException", confirmationBlock.contains("catch (e: CancellationException)"))
+        assertTrue("must rethrow CancellationException", confirmationBlock.contains("throw e"))
+        assertTrue("must catch Exception for non-cancellation errors", confirmationBlock.contains("catch (_: Exception)"))
+        assertFalse("must not catch Throwable to avoid masking JVM Errors", confirmationBlock.contains("catch (_: Throwable)"))
+        assertTrue("must map non-cancellation errors to Unavailable", confirmationBlock.contains("AiSaleExecutionResult.Unavailable"))
+        assertFalse("must not use blind runCatching around confirmSale", confirmationBlock.contains("runCatching"))
+    }
+
+    @Test
+    fun `no callable or Gemini invocation occurs during sale confirmation`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val confirmCallIndex = source.indexOf("confirmSale(outcome.request)")
+        assertTrue("confirmSale is called with local request", confirmCallIndex != -1)
+        val surroundingBlock = source.substring(
+            source.lastIndexOf("onConfirmSale = if", confirmCallIndex),
+            source.indexOf("onCancelSale =", confirmCallIndex),
+        )
+        assertFalse("sale confirmation must not invoke transport", surroundingBlock.contains("transport"))
+        assertFalse("sale confirmation must not invoke turn policy", surroundingBlock.contains("AiDebugLabTurnPolicy"))
+        assertFalse("sale confirmation must not invoke Gemini", surroundingBlock.contains("gemini", ignoreCase = true))
+    }
+
+    @Test
+    fun `confirmation key and sale ID are not shown in UI or persisted in daily chat`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertFalse("sale confirmationKey is never displayed in UI text", screenSource.contains(".confirmationKey"))
+        assertFalse("saleId is never displayed in UI text", screenSource.contains(".saleId"))
+
+        val modelSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt").readText()
+        val historyLoadedBlock = modelSource.substring(
+            modelSource.indexOf("fun onHistoryLoaded"),
+            modelSource.indexOf("fun onOutOfScope"),
+        )
+        assertFalse("history loader never restores sale confirmation", historyLoadedBlock.contains("SaleConfirmation"))
+        assertFalse("history loader never restores sale recorded", historyLoadedBlock.contains("AssistantSaleRecorded"))
     }
 }
