@@ -1,13 +1,19 @@
 package com.cuentivo.app.ui.ai
 
 import com.cuentivo.app.ai.AiDailyMessageKind
+import com.cuentivo.app.ai.AiPaymentBlockReason
+import com.cuentivo.app.ai.AiPaymentCustomerCandidate
+import com.cuentivo.app.ai.AiPaymentPreviewResult
 import com.cuentivo.app.ai.AiProposal
 import com.cuentivo.app.ai.AiProposalValidationResult
+import com.cuentivo.app.ai.AiResolvedPaymentPreview
 import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.ClarificationReason
+import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.RequiresClarificationProposal
 import com.cuentivo.app.ai.SafeAiProposalValidator
 import com.cuentivo.app.ai.UnresolvedSlot
+import java.util.Collections
 
 /**
  * Pure, non-executable AI debug lab states. Nothing in here can confirm, save or execute a
@@ -48,6 +54,43 @@ sealed interface AiChatMessage {
         val slots: Set<UnresolvedSlot>,
     ) : AiChatMessage
     data class AssistantProposal(val proposal: AiProposal) : AiChatMessage
+
+    data class AssistantPaymentPreview(val preview: AiResolvedPaymentPreview) : AiChatMessage
+    data object AssistantPaymentCustomerNotFound : AiChatMessage
+
+    /**
+     * More than one payment candidate matches and a human must choose.
+     *
+     * Plain final class so construction always freezes [candidates]: every construction stores an
+     * unmodifiable copy, so neither the original reference nor a `MutableList` cast can mutate the
+     * result on the JVM.
+     */
+    class AssistantPaymentCustomerSelection private constructor(
+        rawCandidates: List<AiPaymentCustomerCandidate>,
+    ) : AiChatMessage {
+        /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
+        val candidates: List<AiPaymentCustomerCandidate> =
+            Collections.unmodifiableList(rawCandidates.toList())
+
+        companion object {
+            operator fun invoke(
+                candidates: List<AiPaymentCustomerCandidate>,
+            ): AssistantPaymentCustomerSelection = AssistantPaymentCustomerSelection(rawCandidates = candidates)
+        }
+
+        override fun equals(other: Any?): Boolean =
+            this === other ||
+                (other is AssistantPaymentCustomerSelection && candidates == other.candidates)
+
+        override fun hashCode(): Int = candidates.hashCode()
+
+        override fun toString(): String = "AssistantPaymentCustomerSelection(candidates=$candidates)"
+    }
+
+    data class AssistantPaymentBlocked(
+        val reason: AiPaymentBlockReason,
+        val preview: AiResolvedPaymentPreview?,
+    ) : AiChatMessage
 }
 
 /** Result of a submit decision: [Ignored*] means the gateway is never invoked. */
@@ -229,6 +272,49 @@ object AiDebugLabMachine {
 
     fun onCancel(model: AiDebugLabModel): AiDebugLabModel =
         model.copy(state = AiDebugLabState.TextEditing, generation = model.generation + 1)
+
+    /**
+     * Generation-safe transition from a raw payment proposal to its resolved preview.
+     *
+     * Accepts only the current generation and only when the state is ProposalPreview whose
+     * proposal is a RecordPaymentProposal AND the last message is the matching AssistantProposal.
+     * Replaces that last message with the resolved result; never appends duplicate UserText,
+     * persists anything or exposes confirmation. Fail-closed: any mismatch returns [model] unchanged.
+     */
+    fun onPaymentPreviewResult(
+        model: AiDebugLabModel,
+        result: AiPaymentPreviewResult,
+        generation: Long,
+    ): AiDebugLabModel {
+        if (generation != model.generation) return model
+        val currentState = model.state
+        if (currentState !is AiDebugLabState.ProposalPreview) return model
+        val currentProposal = currentState.proposal as? RecordPaymentProposal ?: return model
+        val lastMessage = model.messages.lastOrNull() ?: return model
+        if (lastMessage !is AiChatMessage.AssistantProposal) return model
+        val lastAsPayment = lastMessage.proposal as? RecordPaymentProposal ?: return model
+        if (lastAsPayment != currentProposal) return model
+
+        val assistantMessage: AiChatMessage = when (result) {
+            is AiPaymentPreviewResult.CustomerNotFound -> AiChatMessage.AssistantPaymentCustomerNotFound
+            is AiPaymentPreviewResult.CustomerSelectionRequired ->
+                AiChatMessage.AssistantPaymentCustomerSelection(result.candidates)
+            is AiPaymentPreviewResult.Ready ->
+                AiChatMessage.AssistantPaymentPreview(result.preview)
+            is AiPaymentPreviewResult.Blocked ->
+                AiChatMessage.AssistantPaymentBlocked(result.reason, result.preview)
+            is AiPaymentPreviewResult.Unavailable -> AiChatMessage.AssistantUnavailable
+        }
+
+        val messages = if (model.messages.isNotEmpty() &&
+            model.messages.last() is AiChatMessage.AssistantProposal
+        ) {
+            model.messages.dropLast(1) + assistantMessage
+        } else {
+            model.messages
+        }
+        return model.copy(messages = messages)
+    }
 
     fun onReset(model: AiDebugLabModel): AiDebugLabModel =
         model.copy(
