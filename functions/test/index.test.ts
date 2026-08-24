@@ -26,6 +26,11 @@ describe("regional callable gateway", () => {
     expect(SOURCE).toContain('defineSecret("CUENTIVOAI_GEMINI_API_KEY")');
   });
 
+  test("uses a Gemini-compatible provider deadline below the callable deadline", () => {
+    expect(SOURCE).toContain("timeoutMillis: 12000");
+    expect(SOURCE).not.toContain("timeoutMillis: 8000");
+  });
+
   test("binds the secret only to interpretAiRequest", () => {
     const interpretIndex = SOURCE.indexOf("export const interpretAiRequest");
     const authorizeIndex = SOURCE.indexOf("export const authorizeAiAction");

@@ -46,7 +46,7 @@ export const interpretAiRequest = onCall(
     const provider = apiKey
       ? createGeminiTextProvider({
           apiKey,
-          timeoutMillis: 8000,
+          timeoutMillis: 12000,
           onFailure: (failure) => {
             logger.warn("AI_PROVIDER_FAILURE", {
               category: failure.category,
