@@ -292,4 +292,85 @@ class AiDebugLabGuardsTest {
         assertTrue("must check for blank currentUserId", source.contains("currentUserId.isBlank()"))
         assertTrue("must pass aiDailyChatRepository to CuentivoApp", source.contains("aiDailyChatRepository = aiDailyChatRepository"))
     }
+
+    @Test
+    fun `main activity constructs AiPaymentPreviewResolver once using read only method references`() {
+        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        assertTrue("must construct CustomerRepository", source.contains("CustomerRepository(database.customerDao())"))
+        assertTrue("must construct AiPaymentPreviewResolver", source.contains("AiPaymentPreviewResolver("))
+        assertTrue("must use customerRepository search reference", source.contains("customerRepository::search"))
+        assertTrue("must use customerBalanceCents reference", source.contains("database.financialDao()::customerBalanceCents"))
+        assertTrue("must pass paymentPreviewResolver to CuentivoApp", source.contains("paymentPreviewResolver ="))
+    }
+
+    @Test
+    fun `cuentivo app derives active business id exclusively from DashboardUiState Content and passes dependencies`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
+        assertTrue(
+            "businessId must be derived from DashboardUiState.Content",
+            source.contains("(state as? DashboardUiState.Content)?.businessId"),
+        )
+        assertTrue(
+            "screen must receive paymentPreviewResolver and activeBusinessId",
+            source.contains("paymentPreviewResolver = paymentPreviewResolver") &&
+                source.contains("activeBusinessId = activeBusinessId"),
+        )
+    }
+
+    @Test
+    fun `screen accepts nullable resolver and active business id and resolves on IO only for payment proposal`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue(
+            "screen parameter paymentPreviewResolver must be nullable",
+            source.contains("paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null"),
+        )
+        assertTrue(
+            "screen parameter activeBusinessId must be nullable",
+            source.contains("activeBusinessId: String? = null"),
+        )
+        assertTrue(
+            "screen must invoke paymentPreviewResolver for RecordPaymentProposal",
+            source.contains("paymentPreviewResolver(") && source.contains("RecordPaymentProposal"),
+        )
+        assertTrue(
+            "screen must run resolver on Dispatchers.IO",
+            source.contains("withContext(Dispatchers.IO)"),
+        )
+        assertTrue(
+            "screen must update state via onPaymentPreviewResult",
+            source.contains("AiDebugLabMachine.onPaymentPreviewResult("),
+        )
+    }
+
+    @Test
+    fun `chat message row renders all sealed payment variants with draft note and zero confirmation actions`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("must handle AssistantPaymentPreview", source.contains("is AiChatMessage.AssistantPaymentPreview"))
+        assertTrue("must handle AssistantPaymentCustomerNotFound", source.contains("AiChatMessage.AssistantPaymentCustomerNotFound"))
+        assertTrue("must handle AssistantPaymentCustomerSelection", source.contains("is AiChatMessage.AssistantPaymentCustomerSelection"))
+        assertTrue("must handle AssistantPaymentBlocked", source.contains("is AiChatMessage.AssistantPaymentBlocked"))
+        assertTrue("must render draft note", source.contains("ai_payment_preview_draft_note"))
+        assertFalse("no confirmation action label", source.contains("Confirmar pago") || source.contains("Guardar abono") || source.contains("Registrar abono"))
+        assertFalse("no execution callback in payment card", source.contains("onConfirmPayment") || source.contains("onExecutePayment"))
+    }
+
+    @Test
+    fun `payment preview string resources maintain key parity across spanish and english`() {
+        val esXml = File("src/main/res/values/strings.xml").readText()
+        val enXml = File("src/main/res/values-en/strings.xml").readText()
+        val requiredKeys = listOf(
+            "ai_payment_preview_customer_not_found",
+            "ai_payment_preview_selection_required",
+            "ai_payment_preview_current_balance",
+            "ai_payment_preview_proposed_amount",
+            "ai_payment_preview_projected_balance",
+            "ai_payment_preview_draft_note",
+            "ai_payment_preview_blocked_no_debt",
+            "ai_payment_preview_blocked_exceeds_debt",
+        )
+        for (key in requiredKeys) {
+            assertTrue("Spanish strings must contain $key", esXml.contains("name=\"$key\""))
+            assertTrue("English strings must contain $key", enXml.contains("name=\"$key\""))
+        }
+    }
 }

@@ -63,7 +63,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
+import com.cuentivo.app.ai.AiPaymentPreviewResult
+import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.data.local.CustomerBalanceRow
+import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.data.local.AiDailyChatRepository
@@ -252,6 +255,7 @@ fun CuentivoApp(
     openOverdueCustomers: Boolean = false,
     onOpenOverdueCustomersConsumed: () -> Unit = {},
     aiDailyChatRepository: AiDailyChatRepository? = null,
+    paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
@@ -453,10 +457,13 @@ fun CuentivoApp(
             )
         }
         if (debugAiLabTransport != null && aiDailyChatRepository != null && showAiDebugLab) {
+            val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
             key(aiDailyChatRepository) {
                 AiDebugLabScreen(
                     transport = debugAiLabTransport,
                     repository = aiDailyChatRepository,
+                    paymentPreviewResolver = paymentPreviewResolver,
+                    activeBusinessId = activeBusinessId,
                     onClose = { showAiDebugLab = false },
                 )
             }

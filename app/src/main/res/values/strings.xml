@@ -455,4 +455,12 @@
     <string name="ai_daily_chat_clear_dialog_message">Se eliminarán los mensajes de hoy en este dispositivo. Esta acción no se puede deshacer.</string>
     <string name="ai_daily_chat_clear_confirm">Borrar</string>
     <string name="ai_daily_chat_clear_cancel">Cancelar</string>
+    <string name="ai_payment_preview_customer_not_found">No encontramos al cliente. Por favor escribe su nombre completo tal como está registrado.</string>
+    <string name="ai_payment_preview_selection_required">Se encontraron varios clientes. Por favor escribe el nombre completo:</string>
+    <string name="ai_payment_preview_current_balance">Saldo actual: %1$s</string>
+    <string name="ai_payment_preview_proposed_amount">Abono propuesto: %1$s</string>
+    <string name="ai_payment_preview_projected_balance">Saldo después del abono: %1$s</string>
+    <string name="ai_payment_preview_draft_note">Borrador: no registra nada</string>
+    <string name="ai_payment_preview_blocked_no_debt">Este cliente no tiene saldo pendiente por cobrar.</string>
+    <string name="ai_payment_preview_blocked_exceeds_debt">El abono propuesto supera la deuda actual (%1$s). No se puede registrar un abono mayor a la deuda.</string>
 </resources>

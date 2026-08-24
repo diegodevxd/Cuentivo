@@ -50,6 +50,8 @@ import androidx.compose.ui.window.DialogProperties
 import com.cuentivo.app.R
 import com.cuentivo.app.ai.AiDailyMessageKind
 import com.cuentivo.app.ai.AiInterpretRequest
+import com.cuentivo.app.ai.AiPaymentBlockReason
+import com.cuentivo.app.ai.AiPaymentPreviewResult
 import com.cuentivo.app.ai.AiProposal
 import com.cuentivo.app.ai.BusinessQueryProposal
 import com.cuentivo.app.ai.CallableAiProposalResult
@@ -111,6 +113,8 @@ fun AiDebugLabScreen(
     repository: AiDailyChatRepository,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
+    activeBusinessId: String? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     var isHydrated by remember { mutableStateOf(false) }
@@ -321,7 +325,24 @@ fun AiDebugLabScreen(
                                                 runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_UNAVAILABLE) }
                                             }
                                         }
-                                        model = AiDebugLabMachine.onResult(model, result, token)
+                                        val nextModel = AiDebugLabMachine.onResult(model, result, token)
+                                        model = nextModel
+                                        if (result is CallableAiProposalResult.Proposal &&
+                                            result.proposal is RecordPaymentProposal &&
+                                            nextModel.state is AiDebugLabState.ProposalPreview
+                                        ) {
+                                            val paymentProposal = result.proposal
+                                            val resolutionResult = if (paymentPreviewResolver != null && activeBusinessId != null) {
+                                                withContext(Dispatchers.IO) {
+                                                    runCatching {
+                                                        paymentPreviewResolver(activeBusinessId, paymentProposal)
+                                                    }.getOrDefault(AiPaymentPreviewResult.Unavailable)
+                                                }
+                                            } else {
+                                                AiPaymentPreviewResult.Unavailable
+                                            }
+                                            model = AiDebugLabMachine.onPaymentPreviewResult(model, resolutionResult, token)
+                                        }
                                     }
                                 }
                             }
@@ -461,6 +482,69 @@ private fun ChatMessageRow(message: AiChatMessage) {
                 color = MaterialTheme.colorScheme.error,
             )
             ProposalPreviewContent(message.proposal)
+        }
+        is AiChatMessage.AssistantPaymentPreview -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(R.string.ai_payment_preview_draft_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Text(
+                text = message.preview.customerName,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.ai_payment_preview_current_balance,
+                    formatCents(message.preview.currentBalanceCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.ai_payment_preview_proposed_amount,
+                    formatCents(message.preview.declaredAmountCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.ai_payment_preview_projected_balance,
+                    formatCents(message.preview.projectedBalanceCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        AiChatMessage.AssistantPaymentCustomerNotFound -> Text(
+            text = stringResource(R.string.ai_payment_preview_customer_not_found),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        is AiChatMessage.AssistantPaymentCustomerSelection -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(R.string.ai_payment_preview_selection_required),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            message.candidates.forEach { candidate ->
+                Text(
+                    text = "• " + candidate.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+        is AiChatMessage.AssistantPaymentBlocked -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            when (message.reason) {
+                AiPaymentBlockReason.NO_OUTSTANDING_DEBT -> Text(
+                    text = stringResource(R.string.ai_payment_preview_blocked_no_debt),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT -> {
+                    val debtFormatted = message.preview?.let { formatCents(it.currentBalanceCents) }.orEmpty()
+                    Text(
+                        text = stringResource(R.string.ai_payment_preview_blocked_exceeds_debt, debtFormatted),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
         }
     }
 }

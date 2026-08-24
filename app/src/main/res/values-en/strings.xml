@@ -455,4 +455,12 @@
     <string name="ai_daily_chat_clear_dialog_message">Today\'s messages will be deleted from this device. This action cannot be undone.</string>
     <string name="ai_daily_chat_clear_confirm">Clear</string>
     <string name="ai_daily_chat_clear_cancel">Cancel</string>
+    <string name="ai_payment_preview_customer_not_found">Customer not found. Please type their full registered name.</string>
+    <string name="ai_payment_preview_selection_required">Multiple customers found. Please type the full name:</string>
+    <string name="ai_payment_preview_current_balance">Current balance: %1$s</string>
+    <string name="ai_payment_preview_proposed_amount">Proposed payment: %1$s</string>
+    <string name="ai_payment_preview_projected_balance">Balance after payment: %1$s</string>
+    <string name="ai_payment_preview_draft_note">Draft: nothing is recorded</string>
+    <string name="ai_payment_preview_blocked_no_debt">This customer has no outstanding debt.</string>
+    <string name="ai_payment_preview_blocked_exceeds_debt">The proposed payment exceeds the current debt (%1$s). Cannot record a payment greater than the debt.</string>
 </resources>
