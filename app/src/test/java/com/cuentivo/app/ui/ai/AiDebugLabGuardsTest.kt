@@ -77,6 +77,30 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `debug lab is a fullscreen opaque modal instead of dashboard content`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+
+        assertTrue(
+            "the lab must use a Dialog so the dashboard cannot remain interactive or visible below it",
+            screenSource.contains("Dialog("),
+        )
+        assertTrue(
+            "the lab must fill the dialog's available viewport",
+            screenSource.contains("usePlatformDefaultWidth = false"),
+        )
+        assertTrue(
+            "the lab must paint an opaque surface background",
+            screenSource.contains(".background(MaterialTheme.colorScheme.background)"),
+        )
+        assertTrue(
+            "the lab must stay clear of status/navigation bars and the keyboard",
+            screenSource.contains(".statusBarsPadding()") &&
+                screenSource.contains(".navigationBarsPadding()") &&
+                screenSource.contains(".imePadding()"),
+        )
+    }
+
+    @Test
     fun `capture package has no Firebase network or Room imports`() {
         val captureDir = File("src/main/java/com/cuentivo/app/ai/capture")
         assertTrue("capture package must exist", captureDir.exists())

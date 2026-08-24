@@ -12,8 +12,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -35,6 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.cuentivo.app.R
 import com.cuentivo.app.ai.AiInterpretRequest
 import com.cuentivo.app.ai.AiProposal
@@ -148,10 +153,20 @@ fun AiDebugLabScreen(
         }
     }
 
-    Column(
-        modifier = modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    Dialog(
+        onDismissRequest = closeLab,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = stringResource(R.string.ai_debug_lab_title),
@@ -225,24 +240,25 @@ fun AiDebugLabScreen(
             }
             is AiDebugLabState.ProposalPreview -> ProposalPreviewContent(state.proposal)
         }
-        if (showSourceSelector) {
-            ModalBottomSheet(onDismissRequest = { showSourceSelector = false }) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
-                ) {
-                    TextButton(
-                        onClick = {
-                            showSourceSelector = false
-                            pickImageLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.ai_debug_lab_capture)) }
-                    TextButton(
-                        onClick = { showSourceSelector = false },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.ai_debug_lab_close)) }
+            if (showSourceSelector) {
+                ModalBottomSheet(onDismissRequest = { showSourceSelector = false }) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                    ) {
+                        TextButton(
+                            onClick = {
+                                showSourceSelector = false
+                                pickImageLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.ai_debug_lab_capture)) }
+                        TextButton(
+                            onClick = { showSourceSelector = false },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.ai_debug_lab_close)) }
+                    }
                 }
             }
         }
