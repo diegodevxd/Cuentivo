@@ -47,6 +47,7 @@ class AiSaleExecutionService(
         payment: PaymentEntity?,
         paymentMovement: AccountMovementEntity?,
         paymentAllocations: List<PaymentAllocationEntity>,
+        expectedInitialPaymentId: String,
     ) -> ExpectedSaleResult,
     private val currentUserId: () -> String,
     private val nowMillis: () -> Long,
@@ -151,16 +152,17 @@ class AiSaleExecutionService(
                 notes = null,
             )
 
+            val initialPaymentId = SaleOperationIds.payment(idempotencyKey)
+
             val payment: PaymentEntity?
             val paymentMovement: AccountMovementEntity?
             val paymentAllocations: List<PaymentAllocationEntity>
 
             if (request.initialPaymentCents > 0L) {
-                val paymentId = SaleOperationIds.payment(idempotencyKey)
                 val paymentMovementId = SaleOperationIds.paymentMovement(idempotencyKey)
 
                 payment = PaymentEntity(
-                    id = paymentId,
+                    id = initialPaymentId,
                     businessId = request.businessId,
                     customerId = request.customerId,
                     amountCents = request.initialPaymentCents,
@@ -178,7 +180,7 @@ class AiSaleExecutionService(
                     businessId = request.businessId,
                     customerId = request.customerId,
                     saleId = null,
-                    paymentId = paymentId,
+                    paymentId = initialPaymentId,
                     type = "PAYMENT",
                     amountCents = request.initialPaymentCents,
                     direction = "CREDIT",
@@ -191,7 +193,7 @@ class AiSaleExecutionService(
                 paymentAllocations = listOf(
                     PaymentAllocationEntity(
                         id = SaleOperationIds.allocation(idempotencyKey, saleId),
-                        paymentId = paymentId,
+                        paymentId = initialPaymentId,
                         saleId = saleId,
                         amountCents = request.initialPaymentCents,
                     ),
@@ -212,6 +214,7 @@ class AiSaleExecutionService(
                 payment,
                 paymentMovement,
                 paymentAllocations,
+                initialPaymentId,
             )
 
             when (result) {

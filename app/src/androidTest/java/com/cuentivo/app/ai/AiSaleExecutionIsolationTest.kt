@@ -107,7 +107,7 @@ class AiSaleExecutionIsolationTest {
     }
 
     private fun createService() = AiSaleExecutionService(
-        registerSale = { key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations ->
+        registerSale = { key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId ->
             saleRepository.registerAgainstPreview(
                 idempotencyKey = key,
                 sale = sale,
@@ -118,6 +118,7 @@ class AiSaleExecutionIsolationTest {
                 payment = payment,
                 paymentMovement = paymentMovement,
                 paymentAllocations = allocations,
+                expectedInitialPaymentId = expectedInitialPaymentId,
             )
         },
         currentUserId = { userId },
@@ -293,6 +294,86 @@ class AiSaleExecutionIsolationTest {
         val paidReplayResult = service.confirm(zeroReplayRequest) as AiSaleExecutionResult.Recorded
         assertEquals(paidRecorded.saleId, paidReplayResult.saleId)
         assertEquals(paidRecorded.paymentId, paidReplayResult.paymentId)
+    }
+
+    @Test
+    fun replayWithZeroInitialPaymentAfterLaterManualPaymentStillReturnsNullPaymentId() = runBlocking {
+        val service = createService()
+
+        // 1. Initial AI sale with zero initial payment
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "sale-conf-manual-later",
+            businessId = businessId,
+            customerId = customerId,
+            sourceCustomerFingerprint = "$customerId:10000",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = productId,
+                    productNameSnapshot = "Jabón Corporal",
+                    quantity = 1,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 5000L,
+                    sourceProductFingerprint = "$productId:10000:5000",
+                ),
+            ),
+            totalCents = 5000L,
+            initialPaymentCents = 0L,
+        )
+
+        val recorded = service.confirm(request) as AiSaleExecutionResult.Recorded
+        assertNull(recorded.paymentId)
+
+        // 2. Later, a manual payment is inserted and allocated to that sale
+        val manualPaymentId = "manual-pay-1"
+        val manualPayment = PaymentEntity(
+            id = manualPaymentId,
+            businessId = businessId,
+            customerId = customerId,
+            amountCents = 2500L,
+            paymentMethod = "CASH",
+            paymentDateEpochDay = 20501L,
+            reference = null,
+            notes = null,
+            createdByUserId = userId,
+            createdAtEpochMillis = 25000L,
+            canceledAtEpochMillis = null,
+        )
+        val manualAllocations = listOf(
+            PaymentAllocationEntity(
+                id = "manual-alloc-1",
+                paymentId = manualPaymentId,
+                saleId = recorded.saleId,
+                amountCents = 2500L,
+            ),
+        )
+        val manualMovement = AccountMovementEntity(
+            id = "manual-mov-1",
+            businessId = businessId,
+            customerId = customerId,
+            saleId = null,
+            paymentId = manualPaymentId,
+            type = "PAYMENT",
+            amountCents = 2500L,
+            direction = "CREDIT",
+            occurredAtEpochMillis = 25000L,
+            createdByUserId = userId,
+            reversesMovementId = null,
+            notes = null,
+        )
+        database.financialDao().insertPaymentWithMovements(manualPayment, manualAllocations, manualMovement)
+
+        // Verify the manual allocation now exists on the sale
+        val allAllocations = database.financialDao().allAllocationsForSale(recorded.saleId)
+        assertEquals(1, allAllocations.size)
+        assertEquals(manualPaymentId, allAllocations[0].paymentId)
+
+        // 3. Replay the AI confirmation request
+        val replayResult = service.confirm(request) as AiSaleExecutionResult.Recorded
+        assertEquals(recorded.saleId, replayResult.saleId)
+        assertNull(
+            "Replay must return null paymentId because the expected initial payment does not exist for this key",
+            replayResult.paymentId,
+        )
     }
 
     @Test
@@ -482,6 +563,7 @@ class AiSaleExecutionIsolationTest {
                 payment = invalidPayment,
                 paymentMovement = paymentMovement,
                 paymentAllocations = invalidAllocations,
+                expectedInitialPaymentId = invalidPayment.id,
             )
             fail("Expected IllegalArgumentException on invalid payment allocation")
         } catch (_: IllegalArgumentException) {

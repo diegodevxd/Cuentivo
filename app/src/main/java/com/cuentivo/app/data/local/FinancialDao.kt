@@ -615,6 +615,9 @@ interface FinancialDao {
     @Query("SELECT * FROM payment_allocations WHERE saleId = :saleId")
     suspend fun allAllocationsForSale(saleId: String): List<PaymentAllocationEntity>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM payment_allocations WHERE paymentId = :paymentId AND saleId = :saleId)")
+    suspend fun hasAllocationForPaymentAndSale(paymentId: String, saleId: String): Boolean
+
     @Transaction
     suspend fun registerSaleAgainstPreviewIdempotently(
         operation: OperationEntity,
@@ -626,12 +629,13 @@ interface FinancialDao {
         payment: PaymentEntity?,
         paymentMovement: AccountMovementEntity?,
         paymentAllocations: List<PaymentAllocationEntity>,
+        expectedInitialPaymentId: String,
     ): ExpectedSaleResult {
         operationResultId(operation.idempotencyKey)?.let { saleId ->
             val existingSale = saleForId(saleId) ?: return ExpectedSaleResult.StaleData
             if (existingSale.businessId != sale.businessId) return ExpectedSaleResult.StaleData
-            val existingAllocations = allAllocationsForSale(saleId)
-            val actualPaymentId = existingAllocations.firstOrNull()?.paymentId
+            val hasInitialPayment = hasAllocationForPaymentAndSale(expectedInitialPaymentId, saleId)
+            val actualPaymentId = if (hasInitialPayment) expectedInitialPaymentId else null
             return ExpectedSaleResult.Recorded(saleId, actualPaymentId)
         }
         val customer = customerForPayment(sale.customerId) ?: return ExpectedSaleResult.StaleData

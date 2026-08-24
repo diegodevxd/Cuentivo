@@ -34,6 +34,7 @@ class SaleRepository(private val financialDao: FinancialDao) {
         payment: PaymentEntity?,
         paymentMovement: AccountMovementEntity?,
         paymentAllocations: List<PaymentAllocationEntity>,
+        expectedInitialPaymentId: String = com.cuentivo.app.domain.SaleOperationIds.payment(idempotencyKey),
     ): ExpectedSaleResult = financialDao.registerSaleAgainstPreviewIdempotently(
         operation = OperationEntity(idempotencyKey, "SALE", sale.id, sale.createdAtEpochMillis),
         sale = sale,
@@ -44,6 +45,7 @@ class SaleRepository(private val financialDao: FinancialDao) {
         payment = payment,
         paymentMovement = paymentMovement,
         paymentAllocations = paymentAllocations,
+        expectedInitialPaymentId = expectedInitialPaymentId,
     )
 
     suspend fun storedBundle(businessId: String, saleId: String): StoredSaleBundle? {

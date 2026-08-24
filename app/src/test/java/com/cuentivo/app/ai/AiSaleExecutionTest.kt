@@ -46,7 +46,7 @@ class AiSaleExecutionTest {
         var recordedPayment: PaymentEntity? = null
 
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, items, charge, _, _, payment, _, _ ->
+            registerSale = { _, sale, items, charge, _, _, payment, _, _, _ ->
                 recordedSale = sale
                 recordedItems = items
                 recordedCharge = charge
@@ -83,7 +83,7 @@ class AiSaleExecutionTest {
         val request = validRequest.copy(initialPaymentCents = 4000L)
 
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, payment, paymentMovement, allocations ->
+            registerSale = { _, sale, _, _, _, _, payment, paymentMovement, allocations, _ ->
                 recordedPayment = payment
                 recordedPaymentMovement = paymentMovement
                 recordedAllocations = allocations
@@ -111,7 +111,7 @@ class AiSaleExecutionTest {
     @Test
     fun `stale customer or product data returns StalePreview`() = runBlocking {
         val service = AiSaleExecutionService(
-            registerSale = { _, _, _, _, _, _, _, _, _ ->
+            registerSale = { _, _, _, _, _, _, _, _, _, _ ->
                 ExpectedSaleResult.StaleData
             },
             currentUserId = { "user-1" },
@@ -126,7 +126,7 @@ class AiSaleExecutionTest {
     @Test
     fun `invalid request parameters are rejected fail-closed`() = runBlocking {
         val service = AiSaleExecutionService(
-            registerSale = { _, _, _, _, _, _, _, _, _ ->
+            registerSale = { _, _, _, _, _, _, _, _, _, _ ->
                 ExpectedSaleResult.Recorded("s", null)
             },
             currentUserId = { "user-1" },
@@ -165,7 +165,7 @@ class AiSaleExecutionTest {
     @Test
     fun `missing user id returns Unavailable`() = runBlocking {
         val service = AiSaleExecutionService(
-            registerSale = { _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded("s", null) },
+            registerSale = { _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded("s", null) },
             currentUserId = { "" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -178,7 +178,7 @@ class AiSaleExecutionTest {
     @Test
     fun `cancellation exception is rethrown`() = runBlocking {
         val service = AiSaleExecutionService(
-            registerSale = { _, _, _, _, _, _, _, _, _ -> throw CancellationException("test cancel") },
+            registerSale = { _, _, _, _, _, _, _, _, _, _ -> throw CancellationException("test cancel") },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
