@@ -448,4 +448,6 @@
     <string name="ai_debug_chat_gallery">Gallery</string>
     <string name="ai_debug_chat_camera_unavailable">Camera capture is not available in this version</string>
     <string name="ai_debug_chat_draft_note">Draft - nothing is recorded</string>
+    <string name="ai_daily_chat_greeting">Hi, I\'m CuentivoAI, your assistant to record sales faster. Tell me about a sale, a payment, a debt, or a business query; I\'ll prepare a draft for you to review before recording.</string>
+    <string name="ai_daily_chat_out_of_scope">I\'m CuentivoAI, an assistant for your business. I cannot discuss personal topics, but I can help you with sales, payments, customers, products, debts, and collections.</string>
 </resources>

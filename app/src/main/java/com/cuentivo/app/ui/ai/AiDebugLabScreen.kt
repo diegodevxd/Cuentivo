@@ -373,6 +373,8 @@ private fun ChatMessageRow(message: AiChatMessage) {
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
+        AiChatMessage.AssistantGreeting -> Text(stringResource(R.string.ai_daily_chat_greeting))
+        AiChatMessage.AssistantOutOfScope -> Text(stringResource(R.string.ai_daily_chat_out_of_scope))
         AiChatMessage.AssistantPending -> Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))

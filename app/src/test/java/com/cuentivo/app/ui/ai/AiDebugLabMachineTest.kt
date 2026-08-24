@@ -1,5 +1,6 @@
 package com.cuentivo.app.ui.ai
 
+import com.cuentivo.app.ai.AiDailyMessageKind
 import com.cuentivo.app.ai.AiProposalSaleLine
 import com.cuentivo.app.ai.BusinessQueryProposal
 import com.cuentivo.app.ai.BusinessQueryType
@@ -9,6 +10,7 @@ import com.cuentivo.app.ai.CreateSaleProposal
 import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.RequiresClarificationProposal
 import com.cuentivo.app.ai.UnresolvedSlot
+import com.cuentivo.app.data.local.AiDailyStoredMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -363,5 +365,74 @@ class AiDebugLabMachineTest {
 
         assertEquals(listOf(AiChatMessage.UserText("hola"), AiChatMessage.AssistantPending), cancelled.messages)
         assertTrue(cancelled.generation > submitted.generation)
+    }
+
+    @Test
+    fun `history hydration maps only persisted deterministic kinds`() {
+        val history = listOf(
+            AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_GREETING, null),
+            AiDailyStoredMessage(AiDailyMessageKind.USER_TEXT, "María abonó 150"),
+            AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_OUT_OF_SCOPE, null),
+            AiDailyStoredMessage(AiDailyMessageKind.USER_TEXT, "cobro a Juan"),
+            AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_UNAVAILABLE, null),
+        )
+        val initial = AiDebugLabModel(text = "draft", state = AiDebugLabState.Unavailable)
+        val loaded = AiDebugLabMachine.onHistoryLoaded(initial, history)
+
+        assertEquals(
+            listOf(
+                AiChatMessage.AssistantGreeting,
+                AiChatMessage.UserText("María abonó 150"),
+                AiChatMessage.AssistantOutOfScope,
+                AiChatMessage.UserText("cobro a Juan"),
+                AiChatMessage.AssistantUnavailable,
+            ),
+            loaded.messages,
+        )
+        assertEquals(AiDebugLabState.TextEditing, loaded.state)
+        assertEquals("draft", loaded.text)
+        assertFalse(loaded.messages.any { it is AiChatMessage.AssistantPending })
+        assertFalse(loaded.messages.any { it is AiChatMessage.AssistantProposal })
+        assertFalse(loaded.messages.any { it is AiChatMessage.AssistantClarification })
+    }
+
+    @Test
+    fun `out of scope replaces the draft with user and deterministic assistant messages and clears text`() {
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.TextEditing,
+            text = "  ¿Cómo estás?  ",
+            messages = listOf(AiChatMessage.AssistantGreeting),
+        )
+        val result = AiDebugLabMachine.onOutOfScope(model)
+
+        assertEquals(
+            listOf(
+                AiChatMessage.AssistantGreeting,
+                AiChatMessage.UserText("¿Cómo estás?"),
+                AiChatMessage.AssistantOutOfScope,
+            ),
+            result.messages,
+        )
+        assertEquals("", result.text)
+        assertEquals(AiDebugLabState.TextEditing, result.state)
+    }
+
+    @Test
+    fun `out of scope while sending or blank is ignored`() {
+        val sendingModel = AiDebugLabModel(
+            state = AiDebugLabState.Sending,
+            text = "¿Cómo estás?",
+            messages = listOf(AiChatMessage.AssistantGreeting),
+        )
+        val afterSending = AiDebugLabMachine.onOutOfScope(sendingModel)
+        assertSame(sendingModel, afterSending)
+
+        val blankModel = AiDebugLabModel(
+            state = AiDebugLabState.TextEditing,
+            text = "   ",
+            messages = listOf(AiChatMessage.AssistantGreeting),
+        )
+        val afterBlank = AiDebugLabMachine.onOutOfScope(blankModel)
+        assertSame(blankModel, afterBlank)
     }
 }

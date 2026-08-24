@@ -448,4 +448,6 @@
     <string name="ai_debug_chat_gallery">Galería</string>
     <string name="ai_debug_chat_camera_unavailable">Captura con cámara no disponible en esta versión</string>
     <string name="ai_debug_chat_draft_note">Borrador - no registra nada</string>
+    <string name="ai_daily_chat_greeting">Hola, soy CuentivoAI, tu asistente para registrar ventas más rápido. Cuéntame una venta, un abono, una deuda o una consulta de tu negocio; prepararé un borrador para que lo revises antes de registrarlo.</string>
+    <string name="ai_daily_chat_out_of_scope">Soy CuentivoAI, un asistente para tu negocio. No puedo conversar sobre temas personales, pero sí ayudarte con ventas, abonos, clientes, productos, deudas y cobros.</string>
 </resources>

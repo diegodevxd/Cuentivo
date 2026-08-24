@@ -1,5 +1,6 @@
 package com.cuentivo.app.ui.ai
 
+import com.cuentivo.app.ai.AiDailyMessageKind
 import com.cuentivo.app.ai.AiProposal
 import com.cuentivo.app.ai.AiProposalValidationResult
 import com.cuentivo.app.ai.CallableAiProposalResult
@@ -38,6 +39,8 @@ data class AiDebugLabModel(
  */
 sealed interface AiChatMessage {
     data class UserText(val text: String) : AiChatMessage
+    data object AssistantGreeting : AiChatMessage
+    data object AssistantOutOfScope : AiChatMessage
     data object AssistantPending : AiChatMessage
     data object AssistantUnavailable : AiChatMessage
     data class AssistantClarification(
@@ -155,6 +158,48 @@ object AiDebugLabMachine {
         return model.copy(
             state = AiDebugLabState.TextEditing,
             text = (model.text + separator + trimmed).trim(),
+        )
+    }
+
+    /**
+     * Hydrates the transcript from persisted daily chat history. Maps only the allow-listed
+     * stored kinds and never manufactures Pending, Proposal, or Clarification states.
+     */
+    fun onHistoryLoaded(
+        model: AiDebugLabModel,
+        history: List<com.cuentivo.app.data.local.AiDailyStoredMessage>,
+    ): AiDebugLabModel {
+        val mappedMessages = history.map { stored ->
+            when (stored.kind) {
+                AiDailyMessageKind.USER_TEXT -> AiChatMessage.UserText(stored.textContent.orEmpty())
+                AiDailyMessageKind.ASSISTANT_GREETING -> AiChatMessage.AssistantGreeting
+                AiDailyMessageKind.ASSISTANT_OUT_OF_SCOPE -> AiChatMessage.AssistantOutOfScope
+                AiDailyMessageKind.ASSISTANT_UNAVAILABLE -> AiChatMessage.AssistantUnavailable
+            }
+        }
+        return model.copy(
+            state = AiDebugLabState.TextEditing,
+            messages = mappedMessages,
+        )
+    }
+
+    /**
+     * Handles a turn classified as out-of-scope. Only allowed from [AiDebugLabState.TextEditing]
+     * with non-blank text. Trims current text, appends [AiChatMessage.UserText] and
+     * [AiChatMessage.AssistantOutOfScope], clears draft text and remains in [AiDebugLabState.TextEditing].
+     */
+    fun onOutOfScope(model: AiDebugLabModel): AiDebugLabModel {
+        if (model.text.isBlank() || model.state != AiDebugLabState.TextEditing) {
+            return model
+        }
+        val userText = model.text.trim()
+        val newMessages = model.messages +
+            AiChatMessage.UserText(userText) +
+            AiChatMessage.AssistantOutOfScope
+        return model.copy(
+            state = AiDebugLabState.TextEditing,
+            text = "",
+            messages = newMessages,
         )
     }
 
