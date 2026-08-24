@@ -1,4 +1,5 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import * as logger from "firebase-functions/logger";
 import { defineSecret } from "firebase-functions/params";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
@@ -43,7 +44,16 @@ export const interpretAiRequest = onCall(
     // the server configuration is missing: the callable recovers without consuming a claim.
     const apiKey = geminiApiKey.value();
     const provider = apiKey
-      ? createGeminiTextProvider({ apiKey, timeoutMillis: 8000 })
+      ? createGeminiTextProvider({
+          apiKey,
+          timeoutMillis: 8000,
+          onFailure: (failure) => {
+            logger.warn("AI_PROVIDER_FAILURE", {
+              category: failure.category,
+              status: failure.status,
+            });
+          },
+        })
       : null;
     const repository = controlPlaneRepository();
     const result = await createInterpretAiHandler({

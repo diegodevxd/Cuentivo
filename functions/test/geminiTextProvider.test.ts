@@ -297,4 +297,220 @@ describe("createGeminiTextProvider", () => {
     await provider.interpret({ text: "input" });
     expect(generateFn).toHaveBeenCalledTimes(1);
   });
+
+  describe("safe failure telemetry", () => {
+    test.each([
+      [400, 400],
+      [401, 401],
+      [403, 403],
+      [404, 404],
+      [408, 408],
+      [429, 429],
+      [500, 500],
+      [502, 502],
+      [503, 503],
+      [504, 504],
+      [418, null],
+      [501, null],
+      [undefined, null],
+    ])("reports PROVIDER_ERROR_OR_TIMEOUT with allowlisted status (%s -> %s)", async (status, expectedStatus) => {
+      const failures: any[] = [];
+      const error: any = new Error("API call failed with secret message https://secret-url");
+      if (status !== undefined) {
+        error.status = status;
+      }
+      const mockClient = createMockClient(async () => {
+        throw error;
+      });
+
+      const provider = createGeminiTextProvider(
+        {
+          apiKey: "test-fake-key",
+          timeoutMillis: 5000,
+          onFailure: (f) => failures.push(f),
+        },
+        mockClient,
+      );
+
+      const result = await provider.interpret({ text: "sensitive user text" });
+      expect(result).toBeNull();
+      expect(failures).toEqual([
+        {
+          category: "PROVIDER_ERROR_OR_TIMEOUT",
+          status: expectedStatus,
+        },
+      ]);
+    });
+
+    test("extracts status from response.status or statusCode only if allowlisted", async () => {
+      const failures: any[] = [];
+      const error: any = { response: { status: 429 }, message: "Too many requests" };
+      const mockClient = createMockClient(async () => {
+        throw error;
+      });
+
+      const provider = createGeminiTextProvider(
+        {
+          apiKey: "test-fake-key",
+          timeoutMillis: 5000,
+          onFailure: (f) => failures.push(f),
+        },
+        mockClient,
+      );
+
+      await provider.interpret({ text: "vendo zapatos" });
+      expect(failures).toEqual([
+        {
+          category: "PROVIDER_ERROR_OR_TIMEOUT",
+          status: 429,
+        },
+      ]);
+    });
+
+    test("reports EMPTY_RESPONSE with null status when output text is empty", async () => {
+      const failures: any[] = [];
+      const mockClient = createMockClient(async () => ({ text: "   " }));
+
+      const provider = createGeminiTextProvider(
+        {
+          apiKey: "test-fake-key",
+          timeoutMillis: 5000,
+          onFailure: (f) => failures.push(f),
+        },
+        mockClient,
+      );
+
+      const result = await provider.interpret({ text: "input" });
+      expect(result).toBeNull();
+      expect(failures).toEqual([
+        {
+          category: "EMPTY_RESPONSE",
+          status: null,
+        },
+      ]);
+    });
+
+    test("reports INVALID_JSON with null status when output is not valid JSON", async () => {
+      const failures: any[] = [];
+      const mockClient = createMockClient(async () => ({ text: "not a json" }));
+
+      const provider = createGeminiTextProvider(
+        {
+          apiKey: "test-fake-key",
+          timeoutMillis: 5000,
+          onFailure: (f) => failures.push(f),
+        },
+        mockClient,
+      );
+
+      const result = await provider.interpret({ text: "input" });
+      expect(result).toBeNull();
+      expect(failures).toEqual([
+        {
+          category: "INVALID_JSON",
+          status: null,
+        },
+      ]);
+    });
+
+    test("reports INVALID_PROPOSAL with null status when JSON fails schema parsing", async () => {
+      const failures: any[] = [];
+      const mockClient = createMockClient(async () => ({
+        text: JSON.stringify({ kind: "unknown_kind", customerName: "Ana" }),
+      }));
+
+      const provider = createGeminiTextProvider(
+        {
+          apiKey: "test-fake-key",
+          timeoutMillis: 5000,
+          onFailure: (f) => failures.push(f),
+        },
+        mockClient,
+      );
+
+      const result = await provider.interpret({ text: "input" });
+      expect(result).toBeNull();
+      expect(failures).toEqual([
+        {
+          category: "INVALID_PROPOSAL",
+          status: null,
+        },
+      ]);
+    });
+
+    test("never passes raw error object, error message, input text, or output text to telemetry", async () => {
+      const failures: any[] = [];
+      const sensitiveError = new Error("API key AIzaSy... leaked in stack");
+      (sensitiveError as any).status = 401;
+      (sensitiveError as any).details = "private user data";
+
+      const mockClient = createMockClient(async () => {
+        throw sensitiveError;
+      });
+
+      const provider = createGeminiTextProvider(
+        {
+          apiKey: "test-fake-key",
+          timeoutMillis: 5000,
+          onFailure: (f) => failures.push(f),
+        },
+        mockClient,
+      );
+
+      await provider.interpret({ text: "Secret Customer owes $500" });
+
+      expect(failures.length).toBe(1);
+      const failure = failures[0];
+      expect(Object.keys(failure).sort()).toEqual(["category", "status"].sort());
+      expect(failure.category).toBe("PROVIDER_ERROR_OR_TIMEOUT");
+      expect(failure.status).toBe(401);
+
+      const serialized = JSON.stringify(failure);
+      expect(serialized).not.toContain("AIzaSy");
+      expect(serialized).not.toContain("leaked");
+      expect(serialized).not.toContain("private");
+      expect(serialized).not.toContain("Secret Customer");
+      expect(serialized).not.toContain("500");
+    });
+
+    test("does not invoke onFailure when proposal is valid", async () => {
+      const failures: any[] = [];
+      const mockClient = createMockClient(async () => ({
+        text: JSON.stringify(VALID_PROPOSAL),
+      }));
+
+      const provider = createGeminiTextProvider(
+        {
+          apiKey: "test-fake-key",
+          timeoutMillis: 5000,
+          onFailure: (f) => failures.push(f),
+        },
+        mockClient,
+      );
+
+      const result = await provider.interpret({ text: "vendo zapatos" });
+      expect(result).toEqual(VALID_PROPOSAL);
+      expect(failures).toHaveLength(0);
+    });
+
+    test("still returns null safely if onFailure throws an error", async () => {
+      const mockClient = createMockClient(async () => {
+        throw new Error("SDK error");
+      });
+
+      const provider = createGeminiTextProvider(
+        {
+          apiKey: "test-fake-key",
+          timeoutMillis: 5000,
+          onFailure: () => {
+            throw new Error("telemetry boom");
+          },
+        },
+        mockClient,
+      );
+
+      const result = await provider.interpret({ text: "input" });
+      expect(result).toBeNull();
+    });
+  });
 });

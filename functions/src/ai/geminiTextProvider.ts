@@ -149,6 +149,41 @@ export interface GeminiClientSeam {
   };
 }
 
+export type ProviderFailureCategory =
+  | "PROVIDER_ERROR_OR_TIMEOUT"
+  | "EMPTY_RESPONSE"
+  | "INVALID_JSON"
+  | "INVALID_PROPOSAL";
+
+export interface ProviderFailureTelemetry {
+  readonly category: ProviderFailureCategory;
+  readonly status: number | null;
+}
+
+export type ProviderFailureListener = (failure: ProviderFailureTelemetry) => void;
+
+const ALLOWED_HTTP_STATUSES = new Set([400, 401, 403, 404, 408, 429, 500, 502, 503, 504]);
+
+function extractAllowedHttpStatus(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+  const candidate =
+    "status" in error && typeof (error as { status: unknown }).status === "number"
+      ? (error as { status: number }).status
+      : "statusCode" in error && typeof (error as { statusCode: unknown }).statusCode === "number"
+        ? (error as { statusCode: number }).statusCode
+        : "response" in error &&
+            typeof (error as { response?: { status?: unknown } }).response?.status === "number"
+          ? (error as { response: { status: number } }).response.status
+          : null;
+
+  if (candidate !== null && Number.isInteger(candidate) && ALLOWED_HTTP_STATUSES.has(candidate)) {
+    return candidate;
+  }
+  return null;
+}
+
 export type GeminiClientFactory = (options: {
   apiKey: string;
   httpOptions: {
@@ -166,10 +201,24 @@ export interface TextInterpretationProvider {
 class GeminiTextProvider implements TextInterpretationProvider {
   private readonly client: GeminiClientSeam;
   private readonly timeoutMillis: number;
+  private readonly onFailure?: ProviderFailureListener;
 
-  constructor(client: GeminiClientSeam, timeoutMillis: number) {
+  constructor(
+    client: GeminiClientSeam,
+    timeoutMillis: number,
+    onFailure?: ProviderFailureListener,
+  ) {
     this.client = client;
     this.timeoutMillis = timeoutMillis;
+    this.onFailure = onFailure;
+  }
+
+  private emitFailure(category: ProviderFailureCategory, status: number | null = null): void {
+    try {
+      this.onFailure?.({ category, status });
+    } catch {
+      // Fail-safe: telemetry listener must never propagate exceptions.
+    }
   }
 
   async interpret(input: Readonly<{ text: string }>): Promise<SafeAiProposal | null> {
@@ -198,6 +247,7 @@ class GeminiTextProvider implements TextInterpretationProvider {
       const response = await Promise.race([generatePromise, timeoutPromise]);
       const rawText = response?.text;
       if (typeof rawText !== "string" || rawText.trim().length === 0) {
+        this.emitFailure("EMPTY_RESPONSE", null);
         return null;
       }
 
@@ -205,13 +255,20 @@ class GeminiTextProvider implements TextInterpretationProvider {
       try {
         parsedJson = JSON.parse(rawText);
       } catch {
+        this.emitFailure("INVALID_JSON", null);
         return null;
       }
 
-      return parseSafeAiProposal(parsedJson);
-    } catch {
+      const proposal = parseSafeAiProposal(parsedJson);
+      if (proposal === null) {
+        this.emitFailure("INVALID_PROPOSAL", null);
+        return null;
+      }
+      return proposal;
+    } catch (error) {
       // Fail closed to null on any failure (timeout, network, SDK rejection, malformed payload).
       // Never throw, never retry, and never log exception or text contents.
+      this.emitFailure("PROVIDER_ERROR_OR_TIMEOUT", extractAllowedHttpStatus(error));
       return null;
     } finally {
       if (timerId !== undefined) {
@@ -225,6 +282,7 @@ export function createGeminiTextProvider(
   options: Readonly<{
     apiKey: string;
     timeoutMillis: number;
+    onFailure?: ProviderFailureListener;
   }>,
   clientOrFactory?: GeminiClientSeam | GeminiClientFactory,
 ): TextInterpretationProvider {
@@ -248,5 +306,5 @@ export function createGeminiTextProvider(
     },
   });
 
-  return new GeminiTextProvider(client, options.timeoutMillis);
+  return new GeminiTextProvider(client, options.timeoutMillis, options.onFailure);
 }

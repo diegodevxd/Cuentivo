@@ -64,4 +64,11 @@ describe("regional callable gateway", () => {
     expect(SOURCE).not.toContain("getApps()");
     expect(SOURCE).not.toContain("getApp()");
   });
+
+  test("wires safe provider failure telemetry to logger.warn without logging sensitive details", () => {
+    expect(SOURCE).toContain('logger.warn("AI_PROVIDER_FAILURE"');
+    expect(SOURCE).toContain("category: failure.category");
+    expect(SOURCE).toContain("status: failure.status");
+    expect(SOURCE).not.toMatch(/logger\.(warn|error|info|log)\([^)]*(request\.data|apiKey|auth\.uid|error\.message|stack)/);
+  });
 });
