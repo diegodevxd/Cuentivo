@@ -302,7 +302,7 @@ fun AiDebugLabScreen(
                                                 confirmPayment(outcome.request)
                                             } catch (e: CancellationException) {
                                                 throw e
-                                            } catch (_: Throwable) {
+                                            } catch (_: Exception) {
                                                 AiPaymentExecutionResult.Unavailable
                                             }
                                         }

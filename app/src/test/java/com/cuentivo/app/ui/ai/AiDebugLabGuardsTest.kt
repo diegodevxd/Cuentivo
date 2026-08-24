@@ -402,7 +402,7 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `confirmPayment rethrows CancellationException and falls back to Unavailable only for other errors`() {
+    fun `confirmPayment rethrows CancellationException and falls back to Unavailable only for other exceptions`() {
         val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
         val confirmCallIndex = screenSource.indexOf("confirmPayment(outcome.request)")
         assertTrue("confirmPayment is called", confirmCallIndex != -1)
@@ -412,6 +412,8 @@ class AiDebugLabGuardsTest {
         )
         assertTrue("must explicitly catch CancellationException", confirmationBlock.contains("catch (e: CancellationException)"))
         assertTrue("must rethrow CancellationException", confirmationBlock.contains("throw e"))
+        assertTrue("must catch Exception for non-cancellation errors", confirmationBlock.contains("catch (_: Exception)"))
+        assertFalse("must not catch Throwable to avoid masking JVM Errors", confirmationBlock.contains("catch (_: Throwable)"))
         assertTrue("must map non-cancellation errors to Unavailable", confirmationBlock.contains("AiPaymentExecutionResult.Unavailable"))
         assertFalse("must not use blind runCatching around confirmPayment", confirmationBlock.contains("runCatching"))
     }
