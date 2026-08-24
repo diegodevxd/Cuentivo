@@ -312,6 +312,9 @@ class AiDebugLabGuardsTest {
         assertTrue("must enqueue PAYMENT_ALLOCATION", source.contains("\"PAYMENT_ALLOCATION\""))
         assertTrue("must enqueue MOVEMENT", source.contains("\"MOVEMENT\""))
         assertTrue("must pass confirmPayment to CuentivoApp", source.contains("confirmPayment ="))
+        assertTrue("must validate active business ID from DashboardUiState.Content", source.contains("(state as? DashboardUiState.Content)?.businessId"))
+        assertTrue("must reject null or mismatched businessId", source.contains("activeBusinessId == null || activeBusinessId != request.businessId"))
+        assertTrue("must return Rejected on mismatch", source.contains("AiPaymentExecutionResult.Rejected"))
     }
 
     @Test

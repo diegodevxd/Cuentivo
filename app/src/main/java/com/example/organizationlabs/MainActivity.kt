@@ -915,11 +915,16 @@ class MainActivity : ComponentActivity() {
                     aiDailyChatRepository = aiDailyChatRepository,
                     paymentPreviewResolver = aiPaymentPreviewResolver::resolve,
                     confirmPayment = { request ->
-                        val result = aiPaymentExecutionService.confirm(request)
-                        if (result is AiPaymentExecutionResult.Recorded) {
-                            refreshKey++
+                        val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
+                        if (activeBusinessId == null || activeBusinessId != request.businessId) {
+                            AiPaymentExecutionResult.Rejected
+                        } else {
+                            val result = aiPaymentExecutionService.confirm(request)
+                            if (result is AiPaymentExecutionResult.Recorded) {
+                                refreshKey++
+                            }
+                            result
                         }
-                        result
                     },
                     onCreateBusiness = {
                     lifecycleScope.launch {
