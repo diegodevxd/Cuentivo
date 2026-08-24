@@ -27,6 +27,8 @@ class AiPaymentPreviewTest {
         deletedAtEpochMillis = null,
     )
 
+    private fun candidate(id: String, name: String) = AiPaymentCustomerCandidate(id, name)
+
     @Test
     fun `unique exact normalized match resolves`() {
         val result = AiPaymentCandidateMatcher.match(
@@ -39,18 +41,27 @@ class AiPaymentPreviewTest {
     @Test
     fun `multiple exact rows require selection`() {
         val rows = listOf(customer("1", "María"), customer("2", "Maria"))
-        assertEquals(AiPaymentCustomerMatch.SelectionRequired(rows), AiPaymentCandidateMatcher.match("María", rows))
+        assertEquals(
+            SelectionRequired(rows),
+            AiPaymentCandidateMatcher.match("María", rows),
+        )
     }
 
     @Test
     fun `single partial row still requires selection`() {
         val rows = listOf(customer("1", "María López"))
-        assertEquals(AiPaymentCustomerMatch.SelectionRequired(rows), AiPaymentCandidateMatcher.match("María", rows))
+        assertEquals(
+            SelectionRequired(rows),
+            AiPaymentCandidateMatcher.match("María", rows),
+        )
     }
 
     @Test
     fun `no candidates is not found`() {
-        assertEquals(AiPaymentCustomerMatch.NotFound, AiPaymentCandidateMatcher.match("María", emptyList()))
+        assertEquals(
+            AiPaymentCustomerMatch.NotFound,
+            AiPaymentCandidateMatcher.match("María", emptyList()),
+        )
     }
 
     @Test
@@ -58,38 +69,61 @@ class AiPaymentPreviewTest {
         // CustomerNameNormalizer.key preserves leading/trailing punctuation, so a query wrapped in
         // inverted punctuation does not match the bare normalized name.
         val rows = listOf(customer("1", "Como Estas"))
-        assertEquals(AiPaymentCustomerMatch.SelectionRequired(rows), AiPaymentCandidateMatcher.match("¿Cómo estás?", rows))
+        assertEquals(
+            SelectionRequired(rows),
+            AiPaymentCandidateMatcher.match("¿Cómo estás?", rows),
+        )
     }
 
     @Test
     fun `exact match is unique even when a partial also exists`() {
         val rows = listOf(customer("1", "María"), customer("2", "María López"))
-        assertEquals(AiPaymentCustomerMatch.Exact(customer("1", "María")), AiPaymentCandidateMatcher.match("María", rows))
+        assertEquals(
+            AiPaymentCustomerMatch.Exact(customer("1", "María")),
+            AiPaymentCandidateMatcher.match("María", rows),
+        )
     }
 
     @Test
     fun `match preserves candidate order and copies the list defensively`() {
         val rows = listOf(customer("1", "María"), customer("2", "Maria"))
         val result = AiPaymentCandidateMatcher.match("María", rows)
-        assertEquals(AiPaymentCustomerMatch.SelectionRequired(rows), result)
-        if (result is AiPaymentCustomerMatch.SelectionRequired) {
+        assertEquals(SelectionRequired(rows), result)
+        if (result is SelectionRequired) {
             assertEquals(listOf("1", "2"), result.candidates.map { it.id })
         }
     }
 
     @Test
-    fun `selection result is an unmodifiable copy`() {
+    fun `matcher selection result is an unmodifiable copy`() {
         val source = mutableListOf(customer("1", "María"), customer("2", "Maria"))
         val result = AiPaymentCandidateMatcher.match("María", source)
-        assertTrue("expected SelectionRequired", result is AiPaymentCustomerMatch.SelectionRequired)
-        val selection = result as AiPaymentCustomerMatch.SelectionRequired
+        assertTrue("expected SelectionRequired", result is SelectionRequired)
+        val selection = result as SelectionRequired
 
-        // Casting to MutableList and mutating must throw, following the project's unmodifiable-list pattern.
         mutateExpectingUnsupported(selection.candidates as MutableList<CustomerEntity>)
-
-        // Mutating the source list after matching must not change the result.
         source.add(customer("3", "Extra"))
         assertEquals(2, selection.candidates.size)
+    }
+
+    @Test
+    fun `SelectionRequired constructed directly is an unmodifiable copy`() {
+        val source = mutableListOf(customer("1", "María"), customer("2", "Maria"))
+        val result = SelectionRequired(source)
+
+        mutateExpectingUnsupported(result.candidates as MutableList<CustomerEntity>)
+        source.add(customer("3", "Extra"))
+        assertEquals(2, result.candidates.size)
+    }
+
+    @Test
+    fun `CustomerSelectionRequired constructed directly is an unmodifiable copy`() {
+        val source = mutableListOf(candidate("1", "María"), candidate("2", "Maria"))
+        val result = CustomerSelectionRequired(source)
+
+        mutateExpectingUnsupported(result.candidates as MutableList<AiPaymentCustomerCandidate>)
+        source.add(candidate("3", "Extra"))
+        assertEquals(2, result.candidates.size)
     }
 
     @Test
@@ -104,10 +138,11 @@ class AiPaymentPreviewTest {
         assertEquals(25_000L, preview.projectedBalanceCents)
     }
 
-    private fun mutateExpectingUnsupported(candidates: MutableList<CustomerEntity>) {
+    private fun mutateExpectingUnsupported(candidates: MutableList<*>) {
         var thrown = false
         try {
-            candidates.add(customer("3", "Extra"))
+            @Suppress("UNCHECKED_CAST")
+            (candidates as MutableList<Any>).add(Any())
         } catch (expected: UnsupportedOperationException) {
             thrown = true
         }
