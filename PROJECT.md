@@ -14,7 +14,8 @@ CuentivoAI es una capacidad adicional y desactivable. Gemini sólo propone inten
 
 1. [Arquitectura, seguridad y estado maestro](docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md)
 2. [Diseño de posicionamiento y roadmap competitivo](docs/superpowers/specs/2026-08-24-cuentivo-fiado-catalogo-product-design.md)
-3. El código y las pruebas del repositorio para comportamiento real.
+3. [Diseño aprobado de creación compuesta](docs/superpowers/specs/2026-08-24-cuentivoai-composite-sale-creation-design.md)
+4. El código y las pruebas del repositorio para comportamiento real.
 
 Este archivo es una puerta de entrada. No sustituye ni compite con el source of truth.
 
@@ -22,11 +23,11 @@ Este archivo es una puerta de entrada. No sustituye ni compite con el source of 
 
 Terminar el núcleo confiable de CuentivoAI en incrementos pequeños:
 
-1. confirmación explícita y ejecución idempotente de abonos;
-2. resolución, preview y ejecución idempotente de ventas completas;
-3. consultas naturales deterministas;
-4. voz a texto editable;
-5. OCR por lotes con revisión.
+1. creación compuesta confirmable de clientes y productos nuevos dentro de una venta;
+2. consultas naturales deterministas;
+3. voz a texto editable;
+4. aceptación física y endurecimiento de texto, cámara/OCR y voz;
+5. promoción controlada desde laboratorio debug hacia una beta protegida por feature flags.
 
 Después del núcleo: PDF de estados de cuenta y recibos, WhatsApp asistido, promesas de pago, barcode local Pro, flujo de pedidos/campañas de catálogo y extracción revisable de documentos.
 
@@ -40,6 +41,20 @@ Después del núcleo: PDF de estados de cuenta y recibos, WhatsApp asistido, pro
 - Nada financiero queda DONE sin tests, build, lint, diff check y evidencia proporcional al riesgo.
 - No generar ni subir AAB hasta completar APK debug, prueba física, beta y gates documentados.
 
-## Estado resumido al 2026-08-24
+## Checkpoint de pausa — 2026-08-24
 
-Existe texto remoto Gemini → propuesta tipada y una preview de abono que resuelve cliente y saldo real sin mutar datos. La prueba física mostró $500 de deuda, $150 propuestos y $350 proyectados; el saldo real permaneció en $500 y no apareció ningún abono. Todavía no existe confirmación ni ejecución financiera desde CuentivoAI.
+- Rama: `diegodevxd/feature-cuentivo-ai`.
+- HEAD al pausar: `b2a889b` (`docs(ai): design composite sale creation`).
+- El APK debug conecta con el gateway Gemini mediante Firebase Auth y App Check; la API key permanece server-side.
+- Texto → propuesta tipada → preview → confirmación funciona para abonos y ventas con entidades existentes.
+- Prueba física aceptada: un abono de $150 redujo la deuda real de María López de $500 a $350.
+- Prueba física aceptada: una venta con abono inicial se creó correctamente desde CuentivoAI.
+- El incremento de venta existente quedó en `335dbc1`; Codex verificó JVM, 19 pruebas Room conectadas, `assembleDebug`, `assembleRelease`, `lintDebug` y `git diff --check`.
+- APK auditada: `app/build/outputs/apk/debug/app-debug.apk`.
+- SHA-256 de esa APK: `F80CD085031E1DB38C589ED147044B1FDE9C39FCBDD25335922DDD175A73E3B5`.
+- Diseño siguiente aprobado y documentado en `docs/superpowers/specs/2026-08-24-cuentivoai-composite-sale-creation-design.md`.
+- Decisión aprobada: si el producto es nuevo, el precio mencionado se guarda como precio habitual; costo, stock, categoría y barcode no se inventan.
+- Decisión aprobada: nombres parecidos requieren aclaración para usar el existente, crear uno nuevo o cancelar.
+- Próximo paso exacto: revisar la especificación escrita y preparar el plan de implementación para AGY. No se inició código de creación compuesta.
+- `docs/superpowers/handoffs/` continúa no rastreado y pertenece al usuario; no agregar, borrar ni modificar.
+- Estado de release: APK debug interna solamente. AAB, Play/beta pública y activación general continúan NO-GO.
