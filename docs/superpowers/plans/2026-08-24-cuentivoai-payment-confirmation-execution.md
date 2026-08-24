@@ -30,6 +30,8 @@
 - Modify `app/src/test/java/com/cuentivo/app/ai/AiPaymentPreviewTest.kt`: prove one stable key per resolution and no key for blocked states.
 - Create `app/src/main/java/com/cuentivo/app/ai/AiPaymentExecution.kt`: immutable confirmation request/result and orchestration service.
 - Create `app/src/test/java/com/cuentivo/app/ai/AiPaymentExecutionTest.kt`: service boundary, validation and replay-safe sync tests.
+- Create `app/src/main/java/com/cuentivo/app/domain/PaymentOperationIds.kt`: deterministic financial entity IDs derived from an idempotency key, with no AI dependency.
+- Create `app/src/test/java/com/cuentivo/app/domain/PaymentOperationIdsTest.kt`: deterministic, separated and stable ID tests.
 - Modify `app/src/main/java/com/cuentivo/app/data/local/FinancialDao.kt`: transactional stale-preview check, deterministic allocation and replay path.
 - Modify `app/src/androidTest/java/com/cuentivo/app/ai/AiPaymentExecutionIsolationTest.kt`: real Room mutation, stale, cross-business and concurrent retry evidence.
 - Modify `app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt`: confirmation state machine and single-flight guards.
@@ -142,6 +144,8 @@ git commit -m "feat(ai): bind payment preview to confirmation key"
 **Files:**
 - Create: `app/src/main/java/com/cuentivo/app/ai/AiPaymentExecution.kt`
 - Create: `app/src/test/java/com/cuentivo/app/ai/AiPaymentExecutionTest.kt`
+- Create: `app/src/main/java/com/cuentivo/app/domain/PaymentOperationIds.kt`
+- Create: `app/src/test/java/com/cuentivo/app/domain/PaymentOperationIdsTest.kt`
 - Modify: `app/src/main/java/com/cuentivo/app/data/local/FinancialDao.kt`
 - Modify: `app/src/main/java/com/cuentivo/app/domain/PaymentRepository.kt`
 
@@ -228,7 +232,7 @@ suspend fun registerPaymentAgainstExpectedBalanceIdempotently(
     val allocationResult = PaymentAllocator.allocate(payment.amountCents, outstanding)
     val allocations = allocationResult.allocations.map { allocation ->
         PaymentAllocationEntity(
-            id = AiPaymentEntityIds.allocation(operation.idempotencyKey, allocation.saleId),
+            id = PaymentOperationIds.allocation(operation.idempotencyKey, allocation.saleId),
             paymentId = payment.id,
             saleId = allocation.saleId,
             amountCents = allocation.amountCents,
@@ -239,7 +243,22 @@ suspend fun registerPaymentAgainstExpectedBalanceIdempotently(
 }
 ```
 
-Place `AiPaymentEntityIds` in `AiPaymentExecution.kt`; derive UUID strings with `UUID.nameUUIDFromBytes("$confirmationKey:$kind:$suffix".toByteArray(StandardCharsets.UTF_8))`. This is deterministic identity, not cryptographic authentication.
+Create `PaymentOperationIds` in the domain package, never under `ai`, so `FinancialDao` does not depend on the AI layer:
+
+```kotlin
+object PaymentOperationIds {
+    fun payment(idempotencyKey: String): String = child(idempotencyKey, "payment", "root")
+    fun movement(idempotencyKey: String): String = child(idempotencyKey, "movement", "root")
+    fun allocation(idempotencyKey: String, saleId: String): String = child(idempotencyKey, "allocation", saleId)
+
+    private fun child(key: String, kind: String, suffix: String): String {
+        require(key.isNotBlank())
+        return UUID.nameUUIDFromBytes("$key:$kind:$suffix".toByteArray(StandardCharsets.UTF_8)).toString()
+    }
+}
+```
+
+`PaymentOperationIdsTest` must prove identical inputs are stable, different kinds/keys/sales are distinct and blank keys throw. This is deterministic identity, not cryptographic authentication.
 
 - [ ] **Step 4: Implement repository and service**
 
@@ -292,7 +311,7 @@ It constructs deterministic payment/movement IDs, writes, reloads the stored bun
 - [ ] **Step 5: Run focused JVM tests and observe GREEN**
 
 ```powershell
-.\gradlew.bat testDebugUnitTest --tests "com.cuentivo.app.ai.AiPaymentExecutionTest" --no-daemon --no-configuration-cache --no-watch-fs --console=plain
+.\gradlew.bat testDebugUnitTest --tests "com.cuentivo.app.ai.AiPaymentExecutionTest" --tests "com.cuentivo.app.domain.PaymentOperationIdsTest" --no-daemon --no-configuration-cache --no-watch-fs --console=plain
 ```
 
 Expected: PASS. `PaymentRepository` and the real DAO boundary are covered by Task 3 instrumented tests.
@@ -300,7 +319,7 @@ Expected: PASS. `PaymentRepository` and the real DAO boundary are covered by Tas
 - [ ] **Step 6: Commit Task 2**
 
 ```powershell
-git add app/src/main/java/com/cuentivo/app/ai/AiPaymentExecution.kt app/src/main/java/com/cuentivo/app/data/local/FinancialDao.kt app/src/main/java/com/cuentivo/app/domain/PaymentRepository.kt app/src/test/java/com/cuentivo/app/ai/AiPaymentExecutionTest.kt
+git add app/src/main/java/com/cuentivo/app/ai/AiPaymentExecution.kt app/src/main/java/com/cuentivo/app/data/local/FinancialDao.kt app/src/main/java/com/cuentivo/app/domain/PaymentOperationIds.kt app/src/main/java/com/cuentivo/app/domain/PaymentRepository.kt app/src/test/java/com/cuentivo/app/ai/AiPaymentExecutionTest.kt app/src/test/java/com/cuentivo/app/domain/PaymentOperationIdsTest.kt
 git diff --cached --check
 git commit -m "feat(ai): execute confirmed payment idempotently"
 ```
