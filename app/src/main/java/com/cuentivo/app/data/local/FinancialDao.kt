@@ -556,6 +556,9 @@ interface FinancialDao {
         return payment.id
     }
 
+    @Query("SELECT * FROM customers WHERE id = :customerId LIMIT 1")
+    suspend fun customerForPayment(customerId: String): CustomerEntity?
+
     @Transaction
     suspend fun registerPaymentAgainstExpectedBalanceIdempotently(
         operation: OperationEntity,
@@ -565,6 +568,10 @@ interface FinancialDao {
     ): ExpectedBalancePaymentResult {
         operationResultId(operation.idempotencyKey)?.let {
             return ExpectedBalancePaymentResult.Recorded(it)
+        }
+        val customer = customerForPayment(payment.customerId) ?: return ExpectedBalancePaymentResult.StaleBalance
+        if (customer.businessId != payment.businessId || !customer.isActive || customer.deletedAtEpochMillis != null) {
+            return ExpectedBalancePaymentResult.StaleBalance
         }
         if (customerBalanceCents(payment.businessId, payment.customerId) != expectedBalanceCents) {
             return ExpectedBalancePaymentResult.StaleBalance
