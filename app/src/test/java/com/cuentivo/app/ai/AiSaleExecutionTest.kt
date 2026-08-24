@@ -1,0 +1,197 @@
+package com.cuentivo.app.ai
+
+import com.cuentivo.app.data.local.AccountMovementEntity
+import com.cuentivo.app.data.local.ExpectedSaleResult
+import com.cuentivo.app.data.local.PaymentAllocationEntity
+import com.cuentivo.app.data.local.PaymentEntity
+import com.cuentivo.app.data.local.SaleEntity
+import com.cuentivo.app.data.local.SaleItemEntity
+import com.cuentivo.app.domain.SaleOperationIds
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+
+class AiSaleExecutionTest {
+
+    private val validLine = AiSaleConfirmationLine(
+        productId = "prod-1",
+        productNameSnapshot = "Jabón",
+        quantity = 2,
+        unitPriceCents = 5000L,
+        lineTotalCents = 10000L,
+        sourceProductFingerprint = "prod-1:2000:5000",
+    )
+
+    private val validRequest = AiSaleConfirmationRequest(
+        confirmationKey = "key-sale-1",
+        businessId = "biz-1",
+        customerId = "cust-1",
+        sourceCustomerFingerprint = "cust-1:1000",
+        lines = listOf(validLine),
+        totalCents = 10000L,
+        initialPaymentCents = 0L,
+        promisedPaymentEpochDay = 20600L,
+    )
+
+    @Test
+    fun `successful sale execution with zero initial payment records sale and charge only`() = runBlocking {
+        var recordedSale: SaleEntity? = null
+        var recordedItems: List<SaleItemEntity>? = null
+        var recordedCharge: AccountMovementEntity? = null
+        var recordedPayment: PaymentEntity? = null
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, items, charge, _, _, payment, _, _ ->
+                recordedSale = sale
+                recordedItems = items
+                recordedCharge = charge
+                recordedPayment = payment
+                ExpectedSaleResult.Recorded(sale.id, payment?.id)
+            },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(validRequest)
+        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        val recorded = result as AiSaleExecutionResult.Recorded
+        assertNotNull(recorded.saleId)
+        assertNull(recorded.paymentId)
+        assertNull(recordedPayment)
+
+        assertEquals("user-1", recordedSale?.sellerUserId)
+        assertEquals(10000L, recordedSale?.totalCents)
+        assertEquals(20600L, recordedSale?.dueDateEpochDay)
+        assertEquals(1, recordedItems?.size)
+        assertEquals("CHARGE", recordedCharge?.type)
+        assertEquals("DEBIT", recordedCharge?.direction)
+        assertEquals(10000L, recordedCharge?.amountCents)
+    }
+
+    @Test
+    fun `successful sale execution with initial payment records sale and payment`() = runBlocking {
+        var recordedPayment: PaymentEntity? = null
+        var recordedPaymentMovement: AccountMovementEntity? = null
+        var recordedAllocations: List<PaymentAllocationEntity>? = null
+
+        val request = validRequest.copy(initialPaymentCents = 4000L)
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, payment, paymentMovement, allocations ->
+                recordedPayment = payment
+                recordedPaymentMovement = paymentMovement
+                recordedAllocations = allocations
+                ExpectedSaleResult.Recorded(sale.id, payment?.id)
+            },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(request)
+        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        val recorded = result as AiSaleExecutionResult.Recorded
+        assertNotNull(recorded.saleId)
+        assertNotNull(recorded.paymentId)
+
+        assertEquals(4000L, recordedPayment?.amountCents)
+        assertEquals("PAYMENT", recordedPaymentMovement?.type)
+        assertEquals("CREDIT", recordedPaymentMovement?.direction)
+        assertEquals(1, recordedAllocations?.size)
+        assertEquals(recorded.saleId, recordedAllocations?.first()?.saleId)
+        assertEquals(4000L, recordedAllocations?.first()?.amountCents)
+    }
+
+    @Test
+    fun `stale customer or product data returns StalePreview`() = runBlocking {
+        val service = AiSaleExecutionService(
+            registerSale = { _, _, _, _, _, _, _, _, _ ->
+                ExpectedSaleResult.StaleData
+            },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(validRequest)
+        assertEquals(AiSaleExecutionResult.StalePreview, result)
+    }
+
+    @Test
+    fun `invalid request parameters are rejected fail-closed`() = runBlocking {
+        val service = AiSaleExecutionService(
+            registerSale = { _, _, _, _, _, _, _, _, _ ->
+                ExpectedSaleResult.Recorded("s", null)
+            },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(confirmationKey = "")))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(businessId = "")))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(customerId = "")))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = emptyList())))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(totalCents = 0L)))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(totalCents = -100L)))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(initialPaymentCents = -50L)))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(initialPaymentCents = 20000L))) // exceeds total
+
+        // Line with mismatch total
+        val badLine = validLine.copy(lineTotalCents = 8000L) // 2 * 5000 != 8000
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = listOf(badLine))))
+    }
+
+    @Test
+    fun `missing user id returns Unavailable`() = runBlocking {
+        val service = AiSaleExecutionService(
+            registerSale = { _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded("s", null) },
+            currentUserId = { "" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(validRequest)
+        assertEquals(AiSaleExecutionResult.Unavailable, result)
+    }
+
+    @Test
+    fun `cancellation exception is rethrown`() = runBlocking {
+        val service = AiSaleExecutionService(
+            registerSale = { _, _, _, _, _, _, _, _, _ -> throw CancellationException("test cancel") },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        try {
+            service.confirm(validRequest)
+            fail("Expected CancellationException to be rethrown")
+        } catch (_: CancellationException) {
+            // Success
+        }
+    }
+
+    @Test
+    fun `deterministic operation IDs generated for same confirmation key`() = runBlocking {
+        val key = "key-idem-1"
+        val idempotencyKey = "ai-sale-$key"
+        val saleId1 = SaleOperationIds.sale(idempotencyKey)
+        val saleId2 = SaleOperationIds.sale(idempotencyKey)
+        assertEquals(saleId1, saleId2)
+
+        val chargeId1 = SaleOperationIds.chargeMovement(idempotencyKey)
+        val chargeId2 = SaleOperationIds.chargeMovement(idempotencyKey)
+        assertEquals(chargeId1, chargeId2)
+
+        val paymentId1 = SaleOperationIds.payment(idempotencyKey)
+        val paymentId2 = SaleOperationIds.payment(idempotencyKey)
+        assertEquals(paymentId1, paymentId2)
+    }
+}

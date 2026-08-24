@@ -16,10 +16,22 @@ sealed interface ExpectedBalancePaymentResult {
     data object StaleBalance : ExpectedBalancePaymentResult
 }
 
+sealed interface ExpectedSaleResult {
+    data class Recorded(val saleId: String, val paymentId: String?) : ExpectedSaleResult
+    data object StaleData : ExpectedSaleResult
+}
+
 data class StoredPaymentBundle(
     val payment: PaymentEntity,
     val allocations: List<PaymentAllocationEntity>,
     val movement: AccountMovementEntity,
+)
+
+data class StoredSaleBundle(
+    val sale: SaleEntity,
+    val items: List<SaleItemEntity>,
+    val chargeMovement: AccountMovementEntity,
+    val paymentBundle: StoredPaymentBundle?,
 )
 
 /**
@@ -589,6 +601,66 @@ interface FinancialDao {
         }
         registerPaymentIdempotently(operation, payment, allocations, movement)
         return ExpectedBalancePaymentResult.Recorded(payment.id)
+    }
+
+    @Query("SELECT * FROM products WHERE id = :productId")
+    suspend fun productForSale(productId: String): ProductEntity?
+
+    @Query("SELECT * FROM sale_items WHERE saleId = :saleId")
+    suspend fun itemsForSale(saleId: String): List<SaleItemEntity>
+
+    @Query("SELECT * FROM account_movements WHERE saleId = :saleId AND type = 'CHARGE'")
+    suspend fun chargeMovementForSale(saleId: String): AccountMovementEntity?
+
+    @Query("SELECT * FROM payment_allocations WHERE saleId = :saleId")
+    suspend fun allAllocationsForSale(saleId: String): List<PaymentAllocationEntity>
+
+    @Transaction
+    suspend fun registerSaleAgainstPreviewIdempotently(
+        operation: OperationEntity,
+        sale: SaleEntity,
+        items: List<SaleItemEntity>,
+        charge: AccountMovementEntity,
+        expectedCustomerFingerprint: String,
+        expectedProductFingerprints: Map<String, String>,
+        payment: PaymentEntity?,
+        paymentMovement: AccountMovementEntity?,
+        paymentAllocations: List<PaymentAllocationEntity>,
+    ): ExpectedSaleResult {
+        operationResultId(operation.idempotencyKey)?.let {
+            return ExpectedSaleResult.Recorded(it, payment?.id)
+        }
+        val customer = customerForPayment(sale.customerId) ?: return ExpectedSaleResult.StaleData
+        if (customer.businessId != sale.businessId || !customer.isActive || customer.deletedAtEpochMillis != null) {
+            return ExpectedSaleResult.StaleData
+        }
+        val currentCustFingerprint = "${customer.id}:${customer.updatedAtEpochMillis}"
+        if (currentCustFingerprint != expectedCustomerFingerprint) {
+            return ExpectedSaleResult.StaleData
+        }
+        for (item in items) {
+            val productId = item.productId ?: return ExpectedSaleResult.StaleData
+            val product = productForSale(productId) ?: return ExpectedSaleResult.StaleData
+            if (product.businessId != sale.businessId || !product.isActive || product.deletedAtEpochMillis != null) {
+                return ExpectedSaleResult.StaleData
+            }
+            val currentProdFingerprint = "${product.id}:${product.updatedAtEpochMillis}:${product.salePriceCents}"
+            val expectedFingerprint = expectedProductFingerprints[productId]
+            if (currentProdFingerprint != expectedFingerprint) {
+                return ExpectedSaleResult.StaleData
+            }
+        }
+        createSaleIdempotently(operation, sale, items, charge)
+        if (payment != null && paymentMovement != null && paymentAllocations.isNotEmpty()) {
+            val paymentOperation = OperationEntity(
+                idempotencyKey = "payment-${payment.id}",
+                type = "PAYMENT",
+                resultId = payment.id,
+                createdAtEpochMillis = payment.createdAtEpochMillis,
+            )
+            registerPaymentIdempotently(paymentOperation, payment, paymentAllocations, paymentMovement)
+        }
+        return ExpectedSaleResult.Recorded(sale.id, payment?.id)
     }
 
     /** Stores an immutable, documented balance correction without duplicating retries. */
