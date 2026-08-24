@@ -69,6 +69,7 @@ export const interpretAiRequest = onCall(
     if ("code" in result) {
       throw new HttpsError(result.code, "Request rejected");
     }
+    logger.info("AI_INTERPRET_RESULT", { status: result.status });
     return result;
   },
 );

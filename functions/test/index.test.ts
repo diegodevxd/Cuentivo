@@ -76,4 +76,10 @@ describe("regional callable gateway", () => {
     expect(SOURCE).toContain("status: failure.status");
     expect(SOURCE).not.toMatch(/logger\.(warn|error|info|log)\([^)]*(request\.data|apiKey|auth\.uid|error\.message|stack)/);
   });
+
+  test("logs only the fixed callable outcome without request or proposal data", () => {
+    expect(SOURCE).toContain('logger.info("AI_INTERPRET_RESULT"');
+    expect(SOURCE).toContain("status: result.status");
+    expect(SOURCE).not.toMatch(/AI_INTERPRET_RESULT[^;]*(requestId|proposal|request\.data|auth\.uid)/s);
+  });
 });
