@@ -79,6 +79,10 @@ Las siguientes decisiones están **aprobadas** y solo cambian por una nueva deci
 9. Barcode se considera inicialmente Pro, no exclusivo de CuentivoAI.
 10. Apagar CuentivoAI no puede afectar Gratis ni Pro.
 11. Las fotografías presentes son locales; no se afirmará respaldo cloud de fotos sin implementación y verificación independiente.
+12. Posicionamiento aprobado: Cuentivo es el sistema operativo del fiado y la venta por catálogo para comerciantes mexicanos; POS, inventario y reportes apoyan ese centro, no lo sustituyen.
+13. El ciclo futuro de catálogo distinguirá pedido, encargo, recepción, entrega, deuda, abonos, liquidación y devolución. Un pedido no crea deuda antes de una entrega/venta determinista.
+14. PDF y WhatsApp son superficies de confianza: estados de cuenta, recibos, cobranza y pedidos se generan desde datos reales y se previsualizan antes de compartir. La extracción de documentos sólo produce candidatos revisables.
+15. La secuencia vigente es núcleo financiero AI primero; después voz/OCR, cobranza/documentos, barcode local Pro y finalmente pedidos/campañas. El diseño aprobado está en `docs/superpowers/specs/2026-08-24-cuentivo-fiado-catalogo-product-design.md`.
 
 Barcode no usa IA ni tiene costo marginal de modelo. Mantenerlo como Pro evita mezclar una herramienta operacional con la propuesta de IA.
 
@@ -278,6 +282,16 @@ Regla objetiva de escalamiento: Flash/Qwen → V4 Pro al primer contacto con din
 - Crear producto Play, disclosure final, soporte, runbook e incident response.
 - Done: todas las puertas de seguridad/negocio aprobadas por propietario y Sol; activar por porcentaje con kill-switch probado.
 
+### Programas de producto posteriores al núcleo AI
+
+No son subpasos automáticos ni amplían la fase activa. Cada programa requiere diseño, autorización, tests y rollback propios:
+
+1. Cobranza explicable: promesas de pago, agenda determinista, línea de tiempo, estado de cuenta y recibos PDF.
+2. WhatsApp asistido: mensajes y documentos previsualizados y enviados por el usuario; sin automatización silenciosa inicial.
+3. Barcode Pro local: ML Kit y `Product.sku`, sin Gemini ni cuota AI.
+4. Venta por catálogo: pedidos/campañas, recepción, entrega, faltantes y devoluciones separados del ledger financiero.
+5. Extracción documental: PDF/foto a candidatos revisables; nunca mutación directa.
+
 ## 9. Test plan adversarial
 
 ### Tests unitarios/contratos
@@ -386,7 +400,7 @@ Antes del GO comercial definitivo se sustituyen supuestos por datos observados y
 1. **Monitorear el lanzamiento de Cuentivo actual.** Dónde: Play Console, Crashlytics y Firebase Console ya configuradas. Por qué: el gate requiere evidencia, no sensación. Traer: resumen agregado de crashes/ANR, instalaciones, uso disponible, errores de Billing, sync/restore y feedback. Secretos: ninguno. Posponer: no si se quiere evaluar el gate.
 2. **Conservar feedback sobre captura rápida.** Dónde: Play Console, correo o canal actual. Por qué: prueba interés real en texto/foto/voz. Traer: temas agregados o anonimizados. No recolectar: nombres, tickets, deudas, fotos o texto financiero sólo para métricas. Posponer: sí, pero retrasa evidencia de interés.
 
-No crear ahora cuenta/API key Gemini, gateway AI adicional, Cloud Run, Secret Manager, Firebase Storage, producto CuentivoAI de Play ni dependencias nuevas fuera de una fase autorizada.
+La cuenta, facturación Blaze, presupuesto, API key Gemini en Secret Manager y el deploy acotado de `interpretAiRequest` ya fueron configurados y probados según el changelog. No crear ahora otra key/gateway, Cloud Run, Firebase Storage, producto CuentivoAI de Play ni dependencias nuevas fuera de una fase autorizada.
 
 ### DESPUÉS DEL LANZAMIENTO
 
@@ -463,6 +477,7 @@ No crear ahora cuenta/API key Gemini, gateway AI adicional, Cloud Run, Secret Ma
 | 2026-08-24 | Migración obligatoria del runtime a `gemini-3.5-flash-lite`: una consulta sintética server-side con la clave del proyecto confirmó que `models.list` devuelve 200 y anuncia 2.5, pero `generateContent` devuelve 404 indicando que Gemini 2.5 Flash-Lite ya no está disponible para usuarios nuevos y exige 3.5. La documentación oficial vigente confirma que 3.5 Flash-Lite es estable, multimodal y admite Structured Outputs. | **La decisión Gemini-only se conserva; sólo cambia la versión del modelo.** No cambia `AIProvider`, schema, límites, seguridad, finanzas, cuota, UI ni secretos. Los registros históricos que nombran 2.5 describen el estado de esos incrementos y quedan supersedidos para runtime por esta decisión. |
 | 2026-08-24 | Primera prueba física end-to-end de texto aceptada: `cdf3f4e` migró el runtime a Gemini 3.5 Flash-Lite porque 2.5 devolvía 404 para esta cuenta; `8f7fc1f` elevó el deadline del proveedor de 8 s a 12 s porque Gemini exige al menos 10 s; `34d0383` añadió telemetría de resultado con vocabulario fijo y sin PII; `3873d03` movió `Tasks.await` a `Dispatchers.IO` tras demostrar que Android descartaba en el hilo principal una respuesta que el servidor sí marcaba `AI_PROPOSAL`. En A059P, el texto “María pagó 150 pesos” mostró “Pago candidato”, cliente María e importe declarado 150. | **Incremento texto → borrador remoto debug aceptado.** Evidencia: Functions 223/223, lint/build/diff-check; Android test focal, JVM, `assembleDebug`, `lintDebug`, diff-check; deploy exclusivo de `interpretAiRequest`; APK actualizado con `adb install -r`. El borrador no registró ni modificó dinero, Room, Firestore financiero u outbox. No existe todavía confirmación/ejecución financiera; Fase 3 completa, beta, AAB y producción siguen NOT DONE/NO-GO. |
 | 2026-08-24 | Preview determinista de abono cerrada en `cc43abc`, `04ab234`, `ee6aab0`, `5ff2dbe`, `71db2fa`, `ef059b0` y `30641fa`: Gemini sólo propone `RecordPaymentProposal`; Android resuelve el cliente y consulta el saldo real mediante seams de solo lectura, muestra cliente/saldo actual/abono propuesto/saldo proyectado y bloquea cliente desconocido, ambigüedad, deuda cero y sobrepago. En A059P, con María López y deuda real de $500, “María López me pagó 150 pesos” mostró $500 → $150 → $350. Al salir, el saldo seguía en $500 y Abonos permanecía vacío. | **Incremento de resolución/preview de abono aceptado como no ejecutable.** Codex verificó 610/610 pruebas JVM, `assembleDebug`, `lintDebug`, `git diff --check` y 5/5 pruebas instrumentadas de aislamiento Room en A059P. La prueba compara ventas, pagos, asignaciones, movimientos, outbox, clientes y saldo antes/después. App Check rechazó inicialmente el token debug con 403 y falló cerrado; tras registrar el token actual, el flujo funcionó. No existe confirmación ni escritura financiera por IA; Fase 3 completa, beta, AAB y producción continúan NOT DONE/NO-GO. |
+| 2026-08-24 | Investigación competitiva y dirección de producto aprobadas: Cuentivo se especializa como sistema operativo del fiado y la venta por catálogo, con captura natural segura. PDF/WhatsApp, cobranza explicable, barcode local y pedidos/campañas quedan como programas secuenciales, no como scope del siguiente commit. | `PROJECT.md` es la entrada breve y enlaza este source of truth y `specs/2026-08-24-cuentivo-fiado-catalogo-product-design.md`. El siguiente incremento continúa siendo confirmación y ejecución idempotente del abono; no se autorizan todavía campañas, PDF, WhatsApp, barcode, AAB ni activación pública. |
 
 ## 17. HANDOFF A ORCA — FASE 0 INTERNA AUTORIZADA
 
