@@ -570,10 +570,15 @@ object AiDebugLabMachine {
             state = AiDebugLabState.SaleConfirming(preview),
             generation = nextGeneration,
         )
-        val promisedDay = (preview.promisedPaymentCandidate as? PromisedPaymentCandidate.DateCandidate)?.let {
-            runCatching {
-                LocalDate.of(it.year, it.month, it.day).toEpochDay()
-            }.getOrNull()
+        val promisedDay: Long? = when (val promise = preview.promisedPaymentCandidate) {
+            null -> null
+            is PromisedPaymentCandidate.DateCandidate -> {
+                try {
+                    LocalDate.of(promise.year, promise.month, promise.day).toEpochDay()
+                } catch (_: Exception) {
+                    return AiSaleConfirmOutcome.Ignored
+                }
+            }
         }
         val request = AiSaleConfirmationRequest(
             confirmationKey = preview.confirmationKey,

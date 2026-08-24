@@ -300,7 +300,7 @@ fun AiDebugLabScreen(
                     val isConfirming = model.state is AiDebugLabState.PaymentConfirming || model.state is AiDebugLabState.SaleConfirming
                     ChatMessageRow(
                         message = message,
-                        onConfirmPayment = if (isCurrentPaymentPreview && isHydrated && confirmPayment != null && activeBusinessId != null) {
+                        onConfirmPayment = if (isCurrentPaymentPreview && isHydrated && confirmPayment != null && activeBusinessId?.isNotBlank() == true) {
                             {
                                 val outcome = AiDebugLabMachine.onConfirmPayment(model, activeBusinessId)
                                 if (outcome is AiPaymentConfirmOutcome.Started) {
@@ -324,7 +324,7 @@ fun AiDebugLabScreen(
                         onCancelPayment = if (isCurrentPaymentPreview && isHydrated) {
                             { model = AiDebugLabMachine.onCancel(model) }
                         } else null,
-                        onConfirmSale = if (isCurrentSalePreview && isHydrated && confirmSale != null && activeBusinessId != null) {
+                        onConfirmSale = if (isCurrentSalePreview && isHydrated && confirmSale != null && activeBusinessId?.isNotBlank() == true) {
                             {
                                 val outcome = AiDebugLabMachine.onConfirmSale(model, activeBusinessId)
                                 if (outcome is AiSaleConfirmOutcome.Started) {
@@ -408,11 +408,15 @@ fun AiDebugLabScreen(
                                             nextModel.state is AiDebugLabState.ProposalPreview
                                         ) {
                                             val paymentProposal = result.proposal
-                                            val resolutionResult = if (paymentPreviewResolver != null && activeBusinessId != null) {
+                                            val resolutionResult = if (paymentPreviewResolver != null && activeBusinessId?.isNotBlank() == true) {
                                                 withContext(Dispatchers.IO) {
-                                                    runCatching {
+                                                    try {
                                                         paymentPreviewResolver(activeBusinessId, paymentProposal)
-                                                    }.getOrDefault(AiPaymentPreviewResult.Unavailable)
+                                                    } catch (e: CancellationException) {
+                                                        throw e
+                                                    } catch (_: Exception) {
+                                                        AiPaymentPreviewResult.Unavailable
+                                                    }
                                                 }
                                             } else {
                                                 AiPaymentPreviewResult.Unavailable
@@ -423,11 +427,15 @@ fun AiDebugLabScreen(
                                             nextModel.state is AiDebugLabState.ProposalPreview
                                         ) {
                                             val saleProposal = result.proposal
-                                            val resolutionResult = if (salePreviewResolver != null && activeBusinessId != null) {
+                                            val resolutionResult = if (salePreviewResolver != null && activeBusinessId?.isNotBlank() == true) {
                                                 withContext(Dispatchers.IO) {
-                                                    runCatching {
+                                                    try {
                                                         salePreviewResolver(activeBusinessId, saleProposal)
-                                                    }.getOrDefault(AiSalePreviewResult.Unavailable)
+                                                    } catch (e: CancellationException) {
+                                                        throw e
+                                                    } catch (_: Exception) {
+                                                        AiSalePreviewResult.Unavailable
+                                                    }
                                                 }
                                             } else {
                                                 AiSalePreviewResult.Unavailable

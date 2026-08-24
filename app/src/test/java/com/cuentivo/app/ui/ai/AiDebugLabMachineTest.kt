@@ -1116,6 +1116,32 @@ class AiDebugLabMachineTest {
     }
 
     @Test
+    fun `onConfirmSale fails closed with Ignored when promised DateCandidate is invalid`() {
+        val invalidDatePreview = com.cuentivo.app.ai.AiResolvedSalePreview(
+            confirmationKey = "sale-key-1",
+            customerId = "cust-1",
+            customerName = "María Gómez",
+            rawLines = sampleSalePreview.lines,
+            totalCents = 10000L,
+            initialPaymentCents = 3000L,
+            remainderCents = 7000L,
+            promisedPaymentCandidate = com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate(2026, 2, 30),
+            sourceCustomerFingerprint = "cust-1:10000",
+        )
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleConfirmation(invalidDatePreview),
+            generation = 4L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSalePreview(invalidDatePreview),
+            ),
+        )
+
+        val outcome = AiDebugLabMachine.onConfirmSale(model, "biz-123")
+        assertEquals(AiSaleConfirmOutcome.Ignored, outcome)
+    }
+
+    @Test
     fun `onSaleExecutionResult with Recorded transitions to TextEditing and appends AssistantSaleRecorded`() {
         val model = saleConfirmationModel(generation = 4L)
         val started = AiDebugLabMachine.onConfirmSale(model, "biz-123") as AiSaleConfirmOutcome.Started

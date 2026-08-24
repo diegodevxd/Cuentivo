@@ -537,6 +537,37 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `resolvers rethrow CancellationException and map only other Exceptions to Unavailable without runCatching`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+
+        val paymentResolverIndex = screenSource.indexOf("paymentPreviewResolver(activeBusinessId, paymentProposal)")
+        assertTrue("payment resolver is called", paymentResolverIndex != -1)
+        val paymentResolutionBlock = screenSource.substring(
+            screenSource.lastIndexOf("val resolutionResult = if", paymentResolverIndex),
+            screenSource.indexOf("model = AiDebugLabMachine.onPaymentPreviewResult", paymentResolverIndex),
+        )
+        assertTrue("payment resolver explicitly catches CancellationException", paymentResolutionBlock.contains("catch (e: CancellationException)"))
+        assertTrue("payment resolver rethrows CancellationException", paymentResolutionBlock.contains("throw e"))
+        assertTrue("payment resolver catches Exception", paymentResolutionBlock.contains("catch (_: Exception)"))
+        assertFalse("payment resolver must not catch Throwable", paymentResolutionBlock.contains("catch (_: Throwable)"))
+        assertTrue("payment resolver maps to Unavailable", paymentResolutionBlock.contains("AiPaymentPreviewResult.Unavailable"))
+        assertFalse("payment resolver must not use runCatching", paymentResolutionBlock.contains("runCatching"))
+
+        val saleResolverIndex = screenSource.indexOf("salePreviewResolver(activeBusinessId, saleProposal)")
+        assertTrue("sale resolver is called", saleResolverIndex != -1)
+        val saleResolutionBlock = screenSource.substring(
+            screenSource.lastIndexOf("val resolutionResult = if", saleResolverIndex),
+            screenSource.indexOf("model = AiDebugLabMachine.onSalePreviewResult", saleResolverIndex),
+        )
+        assertTrue("sale resolver explicitly catches CancellationException", saleResolutionBlock.contains("catch (e: CancellationException)"))
+        assertTrue("sale resolver rethrows CancellationException", saleResolutionBlock.contains("throw e"))
+        assertTrue("sale resolver catches Exception", saleResolutionBlock.contains("catch (_: Exception)"))
+        assertFalse("sale resolver must not catch Throwable", saleResolutionBlock.contains("catch (_: Throwable)"))
+        assertTrue("sale resolver maps to Unavailable", saleResolutionBlock.contains("AiSalePreviewResult.Unavailable"))
+        assertFalse("sale resolver must not use runCatching", saleResolutionBlock.contains("runCatching"))
+    }
+
+    @Test
     fun `confirmation key and sale ID are not shown in UI or persisted in daily chat`() {
         val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
         assertFalse("sale confirmationKey is never displayed in UI text", screenSource.contains(".confirmationKey"))
@@ -549,5 +580,14 @@ class AiDebugLabGuardsTest {
         )
         assertFalse("history loader never restores sale confirmation", historyLoadedBlock.contains("SaleConfirmation"))
         assertFalse("history loader never restores sale recorded", historyLoadedBlock.contains("AssistantSaleRecorded"))
+    }
+
+    @Test
+    fun `confirmation and resolution UI callbacks require activeBusinessId isNotBlank`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("onConfirmPayment requires isNotBlank", screenSource.contains("onConfirmPayment = if (isCurrentPaymentPreview && isHydrated && confirmPayment != null && activeBusinessId?.isNotBlank() == true)"))
+        assertTrue("onConfirmSale requires isNotBlank", screenSource.contains("onConfirmSale = if (isCurrentSalePreview && isHydrated && confirmSale != null && activeBusinessId?.isNotBlank() == true)"))
+        assertTrue("payment resolution requires isNotBlank", screenSource.contains("paymentPreviewResolver != null && activeBusinessId?.isNotBlank() == true"))
+        assertTrue("sale resolution requires isNotBlank", screenSource.contains("salePreviewResolver != null && activeBusinessId?.isNotBlank() == true"))
     }
 }
