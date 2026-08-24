@@ -51,7 +51,7 @@ describe("createGeminiTextProvider", () => {
     });
   });
 
-  test("requests model gemini-2.5-flash-lite with temperature 0, cap 512 tokens, application/json and the proposal schema", async () => {
+  test("requests model gemini-3.5-flash-lite with temperature 0, cap 512 tokens, application/json and the proposal schema", async () => {
     let capturedParams: any = null;
     const mockClient = createMockClient(async (params) => {
       capturedParams = params;
@@ -67,7 +67,7 @@ describe("createGeminiTextProvider", () => {
 
     expect(mockClient.models.generateContent).toHaveBeenCalledTimes(1);
     expect(capturedParams).toBeDefined();
-    expect(capturedParams.model).toBe("gemini-2.5-flash-lite");
+    expect(capturedParams.model).toBe("gemini-3.5-flash-lite");
     expect(capturedParams.contents).toBe("vendo zapatos");
     expect(capturedParams.config).toMatchObject({
       responseMimeType: "application/json",

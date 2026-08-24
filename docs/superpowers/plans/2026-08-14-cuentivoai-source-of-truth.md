@@ -71,7 +71,7 @@ Las siguientes decisiones están **aprobadas** y solo cambian por una nueva deci
 2. Precio objetivo experimental: $299 MXN/mes; deberá revisarse con uso, costo y conversión reales.
 3. Jerarquía prevista: Gratis → Pro $199 → CuentivoAI $299. CuentivoAI **incluye Pro**; no son suscripciones acumulativas.
 4. Cuota inicial de referencia: aproximadamente 500 acciones IA/mes, configurable en servidor y no compromiso comercial definitivo.
-5. **Gemini 2.5 Flash-Lite es el único proveedor de inferencia previsto para la primera producción**, detrás de `AIProvider` intercambiable. DeepSeek V4 Pro se usa para desarrollo mediante OpenCode, no dentro de CuentivoAI.
+5. **Gemini 3.5 Flash-Lite es el único proveedor de inferencia previsto para la primera producción**, detrás de `AIProvider` intercambiable. Gemini 2.5 Flash-Lite quedó indisponible para nuevas cuentas y no puede usarse en este proyecto. DeepSeek V4 Pro se usa para desarrollo mediante OpenCode, no dentro de CuentivoAI.
 6. El modelo nunca tiene autoridad financiera: interpretación → schema → validación → lógica determinista → preview → confirmación → operación idempotente → DB.
 7. La key de Gemini jamás reside en APK/AAB; un gateway seguro es requisito previo a todo proveedor real.
 8. OCR intenta primero ejecución local/on-device; voz inicia experimentalmente y no promete offline universal.
@@ -87,7 +87,7 @@ Barcode no usa IA ni tiene costo marginal de modelo. Mantenerlo como Pro evita m
 Android (UI/captura) -- Firebase Auth ID token + App Check --> Cuentivo AI Gateway
                                                                |-- verifica uid, App Check, rol, entitlement y cuota
                                                                |-- rate limit + idempotency + telemetría sin PII cruda
-                                                               |-- AIProvider (Gemini 2.5 Flash-Lite inicialmente; intercambiable)
+                                                               |-- AIProvider (Gemini 3.5 Flash-Lite inicialmente; intercambiable)
                                                                '-- devuelve AiDraft o QueryIntent firmado por requestId
 
 Android -- validación de dominio + preview + confirmación --> Room transaction existente
@@ -188,9 +188,9 @@ No se puede saber desde Git si el proyecto está Spark o Blaze, región Firestor
 
 Supuesto base de sync: 30 operaciones financieras/usuario/mes × 4 documentos escritos y 400 lecturas/usuario/mes. No incluye fotos ni varios miembros. A 10/100/1k/10k usuarios: 1.2k/12k/120k/1.2M writes al mes y 4k/40k/400k/4M reads al mes. Promediado: 10k usuarios (~40k writes/día, ~133k reads/día) supera Spark; 1k normalmente no bajo este supuesto. Medir antes de convertir esta tabla en presupuesto.
 
-### Gemini 2.5 Flash-Lite — costo de modelo
+### Gemini 3.5 Flash-Lite — costo de modelo
 
-No reutilizar estimaciones ni precios de DeepSeek. Antes de beta/producción se verificará el precio vigente de Gemini 2.5 Flash-Lite, modalidad de facturación, región y límites oficiales; entonces se calculará costo por acción con tokens y telemetría reales. OCR/Barcode local y consultas deterministas siguen sin costo de modelo.
+No reutilizar estimaciones ni precios de DeepSeek o Gemini 2.5. Antes de beta/producción se volverá a verificar el precio vigente de Gemini 3.5 Flash-Lite, modalidad de facturación, región y límites oficiales; entonces se calculará costo por acción con tokens y telemetría reales. Al 2026-08-24, la tarifa oficial estándar consultada es USD $0.30 por millón de tokens de entrada y USD $2.50 por millón de tokens de salida; es evidencia de planificación, no un precio hardcodeado. OCR/Barcode local y consultas deterministas siguen sin costo de modelo.
 
 OCR/Barcode local y consultas deterministas cuestan $0 de modelo. Cloud Functions/Run, Firestore de control, egress y Storage futuro se presupuestan separadamente por región en Google Cloud Pricing Calculator al elegir región; no están inventados aquí.
 
@@ -198,7 +198,7 @@ OCR/Barcode local y consultas deterministas cuestan $0 de modelo. Cloud Function
 
 Si aplica el 15% de comisión de Play (confirmar elegibilidad/mercado): Pro $199 → $169.15 MXN antes de infraestructura; AI $299 → $254.15 MXN antes de infraestructura/IA. Si se aplicara 30%, los netos serían $139.30 y $209.30. Impuestos, devoluciones, tipo de cambio y soporte no están incluidos.
 
-Para AI, margen antes de impuestos = `neto Play − (acciones × (inputTokens×0.14 + outputTokens×0.28)/1,000,000 × FX) − backend − Firestore/control − soporte`. Con 500 acciones normal/intensivo, el modelo no parece el costo dominante; límites de abuso, fotos cloud futuras y soporte son riesgos mayores. No fijar $299 ni 500 hasta medir beta y fijar hard cap.
+Para AI, margen antes de impuestos = `neto Play − (acciones × (inputTokens×0.30 + outputTokens×2.50)/1,000,000 × FX) − backend − Firestore/control − soporte`, usando sólo la tarifa oficial observada el 2026-08-24 y debiendo actualizarla antes de beta/producción. Con 500 acciones normal/intensivo, el modelo no parece el costo dominante; límites de abuso, fotos cloud futuras y soporte son riesgos mayores. No fijar $299 ni 500 hasta medir beta y fijar hard cap.
 
 ## 7. Orquestamiento Orca
 
@@ -248,7 +248,7 @@ Regla objetiva de escalamiento: Flash/Qwen → V4 Pro al primer contacto con din
 - Done: 500 es configuración remota, no literal cliente; reintentos no duplican consumo; usuario sin AI no llega a proveedor.
 
 ### Fase 3 — Texto a draft seguro
-- Contrato de intent versionado, Gemini 2.5 Flash-Lite mediante Structured Outputs/JSON Schema, candidates, preview y confirmación usando dominio/Room existentes.
+- Contrato de intent versionado, Gemini 3.5 Flash-Lite mediante Structured Outputs/JSON Schema, candidates, preview y confirmación usando dominio/Room existentes.
 - Tests adversariales de mutación nula antes de confirmar y cálculo local después.
 - Done: venta/pago de textos permitidos solo en beta; ambiguo/incorrecto pide aclaración.
 
@@ -459,6 +459,7 @@ No crear ahora cuenta/API key Gemini, gateway AI adicional, Cloud Run, Secret Ma
 | 2026-08-24 | Se corrigió la prueba instrumentada v1 obsoleta de callable: `a2e5abb` retiró `parseCallableData` al pasar el transporte debug a propuestas v2, pero `FirebaseCallableGatewayInstrumentedTest` aún la llamaba. Se eliminó únicamente esa aserción redundante; permanecen las verificaciones directas del contrato remoto v1 (`contractVersion`, `requestId`, `status` y conjunto exacto de claves). | **Corrección de test aceptada.** No se reintrodujo parser v1, no se alteró gateway, Functions, secreto, Room ni dominio financiero. Este arreglo desbloqueó y permitió ejecutar la evidencia instrumentada de migración anterior. |
 | 2026-08-24 | Historial diario conectado al chat debug en `d156db1`, `c1cd00b`, `b7d2ca2`, con correcciones de auditoría `4b98f77` y `10f316c`: repositorio local aislado por propietario/día, retención exacta de 30 días, saludo y rechazo social deterministas, carga y borrado del día actual. Sólo persiste `USER_TEXT` y estados deterministas allow-listed; propuestas, aclaraciones y salidas Gemini permanecen efímeras. La composición se reinicia al cambiar el repositorio/propietario y la rama local out-of-scope usa token de generación para no quedar bloqueada ni aceptar resultados obsoletos. | **Incremento de historial/chat diario aceptado en debug.** Codex verificó focales JVM forzados, suite JVM, `assembleDebug`, `assembleRelease`, `lintDebug`, compilación AndroidTest y diff-check. Sin ejecución/confirmación financiera, sync de historial, voz, selector de días, deploy nuevo, secret/API key en APK, Billing AI, AAB ni Play. Cuentivo normal/release conserva transporte AI nulo. |
 | 2026-08-24 | El propietario configuró interactivamente `CUENTIVOAI_GEMINI_API_KEY` en Secret Manager y desplegó exclusivamente `interpretAiRequest`; Firebase CLI reportó `interpretAiRequest(us-south1) Successful update operation` y `Deploy complete!`. La fuente local confirma Node 22, 256 MiB, App Check obligatorio y que el secreto está ligado sólo a esa callable. Antes del deploy, Codex verificó Functions 199/199, lint, build y diff-check. | **Gateway Gemini desplegado, todavía fail-closed.** `authorizeAiAction` no fue desplegada; falta bootstrap Admin-only de `aiControl/global` y entitlement temporal del usuario de prueba, además de prueba real desde APK. No hay mutación financiera, AAB, Play ni habilitación pública. |
+| 2026-08-24 | Migración obligatoria del runtime a `gemini-3.5-flash-lite`: una consulta sintética server-side con la clave del proyecto confirmó que `models.list` devuelve 200 y anuncia 2.5, pero `generateContent` devuelve 404 indicando que Gemini 2.5 Flash-Lite ya no está disponible para usuarios nuevos y exige 3.5. La documentación oficial vigente confirma que 3.5 Flash-Lite es estable, multimodal y admite Structured Outputs. | **La decisión Gemini-only se conserva; sólo cambia la versión del modelo.** No cambia `AIProvider`, schema, límites, seguridad, finanzas, cuota, UI ni secretos. Los registros históricos que nombran 2.5 describen el estado de esos incrementos y quedan supersedidos para runtime por esta decisión. |
 
 ## 17. HANDOFF A ORCA — FASE 0 INTERNA AUTORIZADA
 

@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import type { SafeAiProposal } from "../contract.js";
 import { parseSafeAiProposal } from "./interpretation.js";
 
-export const GEMINI_MODEL = "gemini-2.5-flash-lite";
+export const GEMINI_MODEL = "gemini-3.5-flash-lite";
 
 /**
  * Exact JSON Schema for the typed proposal wire format: independent object schemas per kind (and
