@@ -56,8 +56,11 @@ import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
+import com.cuentivo.app.ai.AiPaymentExecutionResult
+import com.cuentivo.app.ai.AiPaymentExecutionService
 import com.cuentivo.app.ai.AiPaymentPreviewResolver
 import com.cuentivo.app.domain.CustomerRepository
+import com.cuentivo.app.domain.PaymentRepository
 import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.ui.theme.CuentivoTheme
 import com.cuentivo.app.data.local.CUENTIVO_MIGRATIONS
@@ -757,6 +760,24 @@ class MainActivity : ComponentActivity() {
                         loadBalanceCents = database.financialDao()::customerBalanceCents,
                     )
                 }
+                val aiPaymentExecutionService = remember(currentUserId) {
+                    val paymentRepository = PaymentRepository(database.financialDao())
+                    AiPaymentExecutionService(
+                        registerPayment = paymentRepository::registerAgainstExpectedBalance,
+                        loadStoredBundle = paymentRepository::storedBundle,
+                        enqueueStoredBundle = { bundle ->
+                            val payment = bundle.payment
+                            syncQueue.enqueue(payment.businessId, "PAYMENT", payment.id, payment.createdAtEpochMillis, SyncPayloads.payment(payment))
+                            bundle.allocations.forEach { allocation ->
+                                syncQueue.enqueue(payment.businessId, "PAYMENT_ALLOCATION", allocation.id, payment.createdAtEpochMillis, SyncPayloads.allocation(allocation))
+                            }
+                            syncQueue.enqueue(payment.businessId, "MOVEMENT", bundle.movement.id, payment.createdAtEpochMillis, SyncPayloads.movement(bundle.movement))
+                        },
+                        currentUserId = { currentUserId },
+                        nowMillis = System::currentTimeMillis,
+                        todayEpochDay = { LocalDate.now().toEpochDay() },
+                    )
+                }
                 val state by produceState<DashboardUiState>(initialValue = DashboardUiState.NoBusiness, refreshKey) { value = viewModel.load() }
                 val customers by produceState<List<CustomerBalanceRow>>(initialValue = emptyList(), state, refreshKey) {
                     value = (state as? DashboardUiState.Content)?.let { database.customerDao().activeWithBalances(it.businessId) } ?: emptyList()
@@ -875,7 +896,32 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                CuentivoApp(state, customers, products, tier, customerScores = customerScores, proPrice = proPriceState.value, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, pendingSaleCustomerId = pendingSaleCustomerId, onPendingSaleConsumed = { pendingSaleCustomerId = null }, isImportingBalances = isImportingBalances, balancesImportedToken = balancesImportedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, aiDailyChatRepository = aiDailyChatRepository, paymentPreviewResolver = aiPaymentPreviewResolver::resolve, onCreateBusiness = {
+                CuentivoApp(
+                    state,
+                    customers,
+                    products,
+                    tier,
+                    customerScores = customerScores,
+                    proPrice = proPriceState.value,
+                    accountLabel = authenticationGateway.currentUserEmail,
+                    isSavingCustomer = isSavingCustomer,
+                    customerSavedToken = customerSavedToken,
+                    pendingSaleCustomerId = pendingSaleCustomerId,
+                    onPendingSaleConsumed = { pendingSaleCustomerId = null },
+                    isImportingBalances = isImportingBalances,
+                    balancesImportedToken = balancesImportedToken,
+                    isSavingProduct = isSavingProduct,
+                    productSavedToken = productSavedToken,
+                    aiDailyChatRepository = aiDailyChatRepository,
+                    paymentPreviewResolver = aiPaymentPreviewResolver::resolve,
+                    confirmPayment = { request ->
+                        val result = aiPaymentExecutionService.confirm(request)
+                        if (result is AiPaymentExecutionResult.Recorded) {
+                            refreshKey++
+                        }
+                        result
+                    },
+                    onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
                         val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)

@@ -302,6 +302,19 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `main activity constructs AiPaymentExecutionService using local repository and sync queue and passes confirmPayment to CuentivoApp`() {
+        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        assertTrue("must construct PaymentRepository", source.contains("PaymentRepository(database.financialDao())"))
+        assertTrue("must construct AiPaymentExecutionService", source.contains("AiPaymentExecutionService("))
+        assertTrue("must wire registerAgainstExpectedBalance", source.contains("paymentRepository::registerAgainstExpectedBalance"))
+        assertTrue("must wire storedBundle", source.contains("paymentRepository::storedBundle"))
+        assertTrue("must enqueue PAYMENT", source.contains("\"PAYMENT\""))
+        assertTrue("must enqueue PAYMENT_ALLOCATION", source.contains("\"PAYMENT_ALLOCATION\""))
+        assertTrue("must enqueue MOVEMENT", source.contains("\"MOVEMENT\""))
+        assertTrue("must pass confirmPayment to CuentivoApp", source.contains("confirmPayment ="))
+    }
+
+    @Test
     fun `cuentivo app derives active business id exclusively from DashboardUiState Content and passes dependencies`() {
         val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
         assertTrue(
@@ -312,6 +325,14 @@ class AiDebugLabGuardsTest {
             "screen must receive paymentPreviewResolver and activeBusinessId",
             source.contains("paymentPreviewResolver = paymentPreviewResolver") &&
                 source.contains("activeBusinessId = activeBusinessId"),
+        )
+        assertTrue(
+            "CuentivoApp parameter confirmPayment must be nullable suspend callback",
+            source.contains("confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null"),
+        )
+        assertTrue(
+            "screen must receive confirmPayment",
+            source.contains("confirmPayment = confirmPayment"),
         )
     }
 

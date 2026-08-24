@@ -63,13 +63,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
+import com.cuentivo.app.ai.AiPaymentConfirmationRequest
+import com.cuentivo.app.ai.AiPaymentExecutionResult
 import com.cuentivo.app.ai.AiPaymentPreviewResult
 import com.cuentivo.app.ai.RecordPaymentProposal
+import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
-import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.ui.ai.AiDebugLabScreen
 import com.cuentivo.app.ui.ai.debugAiTransport
 import kotlinx.coroutines.Dispatchers
@@ -256,6 +258,7 @@ fun CuentivoApp(
     onOpenOverdueCustomersConsumed: () -> Unit = {},
     aiDailyChatRepository: AiDailyChatRepository? = null,
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
+    confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
@@ -464,6 +467,7 @@ fun CuentivoApp(
                     repository = aiDailyChatRepository,
                     paymentPreviewResolver = paymentPreviewResolver,
                     activeBusinessId = activeBusinessId,
+                    confirmPayment = confirmPayment,
                     onClose = { showAiDebugLab = false },
                 )
             }
