@@ -114,6 +114,26 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `chat UI renders a transcript and bottom composer but no confirmation action`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("transcript must use LazyColumn", source.contains("LazyColumn"))
+        assertTrue("transcript must render user messages", source.contains("AiChatMessage.UserText"))
+        assertTrue("capture sheet must offer camera", source.contains("ai_debug_chat_camera"))
+        assertTrue("capture sheet must offer gallery", source.contains("ai_debug_chat_gallery"))
+        assertFalse("no confirmation action label", source.contains("Confirmar operación"))
+        assertFalse("no confirmation callback", source.contains("onConfirm"))
+    }
+
+    @Test
+    fun `composer and capture are enabled for non-sending states`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue(
+            "composer must be enabled whenever not Sending",
+            source.contains("state != AiDebugLabState.Sending"),
+        )
+    }
+
+    @Test
     fun `release transport provides the same API without Firebase`() {
         val release = File("src/release/java/com/cuentivo/app/ui/ai/AiDebugTransportRelease.kt")
         assertTrue("release transport must exist", release.exists())

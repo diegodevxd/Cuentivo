@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -91,6 +93,7 @@ fun AiDebugLabScreen(
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     val scope = rememberCoroutineScope()
     var showSourceSelector by remember { mutableStateOf(false) }
+    var cameraUnavailable by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val captureStore = remember(context) {
         com.cuentivo.app.ai.capture.AiCaptureStore(java.io.File(context.cacheDir, "ai-capture"))
@@ -167,100 +170,147 @@ fun AiDebugLabScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.ai_debug_lab_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = closeLab) { Text(stringResource(R.string.ai_debug_lab_close)) }
+            }
             Text(
-                text = stringResource(R.string.ai_debug_lab_title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f),
+                text = stringResource(R.string.ai_debug_lab_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
             )
-            TextButton(onClick = closeLab) { Text(stringResource(R.string.ai_debug_lab_close)) }
-        }
-        Text(
-            text = stringResource(R.string.ai_debug_lab_warning),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-        OutlinedTextField(
-            value = model.text,
-            onValueChange = { model = AiDebugLabMachine.onTextChanged(model, it) },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.ai_debug_lab_input_hint)) },
-            enabled = model.state == AiDebugLabState.TextEditing,
-            maxLines = 6,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Button(
-                enabled = model.canSubmit,
-                onClick = {
-                    val request = AiInterpretRequest(
-                        text = model.text.trim(),
-                        requestId = UUID.randomUUID().toString(),
-                    )
-                    val outcome = AiDebugLabMachine.onSubmit(model)
-                    if (outcome is AiDebugLabSubmitOutcome.Submitted) {
-                        model = outcome.model
-                        val token = outcome.generation
-                        scope.launch {
-                            val result = AiDebugLabSubmitPolicy.run(transport, request)
-                            model = AiDebugLabMachine.onResult(model, result, token)
-                        }
-                    }
-                },
+            // Temporary operational chat transcript: user bubbles and neutral assistant cards.
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(stringResource(R.string.ai_debug_lab_send))
+                items(model.messages) { message -> ChatMessageRow(message) }
             }
-            Spacer(Modifier.width(8.dp))
-            TextButton(onClick = { model = AiDebugLabMachine.onReset(model) }) {
-                Text(stringResource(R.string.ai_debug_lab_new))
+            if (cameraUnavailable) {
+                Text(
+                    text = stringResource(R.string.ai_debug_chat_camera_unavailable),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
-            Spacer(Modifier.width(8.dp))
-            if (ocrEngine != null) {
-                TextButton(
-                    enabled = model.state == AiDebugLabState.TextEditing,
+            // Bottom-aligned composer: text send uses the existing transport.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = model.text,
+                    onValueChange = { model = AiDebugLabMachine.onTextChanged(model, it) },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text(stringResource(R.string.ai_debug_lab_input_hint)) },
+                    enabled = model.state != AiDebugLabState.Sending,
+                    maxLines = 4,
+                )
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    enabled = model.canSubmit,
                     onClick = {
-                        showSourceSelector = true
+                        val request = AiInterpretRequest(
+                            text = model.text.trim(),
+                            requestId = UUID.randomUUID().toString(),
+                        )
+                        val outcome = AiDebugLabMachine.onSubmit(model)
+                        if (outcome is AiDebugLabSubmitOutcome.Submitted) {
+                            model = outcome.model
+                            val token = outcome.generation
+                            scope.launch {
+                                val result = AiDebugLabSubmitPolicy.run(transport, request)
+                                model = AiDebugLabMachine.onResult(model, result, token)
+                            }
+                        }
                     },
                 ) {
-                    Text(stringResource(R.string.ai_debug_lab_capture))
+                    Text(stringResource(R.string.ai_debug_lab_send))
                 }
             }
-        }
-        when (val state = model.state) {
-            AiDebugLabState.TextEditing -> Unit
-            AiDebugLabState.Sending -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.ai_debug_lab_thinking))
-            }
-            AiDebugLabState.Unavailable -> Text(stringResource(R.string.ai_debug_lab_unavailable))
-            is AiDebugLabState.Clarification -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(stringResource(R.string.ai_debug_lab_clarification))
-                Text(state.reason.name, style = MaterialTheme.typography.titleMedium)
-                Text(state.slots.joinToString { it.name }, style = MaterialTheme.typography.bodySmall)
-            }
-            is AiDebugLabState.ProposalPreview -> ProposalPreviewContent(state.proposal)
-        }
-            if (showSourceSelector) {
-                ModalBottomSheet(onDismissRequest = { showSourceSelector = false }) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { model = AiDebugLabMachine.onReset(model) }) {
+                    Text(stringResource(R.string.ai_debug_lab_new))
+                }
+                if (ocrEngine != null) {
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        enabled = model.state != AiDebugLabState.Sending,
+                        onClick = { showSourceSelector = true },
                     ) {
-                        TextButton(
-                            onClick = {
-                                showSourceSelector = false
-                                pickImageLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.ai_debug_lab_capture)) }
-                        TextButton(
-                            onClick = { showSourceSelector = false },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.ai_debug_lab_close)) }
+                        Text(stringResource(R.string.ai_debug_lab_capture))
                     }
                 }
             }
+        }
+        if (showSourceSelector) {
+            ModalBottomSheet(onDismissRequest = { showSourceSelector = false }) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                ) {
+                    TextButton(
+                        onClick = {
+                            showSourceSelector = false
+                            cameraUnavailable = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.ai_debug_chat_camera)) }
+                    TextButton(
+                        onClick = {
+                            showSourceSelector = false
+                            pickImageLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.ai_debug_chat_gallery)) }
+                    TextButton(
+                        onClick = { showSourceSelector = false },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.ai_debug_lab_close)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatMessageRow(message: AiChatMessage) {
+    when (message) {
+        is AiChatMessage.UserText -> Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Text(
+                text = message.text,
+                modifier = Modifier
+                    .background(
+                        MaterialTheme.colorScheme.primaryContainer,
+                        RoundedCornerShape(12.dp),
+                    )
+                    .padding(10.dp),
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+        AiChatMessage.AssistantPending -> Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.ai_debug_lab_thinking))
+        }
+        AiChatMessage.AssistantUnavailable -> Text(stringResource(R.string.ai_debug_lab_unavailable))
+        is AiChatMessage.AssistantClarification -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(R.string.ai_debug_lab_clarification))
+            Text(message.reason.name, style = MaterialTheme.typography.titleMedium)
+            Text(message.slots.joinToString { it.name }, style = MaterialTheme.typography.bodySmall)
+        }
+        is AiChatMessage.AssistantProposal -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(R.string.ai_debug_chat_draft_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            ProposalPreviewContent(message.proposal)
         }
     }
 }

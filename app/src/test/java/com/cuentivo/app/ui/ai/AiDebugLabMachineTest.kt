@@ -124,6 +124,25 @@ class AiDebugLabMachineTest {
     }
 
     @Test
+    fun `ocr success transitions to editing state so the result can be submitted`() {
+        val afterResult = AiDebugLabModel(state = AiDebugLabState.Unavailable, text = "")
+        val after = AiDebugLabMachine.onOcrResult(afterResult, "reconocido", afterResult.generation)
+        assertEquals(AiDebugLabState.TextEditing, after.state)
+        assertEquals("reconocido", after.text)
+    }
+
+    @Test
+    fun `ocr null keeps the result state unchanged`() {
+        val afterResult = AiDebugLabModel(state = AiDebugLabState.Clarification(
+            ClarificationReason.AMBIGUOUS_CUSTOMER,
+            setOf(UnresolvedSlot.CUSTOMER),
+        ), text = "")
+        val after = AiDebugLabMachine.onOcrResult(afterResult, null, afterResult.generation)
+        assertEquals(afterResult.state, after.state)
+        assertEquals("", after.text)
+    }
+
+    @Test
     fun `valid safe proposal maps to proposal preview`() {
         val editing = AiDebugLabModel(text = "venta")
         val submitted = AiDebugLabMachine.onSubmit(editing) as AiDebugLabSubmitOutcome.Submitted

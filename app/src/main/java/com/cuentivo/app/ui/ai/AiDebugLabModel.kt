@@ -150,7 +150,12 @@ object AiDebugLabMachine {
             return model // preserve existing editor text on empty/failed OCR
         }
         val separator = if (model.text.isNotBlank()) "\n" else ""
-        return model.copy(text = (model.text + separator + trimmed).trim())
+        // Valid OCR returns to TextEditing so the inserted text can be submitted even after a
+        // previous assistant result state.
+        return model.copy(
+            state = AiDebugLabState.TextEditing,
+            text = (model.text + separator + trimmed).trim(),
+        )
     }
 
     fun onCancel(model: AiDebugLabModel): AiDebugLabModel =

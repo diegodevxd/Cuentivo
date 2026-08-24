@@ -444,4 +444,8 @@
     <string name="ai_debug_lab_declared_payment">Declared payment: %1$s</string>
     <string name="ai_debug_lab_promised_date">Promise: %1$s</string>
     <string name="ai_debug_lab_capture">Pick image</string>
+    <string name="ai_debug_chat_camera">Camera</string>
+    <string name="ai_debug_chat_gallery">Gallery</string>
+    <string name="ai_debug_chat_camera_unavailable">Camera capture is not available in this version</string>
+    <string name="ai_debug_chat_draft_note">Draft - nothing is recorded</string>
 </resources>
