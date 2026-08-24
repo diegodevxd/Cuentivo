@@ -631,4 +631,80 @@ class AiDebugLabMachineTest {
         val userTexts = updated.messages.filterIsInstance<AiChatMessage.UserText>()
         assertEquals(1, userTexts.size)
     }
+
+    @Test
+    fun `state not proposal preview returns same instance`() {
+        val model = AiDebugLabModel(state = AiDebugLabState.TextEditing, text = "hola", generation = 4)
+        val result = AiDebugLabMachine.onPaymentPreviewResult(model, readyResult(), generation = 4)
+        assertSame(model, result)
+    }
+
+    @Test
+    fun `empty transcript returns same instance`() {
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.ProposalPreview(RecordPaymentProposal("María", 15_000L)),
+            text = "",
+            messages = emptyList(),
+            generation = 4,
+        )
+        val result = AiDebugLabMachine.onPaymentPreviewResult(model, readyResult(), generation = 4)
+        assertSame(model, result)
+    }
+
+    @Test
+    fun `last message not assistant proposal returns same instance`() {
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.ProposalPreview(RecordPaymentProposal("María", 15_000L)),
+            text = "",
+            messages = listOf(AiChatMessage.UserText("María pagó 150")),
+            generation = 4,
+        )
+        val result = AiDebugLabMachine.onPaymentPreviewResult(model, readyResult(), generation = 4)
+        assertSame(model, result)
+    }
+
+    @Test
+    fun `last assistant proposal not payment returns same instance`() {
+        val saleProposal = CreateSaleProposal(
+            customerName = "María",
+            lines = listOf(AiProposalSaleLine("Perfume", 1, 30000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.ProposalPreview(saleProposal),
+            text = "",
+            messages = listOf(AiChatMessage.AssistantProposal(saleProposal)),
+            generation = 4,
+        )
+        val result = AiDebugLabMachine.onPaymentPreviewResult(model, readyResult(), generation = 4)
+        assertSame(model, result)
+    }
+
+    @Test
+    fun `state and last message payment proposals must match`() {
+        val proposalA = RecordPaymentProposal(customerName = "María", declaredAmountCents = 15_000L)
+        val proposalB = RecordPaymentProposal(customerName = "Juan", declaredAmountCents = 20_000L)
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.ProposalPreview(proposalA),
+            text = "",
+            messages = listOf(AiChatMessage.AssistantProposal(proposalB)),
+            generation = 4,
+        )
+        val result = AiDebugLabMachine.onPaymentPreviewResult(model, readyResult(), generation = 4)
+        assertSame(model, result)
+    }
+
+    @Test
+    fun `ready result also updates state not just messages`() {
+        val model = paymentModel(generation = 4)
+        val ready = AiPaymentPreviewResult.Ready(
+            AiResolvedPaymentPreview("c1", "María", 40_000L, 15_000L, 25_000L),
+        )
+        val updated = AiDebugLabMachine.onPaymentPreviewResult(model, ready, generation = 4)
+        assertTrue(
+            "state must not remain ProposalPreview after resolution",
+            updated.state != AiDebugLabState.ProposalPreview(RecordPaymentProposal("María", 15_000L)),
+        )
+        assertTrue(updated.state != AiDebugLabState.Sending)
+    }
 }

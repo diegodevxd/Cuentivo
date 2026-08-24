@@ -25,6 +25,9 @@ sealed interface AiDebugLabState {
     data object Unavailable : AiDebugLabState
     data class Clarification(val reason: ClarificationReason, val slots: Set<UnresolvedSlot>) : AiDebugLabState
     data class ProposalPreview(val proposal: AiProposal) : AiDebugLabState
+
+    /** Non-executable resolved payment preview state; never triggers financial writes. */
+    data class PaymentResolution(val result: com.cuentivo.app.ai.AiPaymentPreviewResult) : AiDebugLabState
 }
 
 /** Immutable lab view state; [generation] is the single-flight/cancellation token. */
@@ -313,7 +316,11 @@ object AiDebugLabMachine {
         } else {
             model.messages
         }
-        return model.copy(messages = messages)
+        val newState: AiDebugLabState = when (assistantMessage) {
+            AiChatMessage.AssistantUnavailable -> AiDebugLabState.Unavailable
+            else -> AiDebugLabState.PaymentResolution(result)
+        }
+        return model.copy(state = newState, messages = messages, text = "")
     }
 
     fun onReset(model: AiDebugLabModel): AiDebugLabModel =
