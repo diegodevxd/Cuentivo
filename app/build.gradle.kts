@@ -83,6 +83,11 @@ android {
         compose = true
         buildConfig = true
     }
+    // MigrationTestHelper reads the exported Room schemas from androidTest assets; the test-only
+    // helper resolves them under `{canonicalName}/{version}.json` from this exact directory.
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
     // The app switches between Spanish and English at runtime. Both resource sets must be present
     // in every Play-delivered install; otherwise a language split may leave the selected locale
     // unavailable until Play downloads an additional split.
@@ -150,6 +155,7 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.room.testing)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

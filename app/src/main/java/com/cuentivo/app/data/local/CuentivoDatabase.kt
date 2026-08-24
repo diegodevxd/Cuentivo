@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OperationEntity::class, CustomerEntity::class, ProductEntity::class, SaleEntity::class, SaleItemEntity::class, PaymentEntity::class, PaymentAllocationEntity::class, AccountMovementEntity::class, BusinessEntity::class, BusinessMemberEntity::class, AuditLogEntity::class, SyncOperationEntity::class, SyncStateEntity::class], version = 5, exportSchema = true)
+@Database(entities = [OperationEntity::class, CustomerEntity::class, ProductEntity::class, SaleEntity::class, SaleItemEntity::class, PaymentEntity::class, PaymentAllocationEntity::class, AccountMovementEntity::class, BusinessEntity::class, BusinessMemberEntity::class, AuditLogEntity::class, SyncOperationEntity::class, SyncStateEntity::class, AiDailyMessageEntity::class], version = 6, exportSchema = true)
 abstract class CuentivoDatabase : RoomDatabase() {
     abstract fun operationDao(): OperationDao
     abstract fun financialDao(): FinancialDao
@@ -15,6 +15,7 @@ abstract class CuentivoDatabase : RoomDatabase() {
     abstract fun businessDao(): BusinessDao
     abstract fun syncOperationDao(): SyncOperationDao
     abstract fun syncStateDao(): SyncStateDao
+    abstract fun aiDailyMessageDao(): AiDailyMessageDao
 }
 
 /**
@@ -50,4 +51,29 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
-val CUENTIVO_MIGRATIONS = arrayOf(MIGRATION_3_4, MIGRATION_4_5)
+/**
+ * Adds the local daily AI chat table.
+ *
+ * Additive only: no existing table is touched, so no financial row can be lost by running it. The
+ * table stores only non-financial conversation copy scoped by owner and device-local day; there is
+ * no parent table, foreign key, proposal JSON, money or customer/product IDs.
+ */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `ai_daily_messages` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`ownerUserId` TEXT NOT NULL, " +
+                "`dayIso` TEXT NOT NULL, " +
+                "`kind` TEXT NOT NULL, " +
+                "`textContent` TEXT, " +
+                "`createdAtEpochMillis` INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_ai_daily_messages_ownerUserId_dayIso_id` " +
+                "ON `ai_daily_messages` (`ownerUserId`, `dayIso`, `id`)"
+        )
+    }
+}
+
+val CUENTIVO_MIGRATIONS = arrayOf(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
