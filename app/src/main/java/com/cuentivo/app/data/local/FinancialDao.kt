@@ -7,6 +7,20 @@ import androidx.room.Query
 import androidx.room.Transaction
 import com.cuentivo.app.domain.AuditAction
 import com.cuentivo.app.domain.AuditTrail
+import com.cuentivo.app.domain.OutstandingSale
+import com.cuentivo.app.domain.PaymentAllocator
+import com.cuentivo.app.domain.PaymentOperationIds
+
+sealed interface ExpectedBalancePaymentResult {
+    data class Recorded(val paymentId: String) : ExpectedBalancePaymentResult
+    data object StaleBalance : ExpectedBalancePaymentResult
+}
+
+data class StoredPaymentBundle(
+    val payment: PaymentEntity,
+    val allocations: List<PaymentAllocationEntity>,
+    val movement: AccountMovementEntity,
+)
 
 /**
  * A sale with money still owed on it. Mirrors domain.OutstandingSale, which PaymentAllocator takes;
@@ -424,6 +438,12 @@ interface FinancialDao {
     @Query("SELECT * FROM payments WHERE id = :paymentId")
     suspend fun paymentForId(paymentId: String): PaymentEntity?
 
+    @Query("SELECT * FROM payment_allocations WHERE paymentId = :paymentId ORDER BY id")
+    suspend fun allocationsForPayment(paymentId: String): List<PaymentAllocationEntity>
+
+    @Query("SELECT * FROM account_movements WHERE businessId = :businessId AND paymentId = :paymentId AND type = 'PAYMENT' LIMIT 1")
+    suspend fun paymentMovement(businessId: String, paymentId: String): AccountMovementEntity?
+
     @Query("SELECT COUNT(*) FROM account_movements WHERE paymentId = :paymentId")
     suspend fun movementCountForPayment(paymentId: String): Int
     @Query(
@@ -534,6 +554,34 @@ interface FinancialDao {
         insertMovement(movement)
         recordAudit(operation, AuditAction.PAYMENT_REGISTERED, payment.businessId, "PAYMENT", payment.id, payment.createdByUserId, payment.createdAtEpochMillis)
         return payment.id
+    }
+
+    @Transaction
+    suspend fun registerPaymentAgainstExpectedBalanceIdempotently(
+        operation: OperationEntity,
+        payment: PaymentEntity,
+        movement: AccountMovementEntity,
+        expectedBalanceCents: Long,
+    ): ExpectedBalancePaymentResult {
+        operationResultId(operation.idempotencyKey)?.let {
+            return ExpectedBalancePaymentResult.Recorded(it)
+        }
+        if (customerBalanceCents(payment.businessId, payment.customerId) != expectedBalanceCents) {
+            return ExpectedBalancePaymentResult.StaleBalance
+        }
+        val outstanding = outstandingSalesForCustomer(payment.businessId, payment.customerId)
+            .map { OutstandingSale(it.id, it.outstandingCents, it.dueDateEpochDay, it.saleDateEpochDay) }
+        val allocationResult = PaymentAllocator.allocate(payment.amountCents, outstanding)
+        val allocations = allocationResult.allocations.map { allocation ->
+            PaymentAllocationEntity(
+                id = PaymentOperationIds.allocation(operation.idempotencyKey, allocation.saleId),
+                paymentId = payment.id,
+                saleId = allocation.saleId,
+                amountCents = allocation.amountCents,
+            )
+        }
+        registerPaymentIdempotently(operation, payment, allocations, movement)
+        return ExpectedBalancePaymentResult.Recorded(payment.id)
     }
 
     /** Stores an immutable, documented balance correction without duplicating retries. */
