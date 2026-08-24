@@ -3,4 +3,7 @@
     <cache-path
         name="product-camera"
         path="product-camera/" />
+    <cache-path
+        name="ai-camera"
+        path="ai-camera/" />
 </paths>

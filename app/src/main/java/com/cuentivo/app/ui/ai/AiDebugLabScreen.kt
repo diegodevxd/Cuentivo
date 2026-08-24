@@ -52,10 +52,10 @@ import com.cuentivo.app.ai.AiProposal
 import com.cuentivo.app.ai.BusinessQueryProposal
 import com.cuentivo.app.ai.CreateSaleProposal
 import com.cuentivo.app.ai.RecordPaymentProposal
+import com.cuentivo.app.ai.capture.AiCameraCaptureStore
 import com.cuentivo.app.ai.capture.AiCapturePolicy
 import com.cuentivo.app.ai.capture.AiCaptureStore
 import com.cuentivo.app.ai.capture.AiOcrEngine
-import com.cuentivo.app.ui.product.CameraCaptureStore
 import java.io.File
 import java.math.BigDecimal
 import java.util.UUID
@@ -115,7 +115,7 @@ fun AiDebugLabScreen(
     val captureStore = remember(context) {
         com.cuentivo.app.ai.capture.AiCaptureStore(java.io.File(context.cacheDir, "ai-capture"))
     }
-    val cameraStore = remember(context) { CameraCaptureStore(context) }
+    val cameraStore = remember(context) { AiCameraCaptureStore(context) }
     var pendingCaptureUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
     val ocrEngine = remember(context) { debugAiOcrEngine(context) }
 

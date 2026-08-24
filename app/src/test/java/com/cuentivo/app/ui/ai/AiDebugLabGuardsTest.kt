@@ -164,6 +164,41 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `screen uses isolated AI camera store not product camera`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("must use AiCameraCaptureStore", source.contains("AiCameraCaptureStore"))
+        assertFalse(
+            "must not import product CameraCaptureStore",
+            source.contains("com.cuentivo.app.ui.product.CameraCaptureStore"),
+        )
+        assertFalse("must not reference product-camera", source.contains("product-camera"))
+    }
+
+    @Test
+    fun `file provider exposes isolated ai-camera path alongside product-camera`() {
+        val xml = File("src/main/res/xml/product_camera_paths.xml").readText()
+        assertTrue("must expose ai-camera path", xml.contains("ai-camera"))
+        assertTrue("must keep product-camera path", xml.contains("product-camera"))
+    }
+
+    @Test
+    fun `fileFor derives only from captureName not raw lastPathSegment`() {
+        val source = File("src/main/java/com/cuentivo/app/ai/capture/AiCameraCaptureStore.kt").readText()
+        assertTrue(
+            "fileFor must derive from captureName",
+            source.contains("captureName(uri)?.let(::safeFile)"),
+        )
+        val fileForBlock = source.substring(
+            source.indexOf("internal fun fileFor"),
+            source.indexOf("internal fun createCaptureFileForTesting"),
+        )
+        assertFalse(
+            "fileFor must not read uri.lastPathSegment directly",
+            fileForBlock.contains("lastPathSegment"),
+        )
+    }
+
+    @Test
     fun `release transport provides the same API without Firebase`() {
         val release = File("src/release/java/com/cuentivo/app/ui/ai/AiDebugTransportRelease.kt")
         assertTrue("release transport must exist", release.exists())
