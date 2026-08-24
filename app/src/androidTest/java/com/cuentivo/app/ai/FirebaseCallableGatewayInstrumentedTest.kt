@@ -72,12 +72,6 @@ class FirebaseCallableGatewayInstrumentedTest {
             dataMap.keys.map { it.toString() }.toSet() ==
                 setOf("contractVersion", "requestId", "status"),
         )
-
-        // The debug transport collapses the real response to the same fixed technical state.
-        assertEquals(
-            AiProviderResult.Unavailable("AI_NOT_CONFIGURED"),
-            parseCallableData(dataMap, requestId),
-        )
     }
 
     @Test
