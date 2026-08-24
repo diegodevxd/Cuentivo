@@ -10,6 +10,7 @@ import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.RequiresClarificationProposal
 import com.cuentivo.app.ai.UnresolvedSlot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -187,14 +188,161 @@ class AiDebugLabMachineTest {
     }
 
     @Test
-    fun `text editing is only possible in the editing state`() {
+    fun `text editing is ignored while sending`() {
         val editing = AiDebugLabModel(text = "a")
         val submitted = AiDebugLabMachine.onSubmit(editing) as AiDebugLabSubmitOutcome.Submitted
         val changed = AiDebugLabMachine.onTextChanged(submitted.model, "otro")
-        assertEquals("a", changed.text) // ignored while Sending
+        assertEquals("a", changed.text) // ignored while Sending (single-flight preserved)
         assertEquals(AiDebugLabState.Sending, changed.state)
 
         val editable = AiDebugLabMachine.onTextChanged(editing, "otro")
         assertEquals("otro", editable.text)
+    }
+
+    // ---- Task 1: temporary operational chat transcript ----
+
+    @Test
+    fun `after a result the user can send a second message`() {
+        val first = AiDebugLabMachine.onSubmit(AiDebugLabModel(text = "hola"))
+        assertTrue(first is AiDebugLabSubmitOutcome.Submitted)
+        val firstSubmitted = first as AiDebugLabSubmitOutcome.Submitted
+        val afterResult = AiDebugLabMachine.onResult(
+            firstSubmitted.model,
+            CallableAiProposalResult.Unavailable,
+            firstSubmitted.generation,
+        )
+        assertEquals("", afterResult.text) // text cleared to prevent accidental resend
+
+        val edited = AiDebugLabMachine.onTextChanged(afterResult, "siguiente")
+        val second = AiDebugLabMachine.onSubmit(edited)
+        assertTrue(second is AiDebugLabSubmitOutcome.Submitted)
+        val secondSubmitted = second as AiDebugLabSubmitOutcome.Submitted
+
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("hola"),
+                AiChatMessage.AssistantUnavailable,
+                AiChatMessage.UserText("siguiente"),
+                AiChatMessage.AssistantPending,
+            ),
+            secondSubmitted.model.messages,
+        )
+    }
+
+    @Test
+    fun `submitted text becomes one user message and a pending assistant message`() {
+        val outcome = AiDebugLabMachine.onSubmit(AiDebugLabModel(text = "María abonó 150"))
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = (outcome as AiDebugLabSubmitOutcome.Submitted).model
+
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María abonó 150"),
+                AiChatMessage.AssistantPending,
+            ),
+            submitted.messages,
+        )
+    }
+
+    @Test
+    fun `unavailable result replaces pending message without creating an executable action`() {
+        val outcome = AiDebugLabMachine.onSubmit(AiDebugLabModel(text = "hola"))
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = outcome as AiDebugLabSubmitOutcome.Submitted
+        val result = AiDebugLabMachine.onResult(
+            submitted.model,
+            CallableAiProposalResult.Unavailable,
+            submitted.generation,
+        )
+
+        assertEquals(
+            listOf(AiChatMessage.UserText("hola"), AiChatMessage.AssistantUnavailable),
+            result.messages,
+        )
+    }
+
+    @Test
+    fun `clarification result replaces pending message with clarification`() {
+        val outcome = AiDebugLabMachine.onSubmit(AiDebugLabModel(text = "venta"))
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = outcome as AiDebugLabSubmitOutcome.Submitted
+        val proposal = RequiresClarificationProposal(
+            ClarificationReason.AMBIGUOUS_CUSTOMER,
+            setOf(UnresolvedSlot.CUSTOMER),
+        )
+        val result = AiDebugLabMachine.onResult(
+            submitted.model,
+            CallableAiProposalResult.Proposal(proposal),
+            submitted.generation,
+        )
+
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("venta"),
+                AiChatMessage.AssistantClarification(
+                    ClarificationReason.AMBIGUOUS_CUSTOMER,
+                    setOf(UnresolvedSlot.CUSTOMER),
+                ),
+            ),
+            result.messages,
+        )
+    }
+
+    @Test
+    fun `proposal result replaces pending message with proposal`() {
+        val outcome = AiDebugLabMachine.onSubmit(AiDebugLabModel(text = "venta"))
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = outcome as AiDebugLabSubmitOutcome.Submitted
+        val result = AiDebugLabMachine.onResult(
+            submitted.model,
+            CallableAiProposalResult.Proposal(validPayment),
+            submitted.generation,
+        )
+
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("venta"),
+                AiChatMessage.AssistantProposal(validPayment),
+            ),
+            result.messages,
+        )
+    }
+
+    @Test
+    fun `stale result does not touch the transcript`() {
+        val outcome = AiDebugLabMachine.onSubmit(AiDebugLabModel(text = "hola"))
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = outcome as AiDebugLabSubmitOutcome.Submitted
+        val cancelled = AiDebugLabMachine.onCancel(submitted.model)
+        val after = AiDebugLabMachine.onResult(
+            cancelled,
+            CallableAiProposalResult.Unavailable,
+            submitted.generation,
+        )
+
+        assertEquals(cancelled.messages, after.messages)
+        assertEquals(listOf(AiChatMessage.UserText("hola"), AiChatMessage.AssistantPending), after.messages)
+    }
+
+    @Test
+    fun `reset clears draft text and transcript`() {
+        val outcome = AiDebugLabMachine.onSubmit(AiDebugLabModel(text = "hola"))
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = outcome as AiDebugLabSubmitOutcome.Submitted
+        val reset = AiDebugLabMachine.onReset(submitted.model)
+
+        assertEquals("", reset.text)
+        assertEquals(emptyList<AiChatMessage>(), reset.messages)
+    }
+
+    @Test
+    fun `cancel keeps the transcript and only bumps generation`() {
+        val outcome = AiDebugLabMachine.onSubmit(AiDebugLabModel(text = "hola"))
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = outcome as AiDebugLabSubmitOutcome.Submitted
+        val cancelled = AiDebugLabMachine.onCancel(submitted.model)
+
+        assertEquals(listOf(AiChatMessage.UserText("hola"), AiChatMessage.AssistantPending), cancelled.messages)
+        assertTrue(cancelled.generation > submitted.generation)
     }
 }

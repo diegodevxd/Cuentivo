@@ -24,11 +24,27 @@ sealed interface AiDebugLabState {
 data class AiDebugLabModel(
     val state: AiDebugLabState = AiDebugLabState.TextEditing,
     val text: String = "",
+    val messages: List<AiChatMessage> = emptyList(),
     internal val generation: Long = 0L,
 ) {
     /** Blank text or an in-flight request must not send; the gateway is never called then. */
     val canSubmit: Boolean
         get() = text.isNotBlank() && state == AiDebugLabState.TextEditing
+}
+
+/**
+ * Immutable, temporary operational chat transcript message. Purely presentational: no
+ * confirmation, save, execute, callback or domain dependency. Nothing here persists.
+ */
+sealed interface AiChatMessage {
+    data class UserText(val text: String) : AiChatMessage
+    data object AssistantPending : AiChatMessage
+    data object AssistantUnavailable : AiChatMessage
+    data class AssistantClarification(
+        val reason: ClarificationReason,
+        val slots: Set<UnresolvedSlot>,
+    ) : AiChatMessage
+    data class AssistantProposal(val proposal: AiProposal) : AiChatMessage
 }
 
 /** Result of a submit decision: [Ignored*] means the gateway is never invoked. */
@@ -47,7 +63,13 @@ sealed interface AiDebugLabSubmitOutcome {
 object AiDebugLabMachine {
 
     fun onTextChanged(model: AiDebugLabModel, newText: String): AiDebugLabModel =
-        if (model.state == AiDebugLabState.TextEditing) model.copy(text = newText) else model
+        when (model.state) {
+            // Single-flight: editing is ignored while a request is in flight.
+            AiDebugLabState.Sending -> model
+            AiDebugLabState.TextEditing -> model.copy(text = newText)
+            // From a result state the next turn starts: accept text and return to editing.
+            else -> model.copy(state = AiDebugLabState.TextEditing, text = newText)
+        }
 
     fun onSubmit(model: AiDebugLabModel): AiDebugLabSubmitOutcome {
         if (model.text.isBlank()) {
@@ -56,7 +78,11 @@ object AiDebugLabMachine {
         if (model.state != AiDebugLabState.TextEditing) {
             return AiDebugLabSubmitOutcome.IgnoredBusy
         }
-        val next = model.copy(state = AiDebugLabState.Sending, generation = model.generation + 1)
+        val next = model.copy(
+            state = AiDebugLabState.Sending,
+            generation = model.generation + 1,
+            messages = model.messages + AiChatMessage.UserText(model.text.trim()) + AiChatMessage.AssistantPending,
+        )
         return AiDebugLabSubmitOutcome.Submitted(next, next.generation)
     }
 
@@ -68,29 +94,42 @@ object AiDebugLabMachine {
         if (generation != model.generation || model.state != AiDebugLabState.Sending) {
             return model // cancelled or stale result: never applied
         }
-        return when (result) {
-            CallableAiProposalResult.Unavailable ->
-                model.copy(state = AiDebugLabState.Unavailable)
+        val assistantMessage = when (result) {
+            CallableAiProposalResult.Unavailable -> AiChatMessage.AssistantUnavailable
 
             is CallableAiProposalResult.Proposal ->
                 when (val validation = SafeAiProposalValidator.validate(result.proposal)) {
                     is AiProposalValidationResult.Accepted ->
                         when (val proposal = validation.proposal) {
                             is RequiresClarificationProposal ->
-                                model.copy(
-                                    state = AiDebugLabState.Clarification(
-                                        proposal.reason,
-                                        proposal.unresolvedSlots,
-                                    ),
+                                AiChatMessage.AssistantClarification(
+                                    proposal.reason,
+                                    proposal.unresolvedSlots,
                                 )
 
-                            else -> model.copy(state = AiDebugLabState.ProposalPreview(proposal))
+                            else -> AiChatMessage.AssistantProposal(proposal)
                         }
 
-                    is AiProposalValidationResult.Rejected ->
-                        model.copy(state = AiDebugLabState.Unavailable)
+                    is AiProposalValidationResult.Rejected -> AiChatMessage.AssistantUnavailable
                 }
         }
+        val state = when (assistantMessage) {
+            AiChatMessage.AssistantUnavailable -> AiDebugLabState.Unavailable
+            is AiChatMessage.AssistantClarification ->
+                AiDebugLabState.Clarification(assistantMessage.reason, assistantMessage.slots)
+            is AiChatMessage.AssistantProposal -> AiDebugLabState.ProposalPreview(assistantMessage.proposal)
+            else -> AiDebugLabState.TextEditing
+        }
+        // Replace only the final pending message with the assistant outcome, and clear the draft
+        // text so the same message cannot be accidentally re-sent.
+        val messages = if (model.messages.isNotEmpty() &&
+            model.messages.last() == AiChatMessage.AssistantPending
+        ) {
+            model.messages.dropLast(1) + assistantMessage
+        } else {
+            model.messages + assistantMessage
+        }
+        return model.copy(state = state, messages = messages, text = "")
     }
 
     /**
@@ -121,6 +160,7 @@ object AiDebugLabMachine {
         model.copy(
             state = AiDebugLabState.TextEditing,
             text = "",
+            messages = emptyList(),
             generation = model.generation + 1,
         )
 }
