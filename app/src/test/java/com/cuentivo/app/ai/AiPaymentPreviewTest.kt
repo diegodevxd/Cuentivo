@@ -42,7 +42,7 @@ class AiPaymentPreviewTest {
     fun `multiple exact rows require selection`() {
         val rows = listOf(customer("1", "María"), customer("2", "Maria"))
         assertEquals(
-            SelectionRequired(rows),
+            AiPaymentCustomerMatch.SelectionRequired(rows),
             AiPaymentCandidateMatcher.match("María", rows),
         )
     }
@@ -51,7 +51,7 @@ class AiPaymentPreviewTest {
     fun `single partial row still requires selection`() {
         val rows = listOf(customer("1", "María López"))
         assertEquals(
-            SelectionRequired(rows),
+            AiPaymentCustomerMatch.SelectionRequired(rows),
             AiPaymentCandidateMatcher.match("María", rows),
         )
     }
@@ -70,7 +70,7 @@ class AiPaymentPreviewTest {
         // inverted punctuation does not match the bare normalized name.
         val rows = listOf(customer("1", "Como Estas"))
         assertEquals(
-            SelectionRequired(rows),
+            AiPaymentCustomerMatch.SelectionRequired(rows),
             AiPaymentCandidateMatcher.match("¿Cómo estás?", rows),
         )
     }
@@ -88,8 +88,8 @@ class AiPaymentPreviewTest {
     fun `match preserves candidate order and copies the list defensively`() {
         val rows = listOf(customer("1", "María"), customer("2", "Maria"))
         val result = AiPaymentCandidateMatcher.match("María", rows)
-        assertEquals(SelectionRequired(rows), result)
-        if (result is SelectionRequired) {
+        assertEquals(AiPaymentCustomerMatch.SelectionRequired(rows), result)
+        if (result is AiPaymentCustomerMatch.SelectionRequired) {
             assertEquals(listOf("1", "2"), result.candidates.map { it.id })
         }
     }
@@ -98,8 +98,8 @@ class AiPaymentPreviewTest {
     fun `matcher selection result is an unmodifiable copy`() {
         val source = mutableListOf(customer("1", "María"), customer("2", "Maria"))
         val result = AiPaymentCandidateMatcher.match("María", source)
-        assertTrue("expected SelectionRequired", result is SelectionRequired)
-        val selection = result as SelectionRequired
+        assertTrue("expected SelectionRequired", result is AiPaymentCustomerMatch.SelectionRequired)
+        val selection = result as AiPaymentCustomerMatch.SelectionRequired
 
         mutateExpectingUnsupported(selection.candidates as MutableList<CustomerEntity>)
         source.add(customer("3", "Extra"))
@@ -109,7 +109,7 @@ class AiPaymentPreviewTest {
     @Test
     fun `SelectionRequired constructed directly is an unmodifiable copy`() {
         val source = mutableListOf(customer("1", "María"), customer("2", "Maria"))
-        val result = SelectionRequired(source)
+        val result = AiPaymentCustomerMatch.SelectionRequired(source)
 
         mutateExpectingUnsupported(result.candidates as MutableList<CustomerEntity>)
         source.add(customer("3", "Extra"))
@@ -119,7 +119,7 @@ class AiPaymentPreviewTest {
     @Test
     fun `CustomerSelectionRequired constructed directly is an unmodifiable copy`() {
         val source = mutableListOf(candidate("1", "María"), candidate("2", "Maria"))
-        val result = CustomerSelectionRequired(source)
+        val result = AiPaymentPreviewResult.CustomerSelectionRequired(source)
 
         mutateExpectingUnsupported(result.candidates as MutableList<AiPaymentCustomerCandidate>)
         source.add(candidate("3", "Extra"))
