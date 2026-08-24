@@ -311,7 +311,7 @@ fun AiDebugLabScreen(
                                         withContext(Dispatchers.IO) {
                                             runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_OUT_OF_SCOPE) }
                                         }
-                                        model = AiDebugLabMachine.onOutOfScope(model)
+                                        model = AiDebugLabMachine.onOutOfScopeResult(model, token)
                                     }
                                     is AiDebugLabTurnResult.Remote -> {
                                         val result = turnResult.result

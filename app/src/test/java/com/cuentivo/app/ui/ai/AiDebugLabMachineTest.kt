@@ -435,4 +435,68 @@ class AiDebugLabMachineTest {
         val afterBlank = AiDebugLabMachine.onOutOfScope(blankModel)
         assertSame(blankModel, afterBlank)
     }
+
+    @Test
+    fun `out of scope result with current token replaces trailing pending with AssistantOutOfScope and returns to editing with empty text`() {
+        val initial = AiDebugLabModel(
+            text = "hola",
+            messages = listOf(AiChatMessage.AssistantGreeting),
+        )
+        val outcome = AiDebugLabMachine.onSubmit(initial)
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = outcome as AiDebugLabSubmitOutcome.Submitted
+
+        val result = AiDebugLabMachine.onOutOfScopeResult(submitted.model, submitted.generation)
+
+        assertEquals(
+            listOf(
+                AiChatMessage.AssistantGreeting,
+                AiChatMessage.UserText("hola"),
+                AiChatMessage.AssistantOutOfScope,
+            ),
+            result.messages,
+        )
+        assertEquals("", result.text)
+        assertEquals(AiDebugLabState.TextEditing, result.state)
+        assertFalse(result.messages.any { it is AiChatMessage.AssistantPending })
+    }
+
+    @Test
+    fun `out of scope result with stale token is ignored`() {
+        val initial = AiDebugLabModel(text = "hola")
+        val outcome = AiDebugLabMachine.onSubmit(initial)
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = outcome as AiDebugLabSubmitOutcome.Submitted
+
+        val result = AiDebugLabMachine.onOutOfScopeResult(submitted.model, submitted.generation - 1)
+        assertSame(submitted.model, result)
+    }
+
+    @Test
+    fun `out of scope result when not sending is ignored`() {
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.TextEditing,
+            text = "hola",
+            messages = listOf(AiChatMessage.AssistantGreeting),
+        )
+        val result = AiDebugLabMachine.onOutOfScopeResult(model, model.generation)
+        assertSame(model, result)
+    }
+
+    @Test
+    fun `out of scope result preserves exactly one UserText without duplicating`() {
+        val initial = AiDebugLabModel(
+            text = "  cuentame un chiste  ",
+            messages = listOf(AiChatMessage.AssistantGreeting),
+        )
+        val outcome = AiDebugLabMachine.onSubmit(initial)
+        assertTrue(outcome is AiDebugLabSubmitOutcome.Submitted)
+        val submitted = outcome as AiDebugLabSubmitOutcome.Submitted
+
+        val result = AiDebugLabMachine.onOutOfScopeResult(submitted.model, submitted.generation)
+        val userMessages = result.messages.filterIsInstance<AiChatMessage.UserText>()
+
+        assertEquals(1, userMessages.size)
+        assertEquals("cuentame un chiste", userMessages.first().text)
+    }
 }

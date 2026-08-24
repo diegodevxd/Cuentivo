@@ -203,6 +203,30 @@ object AiDebugLabMachine {
         )
     }
 
+    /**
+     * Completes an in-flight out-of-scope turn that was submitted. Replaces the trailing
+     * [AiChatMessage.AssistantPending] with [AiChatMessage.AssistantOutOfScope], clears draft text
+     * and returns to [AiDebugLabState.TextEditing]. If the generation token is stale or the state
+     * is not [AiDebugLabState.Sending], returns [model] unchanged.
+     */
+    fun onOutOfScopeResult(model: AiDebugLabModel, generation: Long): AiDebugLabModel {
+        if (model.state != AiDebugLabState.Sending || generation != model.generation) {
+            return model
+        }
+        val messages = if (model.messages.isNotEmpty() &&
+            model.messages.last() == AiChatMessage.AssistantPending
+        ) {
+            model.messages.dropLast(1) + AiChatMessage.AssistantOutOfScope
+        } else {
+            model.messages + AiChatMessage.AssistantOutOfScope
+        }
+        return model.copy(
+            state = AiDebugLabState.TextEditing,
+            messages = messages,
+            text = "",
+        )
+    }
+
     fun onCancel(model: AiDebugLabModel): AiDebugLabModel =
         model.copy(state = AiDebugLabState.TextEditing, generation = model.generation + 1)
 
