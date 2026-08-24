@@ -18,6 +18,7 @@ import com.cuentivo.app.data.local.AiDailyStoredMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -524,41 +525,45 @@ class AiDebugLabMachineTest {
     )
 
     @Test
-    fun `resolved payment replaces raw proposal only for current generation`() {
+    fun `ready produces exactly PaymentResolution state and AssistantPaymentPreview message`() {
         val model = paymentModel(generation = 4)
-        val ready = AiPaymentPreviewResult.Ready(
-            AiResolvedPaymentPreview("c1", "María", 40_000L, 15_000L, 25_000L),
-        )
+        val ready = readyResult()
         val updated = AiDebugLabMachine.onPaymentPreviewResult(model, ready, generation = 4)
-        assertTrue(
-            "last message must be AssistantPaymentPreview",
-            updated.messages.last() is AiChatMessage.AssistantPaymentPreview,
+        assertEquals(AiDebugLabState.PaymentResolution(ready), updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantPaymentPreview(ready.preview),
+            ),
+            updated.messages,
         )
+        assertEquals("", updated.text)
     }
 
     @Test
-    fun `stale payment resolution is ignored`() {
-        val model = paymentModel(generation = 5)
-        val ready = AiPaymentPreviewResult.Ready(
-            AiResolvedPaymentPreview("c1", "María", 40_000L, 15_000L, 25_000L),
-        )
-        val result = AiDebugLabMachine.onPaymentPreviewResult(model, ready, generation = 4)
-        assertSame(model, result)
-    }
-
-    @Test
-    fun `customer not found replaces raw proposal`() {
+    fun `customer not found produces exactly PaymentResolution CustomerNotFound state and message`() {
         val model = paymentModel(generation = 4)
         val updated = AiDebugLabMachine.onPaymentPreviewResult(
-            model, AiPaymentPreviewResult.CustomerNotFound, generation = 4,
+            model,
+            AiPaymentPreviewResult.CustomerNotFound,
+            generation = 4,
         )
-        assertTrue(
-            updated.messages.last() is AiChatMessage.AssistantPaymentCustomerNotFound,
+        assertEquals(
+            AiDebugLabState.PaymentResolution(AiPaymentPreviewResult.CustomerNotFound),
+            updated.state,
         )
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantPaymentCustomerNotFound,
+            ),
+            updated.messages,
+        )
+        assertEquals("", updated.text)
     }
 
     @Test
-    fun `selection required maps candidates immutably`() {
+    fun `customer selection required produces exactly PaymentResolution state and AssistantPaymentCustomerSelection message`() {
         val model = paymentModel(generation = 4)
         val candidates = listOf(
             AiPaymentCustomerCandidate("c1", "María López"),
@@ -566,35 +571,96 @@ class AiDebugLabMachineTest {
         )
         val result = AiPaymentPreviewResult.CustomerSelectionRequired(candidates)
         val updated = AiDebugLabMachine.onPaymentPreviewResult(model, result, generation = 4)
+        assertEquals(AiDebugLabState.PaymentResolution(result), updated.state)
         val last = updated.messages.last()
         assertTrue(last is AiChatMessage.AssistantPaymentCustomerSelection)
-        assertEquals(2, (last as AiChatMessage.AssistantPaymentCustomerSelection).candidates.size)
+        assertEquals(candidates, (last as AiChatMessage.AssistantPaymentCustomerSelection).candidates)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantPaymentCustomerSelection(candidates),
+            ),
+            updated.messages,
+        )
+        assertEquals("", updated.text)
     }
 
     @Test
-    fun `blocked no debt maps correctly`() {
+    fun `blocked no outstanding debt produces exactly PaymentResolution state and AssistantPaymentBlocked message`() {
         val model = paymentModel(generation = 4)
         val blocked = AiPaymentPreviewResult.Blocked(AiPaymentBlockReason.NO_OUTSTANDING_DEBT, null)
         val updated = AiDebugLabMachine.onPaymentPreviewResult(model, blocked, generation = 4)
-        assertTrue(updated.messages.last() is AiChatMessage.AssistantPaymentBlocked)
+        assertEquals(AiDebugLabState.PaymentResolution(blocked), updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantPaymentBlocked(AiPaymentBlockReason.NO_OUTSTANDING_DEBT, null),
+            ),
+            updated.messages,
+        )
+        assertEquals("", updated.text)
     }
 
     @Test
-    fun `blocked overpayment maps with preview for display`() {
+    fun `blocked amount exceeds debt produces exactly PaymentResolution state and AssistantPaymentBlocked message`() {
         val model = paymentModel(generation = 4)
         val preview = AiResolvedPaymentPreview("c1", "María", 10_000L, 15_000L, -5_000L)
         val blocked = AiPaymentPreviewResult.Blocked(AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT, preview)
         val updated = AiDebugLabMachine.onPaymentPreviewResult(model, blocked, generation = 4)
-        val last = updated.messages.last()
-        assertTrue(last is AiChatMessage.AssistantPaymentBlocked)
-        assertEquals(AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT, (last as AiChatMessage.AssistantPaymentBlocked).reason)
+        assertEquals(AiDebugLabState.PaymentResolution(blocked), updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantPaymentBlocked(AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT, preview),
+            ),
+            updated.messages,
+        )
+        assertEquals("", updated.text)
     }
 
     @Test
-    fun `unavailable maps to assistant unavailable`() {
+    fun `unavailable produces exactly Unavailable state and AssistantUnavailable message`() {
         val model = paymentModel(generation = 4)
-        val updated = AiDebugLabMachine.onPaymentPreviewResult(model, AiPaymentPreviewResult.Unavailable, generation = 4)
-        assertTrue(updated.messages.last() is AiChatMessage.AssistantUnavailable)
+        val updated = AiDebugLabMachine.onPaymentPreviewResult(
+            model,
+            AiPaymentPreviewResult.Unavailable,
+            generation = 4,
+        )
+        assertEquals(AiDebugLabState.Unavailable, updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantUnavailable,
+            ),
+            updated.messages,
+        )
+        assertEquals("", updated.text)
+    }
+
+    @Test
+    fun `assistant payment customer selection runtime immutability defends against list mutation and cast`() {
+        val mutableSource = mutableListOf(
+            AiPaymentCustomerCandidate("c1", "María López"),
+            AiPaymentCustomerCandidate("c2", "María García"),
+        )
+        val selection = AiChatMessage.AssistantPaymentCustomerSelection(mutableSource)
+        mutableSource.add(AiPaymentCustomerCandidate("c3", "María Hernández"))
+        assertEquals(2, selection.candidates.size)
+
+        assertThrows(UnsupportedOperationException::class.java) {
+            @Suppress("UNCHECKED_CAST")
+            (selection.candidates as MutableList<AiPaymentCustomerCandidate>).add(
+                AiPaymentCustomerCandidate("c4", "Attack"),
+            )
+        }
+    }
+
+    @Test
+    fun `stale payment resolution is ignored`() {
+        val model = paymentModel(generation = 5)
+        val ready = readyResult()
+        val result = AiDebugLabMachine.onPaymentPreviewResult(model, ready, generation = 4)
+        assertSame(model, result)
     }
 
     @Test
@@ -624,9 +690,7 @@ class AiDebugLabMachineTest {
     @Test
     fun `no duplicate user text after payment resolution`() {
         val model = paymentModel(generation = 4)
-        val ready = AiPaymentPreviewResult.Ready(
-            AiResolvedPaymentPreview("c1", "María", 40_000L, 15_000L, 25_000L),
-        )
+        val ready = readyResult()
         val updated = AiDebugLabMachine.onPaymentPreviewResult(model, ready, generation = 4)
         val userTexts = updated.messages.filterIsInstance<AiChatMessage.UserText>()
         assertEquals(1, userTexts.size)
@@ -692,19 +756,5 @@ class AiDebugLabMachineTest {
         )
         val result = AiDebugLabMachine.onPaymentPreviewResult(model, readyResult(), generation = 4)
         assertSame(model, result)
-    }
-
-    @Test
-    fun `ready result also updates state not just messages`() {
-        val model = paymentModel(generation = 4)
-        val ready = AiPaymentPreviewResult.Ready(
-            AiResolvedPaymentPreview("c1", "María", 40_000L, 15_000L, 25_000L),
-        )
-        val updated = AiDebugLabMachine.onPaymentPreviewResult(model, ready, generation = 4)
-        assertTrue(
-            "state must not remain ProposalPreview after resolution",
-            updated.state != AiDebugLabState.ProposalPreview(RecordPaymentProposal("María", 15_000L)),
-        )
-        assertTrue(updated.state != AiDebugLabState.Sending)
     }
 }

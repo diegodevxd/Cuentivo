@@ -46,7 +46,7 @@ data class AiDebugLabModel(
  * Immutable, temporary operational chat transcript message. Purely presentational: no
  * confirmation, save, execute, callback or domain dependency. Nothing here persists.
  */
-sealed interface AiChatMessage {
+interface AiChatMessage {
     data class UserText(val text: String) : AiChatMessage
     data object AssistantGreeting : AiChatMessage
     data object AssistantOutOfScope : AiChatMessage
