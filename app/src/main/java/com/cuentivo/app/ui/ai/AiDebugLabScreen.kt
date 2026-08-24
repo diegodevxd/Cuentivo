@@ -127,6 +127,7 @@ fun AiDebugLabScreen(
     val ocrEngine = remember(context) { debugAiOcrEngine(context) }
 
     LaunchedEffect(repository) {
+        isHydrated = false
         val loaded = withContext(Dispatchers.IO) {
             runCatching { repository.openToday() }.getOrNull()
         }

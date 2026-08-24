@@ -187,6 +187,28 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `ai debug lab screen is keyed on daily chat repository to prevent state leaking between owners`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
+        assertTrue(
+            "screen must be wrapped in key(aiDailyChatRepository)",
+            source.contains("key(aiDailyChatRepository)") && source.contains("AiDebugLabScreen("),
+        )
+    }
+
+    @Test
+    fun `screen resets hydration to false before IO loading on repository change`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val block = source.substring(
+            source.indexOf("LaunchedEffect(repository)"),
+            source.indexOf("repository.openToday()"),
+        )
+        assertTrue(
+            "must set isHydrated = false before I/O in LaunchedEffect(repository)",
+            block.contains("isHydrated = false"),
+        )
+    }
+
+    @Test
     fun `camera capture uses existing store and take picture contract without permissions or network`() {
         val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
         assertTrue("must use the existing CameraCaptureStore", source.contains("CameraCaptureStore"))

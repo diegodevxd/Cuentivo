@@ -44,6 +44,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -452,11 +453,13 @@ fun CuentivoApp(
             )
         }
         if (debugAiLabTransport != null && aiDailyChatRepository != null && showAiDebugLab) {
-            AiDebugLabScreen(
-                transport = debugAiLabTransport,
-                repository = aiDailyChatRepository,
-                onClose = { showAiDebugLab = false },
-            )
+            key(aiDailyChatRepository) {
+                AiDebugLabScreen(
+                    transport = debugAiLabTransport,
+                    repository = aiDailyChatRepository,
+                    onClose = { showAiDebugLab = false },
+                )
+            }
         }
         }
     }
