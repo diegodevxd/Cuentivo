@@ -134,6 +134,13 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `app passes AI header callback only while debug transport exists`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
+        assertTrue(source.contains("onOpenAi = debugAiLabTransport?.let"))
+        assertFalse("floating entry must be removed", source.contains("AiDebugLabEntryButton"))
+    }
+
+    @Test
     fun `release transport provides the same API without Firebase`() {
         val release = File("src/release/java/com/cuentivo/app/ui/ai/AiDebugTransportRelease.kt")
         assertTrue("release transport must exist", release.exists())

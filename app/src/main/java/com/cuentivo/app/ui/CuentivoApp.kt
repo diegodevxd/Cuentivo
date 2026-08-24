@@ -65,7 +65,6 @@ import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
-import com.cuentivo.app.ui.ai.AiDebugLabEntryButton
 import com.cuentivo.app.ui.ai.AiDebugLabScreen
 import com.cuentivo.app.ui.ai.debugAiTransport
 import kotlinx.coroutines.Dispatchers
@@ -339,6 +338,7 @@ fun CuentivoApp(
         onOpenAccount = { showAccount = true },
         onOpenLanguage = { showLanguage = true },
         onOpenAlerts = { showAlerts = true },
+        onOpenAi = debugAiLabTransport?.let { { showAiDebugLab = true } },
         snackbarHost = { SnackbarHost(snackbar) },
         showBrandHeader = statementCustomer == null,
     ) { padding ->
@@ -445,20 +445,11 @@ fun CuentivoApp(
                 onCreatePayment = onCreatePayment,
             )
         }
-        if (debugAiLabTransport != null) {
-            if (showAiDebugLab) {
-                AiDebugLabScreen(
-                    transport = debugAiLabTransport,
-                    onClose = { showAiDebugLab = false },
-                )
-            } else {
-                AiDebugLabEntryButton(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp),
-                    onOpen = { showAiDebugLab = true },
-                )
-            }
+        if (debugAiLabTransport != null && showAiDebugLab) {
+            AiDebugLabScreen(
+                transport = debugAiLabTransport,
+                onClose = { showAiDebugLab = false },
+            )
         }
         }
     }

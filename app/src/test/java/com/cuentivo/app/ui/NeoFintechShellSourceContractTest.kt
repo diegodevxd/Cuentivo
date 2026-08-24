@@ -16,4 +16,11 @@ class NeoFintechShellSourceContractTest {
             ).containsMatchIn(source),
         )
     }
+
+    @Test
+    fun `shell renders optional AI action before language action`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/NeoFintechShell.kt").readText()
+        assertTrue(source.contains("onOpenAi: (() -> Unit)? = null"))
+        assertTrue(source.indexOf("onOpenAi?.let") < source.indexOf("onClick = onOpenLanguage"))
+    }
 }

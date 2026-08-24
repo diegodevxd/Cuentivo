@@ -107,6 +107,8 @@ fun NeoFintechShell(
     onOpenAccount: () -> Unit,
     onOpenLanguage: () -> Unit,
     onOpenAlerts: () -> Unit,
+    /** Debug-only AI lab entry; null hides it entirely (release builds). */
+    onOpenAi: (() -> Unit)? = null,
     snackbarHost: @Composable () -> Unit = {},
     /**
      * A dedicated task that owns the whole viewport — customer detail, for instance — brings its
@@ -166,6 +168,20 @@ fun NeoFintechShell(
                     )
                 }
                 Box(Modifier.weight(1f))
+                onOpenAi?.let { openAi ->
+                    IconButton(
+                        onClick = openAi,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("global-ai-action"),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Star,
+                            contentDescription = stringResource(R.string.ai_debug_lab_entry),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
                 IconButton(
                     onClick = onOpenLanguage,
                     modifier = Modifier
