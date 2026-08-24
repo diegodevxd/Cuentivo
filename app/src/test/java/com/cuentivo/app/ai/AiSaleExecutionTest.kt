@@ -146,6 +146,20 @@ class AiSaleExecutionTest {
         // Line with mismatch total
         val badLine = validLine.copy(lineTotalCents = 8000L) // 2 * 5000 != 8000
         assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = listOf(badLine))))
+
+        // Line with blank product name snapshot
+        val blankNameLine = validLine.copy(productNameSnapshot = "   ")
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = listOf(blankNameLine))))
+
+        // Line with blank product id
+        val blankIdLine = validLine.copy(productId = " ")
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = listOf(blankIdLine))))
+
+        // Line with invalid quantity or negative price
+        val badQtyLine = validLine.copy(quantity = 0, lineTotalCents = 0L)
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = listOf(badQtyLine), totalCents = 0L)))
+        val negPriceLine = validLine.copy(unitPriceCents = -10L)
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = listOf(negPriceLine))))
     }
 
     @Test

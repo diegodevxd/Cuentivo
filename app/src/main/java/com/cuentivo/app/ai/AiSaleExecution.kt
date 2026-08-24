@@ -67,6 +67,7 @@ class AiSaleExecutionService(
         var calculatedTotal = 0L
         for (line in request.lines) {
             if (line.productId.isBlank() ||
+                line.productNameSnapshot.isBlank() ||
                 line.quantity <= 0 ||
                 line.unitPriceCents < 0L ||
                 line.lineTotalCents < 0L

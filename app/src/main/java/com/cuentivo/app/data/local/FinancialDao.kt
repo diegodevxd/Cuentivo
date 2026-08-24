@@ -627,8 +627,12 @@ interface FinancialDao {
         paymentMovement: AccountMovementEntity?,
         paymentAllocations: List<PaymentAllocationEntity>,
     ): ExpectedSaleResult {
-        operationResultId(operation.idempotencyKey)?.let {
-            return ExpectedSaleResult.Recorded(it, payment?.id)
+        operationResultId(operation.idempotencyKey)?.let { saleId ->
+            val existingSale = saleForId(saleId) ?: return ExpectedSaleResult.StaleData
+            if (existingSale.businessId != sale.businessId) return ExpectedSaleResult.StaleData
+            val existingAllocations = allAllocationsForSale(saleId)
+            val actualPaymentId = existingAllocations.firstOrNull()?.paymentId
+            return ExpectedSaleResult.Recorded(saleId, actualPaymentId)
         }
         val customer = customerForPayment(sale.customerId) ?: return ExpectedSaleResult.StaleData
         if (customer.businessId != sale.businessId || !customer.isActive || customer.deletedAtEpochMillis != null) {
@@ -639,6 +643,7 @@ interface FinancialDao {
             return ExpectedSaleResult.StaleData
         }
         for (item in items) {
+            require(item.productNameSnapshot.isNotBlank()) { "Product name snapshot must not be blank." }
             val productId = item.productId ?: return ExpectedSaleResult.StaleData
             val product = productForSale(productId) ?: return ExpectedSaleResult.StaleData
             if (product.businessId != sale.businessId || !product.isActive || product.deletedAtEpochMillis != null) {
@@ -651,7 +656,18 @@ interface FinancialDao {
             }
         }
         createSaleIdempotently(operation, sale, items, charge)
-        if (payment != null && paymentMovement != null && paymentAllocations.isNotEmpty()) {
+        if (payment != null) {
+            requireNotNull(paymentMovement) { "Payment movement must be provided." }
+            require(paymentAllocations.isNotEmpty()) { "Payment allocations must be provided." }
+            require(payment.amountCents > 0L && payment.amountCents <= sale.totalCents) {
+                "Payment amount must be positive and not exceed sale total."
+            }
+            require(paymentAllocations.sumOf { it.amountCents } == payment.amountCents) {
+                "Payment allocations must sum to payment amount."
+            }
+            require(paymentAllocations.all { it.saleId == sale.id && it.paymentId == payment.id }) {
+                "Payment allocations must link payment to sale."
+            }
             val paymentOperation = OperationEntity(
                 idempotencyKey = "payment-${payment.id}",
                 type = "PAYMENT",

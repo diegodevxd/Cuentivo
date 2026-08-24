@@ -8,6 +8,7 @@ import com.cuentivo.app.data.local.AuditLogEntity
 import com.cuentivo.app.data.local.BusinessEntity
 import com.cuentivo.app.data.local.CuentivoDatabase
 import com.cuentivo.app.data.local.CustomerEntity
+import com.cuentivo.app.data.local.OperationEntity
 import com.cuentivo.app.data.local.PaymentAllocationEntity
 import com.cuentivo.app.data.local.PaymentEntity
 import com.cuentivo.app.data.local.ProductEntity
@@ -22,14 +23,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
  * Instrumented isolation tests for [AiSaleExecutionService], [SaleRepository], and [FinancialDao].
- * Proves exact-once financial mutation, atomic sale + initial payment, idempotency replay,
- * concurrency safety, and stale fingerprint rejection.
+ * Proves exact-once financial mutation, atomic sale + initial payment, idempotency replay without
+ * deriving payment from replay parameters, wrong-business rejections, full rollback on payment failure,
+ * and concurrency safety.
  */
 @RunWith(AndroidJUnit4::class)
 class AiSaleExecutionIsolationTest {
@@ -223,14 +226,16 @@ class AiSaleExecutionIsolationTest {
         assertEquals(4000L, bundle?.paymentBundle?.payment?.amountCents)
 
         val customerBalance = database.financialDao().customerBalanceCents(businessId, customerId)
-        assertEquals(6000L, customerBalance) // 10000 debt - 4000 paid = 6000
+        assertEquals(6000L, customerBalance)
     }
 
     @Test
-    fun idempotencyReplayReturnsOriginalIdsWithoutDuplicates() = runBlocking {
+    fun idempotencyReplayNeverDerivesPaymentIdFromReplayParameters() = runBlocking {
         val service = createService()
-        val request = AiSaleConfirmationRequest(
-            confirmationKey = "sale-conf-replay",
+
+        // 1. Initial execution has zero initial payment
+        val zeroPaymentRequest = AiSaleConfirmationRequest(
+            confirmationKey = "sale-conf-replay-zero",
             businessId = businessId,
             customerId = customerId,
             sourceCustomerFingerprint = "$customerId:10000",
@@ -245,19 +250,252 @@ class AiSaleExecutionIsolationTest {
                 ),
             ),
             totalCents = 5000L,
-            initialPaymentCents = 2000L,
+            initialPaymentCents = 0L,
         )
 
-        val first = service.confirm(request) as AiSaleExecutionResult.Recorded
-        val second = service.confirm(request) as AiSaleExecutionResult.Recorded
+        val firstRecorded = service.confirm(zeroPaymentRequest) as AiSaleExecutionResult.Recorded
+        assertNull(firstRecorded.paymentId)
 
-        assertEquals(first.saleId, second.saleId)
-        assertEquals(first.paymentId, second.paymentId)
+        // Replay with positive initial payment parameter must NOT create payment and must return paymentId = null
+        val positiveReplayRequest = zeroPaymentRequest.copy(initialPaymentCents = 2000L)
+        val replayResult = service.confirm(positiveReplayRequest) as AiSaleExecutionResult.Recorded
+        assertEquals(firstRecorded.saleId, replayResult.saleId)
+        assertNull("Replay must return stored paymentId (null), not request parameter", replayResult.paymentId)
 
-        val allSales = database.financialDao().allSalesForBackfill(businessId)
-        assertEquals(1, allSales.size)
-        val customerBalance = database.financialDao().customerBalanceCents(businessId, customerId)
-        assertEquals(3000L, customerBalance)
+        val allocations = database.financialDao().allAllocationsForSale(firstRecorded.saleId)
+        assertEquals(0, allocations.size)
+
+        // 2. Inverse case: Initial execution has positive initial payment
+        val withPaymentRequest = AiSaleConfirmationRequest(
+            confirmationKey = "sale-conf-replay-paid",
+            businessId = businessId,
+            customerId = customerId,
+            sourceCustomerFingerprint = "$customerId:10000",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = productId,
+                    productNameSnapshot = "Jabón Corporal",
+                    quantity = 1,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 5000L,
+                    sourceProductFingerprint = "$productId:10000:5000",
+                ),
+            ),
+            totalCents = 5000L,
+            initialPaymentCents = 3000L,
+        )
+
+        val paidRecorded = service.confirm(withPaymentRequest) as AiSaleExecutionResult.Recorded
+        assertNotNull(paidRecorded.paymentId)
+
+        // Replay with zero initial payment parameter must return the actual stored paymentId
+        val zeroReplayRequest = withPaymentRequest.copy(initialPaymentCents = 0L)
+        val paidReplayResult = service.confirm(zeroReplayRequest) as AiSaleExecutionResult.Recorded
+        assertEquals(paidRecorded.saleId, paidReplayResult.saleId)
+        assertEquals(paidRecorded.paymentId, paidReplayResult.paymentId)
+    }
+
+    @Test
+    fun wrongBusinessCustomerRejectionWritesZeroFinancialRows() = runBlocking {
+        val otherBusinessCustomer = CustomerEntity(
+            id = "cust-other-biz",
+            businessId = "other-biz-id",
+            name = "Cliente Otro Negocio",
+            normalizedName = "cliente otro negocio",
+            phone = null,
+            email = null,
+            address = null,
+            notes = null,
+            creditLimitCents = null,
+            isActive = true,
+            createdAtEpochMillis = 10_000L,
+            updatedAtEpochMillis = 10_000L,
+            deletedAtEpochMillis = null,
+        )
+        database.customerDao().insert(otherBusinessCustomer)
+
+        val service = createService()
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "sale-conf-wrong-cust",
+            businessId = businessId,
+            customerId = otherBusinessCustomer.id,
+            sourceCustomerFingerprint = "${otherBusinessCustomer.id}:10000",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = productId,
+                    productNameSnapshot = "Jabón Corporal",
+                    quantity = 1,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 5000L,
+                    sourceProductFingerprint = "$productId:10000:5000",
+                ),
+            ),
+            totalCents = 5000L,
+            initialPaymentCents = 0L,
+        )
+
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.StalePreview, result)
+
+        assertEquals(0, database.financialDao().allSalesForBackfill(businessId).size)
+    }
+
+    @Test
+    fun wrongBusinessProductRejectionWritesZeroFinancialRows() = runBlocking {
+        val otherBusinessProduct = ProductEntity(
+            id = "prod-other-biz",
+            businessId = "other-biz-id",
+            name = "Producto Otro Negocio",
+            description = null,
+            sku = null,
+            category = null,
+            salePriceCents = 5000L,
+            costPriceCents = null,
+            stock = null,
+            imageUri = null,
+            isActive = true,
+            createdAtEpochMillis = 10_000L,
+            updatedAtEpochMillis = 10_000L,
+            deletedAtEpochMillis = null,
+        )
+        database.productDao().insert(otherBusinessProduct)
+
+        val service = createService()
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "sale-conf-wrong-prod",
+            businessId = businessId,
+            customerId = customerId,
+            sourceCustomerFingerprint = "$customerId:10000",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = otherBusinessProduct.id,
+                    productNameSnapshot = "Producto Otro Negocio",
+                    quantity = 1,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 5000L,
+                    sourceProductFingerprint = "${otherBusinessProduct.id}:10000:5000",
+                ),
+            ),
+            totalCents = 5000L,
+            initialPaymentCents = 0L,
+        )
+
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.StalePreview, result)
+
+        assertEquals(0, database.financialDao().allSalesForBackfill(businessId).size)
+    }
+
+    @Test
+    fun fullRollbackWhenPaymentLegFailsAfterSaleLegStarts() = runBlocking {
+        // We directly invoke registerSaleAgainstPreviewIdempotently with an invalid payment bundle
+        // (payment is non-null but allocations sum does not match payment amount)
+        val now = 20_000L
+        val saleId = "sale-rollback-1"
+        val sale = SaleEntity(
+            id = saleId,
+            businessId = businessId,
+            customerId = customerId,
+            sellerUserId = userId,
+            saleNumber = "V-$saleId",
+            saleDateEpochDay = 20500L,
+            dueDateEpochDay = null,
+            subtotalCents = 5000L,
+            discountCents = 0L,
+            totalCents = 5000L,
+            isCanceled = false,
+            notes = null,
+            createdAtEpochMillis = now,
+            updatedAtEpochMillis = now,
+        )
+        val items = listOf(
+            SaleItemEntity(
+                id = "item-rollback-1",
+                saleId = saleId,
+                productId = productId,
+                productNameSnapshot = "Jabón Corporal",
+                quantity = 1L,
+                unitPriceCents = 5000L,
+                discountCents = 0L,
+                subtotalCents = 5000L,
+            ),
+        )
+        val charge = AccountMovementEntity(
+            id = "charge-rollback-1",
+            businessId = businessId,
+            customerId = customerId,
+            saleId = saleId,
+            paymentId = null,
+            type = "CHARGE",
+            amountCents = 5000L,
+            direction = "DEBIT",
+            occurredAtEpochMillis = now,
+            createdByUserId = userId,
+            reversesMovementId = null,
+            notes = null,
+        )
+        val invalidPayment = PaymentEntity(
+            id = "pay-rollback-1",
+            businessId = businessId,
+            customerId = customerId,
+            amountCents = 2000L,
+            paymentMethod = "CASH",
+            paymentDateEpochDay = 20500L,
+            reference = null,
+            notes = null,
+            createdByUserId = userId,
+            createdAtEpochMillis = now,
+            canceledAtEpochMillis = null,
+        )
+        val paymentMovement = AccountMovementEntity(
+            id = "pm-rollback-1",
+            businessId = businessId,
+            customerId = customerId,
+            saleId = null,
+            paymentId = invalidPayment.id,
+            type = "PAYMENT",
+            amountCents = 2000L,
+            direction = "CREDIT",
+            occurredAtEpochMillis = now,
+            createdByUserId = userId,
+            reversesMovementId = null,
+            notes = null,
+        )
+        // Invalid allocations: sum 1000 != payment amount 2000
+        val invalidAllocations = listOf(
+            PaymentAllocationEntity(
+                id = "alloc-rollback-1",
+                paymentId = invalidPayment.id,
+                saleId = saleId,
+                amountCents = 1000L,
+            ),
+        )
+
+        try {
+            database.financialDao().registerSaleAgainstPreviewIdempotently(
+                operation = OperationEntity("op-rollback-test", "SALE", saleId, now),
+                sale = sale,
+                items = items,
+                charge = charge,
+                expectedCustomerFingerprint = "$customerId:10000",
+                expectedProductFingerprints = mapOf(productId to "$productId:10000:5000"),
+                payment = invalidPayment,
+                paymentMovement = paymentMovement,
+                paymentAllocations = invalidAllocations,
+            )
+            fail("Expected IllegalArgumentException on invalid payment allocation")
+        } catch (_: IllegalArgumentException) {
+            // Expected
+        }
+
+        // Verify entire Room transaction rolled back: 0 rows in all financial tables
+        assertNull("Sale must not exist", database.financialDao().saleForId(saleId))
+        assertEquals("Sale items must be empty", 0, database.financialDao().itemsForSale(saleId).size)
+        assertNull("Charge must not exist", database.financialDao().chargeMovementForSale(saleId))
+        assertNull("Payment must not exist", database.financialDao().paymentForId(invalidPayment.id))
+        assertEquals("Allocations must be empty", 0, database.financialDao().allAllocationsForSale(saleId).size)
+        assertNull("Operation must not be reserved", database.financialDao().operationResultId("op-rollback-test"))
+        assertEquals("Audit log must be empty", 0, database.auditDao().forBusiness(businessId).size)
     }
 
     @Test
@@ -267,7 +505,7 @@ class AiSaleExecutionIsolationTest {
             confirmationKey = "sale-conf-stale-cust",
             businessId = businessId,
             customerId = customerId,
-            sourceCustomerFingerprint = "$customerId:99999", // Stale!
+            sourceCustomerFingerprint = "$customerId:99999",
             lines = listOf(
                 AiSaleConfirmationLine(
                     productId = productId,
@@ -304,7 +542,7 @@ class AiSaleExecutionIsolationTest {
                     quantity = 1,
                     unitPriceCents = 5000L,
                     lineTotalCents = 5000L,
-                    sourceProductFingerprint = "$productId:99999:5000", // Stale!
+                    sourceProductFingerprint = "$productId:99999:5000",
                 ),
             ),
             totalCents = 5000L,
