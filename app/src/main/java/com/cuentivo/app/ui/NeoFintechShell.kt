@@ -55,6 +55,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
@@ -176,7 +177,7 @@ fun NeoFintechShell(
                             .testTag("global-ai-action"),
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Star,
+                            painter = painterResource(R.drawable.ic_cuentivo_ai_robot),
                             contentDescription = stringResource(R.string.ai_debug_lab_entry),
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
