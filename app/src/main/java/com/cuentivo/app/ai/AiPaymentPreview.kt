@@ -2,6 +2,7 @@ package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.CustomerEntity
 import java.util.Collections
+import java.util.UUID
 
 /** Result of matching a payment customer query against already repository-scoped candidate rows. */
 sealed interface AiPaymentCustomerMatch {
@@ -45,6 +46,7 @@ data class AiPaymentCustomerCandidate(val customerId: String, val displayName: S
  * is derived, never stored, and this preview exposes no confirmation or write path.
  */
 data class AiResolvedPaymentPreview(
+    val confirmationKey: String,
     val customerId: String,
     val customerName: String,
     val currentBalanceCents: Long,
@@ -133,6 +135,7 @@ object AiPaymentCandidateMatcher {
 class AiPaymentPreviewResolver(
     private val searchCustomers: suspend (businessId: String, query: String) -> List<CustomerEntity>,
     private val loadBalanceCents: suspend (businessId: String, customerId: String) -> Long,
+    private val newConfirmationKey: () -> String = { UUID.randomUUID().toString() },
 ) {
 
     suspend fun resolve(
@@ -176,11 +179,15 @@ class AiPaymentPreviewResolver(
         if (projected < 0L) {
             return AiPaymentPreviewResult.Blocked(
                 AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT,
-                AiResolvedPaymentPreview(customer.id, customer.name, currentBalanceCents, proposal.declaredAmountCents, projected),
+                AiResolvedPaymentPreview("", customer.id, customer.name, currentBalanceCents, proposal.declaredAmountCents, projected),
             )
         }
+        val key = newConfirmationKey().trim()
+        if (key.isBlank()) {
+            return AiPaymentPreviewResult.Unavailable
+        }
         return AiPaymentPreviewResult.Ready(
-            AiResolvedPaymentPreview(customer.id, customer.name, currentBalanceCents, proposal.declaredAmountCents, projected),
+            AiResolvedPaymentPreview(key, customer.id, customer.name, currentBalanceCents, proposal.declaredAmountCents, projected),
         )
     }
 }

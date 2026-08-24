@@ -521,7 +521,7 @@ class AiDebugLabMachineTest {
     }
 
     private fun readyResult() = AiPaymentPreviewResult.Ready(
-        AiResolvedPaymentPreview("c1", "María", 40_000L, 15_000L, 25_000L),
+        AiResolvedPaymentPreview("k1", "c1", "María", 40_000L, 15_000L, 25_000L),
     )
 
     @Test
@@ -604,7 +604,7 @@ class AiDebugLabMachineTest {
     @Test
     fun `blocked amount exceeds debt produces exactly PaymentResolution state and AssistantPaymentBlocked message`() {
         val model = paymentModel(generation = 4)
-        val preview = AiResolvedPaymentPreview("c1", "María", 10_000L, 15_000L, -5_000L)
+        val preview = AiResolvedPaymentPreview("", "c1", "María", 10_000L, 15_000L, -5_000L)
         val blocked = AiPaymentPreviewResult.Blocked(AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT, preview)
         val updated = AiDebugLabMachine.onPaymentPreviewResult(model, blocked, generation = 4)
         assertEquals(AiDebugLabState.PaymentResolution(blocked), updated.state)

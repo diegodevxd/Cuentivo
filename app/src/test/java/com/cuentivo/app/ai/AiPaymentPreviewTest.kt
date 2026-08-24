@@ -131,6 +131,7 @@ class AiPaymentPreviewTest {
     @Test
     fun `declared amount and balance stay as Long with no floating point`() {
         val preview = AiResolvedPaymentPreview(
+            confirmationKey = "key-1",
             customerId = "c1",
             customerName = "María",
             currentBalanceCents = 40_000L,
@@ -138,6 +139,7 @@ class AiPaymentPreviewTest {
             projectedBalanceCents = 25_000L,
         )
         assertEquals(25_000L, preview.projectedBalanceCents)
+        assertEquals("key-1", preview.confirmationKey)
     }
 
     private fun mutateExpectingUnsupported(candidates: MutableList<*>) {
@@ -183,8 +185,100 @@ class AiPaymentPreviewResolverTest {
 
     private val requestId = "123e4567-e89b-12d3-a456-426614174000"
 
+    private fun customer(id: String = "c1", name: String = "María", businessId: String = "b1") = CustomerEntity(
+        id = id,
+        businessId = businessId,
+        name = name,
+        normalizedName = com.cuentivo.app.domain.CustomerNameNormalizer.key(name),
+        phone = null,
+        email = null,
+        address = null,
+        notes = null,
+        creditLimitCents = null,
+        isActive = true,
+        createdAtEpochMillis = 0L,
+        updatedAtEpochMillis = 0L,
+        deletedAtEpochMillis = null,
+    )
+
     private fun proposal(amountCents: Long = 15_000L) =
         RecordPaymentProposal(customerName = "María", declaredAmountCents = amountCents)
+
+    @Test
+    fun `ready preview receives one opaque local confirmation key`() = runBlocking {
+        var keyCalls = 0
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ -> listOf(customer("c1", "María", "b1")) },
+            loadBalanceCents = { _, _ -> 50_000L },
+            newConfirmationKey = { keyCalls++; "ai-confirm-1" },
+        )
+
+        val result = resolver.resolve("b1", RecordPaymentProposal("María", 15_000L))
+
+        assertTrue("expected Ready result", result is AiPaymentPreviewResult.Ready)
+        val ready = result as AiPaymentPreviewResult.Ready
+        assertEquals("ai-confirm-1", ready.preview.confirmationKey)
+        assertEquals(1, keyCalls)
+    }
+
+    @Test
+    fun `blocked and unresolved previews never allocate a confirmation key`() = runBlocking {
+        var keyCalls = 0
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ -> emptyList() },
+            loadBalanceCents = { _, _ -> error("must not load") },
+            newConfirmationKey = { keyCalls++; "forbidden" },
+        )
+
+        assertTrue(
+            resolver.resolve("b1", RecordPaymentProposal("Nadie", 15_000L)) is AiPaymentPreviewResult.CustomerNotFound,
+        )
+        assertEquals(0, keyCalls)
+    }
+
+    @Test
+    fun `blocked amount exceeds debt never allocates a confirmation key`() = runBlocking {
+        var keyCalls = 0
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ -> listOf(customer("c1", "María", "b1")) },
+            loadBalanceCents = { _, _ -> 10_000L },
+            newConfirmationKey = { keyCalls++; "forbidden" },
+        )
+
+        val result = resolver.resolve("b1", RecordPaymentProposal("María", 15_000L))
+        assertTrue(result is AiPaymentPreviewResult.Blocked)
+        assertEquals(0, keyCalls)
+        val blocked = result as AiPaymentPreviewResult.Blocked
+        assertEquals("", blocked.preview?.confirmationKey)
+    }
+
+    @Test
+    fun `blank confirmation key fails closed to Unavailable`() = runBlocking {
+        for (blankKey in listOf("", "   ", "\t\n")) {
+            val resolver = AiPaymentPreviewResolver(
+                searchCustomers = { _, _ -> listOf(customer("c1", "María", "b1")) },
+                loadBalanceCents = { _, _ -> 50_000L },
+                newConfirmationKey = { blankKey },
+            )
+
+            val result = resolver.resolve("b1", RecordPaymentProposal("María", 15_000L))
+            assertEquals(AiPaymentPreviewResult.Unavailable, result)
+        }
+    }
+
+    @Test
+    fun `confirmation key is trimmed`() = runBlocking {
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ -> listOf(customer("c1", "María", "b1")) },
+            loadBalanceCents = { _, _ -> 50_000L },
+            newConfirmationKey = { "  ai-confirm-trimmed  " },
+        )
+
+        val result = resolver.resolve("b1", RecordPaymentProposal("María", 15_000L))
+        assertTrue(result is AiPaymentPreviewResult.Ready)
+        val ready = result as AiPaymentPreviewResult.Ready
+        assertEquals("ai-confirm-trimmed", ready.preview.confirmationKey)
+    }
 
     @Test
     fun `blank business returns unavailable without invoking seams`() = runBlocking {
@@ -292,6 +386,7 @@ class AiPaymentPreviewResolverTest {
                 balanceArgs = businessId to customerId
                 40_000L
             },
+            newConfirmationKey = { "key-1" },
         )
 
         val result = resolver.resolve("business-1", RecordPaymentProposal("María", 15_000L))
@@ -299,7 +394,7 @@ class AiPaymentPreviewResolverTest {
         assertEquals("business-1" to "María", searchArgs)
         assertEquals("business-1" to "c1", balanceArgs)
         assertEquals(
-            AiPaymentPreviewResult.Ready(AiResolvedPaymentPreview("c1", "María", 40_000L, 15_000L, 25_000L)),
+            AiPaymentPreviewResult.Ready(AiResolvedPaymentPreview("key-1", "c1", "María", 40_000L, 15_000L, 25_000L)),
             result,
         )
     }
@@ -327,12 +422,13 @@ class AiPaymentPreviewResolverTest {
                 )
             },
             loadBalanceCents = { _, _ -> 15_000L },
+            newConfirmationKey = { "key-1" },
         )
 
         val result = resolver.resolve("b1", RecordPaymentProposal("María", 15_000L))
 
         assertEquals(
-            AiPaymentPreviewResult.Ready(AiResolvedPaymentPreview("c1", "María", 15_000L, 15_000L, 0L)),
+            AiPaymentPreviewResult.Ready(AiResolvedPaymentPreview("key-1", "c1", "María", 15_000L, 15_000L, 0L)),
             result,
         )
     }
@@ -400,7 +496,7 @@ class AiPaymentPreviewResolverTest {
         assertEquals(
             AiPaymentPreviewResult.Blocked(
                 AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT,
-                AiResolvedPaymentPreview("c1", "María", 10_000L, 15_000L, -5_000L),
+                AiResolvedPaymentPreview("", "c1", "María", 10_000L, 15_000L, -5_000L),
             ),
             result,
         )
@@ -462,13 +558,16 @@ class AiPaymentPreviewResolverTest {
                 )
             },
             loadBalanceCents = { _, _ -> Long.MAX_VALUE },
+            newConfirmationKey = { "key-max" },
         )
 
         // Long.MAX_VALUE - Long.MAX_VALUE = 0: mathematically valid, no overflow possible
         // with two positive Long operands. The system must not crash.
         val result = resolver.resolve("b1", RecordPaymentProposal("María", Long.MAX_VALUE))
         assertTrue(result is AiPaymentPreviewResult.Ready)
-        assertEquals(0L, (result as AiPaymentPreviewResult.Ready).preview.projectedBalanceCents)
+        val ready = result as AiPaymentPreviewResult.Ready
+        assertEquals(0L, ready.preview.projectedBalanceCents)
+        assertEquals("key-max", ready.preview.confirmationKey)
     }
 
     @Test
