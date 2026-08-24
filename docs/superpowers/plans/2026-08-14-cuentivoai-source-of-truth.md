@@ -1,18 +1,18 @@
 # CuentivoAI — arquitectura, seguridad y plan de ejecución
 
-> **Estado:** el lanzamiento público y cualquier AAB/activación para usuarios permanecen en **NO-GO**. En la rama aislada `diegodevxd/feature-cuentivo-ai`, Fase 0A, Fase 1B (gateway fail-closed) y Fase 2A (control plane Gemini-only local) están cerradas. **Fase 2A no tiene autorización de deploy ni proveedor real.** La excepción interna no autoriza operaciones financieras IA, AAB, Play ni el inicio automático de fases posteriores.
+> **Estado:** el lanzamiento público y cualquier AAB/activación para usuarios permanecen en **NO-GO**. En la rama aislada `diegodevxd/feature-cuentivo-ai`, Fase 0A, Fase 1B y Fase 2A local están cerradas. El 2026-08-24 se configuró el secreto server-side y se desplegó exclusivamente `interpretAiRequest` en `us-south1`; el control plane remoto permanece sin bootstrap y, por diseño, la IA continúa fail-closed hasta habilitar configuración y entitlement de prueba mediante un mecanismo Admin-only auditado. La excepción interna no autoriza operaciones financieras IA, AAB, Play ni activación para usuarios.
 >
 > **Source of truth:** este documento prevalece para CuentivoAI hasta que el propietario apruebe una fase explícitamente. Las decisiones y supuestos deben actualizarse aquí antes de cambiar producción.
 >
 > **Fecha de auditoría:** 2026-08-14. **Rama inspeccionada:** `codex/neo-fintech`.
 >
-> **Reconciliación actual (2026-08-22):** la rama vigente es `diegodevxd/feature-cuentivo-ai`;
-> HEAD local de implementación en el momento del incremento documental Task 4: `4e04052`
-> (antes del commit documental de Task 4). El incremento local Gemini Debug Gateway está
-> **aceptado por Codex**, pendiente de autorización explícita de deploy, bootstrap del control
-> plane server-side (config/entitlement Admin-only) y revisión GLM diferida por instrucción del
-> propietario. No se marca producción, Fase 2 ni Fase 3 como completadas; el release/AAB público
-> sigue NO-GO.
+> **Reconciliación actual (2026-08-24):** la rama vigente es `diegodevxd/feature-cuentivo-ai` y
+> el HEAD auditado antes de esta actualización documental es `904edc7`. El Gemini Debug Gateway
+> fue desplegado de forma acotada con su secreto ligado sólo a `interpretAiRequest`; la evidencia
+> de Firebase CLI confirma `interpretAiRequest(us-south1) Successful update operation` y
+> `Deploy complete!`. No se desplegó `authorizeAiAction`. Falta bootstrap Admin-only del control
+> plane, prueba real Auth/App Check/Gemini y revisión del siguiente incremento. No se marca
+> producción ni Fase 3 financiera como completadas; el release/AAB público sigue NO-GO.
 
 ## 0. Mandato y límites
 
@@ -458,6 +458,7 @@ No crear ahora cuenta/API key Gemini, gateway AI adicional, Cloud Run, Secret Ma
 | 2026-08-24 | Fundación local de historial diario del asistente añadida en `fe181ca`/`47ccae1`: tabla Room v6 `ai_daily_messages`, DAO con aislamiento por propietario/día, borrado manual y retención exacta de 30 días. Sólo se persiste localmente texto introducido por el usuario y tipos deterministas de asistente; no audio, fotos, propuesta JSON, logs, Analytics, Crashlytics, Firestore ni gateway. El historial no es fuente de verdad financiera. | **Aceptado como infraestructura local aislada.** Codex ejecutó en A059P las 5 pruebas instrumentadas focalizadas (DAO + migración 5→6), además de compilación AndroidTest, JVM, `assembleDebug`, `lintDebug` y `git diff --check`. La migración conserva una fila financiera representativa y crea únicamente la tabla/índice AI. Sin UI conectada aún, sincronización, red, ejecución, confirmación ni mutación financiera. |
 | 2026-08-24 | Se corrigió la prueba instrumentada v1 obsoleta de callable: `a2e5abb` retiró `parseCallableData` al pasar el transporte debug a propuestas v2, pero `FirebaseCallableGatewayInstrumentedTest` aún la llamaba. Se eliminó únicamente esa aserción redundante; permanecen las verificaciones directas del contrato remoto v1 (`contractVersion`, `requestId`, `status` y conjunto exacto de claves). | **Corrección de test aceptada.** No se reintrodujo parser v1, no se alteró gateway, Functions, secreto, Room ni dominio financiero. Este arreglo desbloqueó y permitió ejecutar la evidencia instrumentada de migración anterior. |
 | 2026-08-24 | Historial diario conectado al chat debug en `d156db1`, `c1cd00b`, `b7d2ca2`, con correcciones de auditoría `4b98f77` y `10f316c`: repositorio local aislado por propietario/día, retención exacta de 30 días, saludo y rechazo social deterministas, carga y borrado del día actual. Sólo persiste `USER_TEXT` y estados deterministas allow-listed; propuestas, aclaraciones y salidas Gemini permanecen efímeras. La composición se reinicia al cambiar el repositorio/propietario y la rama local out-of-scope usa token de generación para no quedar bloqueada ni aceptar resultados obsoletos. | **Incremento de historial/chat diario aceptado en debug.** Codex verificó focales JVM forzados, suite JVM, `assembleDebug`, `assembleRelease`, `lintDebug`, compilación AndroidTest y diff-check. Sin ejecución/confirmación financiera, sync de historial, voz, selector de días, deploy nuevo, secret/API key en APK, Billing AI, AAB ni Play. Cuentivo normal/release conserva transporte AI nulo. |
+| 2026-08-24 | El propietario configuró interactivamente `CUENTIVOAI_GEMINI_API_KEY` en Secret Manager y desplegó exclusivamente `interpretAiRequest`; Firebase CLI reportó `interpretAiRequest(us-south1) Successful update operation` y `Deploy complete!`. La fuente local confirma Node 22, 256 MiB, App Check obligatorio y que el secreto está ligado sólo a esa callable. Antes del deploy, Codex verificó Functions 199/199, lint, build y diff-check. | **Gateway Gemini desplegado, todavía fail-closed.** `authorizeAiAction` no fue desplegada; falta bootstrap Admin-only de `aiControl/global` y entitlement temporal del usuario de prueba, además de prueba real desde APK. No hay mutación financiera, AAB, Play ni habilitación pública. |
 
 ## 17. HANDOFF A ORCA — FASE 0 INTERNA AUTORIZADA
 
