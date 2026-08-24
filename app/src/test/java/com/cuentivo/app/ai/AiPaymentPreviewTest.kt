@@ -1,6 +1,8 @@
 package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.CustomerEntity
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -147,5 +149,339 @@ class AiPaymentPreviewTest {
             thrown = true
         }
         assertTrue("candidates must be unmodifiable", thrown)
+    }
+}
+
+// ---- Task 2: read-only local payment preview resolver ----
+
+private class RecordingSeams(
+    val businessId: String = "b1",
+    val searchResult: List<CustomerEntity> = emptyList(),
+    var balanceResult: Long = 40_000L,
+    var searchThrows: Boolean = false,
+    var balanceThrows: Boolean = false,
+) {
+    var searchCalls: Int = 0
+    var balanceCalls: Int = 0
+    var lastSearchQuery: String? = null
+
+    fun searchCustomers(businessId: String, query: String): List<CustomerEntity> {
+        searchCalls += 1
+        lastSearchQuery = query
+        if (searchThrows) throw IllegalStateException("search down")
+        return searchResult
+    }
+
+    fun loadBalanceCents(businessId: String, customerId: String): Long {
+        balanceCalls += 1
+        if (balanceThrows) throw IllegalStateException("balance down")
+        return balanceResult
+    }
+}
+
+class AiPaymentPreviewResolverTest {
+
+    private val requestId = "123e4567-e89b-12d3-a456-426614174000"
+
+    private fun proposal(amountCents: Long = 15_000L) =
+        RecordPaymentProposal(customerName = "María", declaredAmountCents = amountCents)
+
+    @Test
+    fun `blank business returns unavailable without invoking seams`() = runBlocking {
+        val seams = RecordingSeams()
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = seams::searchCustomers,
+            loadBalanceCents = seams::loadBalanceCents,
+        )
+
+        val result = resolver.resolve("", proposal())
+
+        assertEquals(AiPaymentPreviewResult.Unavailable, result)
+        assertEquals(0, seams.searchCalls)
+        assertEquals(0, seams.balanceCalls)
+    }
+
+    @Test
+    fun `non positive declared amount returns unavailable without invoking seams`() = runBlocking {
+        for (amount in listOf(0L, -1L)) {
+            val seams = RecordingSeams()
+            val resolver = AiPaymentPreviewResolver(
+                searchCustomers = seams::searchCustomers,
+                loadBalanceCents = seams::loadBalanceCents,
+            )
+            assertEquals(AiPaymentPreviewResult.Unavailable, resolver.resolve("b1", proposal(amount)))
+            assertEquals(0, seams.searchCalls)
+            assertEquals(0, seams.balanceCalls)
+        }
+    }
+
+    @Test
+    fun `not found returns customer not found without loading balance`() = runBlocking {
+        val seams = RecordingSeams(searchResult = emptyList())
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = seams::searchCustomers,
+            loadBalanceCents = seams::loadBalanceCents,
+        )
+
+        val result = resolver.resolve("b1", proposal())
+
+        assertEquals(AiPaymentPreviewResult.CustomerNotFound, result)
+        assertEquals(1, seams.searchCalls)
+        assertEquals(0, seams.balanceCalls)
+    }
+
+    @Test
+    fun `selection required maps candidates to id and display name without loading balance`() = runBlocking {
+        val candidates = listOf(
+            CustomerEntity(
+                id = "c1",
+                businessId = "b1",
+                name = "María López",
+                normalizedName = "maria lopez",
+                phone = null,
+                email = null,
+                address = null,
+                notes = null,
+                creditLimitCents = null,
+                isActive = true,
+                createdAtEpochMillis = 0L,
+                updatedAtEpochMillis = 0L,
+                deletedAtEpochMillis = null,
+            ),
+        )
+        val seams = RecordingSeams(searchResult = candidates)
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = seams::searchCustomers,
+            loadBalanceCents = seams::loadBalanceCents,
+        )
+
+        val result = resolver.resolve("b1", proposal())
+
+        assertTrue(result is AiPaymentPreviewResult.CustomerSelectionRequired)
+        result as AiPaymentPreviewResult.CustomerSelectionRequired
+        assertEquals(listOf(AiPaymentCustomerCandidate("c1", "María López")), result.candidates)
+        assertEquals(0, seams.balanceCalls)
+    }
+
+    @Test
+    fun `ready preview uses scoped search and real balance`() = runBlocking {
+        var searchArgs: Pair<String, String>? = null
+        var balanceArgs: Pair<String, String>? = null
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { businessId, name ->
+                searchArgs = businessId to name
+                listOf(
+                    CustomerEntity(
+                        id = "c1",
+                        businessId = businessId,
+                        name = "María",
+                        normalizedName = "maria",
+                        phone = null,
+                        email = null,
+                        address = null,
+                        notes = null,
+                        creditLimitCents = null,
+                        isActive = true,
+                        createdAtEpochMillis = 0L,
+                        updatedAtEpochMillis = 0L,
+                        deletedAtEpochMillis = null,
+                    ),
+                )
+            },
+            loadBalanceCents = { businessId, customerId ->
+                balanceArgs = businessId to customerId
+                40_000L
+            },
+        )
+
+        val result = resolver.resolve("business-1", RecordPaymentProposal("María", 15_000L))
+
+        assertEquals("business-1" to "María", searchArgs)
+        assertEquals("business-1" to "c1", balanceArgs)
+        assertEquals(
+            AiPaymentPreviewResult.Ready(AiResolvedPaymentPreview("c1", "María", 40_000L, 15_000L, 25_000L)),
+            result,
+        )
+    }
+
+    @Test
+    fun `exact payment yields projected zero`() = runBlocking {
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ ->
+                listOf(
+                    CustomerEntity(
+                        id = "c1",
+                        businessId = "b1",
+                        name = "María",
+                        normalizedName = "maria",
+                        phone = null,
+                        email = null,
+                        address = null,
+                        notes = null,
+                        creditLimitCents = null,
+                        isActive = true,
+                        createdAtEpochMillis = 0L,
+                        updatedAtEpochMillis = 0L,
+                        deletedAtEpochMillis = null,
+                    ),
+                )
+            },
+            loadBalanceCents = { _, _ -> 15_000L },
+        )
+
+        val result = resolver.resolve("b1", RecordPaymentProposal("María", 15_000L))
+
+        assertEquals(
+            AiPaymentPreviewResult.Ready(AiResolvedPaymentPreview("c1", "María", 15_000L, 15_000L, 0L)),
+            result,
+        )
+    }
+
+    @Test
+    fun `zero or negative balance blocks without preview`() = runBlocking {
+        for (balance in listOf(0L, -5_000L)) {
+            val resolver = AiPaymentPreviewResolver(
+                searchCustomers = { _, _ ->
+                    listOf(
+                        CustomerEntity(
+                            id = "c1",
+                            businessId = "b1",
+                            name = "María",
+                            normalizedName = "maria",
+                            phone = null,
+                            email = null,
+                            address = null,
+                            notes = null,
+                            creditLimitCents = null,
+                            isActive = true,
+                            createdAtEpochMillis = 0L,
+                            updatedAtEpochMillis = 0L,
+                            deletedAtEpochMillis = null,
+                        ),
+                    )
+                },
+                loadBalanceCents = { _, _ -> balance },
+            )
+            val result = resolver.resolve("b1", RecordPaymentProposal("María", 15_000L))
+            assertEquals(
+                AiPaymentPreviewResult.Blocked(AiPaymentBlockReason.NO_OUTSTANDING_DEBT, null),
+                result,
+            )
+        }
+    }
+
+    @Test
+    fun `amount greater than balance blocks with preview for display`() = runBlocking {
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ ->
+                listOf(
+                    CustomerEntity(
+                        id = "c1",
+                        businessId = "b1",
+                        name = "María",
+                        normalizedName = "maria",
+                        phone = null,
+                        email = null,
+                        address = null,
+                        notes = null,
+                        creditLimitCents = null,
+                        isActive = true,
+                        createdAtEpochMillis = 0L,
+                        updatedAtEpochMillis = 0L,
+                        deletedAtEpochMillis = null,
+                    ),
+                )
+            },
+            loadBalanceCents = { _, _ -> 10_000L },
+        )
+
+        val result = resolver.resolve("b1", RecordPaymentProposal("María", 15_000L))
+
+        assertEquals(
+            AiPaymentPreviewResult.Blocked(
+                AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT,
+                AiResolvedPaymentPreview("c1", "María", 10_000L, 15_000L, -5_000L),
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `seam exception returns unavailable`() = runBlocking {
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ -> throw IllegalStateException("search down") },
+            loadBalanceCents = { _, _ -> 40_000L },
+        )
+        assertEquals(AiPaymentPreviewResult.Unavailable, resolver.resolve("b1", proposal()))
+
+        val resolver2 = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ ->
+                listOf(
+                    CustomerEntity(
+                        id = "c1",
+                        businessId = "b1",
+                        name = "María",
+                        normalizedName = "maria",
+                        phone = null,
+                        email = null,
+                        address = null,
+                        notes = null,
+                        creditLimitCents = null,
+                        isActive = true,
+                        createdAtEpochMillis = 0L,
+                        updatedAtEpochMillis = 0L,
+                        deletedAtEpochMillis = null,
+                    ),
+                )
+            },
+            loadBalanceCents = { _, _ -> throw IllegalStateException("balance down") },
+        )
+        assertEquals(AiPaymentPreviewResult.Unavailable, resolver2.resolve("b1", proposal()))
+    }
+
+    @Test
+    fun `extreme long values are handled without crash`() = runBlocking {
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ ->
+                listOf(
+                    CustomerEntity(
+                        id = "c1",
+                        businessId = "b1",
+                        name = "María",
+                        normalizedName = "maria",
+                        phone = null,
+                        email = null,
+                        address = null,
+                        notes = null,
+                        creditLimitCents = null,
+                        isActive = true,
+                        createdAtEpochMillis = 0L,
+                        updatedAtEpochMillis = 0L,
+                        deletedAtEpochMillis = null,
+                    ),
+                )
+            },
+            loadBalanceCents = { _, _ -> Long.MAX_VALUE },
+        )
+
+        // Long.MAX_VALUE - Long.MAX_VALUE = 0: mathematically valid, no overflow possible
+        // with two positive Long operands. The system must not crash.
+        val result = resolver.resolve("b1", RecordPaymentProposal("María", Long.MAX_VALUE))
+        assertTrue(result is AiPaymentPreviewResult.Ready)
+        assertEquals(0L, (result as AiPaymentPreviewResult.Ready).preview.projectedBalanceCents)
+    }
+
+    @Test
+    fun `cancellation exception is rethrown not swallowed`() = runBlocking {
+        val resolver = AiPaymentPreviewResolver(
+            searchCustomers = { _, _ -> throw CancellationException("cancelled") },
+            loadBalanceCents = { _, _ -> 40_000L },
+        )
+        try {
+            resolver.resolve("b1", proposal())
+            throw AssertionError("expected CancellationException")
+        } catch (expected: CancellationException) {
+            // expected
+        }
     }
 }

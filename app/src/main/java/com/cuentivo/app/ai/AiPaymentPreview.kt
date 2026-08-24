@@ -59,7 +59,7 @@ sealed interface AiPaymentPreviewResult {
     data object CustomerNotFound : AiPaymentPreviewResult
 
     /**
-     * More than one candidate matches and a human must choose.
+     * More than one candidate matches and a human must choose; never auto-selected.
      *
      * Plain final class so construction always freezes [candidates]: every construction stores an
      * unmodifiable copy, so neither the original reference nor a `MutableList` cast can mutate the
@@ -67,7 +67,7 @@ sealed interface AiPaymentPreviewResult {
      */
     class CustomerSelectionRequired private constructor(
         rawCandidates: List<AiPaymentCustomerCandidate>,
-    ) {
+    ) : AiPaymentPreviewResult {
         /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
         val candidates: List<AiPaymentCustomerCandidate> =
             Collections.unmodifiableList(rawCandidates.toList())
@@ -89,10 +89,7 @@ sealed interface AiPaymentPreviewResult {
 
     data class Ready(val preview: AiResolvedPaymentPreview) : AiPaymentPreviewResult
 
-    data class Blocked(
-        val reason: AiPaymentBlockReason,
-        val preview: AiResolvedPaymentPreview?,
-    ) : AiPaymentPreviewResult
+    data class Blocked(val reason: AiPaymentBlockReason, val preview: AiResolvedPaymentPreview?) : AiPaymentPreviewResult
 
     data object Unavailable : AiPaymentPreviewResult
 }
@@ -120,5 +117,70 @@ object AiPaymentCandidateMatcher {
             }
             else -> AiPaymentCustomerMatch.SelectionRequired(candidates)
         }
+    }
+}
+
+/**
+ * Read-only resolver that turns a validated payment proposal into a deterministic preview against
+ * the local ledger. It never writes, never confirms and never exposes a write path.
+ *
+ * Fail-closed rules: blank businessId or any seam exception returns [AiPaymentPreviewResult.Unavailable]
+ * without fabricating data; a non-positive declared amount returns Unavailable because the proposal
+ * validator should have already enforced this boundary; zero/non-positive balance blocks with
+ * NO_OUTSTANDING_DEBT; an amount greater than the balance blocks with AMOUNT_EXCEEDS_DEBT and the
+ * negative projected result available only for display — it never becomes executable credit.
+ */
+class AiPaymentPreviewResolver(
+    private val searchCustomers: suspend (businessId: String, query: String) -> List<CustomerEntity>,
+    private val loadBalanceCents: suspend (businessId: String, customerId: String) -> Long,
+) {
+
+    suspend fun resolve(
+        businessId: String,
+        proposal: RecordPaymentProposal,
+    ): AiPaymentPreviewResult = try {
+        resolveInternal(businessId, proposal)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        AiPaymentPreviewResult.Unavailable
+    }
+
+    private suspend fun resolveInternal(
+        businessId: String,
+        proposal: RecordPaymentProposal,
+    ): AiPaymentPreviewResult {
+        if (businessId.isBlank()) {
+            return AiPaymentPreviewResult.Unavailable
+        }
+        if (proposal.declaredAmountCents <= 0L) {
+            return AiPaymentPreviewResult.Unavailable
+        }
+        val candidates = searchCustomers(businessId, proposal.customerName)
+        val match = AiPaymentCandidateMatcher.match(proposal.customerName, candidates)
+        if (match is AiPaymentCustomerMatch.NotFound) {
+            return AiPaymentPreviewResult.CustomerNotFound
+        }
+        if (match is AiPaymentCustomerMatch.SelectionRequired) {
+            return AiPaymentPreviewResult.CustomerSelectionRequired(
+                match.candidates.map { AiPaymentCustomerCandidate(it.id, it.name) },
+            )
+        }
+        val exact = match as AiPaymentCustomerMatch.Exact
+        val customer = exact.customer
+        val currentBalanceCents = loadBalanceCents(businessId, customer.id)
+        if (currentBalanceCents <= 0L) {
+            return AiPaymentPreviewResult.Blocked(AiPaymentBlockReason.NO_OUTSTANDING_DEBT, null)
+        }
+        val projected = Math.subtractExact(currentBalanceCents, proposal.declaredAmountCents)
+        if (projected < 0L) {
+            return AiPaymentPreviewResult.Blocked(
+                AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT,
+                AiResolvedPaymentPreview(customer.id, customer.name, currentBalanceCents, proposal.declaredAmountCents, projected),
+            )
+        }
+        return AiPaymentPreviewResult.Ready(
+            AiResolvedPaymentPreview(customer.id, customer.name, currentBalanceCents, proposal.declaredAmountCents, projected),
+        )
     }
 }
