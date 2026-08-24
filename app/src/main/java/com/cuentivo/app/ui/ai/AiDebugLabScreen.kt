@@ -67,6 +67,7 @@ import com.cuentivo.app.data.local.AiDailyChatRepository
 import java.io.File
 import java.math.BigDecimal
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -103,10 +104,14 @@ private val CaptureUriSaver = Saver<Uri?, String>(
 )
 
 /**
- * Non-executable debug text lab. Edits text, sends ONE request through the injected transport and
- * shows the safe result: unavailable, clarification or a typed proposal preview. There is no
- * confirm/save/execute control and nothing connects to sales, payments, products, customers,
- * Room or any financial data. A visible warning states the lab records nothing.
+ * AI debug text lab with optional explicit payment confirmation. Edits text, sends ONE request
+ * through the injected transport and shows the safe result: unavailable, clarification, proposal,
+ * or a typed payment preview.
+ *
+ * Confirmation is human-initiated and explicit: [confirmPayment] is an injected host callback;
+ * this screen performs zero direct Room mutations, financial calculations, or model/transport
+ * calls during confirmation. Generation tokens and single-flight states protect against replay
+ * and late async responses. On release builds, the lab remains entirely disabled and unreachable.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -293,9 +298,13 @@ fun AiDebugLabScreen(
                                     val token = outcome.generation
                                     scope.launch {
                                         val result = withContext(Dispatchers.IO) {
-                                            runCatching {
+                                            try {
                                                 confirmPayment(outcome.request)
-                                            }.getOrDefault(AiPaymentExecutionResult.Unavailable)
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (_: Throwable) {
+                                                AiPaymentExecutionResult.Unavailable
+                                            }
                                         }
                                         model = AiDebugLabMachine.onPaymentExecutionResult(model, result, token)
                                     }

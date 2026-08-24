@@ -402,6 +402,21 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `confirmPayment rethrows CancellationException and falls back to Unavailable only for other errors`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val confirmCallIndex = screenSource.indexOf("confirmPayment(outcome.request)")
+        assertTrue("confirmPayment is called", confirmCallIndex != -1)
+        val confirmationBlock = screenSource.substring(
+            screenSource.lastIndexOf("val result = withContext(Dispatchers.IO)", confirmCallIndex),
+            screenSource.indexOf("model = AiDebugLabMachine.onPaymentExecutionResult", confirmCallIndex),
+        )
+        assertTrue("must explicitly catch CancellationException", confirmationBlock.contains("catch (e: CancellationException)"))
+        assertTrue("must rethrow CancellationException", confirmationBlock.contains("throw e"))
+        assertTrue("must map non-cancellation errors to Unavailable", confirmationBlock.contains("AiPaymentExecutionResult.Unavailable"))
+        assertFalse("must not use blind runCatching around confirmPayment", confirmationBlock.contains("runCatching"))
+    }
+
+    @Test
     fun `confirmation key and payment ID are not shown in UI or persisted in daily chat`() {
         val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
         assertFalse("confirmationKey is never displayed in UI text", screenSource.contains(".confirmationKey"))
