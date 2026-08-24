@@ -208,4 +208,87 @@ class AiSaleExecutionTest {
         val paymentId2 = SaleOperationIds.payment(idempotencyKey)
         assertEquals(paymentId1, paymentId2)
     }
+
+    @Test
+    fun `confirm on Recorded loads stored bundle and enqueues to sync queue`() = runBlocking {
+        var enqueuedBundle: com.cuentivo.app.data.local.StoredSaleBundle? = null
+        val sampleSale = SaleEntity(
+            id = "sale-1",
+            businessId = "biz-1",
+            customerId = "cust-1",
+            sellerUserId = "user-1",
+            saleNumber = "V-1",
+            saleDateEpochDay = 20500L,
+            dueDateEpochDay = 20600L,
+            subtotalCents = 10000L,
+            discountCents = 0L,
+            totalCents = 10000L,
+            isCanceled = false,
+            notes = null,
+            createdAtEpochMillis = 5000L,
+            updatedAtEpochMillis = 5000L,
+        )
+        val sampleItem = SaleItemEntity(
+            id = "item-1",
+            saleId = "sale-1",
+            productId = "prod-1",
+            productNameSnapshot = "Jabón",
+            quantity = 2L,
+            unitPriceCents = 5000L,
+            discountCents = 0L,
+            subtotalCents = 10000L,
+        )
+        val sampleCharge = AccountMovementEntity(
+            id = "charge-1",
+            businessId = "biz-1",
+            customerId = "cust-1",
+            saleId = "sale-1",
+            paymentId = null,
+            type = "CHARGE",
+            amountCents = 10000L,
+            direction = "DEBIT",
+            occurredAtEpochMillis = 5000L,
+            createdByUserId = "user-1",
+            reversesMovementId = null,
+            notes = null,
+        )
+        val mockBundle = com.cuentivo.app.data.local.StoredSaleBundle(
+            sale = sampleSale,
+            items = listOf(sampleItem),
+            chargeMovement = sampleCharge,
+            paymentBundle = null,
+        )
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            loadStoredBundle = { businessId, _ ->
+                if (businessId == "biz-1") mockBundle else null
+            },
+            enqueueStoredBundle = { bundle -> enqueuedBundle = bundle },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(validRequest)
+        assertTrue(result is AiSaleExecutionResult.Recorded)
+        assertEquals(mockBundle, enqueuedBundle)
+    }
+
+    @Test
+    fun `confirm on StaleData does not enqueue stored bundle`() = runBlocking {
+        var enqueued = false
+        val service = AiSaleExecutionService(
+            registerSale = { _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.StaleData },
+            loadStoredBundle = { _, _ -> fail("Should not load bundle on StaleData"); null },
+            enqueueStoredBundle = { enqueued = true },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(validRequest)
+        assertTrue(result is AiSaleExecutionResult.StalePreview)
+        assertEquals(false, enqueued)
+    }
 }

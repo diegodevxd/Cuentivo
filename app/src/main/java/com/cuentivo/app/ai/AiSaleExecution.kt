@@ -6,6 +6,7 @@ import com.cuentivo.app.data.local.PaymentAllocationEntity
 import com.cuentivo.app.data.local.PaymentEntity
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
+import com.cuentivo.app.data.local.StoredSaleBundle
 import com.cuentivo.app.domain.SaleOperationIds
 import kotlinx.coroutines.CancellationException
 
@@ -49,6 +50,8 @@ class AiSaleExecutionService(
         paymentAllocations: List<PaymentAllocationEntity>,
         expectedInitialPaymentId: String,
     ) -> ExpectedSaleResult,
+    private val loadStoredBundle: (suspend (businessId: String, saleId: String) -> StoredSaleBundle?)? = null,
+    private val enqueueStoredBundle: (suspend (StoredSaleBundle) -> Unit)? = null,
     private val currentUserId: () -> String,
     private val nowMillis: () -> Long,
     private val todayEpochDay: () -> Long,
@@ -219,7 +222,13 @@ class AiSaleExecutionService(
 
             when (result) {
                 is ExpectedSaleResult.StaleData -> AiSaleExecutionResult.StalePreview
-                is ExpectedSaleResult.Recorded -> AiSaleExecutionResult.Recorded(result.saleId, result.paymentId)
+                is ExpectedSaleResult.Recorded -> {
+                    val bundle = loadStoredBundle?.invoke(request.businessId, result.saleId)
+                    if (bundle != null) {
+                        enqueueStoredBundle?.invoke(bundle)
+                    }
+                    AiSaleExecutionResult.Recorded(result.saleId, result.paymentId)
+                }
             }
         } catch (c: CancellationException) {
             throw c

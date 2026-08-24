@@ -66,6 +66,10 @@ import com.cuentivo.app.R
 import com.cuentivo.app.ai.AiPaymentConfirmationRequest
 import com.cuentivo.app.ai.AiPaymentExecutionResult
 import com.cuentivo.app.ai.AiPaymentPreviewResult
+import com.cuentivo.app.ai.AiSaleConfirmationRequest
+import com.cuentivo.app.ai.AiSaleExecutionResult
+import com.cuentivo.app.ai.AiSalePreviewResult
+import com.cuentivo.app.ai.CreateSaleProposal
 import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.data.local.CustomerBalanceRow
@@ -259,6 +263,8 @@ fun CuentivoApp(
     aiDailyChatRepository: AiDailyChatRepository? = null,
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
+    salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal) -> AiSalePreviewResult)? = null,
+    confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
@@ -466,8 +472,10 @@ fun CuentivoApp(
                     transport = debugAiLabTransport,
                     repository = aiDailyChatRepository,
                     paymentPreviewResolver = paymentPreviewResolver,
+                    salePreviewResolver = salePreviewResolver,
                     activeBusinessId = activeBusinessId,
                     confirmPayment = confirmPayment,
+                    confirmSale = confirmSale,
                     onClose = { showAiDebugLab = false },
                 )
             }

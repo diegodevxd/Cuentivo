@@ -14,7 +14,13 @@ import com.cuentivo.app.data.local.PaymentEntity
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
+import com.cuentivo.app.data.local.StoredSaleBundle
+import com.cuentivo.app.data.local.SyncOperationEntity
+import com.cuentivo.app.domain.CustomerRepository
+import com.cuentivo.app.domain.ProductRepository
 import com.cuentivo.app.domain.SaleRepository
+import com.cuentivo.app.sync.SyncOperationId
+import com.cuentivo.app.sync.SyncPayloads
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -106,7 +112,9 @@ class AiSaleExecutionIsolationTest {
         database.close()
     }
 
-    private fun createService() = AiSaleExecutionService(
+    private fun createService(
+        onEnqueue: (suspend (StoredSaleBundle) -> Unit)? = null,
+    ) = AiSaleExecutionService(
         registerSale = { key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId ->
             saleRepository.registerAgainstPreview(
                 idempotencyKey = key,
@@ -121,6 +129,8 @@ class AiSaleExecutionIsolationTest {
                 expectedInitialPaymentId = expectedInitialPaymentId,
             )
         },
+        loadStoredBundle = saleRepository::storedBundle,
+        enqueueStoredBundle = onEnqueue,
         currentUserId = { userId },
         nowMillis = { 20_000L },
         todayEpochDay = { 20_500L },
@@ -673,5 +683,221 @@ class AiSaleExecutionIsolationTest {
 
         val allSales = database.financialDao().allSalesForBackfill(businessId)
         assertEquals(1, allSales.size)
+    }
+
+    @Test
+    fun previewAloneWritesNothing() = runBlocking {
+        val customerRepo = CustomerRepository(database.customerDao())
+        val productRepo = ProductRepository(database.productDao())
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = customerRepo::search,
+            searchProducts = productRepo::search,
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María Gómez",
+            lines = listOf(
+                AiProposalSaleLine(productName = "Jabón Corporal", quantity = 2, unitPriceCents = 5000L),
+            ),
+            declaredInitialPaymentCents = 1000L,
+            promisedPaymentCandidate = null,
+        )
+
+        val previewResult = resolver.resolve(businessId, proposal)
+        assertTrue("preview must be Ready", previewResult is AiSalePreviewResult.Ready)
+
+        // Verify zero database mutations across all financial tables
+        assertEquals(0, database.financialDao().allSalesForBackfill(businessId).size)
+        assertEquals(0, database.financialDao().allPaymentsForBackfill(businessId).size)
+        assertEquals(0, database.financialDao().customerMovements(businessId, customerId).size)
+        assertEquals(0, database.financialDao().itemsForSale("any").size)
+        assertEquals(0, database.auditDao().forBusiness(businessId).size)
+    }
+
+    @Test
+    fun recordedSaleEnqueuesExactOutboxAndReplayDoesNotDuplicateOutbox() = runBlocking {
+        val enqueuedOps = mutableListOf<SyncOperationEntity>()
+        val service = createService(
+            onEnqueue = { bundle ->
+                val sale = bundle.sale
+                val now = sale.createdAtEpochMillis
+                val saleOp = SyncOperationEntity(
+                    id = SyncOperationId.create(sale.businessId, "SALE", sale.id, now),
+                    businessId = sale.businessId,
+                    entityType = "SALE",
+                    entityId = sale.id,
+                    operation = "UPSERT",
+                    payload = org.json.JSONObject(SyncPayloads.sale(sale)).toString(),
+                    createdAtEpochMillis = now,
+                    attemptCount = 0,
+                    lastError = null,
+                )
+                database.syncOperationDao().enqueue(saleOp)
+                enqueuedOps.add(saleOp)
+
+                bundle.items.forEach { item ->
+                    val itemOp = SyncOperationEntity(
+                        id = SyncOperationId.create(sale.businessId, "SALE_ITEM", item.id, now),
+                        businessId = sale.businessId,
+                        entityType = "SALE_ITEM",
+                        entityId = item.id,
+                        operation = "UPSERT",
+                        payload = org.json.JSONObject(SyncPayloads.saleItem(item)).toString(),
+                        createdAtEpochMillis = now,
+                        attemptCount = 0,
+                        lastError = null,
+                    )
+                    database.syncOperationDao().enqueue(itemOp)
+                    enqueuedOps.add(itemOp)
+                }
+
+                val chargeOp = SyncOperationEntity(
+                    id = SyncOperationId.create(sale.businessId, "MOVEMENT", bundle.chargeMovement.id, now),
+                    businessId = sale.businessId,
+                    entityType = "MOVEMENT",
+                    entityId = bundle.chargeMovement.id,
+                    operation = "UPSERT",
+                    payload = org.json.JSONObject(SyncPayloads.movement(bundle.chargeMovement)).toString(),
+                    createdAtEpochMillis = now,
+                    attemptCount = 0,
+                    lastError = null,
+                )
+                database.syncOperationDao().enqueue(chargeOp)
+                enqueuedOps.add(chargeOp)
+
+                bundle.paymentBundle?.let { pBundle ->
+                    val payment = pBundle.payment
+                    val payOp = SyncOperationEntity(
+                        id = SyncOperationId.create(payment.businessId, "PAYMENT", payment.id, now),
+                        businessId = payment.businessId,
+                        entityType = "PAYMENT",
+                        entityId = payment.id,
+                        operation = "UPSERT",
+                        payload = org.json.JSONObject(SyncPayloads.payment(payment)).toString(),
+                        createdAtEpochMillis = now,
+                        attemptCount = 0,
+                        lastError = null,
+                    )
+                    database.syncOperationDao().enqueue(payOp)
+                    enqueuedOps.add(payOp)
+
+                    pBundle.allocations.forEach { alloc ->
+                        val allocOp = SyncOperationEntity(
+                            id = SyncOperationId.create(payment.businessId, "PAYMENT_ALLOCATION", alloc.id, now),
+                            businessId = payment.businessId,
+                            entityType = "PAYMENT_ALLOCATION",
+                            entityId = alloc.id,
+                            operation = "UPSERT",
+                            payload = org.json.JSONObject(SyncPayloads.allocation(alloc)).toString(),
+                            createdAtEpochMillis = now,
+                            attemptCount = 0,
+                            lastError = null,
+                        )
+                        database.syncOperationDao().enqueue(allocOp)
+                        enqueuedOps.add(allocOp)
+                    }
+
+                    val movOp = SyncOperationEntity(
+                        id = SyncOperationId.create(payment.businessId, "MOVEMENT", pBundle.movement.id, now),
+                        businessId = payment.businessId,
+                        entityType = "MOVEMENT",
+                        entityId = pBundle.movement.id,
+                        operation = "UPSERT",
+                        payload = org.json.JSONObject(SyncPayloads.movement(pBundle.movement)).toString(),
+                        createdAtEpochMillis = now,
+                        attemptCount = 0,
+                        lastError = null,
+                    )
+                    database.syncOperationDao().enqueue(movOp)
+                    enqueuedOps.add(movOp)
+                }
+            },
+        )
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "sale-conf-outbox-1",
+            businessId = businessId,
+            customerId = customerId,
+            sourceCustomerFingerprint = "$customerId:10000",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = productId,
+                    productNameSnapshot = "Jabón Corporal",
+                    quantity = 2,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 10000L,
+                    sourceProductFingerprint = "$productId:10000:5000",
+                ),
+            ),
+            totalCents = 10000L,
+            initialPaymentCents = 3000L,
+        )
+
+        val result1 = service.confirm(request)
+        assertTrue(result1 is AiSaleExecutionResult.Recorded)
+
+        // 1 SALE, 1 SALE_ITEM, 1 CHARGE, 1 PAYMENT, 1 PAYMENT_ALLOCATION, 1 PAYMENT MOVEMENT = 6 ops
+        val pending1 = database.syncOperationDao().pending(100)
+        assertEquals(6, pending1.size)
+
+        // Replaying same key should re-enqueue exact same operation IDs, leaving outbox count at 6 without duplicates
+        val result2 = service.confirm(request)
+        assertTrue(result2 is AiSaleExecutionResult.Recorded)
+        assertEquals((result1 as AiSaleExecutionResult.Recorded).saleId, (result2 as AiSaleExecutionResult.Recorded).saleId)
+        assertEquals(result1.paymentId, result2.paymentId)
+
+        val pending2 = database.syncOperationDao().pending(100)
+        assertEquals(6, pending2.size)
+    }
+
+    @Test
+    fun enqueueFailureAfterCommitRecoversOnRetryWithoutDuplicateRows() = runBlocking {
+        var enqueueAttempts = 0
+        val service = createService(
+            onEnqueue = { _ ->
+                enqueueAttempts++
+                if (enqueueAttempts == 1) {
+                    throw RuntimeException("Simulated crash during outbox enqueue")
+                }
+            },
+        )
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "sale-conf-crash-retry",
+            businessId = businessId,
+            customerId = customerId,
+            sourceCustomerFingerprint = "$customerId:10000",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = productId,
+                    productNameSnapshot = "Jabón Corporal",
+                    quantity = 1,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 5000L,
+                    sourceProductFingerprint = "$productId:10000:5000",
+                ),
+            ),
+            totalCents = 5000L,
+            initialPaymentCents = 0L,
+        )
+
+        // First attempt commits Room transaction but crashes on enqueue -> Unavailable
+        val firstResult = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.Unavailable, firstResult)
+
+        // Room has exactly 1 committed sale
+        val salesAfterFirst = database.financialDao().allSalesForBackfill(businessId)
+        assertEquals(1, salesAfterFirst.size)
+        val committedSaleId = salesAfterFirst.first().id
+
+        // Retry with same confirmation key succeeds and recognizes already-recorded sale
+        val retryResult = service.confirm(request)
+        assertTrue(retryResult is AiSaleExecutionResult.Recorded)
+        assertEquals(committedSaleId, (retryResult as AiSaleExecutionResult.Recorded).saleId)
+
+        // Database still has exactly 1 sale, 1 item, 1 charge movement
+        assertEquals(1, database.financialDao().allSalesForBackfill(businessId).size)
+        assertEquals(1, database.financialDao().itemsForSale(committedSaleId).size)
+        assertNotNull(database.financialDao().chargeMovementForSale(committedSaleId))
     }
 }

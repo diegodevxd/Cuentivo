@@ -59,8 +59,13 @@ import com.cuentivo.app.data.local.SaleItemEntity
 import com.cuentivo.app.ai.AiPaymentExecutionResult
 import com.cuentivo.app.ai.AiPaymentExecutionService
 import com.cuentivo.app.ai.AiPaymentPreviewResolver
+import com.cuentivo.app.ai.AiSaleExecutionResult
+import com.cuentivo.app.ai.AiSaleExecutionService
+import com.cuentivo.app.ai.AiSalePreviewResolver
 import com.cuentivo.app.domain.CustomerRepository
 import com.cuentivo.app.domain.PaymentRepository
+import com.cuentivo.app.domain.ProductRepository
+import com.cuentivo.app.domain.SaleRepository
 import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.ui.theme.CuentivoTheme
 import com.cuentivo.app.data.local.CUENTIVO_MIGRATIONS
@@ -754,10 +759,17 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 val customerRepository = remember { CustomerRepository(database.customerDao()) }
+                val productRepository = remember { ProductRepository(database.productDao()) }
                 val aiPaymentPreviewResolver = remember {
                     AiPaymentPreviewResolver(
                         searchCustomers = customerRepository::search,
                         loadBalanceCents = database.financialDao()::customerBalanceCents,
+                    )
+                }
+                val aiSalePreviewResolver = remember {
+                    AiSalePreviewResolver(
+                        searchCustomers = customerRepository::search,
+                        searchProducts = productRepository::search,
                     )
                 }
                 val aiPaymentExecutionService = remember(currentUserId) {
@@ -772,6 +784,33 @@ class MainActivity : ComponentActivity() {
                                 syncQueue.enqueue(payment.businessId, "PAYMENT_ALLOCATION", allocation.id, payment.createdAtEpochMillis, SyncPayloads.allocation(allocation))
                             }
                             syncQueue.enqueue(payment.businessId, "MOVEMENT", bundle.movement.id, payment.createdAtEpochMillis, SyncPayloads.movement(bundle.movement))
+                        },
+                        currentUserId = { currentUserId },
+                        nowMillis = System::currentTimeMillis,
+                        todayEpochDay = { LocalDate.now().toEpochDay() },
+                    )
+                }
+                val aiSaleExecutionService = remember(currentUserId) {
+                    val saleRepository = SaleRepository(database.financialDao())
+                    AiSaleExecutionService(
+                        registerSale = saleRepository::registerAgainstPreview,
+                        loadStoredBundle = saleRepository::storedBundle,
+                        enqueueStoredBundle = { bundle ->
+                            val sale = bundle.sale
+                            val now = sale.createdAtEpochMillis
+                            syncQueue.enqueue(sale.businessId, "SALE", sale.id, now, SyncPayloads.sale(sale))
+                            bundle.items.forEach { item ->
+                                syncQueue.enqueue(sale.businessId, "SALE_ITEM", item.id, now, SyncPayloads.saleItem(item))
+                            }
+                            syncQueue.enqueue(sale.businessId, "MOVEMENT", bundle.chargeMovement.id, now, SyncPayloads.movement(bundle.chargeMovement))
+                            bundle.paymentBundle?.let { pBundle ->
+                                val payment = pBundle.payment
+                                syncQueue.enqueue(payment.businessId, "PAYMENT", payment.id, now, SyncPayloads.payment(payment))
+                                pBundle.allocations.forEach { allocation ->
+                                    syncQueue.enqueue(payment.businessId, "PAYMENT_ALLOCATION", allocation.id, now, SyncPayloads.allocation(allocation))
+                                }
+                                syncQueue.enqueue(payment.businessId, "MOVEMENT", pBundle.movement.id, now, SyncPayloads.movement(pBundle.movement))
+                            }
                         },
                         currentUserId = { currentUserId },
                         nowMillis = System::currentTimeMillis,
@@ -916,11 +955,24 @@ class MainActivity : ComponentActivity() {
                     paymentPreviewResolver = aiPaymentPreviewResolver::resolve,
                     confirmPayment = { request ->
                         val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
-                        if (activeBusinessId == null || activeBusinessId != request.businessId) {
+                        if (activeBusinessId == null || activeBusinessId != request.businessId || currentUserId.isBlank()) {
                             AiPaymentExecutionResult.Rejected
                         } else {
                             val result = aiPaymentExecutionService.confirm(request)
                             if (result is AiPaymentExecutionResult.Recorded) {
+                                refreshKey++
+                            }
+                            result
+                        }
+                    },
+                    salePreviewResolver = aiSalePreviewResolver::resolve,
+                    confirmSale = { request ->
+                        val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
+                        if (activeBusinessId == null || activeBusinessId != request.businessId || currentUserId.isBlank()) {
+                            AiSaleExecutionResult.Rejected
+                        } else {
+                            val result = aiSaleExecutionService.confirm(request)
+                            if (result is AiSaleExecutionResult.Recorded) {
                                 refreshKey++
                             }
                             result

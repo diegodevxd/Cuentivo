@@ -316,6 +316,34 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `main activity constructs AiSalePreviewResolver once using read only method references`() {
+        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        assertTrue("must construct ProductRepository", source.contains("ProductRepository(database.productDao())"))
+        assertTrue("must construct AiSalePreviewResolver", source.contains("AiSalePreviewResolver("))
+        assertTrue("must use customerRepository search reference", source.contains("customerRepository::search"))
+        assertTrue("must use productRepository search reference", source.contains("productRepository::search"))
+        assertTrue("must pass salePreviewResolver to CuentivoApp", source.contains("salePreviewResolver ="))
+    }
+
+    @Test
+    fun `main activity constructs AiSaleExecutionService using local repository and sync queue and passes confirmSale to CuentivoApp`() {
+        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        assertTrue("must construct SaleRepository", source.contains("SaleRepository(database.financialDao())"))
+        assertTrue("must construct AiSaleExecutionService", source.contains("AiSaleExecutionService("))
+        assertTrue("must wire registerAgainstPreview", source.contains("saleRepository::registerAgainstPreview"))
+        assertTrue("must wire storedBundle", source.contains("saleRepository::storedBundle"))
+        assertTrue("must enqueue SALE", source.contains("\"SALE\""))
+        assertTrue("must enqueue SALE_ITEM", source.contains("\"SALE_ITEM\""))
+        assertTrue("must enqueue MOVEMENT", source.contains("\"MOVEMENT\""))
+        assertTrue("must enqueue PAYMENT", source.contains("\"PAYMENT\""))
+        assertTrue("must enqueue PAYMENT_ALLOCATION", source.contains("\"PAYMENT_ALLOCATION\""))
+        assertTrue("must pass confirmSale to CuentivoApp", source.contains("confirmSale ="))
+        assertTrue("must validate active business ID from DashboardUiState.Content", source.contains("(state as? DashboardUiState.Content)?.businessId"))
+        assertTrue("must reject null or mismatched businessId or blank user", source.contains("activeBusinessId == null || activeBusinessId != request.businessId || currentUserId.isBlank()"))
+        assertTrue("must return Rejected on mismatch", source.contains("AiSaleExecutionResult.Rejected"))
+    }
+
+    @Test
     fun `cuentivo app derives active business id exclusively from DashboardUiState Content and passes dependencies`() {
         val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
         assertTrue(
@@ -328,8 +356,17 @@ class AiDebugLabGuardsTest {
                 source.contains("activeBusinessId = activeBusinessId"),
         )
         assertTrue(
+            "screen must receive salePreviewResolver and confirmSale",
+            source.contains("salePreviewResolver = salePreviewResolver") &&
+                source.contains("confirmSale = confirmSale"),
+        )
+        assertTrue(
             "CuentivoApp parameter confirmPayment must be nullable suspend callback",
             source.contains("confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null"),
+        )
+        assertTrue(
+            "CuentivoApp parameter confirmSale must be nullable suspend callback",
+            source.contains("confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null"),
         )
         assertTrue(
             "screen must receive confirmPayment",
