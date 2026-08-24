@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,10 +31,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +55,7 @@ import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.capture.AiCapturePolicy
 import com.cuentivo.app.ai.capture.AiCaptureStore
 import com.cuentivo.app.ai.capture.AiOcrEngine
+import com.cuentivo.app.ui.product.CameraCaptureStore
 import java.io.File
 import java.math.BigDecimal
 import java.util.UUID
@@ -78,6 +83,18 @@ fun AiDebugLabEntryButton(
 }
 
 /**
+ * Survives Activity recreation while the camera app is in front.
+ *
+ * The camera runs in another process, so this one can be destroyed while it is on screen. A plain
+ * `remember` would forget where the photo was being written and the returning result would be
+ * dropped even though the file landed on disk.
+ */
+private val CaptureUriSaver = Saver<Uri?, String>(
+    save = { it?.toString() },
+    restore = { Uri.parse(it) },
+)
+
+/**
  * Non-executable debug text lab. Edits text, sends ONE request through the injected transport and
  * shows the safe result: unavailable, clarification or a typed proposal preview. There is no
  * confirm/save/execute control and nothing connects to sales, payments, products, customers,
@@ -98,13 +115,25 @@ fun AiDebugLabScreen(
     val captureStore = remember(context) {
         com.cuentivo.app.ai.capture.AiCaptureStore(java.io.File(context.cacheDir, "ai-capture"))
     }
+    val cameraStore = remember(context) { CameraCaptureStore(context) }
+    var pendingCaptureUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
     val ocrEngine = remember(context) { debugAiOcrEngine(context) }
+
+    // Sweeps captures orphaned by an earlier dialog when this one opens, not in onDispose:
+    // leaving composition can mean the Activity was destroyed while the camera app was still
+    // writing to that very file, and deleting it there threw away the photo the user just took.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { cameraStore.deleteStale(except = pendingCaptureUri) }
+    }
 
     // One close action: cancel the in-flight request (generation bump) BEFORE closing, so a late
     // transport result is always invalidated. Also sweeps all capture temp files.
     val closeLab = {
         model = AiDebugLabMachine.onCancel(model)
         captureStore.cleanupAll()
+        pendingCaptureUri?.let(cameraStore::delete)
+        pendingCaptureUri = null
+        cameraStore.deleteStale(except = null)
         onClose()
     }
 
@@ -150,6 +179,41 @@ fun AiDebugLabScreen(
                     null
                 } finally {
                     captureStore.deleteCapture(captureFile)
+                }
+            }
+            model = AiDebugLabMachine.onOcrResult(model, recognizedText, token)
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { success ->
+        val uri = pendingCaptureUri ?: return@rememberLauncherForActivityResult
+        pendingCaptureUri = null
+        if (!success) {
+            cameraStore.delete(uri)
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val token = model.generation
+            val recognizedText = withContext(Dispatchers.IO) {
+                val file = cameraStore.fileFor(uri)
+                try {
+                    if (!AiCapturePolicy.isWithinByteCap(file.length())) {
+                        return@withContext null
+                    }
+                    val bounds = android.graphics.BitmapFactory.Options().apply {
+                        inJustDecodeBounds = true
+                    }
+                    android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+                    if (!AiCapturePolicy.isWithinDimensions(bounds.outWidth, bounds.outHeight)) {
+                        return@withContext null
+                    }
+                    ocrEngine?.recognize(file)
+                } catch (_: Exception) {
+                    null
+                } finally {
+                    cameraStore.delete(uri)
                 }
             }
             model = AiDebugLabMachine.onOcrResult(model, recognizedText, token)
@@ -230,7 +294,12 @@ fun AiDebugLabScreen(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { model = AiDebugLabMachine.onReset(model) }) {
+                TextButton(onClick = {
+                    pendingCaptureUri?.let(cameraStore::delete)
+                    pendingCaptureUri = null
+                    cameraStore.deleteStale(except = null)
+                    model = AiDebugLabMachine.onReset(model)
+                }) {
                     Text(stringResource(R.string.ai_debug_lab_new))
                 }
                 if (ocrEngine != null) {
@@ -252,7 +321,18 @@ fun AiDebugLabScreen(
                     TextButton(
                         onClick = {
                             showSourceSelector = false
-                            cameraUnavailable = true
+                            cameraUnavailable = false
+                            cameraStore.deleteStale(except = pendingCaptureUri)
+                            val attempt = runCatching {
+                                val uri = cameraStore.createCaptureUri()
+                                pendingCaptureUri = uri
+                                cameraLauncher.launch(uri)
+                            }
+                            if (attempt.isFailure) {
+                                pendingCaptureUri?.let(cameraStore::delete)
+                                pendingCaptureUri = null
+                                cameraUnavailable = true
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.ai_debug_chat_camera)) }

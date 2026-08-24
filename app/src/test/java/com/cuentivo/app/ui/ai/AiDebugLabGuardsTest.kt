@@ -141,6 +141,29 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `camera capture uses existing store and take picture contract without permissions or network`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("must use the existing CameraCaptureStore", source.contains("CameraCaptureStore"))
+        assertTrue("must use TakePicture contract", source.contains("ActivityResultContracts.TakePicture"))
+        assertTrue("must create a capture URI", source.contains("createCaptureUri"))
+        assertTrue("must sweep stale captures", source.contains("deleteStale"))
+        assertTrue("must delete the capture after the callback", source.contains("cameraStore.delete"))
+        assertFalse("no CAMERA permission", source.contains("CAMERA"))
+        assertFalse("no RECORD_AUDIO", source.contains("RECORD_AUDIO"))
+        assertFalse("no Gemini client", source.contains("Gemini"))
+        assertFalse("no network", source.contains("http"))
+    }
+
+    @Test
+    fun `pending capture uri survives activity recreation via rememberSaveable`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("must use rememberSaveable for the pending URI", source.contains("rememberSaveable"))
+        assertTrue("must define a URI saver", source.contains("Saver<Uri?, String>"))
+        assertTrue("must bind the saver via stateSaver", source.contains("stateSaver"))
+        assertTrue("must sweep stale captures on entry", source.contains("deleteStale(except = pendingCaptureUri)"))
+    }
+
+    @Test
     fun `release transport provides the same API without Firebase`() {
         val release = File("src/release/java/com/cuentivo/app/ui/ai/AiDebugTransportRelease.kt")
         assertTrue("release transport must exist", release.exists())
