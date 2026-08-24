@@ -115,8 +115,13 @@ git commit -m "feat(ai-history): add scoped daily chat repository"
 **Files:**
 - Modify: `app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt`
 - Create: `app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabTurnPolicy.kt`
+- Modify: `app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt`
+- Modify: `app/src/main/res/values/strings.xml`
+- Modify: `app/src/main/res/values-en/strings.xml`
 - Modify: `app/src/test/java/com/cuentivo/app/ui/ai/AiDebugLabMachineTest.kt`
 - Create: `app/src/test/java/com/cuentivo/app/ui/ai/AiDebugLabTurnPolicyTest.kt`
+
+The two new sealed presentation variants make the existing exhaustive `ChatMessageRow` fail to compile unless it renders them. This narrow UI/resource amendment belongs to Task 2; persistence wiring, delete behavior, host construction and activity changes remain exclusively in Task 3.
 
 **Interfaces:**
 - Consumes: `AiDailyStoredMessage`, `AiBusinessScopePolicy`, `AiDebugLabSubmitPolicy`.
@@ -176,7 +181,7 @@ git diff --check
 - [ ] **Step 5: Commit only Task 2 files**
 
 ```powershell
-git add app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabTurnPolicy.kt app/src/test/java/com/cuentivo/app/ui/ai/AiDebugLabMachineTest.kt app/src/test/java/com/cuentivo/app/ui/ai/AiDebugLabTurnPolicyTest.kt
+git add app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabTurnPolicy.kt app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt app/src/main/res/values/strings.xml app/src/main/res/values-en/strings.xml app/src/test/java/com/cuentivo/app/ui/ai/AiDebugLabMachineTest.kt app/src/test/java/com/cuentivo/app/ui/ai/AiDebugLabTurnPolicyTest.kt
 git commit -m "feat(ai-ui): enforce business-only daily turns"
 ```
 
