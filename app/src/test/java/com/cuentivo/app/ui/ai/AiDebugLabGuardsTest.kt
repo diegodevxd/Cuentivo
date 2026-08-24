@@ -43,7 +43,7 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `main ai lab sources never expose an executable financial action`() {
+    fun `main ai lab sources never expose direct DAO Room or sync imports`() {
         for (source in sourcesOf(mainDir)) {
             val imports = source.lines().filter { it.startsWith("import ") }.joinToString("\n")
             assertFalse("no financial DAO imports in main", imports.contains("Dao") || imports.contains("Entity") || imports.contains("CuentivoDatabase"))
@@ -51,10 +51,9 @@ class AiDebugLabGuardsTest {
             assertFalse("no outbox or sync in main", imports.contains("sync") || imports.contains("SyncQueue"))
             assertFalse("no Room imports in main", imports.contains(".room."))
             assertFalse(
-                "no financial confirmation action in main",
+                "no financial sale confirmation action in main",
                 source.contains("onConfirmSale") ||
                     source.contains("onSaveSale") ||
-                    source.contains("onConfirmPayment") ||
                     source.contains("onRecordPayment"),
             )
         }
@@ -157,14 +156,13 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `chat UI renders a transcript and bottom composer but no confirmation action`() {
+    fun `chat UI renders a transcript and bottom composer with neutral assistant cards`() {
         val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
         assertTrue("transcript must use LazyColumn", source.contains("LazyColumn"))
         assertTrue("transcript must render user messages", source.contains("AiChatMessage.UserText"))
         assertTrue("capture sheet must offer camera", source.contains("ai_debug_chat_camera"))
         assertTrue("capture sheet must offer gallery", source.contains("ai_debug_chat_gallery"))
-        assertFalse("no confirmation action label", source.contains("Confirmar operación"))
-        assertFalse("no confirmation callback", source.contains("onConfirm"))
+        assertFalse("no sale confirmation action label", source.contains("Confirmar operación") || source.contains("Confirmar venta"))
     }
 
     @Test
@@ -343,15 +341,79 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `chat message row renders all sealed payment variants with draft note and zero confirmation actions`() {
+    fun `chat message row renders all sealed payment variants with confirmation action only on preview`() {
         val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
         assertTrue("must handle AssistantPaymentPreview", source.contains("is AiChatMessage.AssistantPaymentPreview"))
         assertTrue("must handle AssistantPaymentCustomerNotFound", source.contains("AiChatMessage.AssistantPaymentCustomerNotFound"))
         assertTrue("must handle AssistantPaymentCustomerSelection", source.contains("is AiChatMessage.AssistantPaymentCustomerSelection"))
         assertTrue("must handle AssistantPaymentBlocked", source.contains("is AiChatMessage.AssistantPaymentBlocked"))
+        assertTrue("must handle AssistantPaymentRecorded", source.contains("is AiChatMessage.AssistantPaymentRecorded"))
+        assertTrue("must handle AssistantPaymentStale", source.contains("AiChatMessage.AssistantPaymentStale"))
+        assertTrue("must handle AssistantPaymentRejected", source.contains("AiChatMessage.AssistantPaymentRejected"))
         assertTrue("must render draft note", source.contains("ai_payment_preview_draft_note"))
-        assertFalse("no confirmation action label", source.contains("Confirmar pago") || source.contains("Guardar abono") || source.contains("Registrar abono"))
-        assertFalse("no execution callback in payment card", source.contains("onConfirmPayment") || source.contains("onExecutePayment"))
+        assertTrue("must offer confirm action", source.contains("ai_payment_confirm_action"))
+        assertTrue("must offer cancel action", source.contains("ai_payment_confirm_cancel"))
+    }
+
+    @Test
+    fun `no confirm action exists for blocked, unresolved, unavailable or arbitrary proposal messages`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val chatMessageRowBlock = source.substring(
+            source.indexOf("private fun ChatMessageRow("),
+            source.indexOf("private fun ProposalPreviewContent("),
+        )
+        val blockedBlock = chatMessageRowBlock.substring(
+            chatMessageRowBlock.indexOf("is AiChatMessage.AssistantPaymentBlocked"),
+            chatMessageRowBlock.indexOf("is AiChatMessage.AssistantPaymentRecorded"),
+        )
+        assertFalse("blocked has no confirm action", blockedBlock.contains("ai_payment_confirm_action"))
+
+        val notFoundBlock = chatMessageRowBlock.substring(
+            chatMessageRowBlock.indexOf("AiChatMessage.AssistantPaymentCustomerNotFound"),
+            chatMessageRowBlock.indexOf("is AiChatMessage.AssistantPaymentCustomerSelection"),
+        )
+        assertFalse("not found has no confirm action", notFoundBlock.contains("ai_payment_confirm_action"))
+
+        val selectionBlock = chatMessageRowBlock.substring(
+            chatMessageRowBlock.indexOf("is AiChatMessage.AssistantPaymentCustomerSelection"),
+            chatMessageRowBlock.indexOf("is AiChatMessage.AssistantPaymentBlocked"),
+        )
+        assertFalse("selection has no confirm action", selectionBlock.contains("ai_payment_confirm_action"))
+
+        val proposalBlock = chatMessageRowBlock.substring(
+            chatMessageRowBlock.indexOf("is AiChatMessage.AssistantProposal"),
+            chatMessageRowBlock.indexOf("is AiChatMessage.AssistantPaymentPreview"),
+        )
+        assertFalse("proposal has no confirm action", proposalBlock.contains("ai_payment_confirm_action"))
+    }
+
+    @Test
+    fun `no callable or Gemini invocation occurs during confirmation`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val confirmCallIndex = source.indexOf("confirmPayment(outcome.request)")
+        assertTrue("confirmPayment is called with local request", confirmCallIndex != -1)
+        val surroundingBlock = source.substring(
+            source.lastIndexOf("onConfirmPayment = if", confirmCallIndex),
+            source.indexOf("onCancelPayment =", confirmCallIndex),
+        )
+        assertFalse("confirmation must not invoke transport", surroundingBlock.contains("transport"))
+        assertFalse("confirmation must not invoke turn policy", surroundingBlock.contains("AiDebugLabTurnPolicy"))
+        assertFalse("confirmation must not invoke Gemini", surroundingBlock.contains("gemini", ignoreCase = true))
+    }
+
+    @Test
+    fun `confirmation key and payment ID are not shown in UI or persisted in daily chat`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertFalse("confirmationKey is never displayed in UI text", screenSource.contains(".confirmationKey"))
+        assertFalse("paymentId is never displayed in UI text", screenSource.contains(".paymentId"))
+
+        val modelSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt").readText()
+        val historyLoadedBlock = modelSource.substring(
+            modelSource.indexOf("fun onHistoryLoaded"),
+            modelSource.indexOf("fun onOutOfScope"),
+        )
+        assertFalse("history loader never restores payment confirmation", historyLoadedBlock.contains("PaymentConfirmation"))
+        assertFalse("history loader never restores payment recorded", historyLoadedBlock.contains("AssistantPaymentRecorded"))
     }
 
     @Test
@@ -367,6 +429,11 @@ class AiDebugLabGuardsTest {
             "ai_payment_preview_draft_note",
             "ai_payment_preview_blocked_no_debt",
             "ai_payment_preview_blocked_exceeds_debt",
+            "ai_payment_confirm_action",
+            "ai_payment_confirm_cancel",
+            "ai_payment_recorded_success",
+            "ai_payment_stale_message",
+            "ai_payment_rejected_message",
         )
         for (key in requiredKeys) {
             assertTrue("Spanish strings must contain $key", esXml.contains("name=\"$key\""))

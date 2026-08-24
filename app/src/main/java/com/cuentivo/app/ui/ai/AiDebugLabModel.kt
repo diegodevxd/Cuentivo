@@ -2,7 +2,9 @@ package com.cuentivo.app.ui.ai
 
 import com.cuentivo.app.ai.AiDailyMessageKind
 import com.cuentivo.app.ai.AiPaymentBlockReason
+import com.cuentivo.app.ai.AiPaymentConfirmationRequest
 import com.cuentivo.app.ai.AiPaymentCustomerCandidate
+import com.cuentivo.app.ai.AiPaymentExecutionResult
 import com.cuentivo.app.ai.AiPaymentPreviewResult
 import com.cuentivo.app.ai.AiProposal
 import com.cuentivo.app.ai.AiProposalValidationResult
@@ -28,6 +30,8 @@ sealed interface AiDebugLabState {
 
     /** Non-executable resolved payment preview state; never triggers financial writes. */
     data class PaymentResolution(val result: com.cuentivo.app.ai.AiPaymentPreviewResult) : AiDebugLabState
+    data class PaymentConfirmation(val preview: AiResolvedPaymentPreview) : AiDebugLabState
+    data class PaymentConfirming(val preview: AiResolvedPaymentPreview) : AiDebugLabState
 }
 
 /** Immutable lab view state; [generation] is the single-flight/cancellation token. */
@@ -94,6 +98,19 @@ sealed interface AiChatMessage {
         val reason: AiPaymentBlockReason,
         val preview: AiResolvedPaymentPreview?,
     ) : AiChatMessage
+
+    data class AssistantPaymentRecorded(val paymentId: String) : AiChatMessage
+    data object AssistantPaymentStale : AiChatMessage
+    data object AssistantPaymentRejected : AiChatMessage
+}
+
+sealed interface AiPaymentConfirmOutcome {
+    data object Ignored : AiPaymentConfirmOutcome
+    data class Started(
+        val model: AiDebugLabModel,
+        val request: AiPaymentConfirmationRequest,
+        val generation: Long,
+    ) : AiPaymentConfirmOutcome
 }
 
 /** Result of a submit decision: [Ignored*] means the gateway is never invoked. */
@@ -114,7 +131,8 @@ object AiDebugLabMachine {
     fun onTextChanged(model: AiDebugLabModel, newText: String): AiDebugLabModel =
         when (model.state) {
             // Single-flight: editing is ignored while a request is in flight.
-            AiDebugLabState.Sending -> model
+            AiDebugLabState.Sending,
+            is AiDebugLabState.PaymentConfirming -> model
             AiDebugLabState.TextEditing -> model.copy(text = newText)
             // From a result state the next turn starts: accept text and return to editing.
             else -> model.copy(state = AiDebugLabState.TextEditing, text = newText)
@@ -318,9 +336,83 @@ object AiDebugLabMachine {
         }
         val newState: AiDebugLabState = when (assistantMessage) {
             AiChatMessage.AssistantUnavailable -> AiDebugLabState.Unavailable
+            is AiChatMessage.AssistantPaymentPreview -> AiDebugLabState.PaymentConfirmation(assistantMessage.preview)
             else -> AiDebugLabState.PaymentResolution(result)
         }
         return model.copy(state = newState, messages = messages, text = "")
+    }
+
+    /**
+     * Generation-safe confirmation start for a resolved payment preview.
+     *
+     * Accepts only when state is [AiDebugLabState.PaymentConfirmation], the last message matches
+     * the active preview, and the business ID is non-blank. Transitions to [AiDebugLabState.PaymentConfirming]
+     * with an incremented generation token. Fail-closed: any mismatch returns [AiPaymentConfirmOutcome.Ignored].
+     */
+    fun onConfirmPayment(model: AiDebugLabModel, businessId: String): AiPaymentConfirmOutcome {
+        if (businessId.isBlank()) return AiPaymentConfirmOutcome.Ignored
+        val state = model.state as? AiDebugLabState.PaymentConfirmation ?: return AiPaymentConfirmOutcome.Ignored
+        val preview = state.preview
+        val lastMessage = model.messages.lastOrNull() as? AiChatMessage.AssistantPaymentPreview ?: return AiPaymentConfirmOutcome.Ignored
+        if (lastMessage.preview != preview) return AiPaymentConfirmOutcome.Ignored
+
+        val nextGeneration = model.generation + 1
+        val nextModel = model.copy(
+            state = AiDebugLabState.PaymentConfirming(preview),
+            generation = nextGeneration,
+        )
+        val request = AiPaymentConfirmationRequest(
+            confirmationKey = preview.confirmationKey,
+            businessId = businessId,
+            customerId = preview.customerId,
+            expectedBalanceCents = preview.currentBalanceCents,
+            amountCents = preview.declaredAmountCents,
+        )
+        return AiPaymentConfirmOutcome.Started(
+            model = nextModel,
+            request = request,
+            generation = nextGeneration,
+        )
+    }
+
+    /**
+     * Applies the result of a confirmed payment execution.
+     *
+     * Accepts only matching [generation] and [AiDebugLabState.PaymentConfirming] where the last
+     * message is the corresponding [AiChatMessage.AssistantPaymentPreview]. Replaces the preview
+     * message with the outcome; never leaves confirmation active or duplicate draft cards.
+     */
+    fun onPaymentExecutionResult(
+        model: AiDebugLabModel,
+        result: AiPaymentExecutionResult,
+        generation: Long,
+    ): AiDebugLabModel {
+        if (generation != model.generation) return model
+        val state = model.state as? AiDebugLabState.PaymentConfirming ?: return model
+        val lastMessage = model.messages.lastOrNull() as? AiChatMessage.AssistantPaymentPreview ?: return model
+        if (lastMessage.preview != state.preview) return model
+
+        val assistantMessage: AiChatMessage = when (result) {
+            is AiPaymentExecutionResult.Recorded -> AiChatMessage.AssistantPaymentRecorded(result.paymentId)
+            is AiPaymentExecutionResult.StalePreview -> AiChatMessage.AssistantPaymentStale
+            is AiPaymentExecutionResult.Rejected -> AiChatMessage.AssistantPaymentRejected
+            is AiPaymentExecutionResult.Unavailable -> AiChatMessage.AssistantUnavailable
+        }
+
+        val messages = if (model.messages.isNotEmpty() && model.messages.last() is AiChatMessage.AssistantPaymentPreview) {
+            model.messages.dropLast(1) + assistantMessage
+        } else {
+            model.messages + assistantMessage
+        }
+        val newState = when (assistantMessage) {
+            AiChatMessage.AssistantUnavailable -> AiDebugLabState.Unavailable
+            else -> AiDebugLabState.TextEditing
+        }
+        return model.copy(
+            state = newState,
+            messages = messages,
+            text = "",
+        )
     }
 
     fun onReset(model: AiDebugLabModel): AiDebugLabModel =

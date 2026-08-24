@@ -525,11 +525,11 @@ class AiDebugLabMachineTest {
     )
 
     @Test
-    fun `ready produces exactly PaymentResolution state and AssistantPaymentPreview message`() {
+    fun `ready produces exactly PaymentConfirmation state and AssistantPaymentPreview message`() {
         val model = paymentModel(generation = 4)
         val ready = readyResult()
         val updated = AiDebugLabMachine.onPaymentPreviewResult(model, ready, generation = 4)
-        assertEquals(AiDebugLabState.PaymentResolution(ready), updated.state)
+        assertEquals(AiDebugLabState.PaymentConfirmation(ready.preview), updated.state)
         assertEquals(
             listOf(
                 AiChatMessage.UserText("María pagó 150"),
@@ -756,5 +756,180 @@ class AiDebugLabMachineTest {
         )
         val result = AiDebugLabMachine.onPaymentPreviewResult(model, readyResult(), generation = 4)
         assertSame(model, result)
+    }
+
+    // ---- Confirmation State Machine Tests ----
+
+    private fun confirmationModel(generation: Long = 4): AiDebugLabModel {
+        val preview = AiResolvedPaymentPreview("k1", "c1", "María", 40_000L, 15_000L, 25_000L)
+        return AiDebugLabModel(
+            state = AiDebugLabState.PaymentConfirmation(preview),
+            text = "",
+            messages = listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantPaymentPreview(preview),
+            ),
+            generation = generation,
+        )
+    }
+
+    @Test
+    fun `onConfirmPayment transitions to PaymentConfirming and returns Started outcome with exact request`() {
+        val model = confirmationModel(generation = 4)
+        val outcome = AiDebugLabMachine.onConfirmPayment(model, "business-1")
+
+        assertTrue("Expected Started but got $outcome", outcome is AiPaymentConfirmOutcome.Started)
+        val started = outcome as AiPaymentConfirmOutcome.Started
+        assertEquals(5L, started.generation)
+        assertEquals("k1", started.request.confirmationKey)
+        assertEquals("business-1", started.request.businessId)
+        assertEquals("c1", started.request.customerId)
+        assertEquals(40_000L, started.request.expectedBalanceCents)
+        assertEquals(15_000L, started.request.amountCents)
+
+        assertEquals(AiDebugLabState.PaymentConfirming(readyResult().preview), started.model.state)
+        assertEquals(5L, started.model.generation)
+    }
+
+    @Test
+    fun `second onConfirmPayment while confirming is ignored`() {
+        val model = confirmationModel(generation = 4)
+        val started = AiDebugLabMachine.onConfirmPayment(model, "business-1") as AiPaymentConfirmOutcome.Started
+        val secondOutcome = AiDebugLabMachine.onConfirmPayment(started.model, "business-1")
+
+        assertEquals(AiPaymentConfirmOutcome.Ignored, secondOutcome)
+    }
+
+    @Test
+    fun `onConfirmPayment from non-PaymentConfirmation state is ignored`() {
+        val model = paymentModel(generation = 4)
+        val outcome = AiDebugLabMachine.onConfirmPayment(model, "business-1")
+        assertEquals(AiPaymentConfirmOutcome.Ignored, outcome)
+    }
+
+    @Test
+    fun `onConfirmPayment with blank businessId is ignored`() {
+        val model = confirmationModel(generation = 4)
+        assertEquals(AiPaymentConfirmOutcome.Ignored, AiDebugLabMachine.onConfirmPayment(model, ""))
+        assertEquals(AiPaymentConfirmOutcome.Ignored, AiDebugLabMachine.onConfirmPayment(model, "   "))
+    }
+
+    @Test
+    fun `stale generation result onPaymentExecutionResult is ignored`() {
+        val model = confirmationModel(generation = 4)
+        val started = AiDebugLabMachine.onConfirmPayment(model, "business-1") as AiPaymentConfirmOutcome.Started
+        val confirmingModel = started.model
+
+        val updated = AiDebugLabMachine.onPaymentExecutionResult(
+            confirmingModel,
+            com.cuentivo.app.ai.AiPaymentExecutionResult.Recorded("pay-1"),
+            generation = 4L, // stale token (current is 5L)
+        )
+        assertSame(confirmingModel, updated)
+    }
+
+    @Test
+    fun `onPaymentExecutionResult with Recorded transitions to TextEditing and replaces preview with AssistantPaymentRecorded`() {
+        val model = confirmationModel(generation = 4)
+        val started = AiDebugLabMachine.onConfirmPayment(model, "business-1") as AiPaymentConfirmOutcome.Started
+        val confirmingModel = started.model
+
+        val updated = AiDebugLabMachine.onPaymentExecutionResult(
+            confirmingModel,
+            com.cuentivo.app.ai.AiPaymentExecutionResult.Recorded("pay-1"),
+            generation = 5L,
+        )
+
+        assertEquals(AiDebugLabState.TextEditing, updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantPaymentRecorded("pay-1"),
+            ),
+            updated.messages,
+        )
+        assertEquals("", updated.text)
+    }
+
+    @Test
+    fun `onPaymentExecutionResult with StalePreview transitions to TextEditing and appends AssistantPaymentStale`() {
+        val model = confirmationModel(generation = 4)
+        val started = AiDebugLabMachine.onConfirmPayment(model, "business-1") as AiPaymentConfirmOutcome.Started
+
+        val updated = AiDebugLabMachine.onPaymentExecutionResult(
+            started.model,
+            com.cuentivo.app.ai.AiPaymentExecutionResult.StalePreview,
+            generation = 5L,
+        )
+
+        assertEquals(AiDebugLabState.TextEditing, updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantPaymentStale,
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
+    fun `onPaymentExecutionResult with Rejected transitions to TextEditing and appends AssistantPaymentRejected`() {
+        val model = confirmationModel(generation = 4)
+        val started = AiDebugLabMachine.onConfirmPayment(model, "business-1") as AiPaymentConfirmOutcome.Started
+
+        val updated = AiDebugLabMachine.onPaymentExecutionResult(
+            started.model,
+            com.cuentivo.app.ai.AiPaymentExecutionResult.Rejected,
+            generation = 5L,
+        )
+
+        assertEquals(AiDebugLabState.TextEditing, updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantPaymentRejected,
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
+    fun `onPaymentExecutionResult with Unavailable transitions to Unavailable and appends AssistantUnavailable`() {
+        val model = confirmationModel(generation = 4)
+        val started = AiDebugLabMachine.onConfirmPayment(model, "business-1") as AiPaymentConfirmOutcome.Started
+
+        val updated = AiDebugLabMachine.onPaymentExecutionResult(
+            started.model,
+            com.cuentivo.app.ai.AiPaymentExecutionResult.Unavailable,
+            generation = 5L,
+        )
+
+        assertEquals(AiDebugLabState.Unavailable, updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("María pagó 150"),
+                AiChatMessage.AssistantUnavailable,
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
+    fun `onCancel during PaymentConfirming increments generation and returns to TextEditing`() {
+        val model = confirmationModel(generation = 4)
+        val started = AiDebugLabMachine.onConfirmPayment(model, "business-1") as AiPaymentConfirmOutcome.Started
+        val cancelled = AiDebugLabMachine.onCancel(started.model)
+
+        assertEquals(AiDebugLabState.TextEditing, cancelled.state)
+        assertEquals(6L, cancelled.generation)
+    }
+
+    @Test
+    fun `text editing is ignored while in PaymentConfirming state`() {
+        val model = confirmationModel(generation = 4)
+        val started = AiDebugLabMachine.onConfirmPayment(model, "business-1") as AiPaymentConfirmOutcome.Started
+        val edited = AiDebugLabMachine.onTextChanged(started.model, "new typing")
+
+        assertSame(started.model, edited)
     }
 }

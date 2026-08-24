@@ -51,6 +51,8 @@ import com.cuentivo.app.R
 import com.cuentivo.app.ai.AiDailyMessageKind
 import com.cuentivo.app.ai.AiInterpretRequest
 import com.cuentivo.app.ai.AiPaymentBlockReason
+import com.cuentivo.app.ai.AiPaymentConfirmationRequest
+import com.cuentivo.app.ai.AiPaymentExecutionResult
 import com.cuentivo.app.ai.AiPaymentPreviewResult
 import com.cuentivo.app.ai.AiProposal
 import com.cuentivo.app.ai.BusinessQueryProposal
@@ -115,6 +117,7 @@ fun AiDebugLabScreen(
     modifier: Modifier = Modifier,
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
     activeBusinessId: String? = null,
+    confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     var isHydrated by remember { mutableStateOf(false) }
@@ -274,7 +277,37 @@ fun AiDebugLabScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(model.messages) { message -> ChatMessageRow(message) }
+                items(model.messages) { message ->
+                    val isCurrentPreview = message is AiChatMessage.AssistantPaymentPreview && (
+                        (model.state as? AiDebugLabState.PaymentConfirmation)?.preview == message.preview ||
+                            (model.state as? AiDebugLabState.PaymentConfirming)?.preview == message.preview
+                    )
+                    val isConfirming = model.state is AiDebugLabState.PaymentConfirming
+                    ChatMessageRow(
+                        message = message,
+                        onConfirmPayment = if (isCurrentPreview && isHydrated && confirmPayment != null && activeBusinessId != null) {
+                            {
+                                val outcome = AiDebugLabMachine.onConfirmPayment(model, activeBusinessId)
+                                if (outcome is AiPaymentConfirmOutcome.Started) {
+                                    model = outcome.model
+                                    val token = outcome.generation
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                confirmPayment(outcome.request)
+                                            }.getOrDefault(AiPaymentExecutionResult.Unavailable)
+                                        }
+                                        model = AiDebugLabMachine.onPaymentExecutionResult(model, result, token)
+                                    }
+                                }
+                            }
+                        } else null,
+                        onCancelPayment = if (isCurrentPreview && isHydrated) {
+                            { model = AiDebugLabMachine.onCancel(model) }
+                        } else null,
+                        isConfirming = isConfirming,
+                    )
+                }
             }
             if (cameraUnavailable) {
                 Text(
@@ -445,7 +478,12 @@ fun AiDebugLabScreen(
 }
 
 @Composable
-private fun ChatMessageRow(message: AiChatMessage) {
+private fun ChatMessageRow(
+    message: AiChatMessage,
+    onConfirmPayment: (() -> Unit)? = null,
+    onCancelPayment: (() -> Unit)? = null,
+    isConfirming: Boolean = false,
+) {
     when (message) {
         is AiChatMessage.UserText -> Row(
             modifier = Modifier.fillMaxWidth(),
@@ -514,6 +552,25 @@ private fun ChatMessageRow(message: AiChatMessage) {
                 ),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (onConfirmPayment != null && onCancelPayment != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = onConfirmPayment,
+                        enabled = !isConfirming,
+                    ) {
+                        Text(stringResource(R.string.ai_payment_confirm_action))
+                    }
+                    TextButton(
+                        onClick = onCancelPayment,
+                        enabled = !isConfirming,
+                    ) {
+                        Text(stringResource(R.string.ai_payment_confirm_cancel))
+                    }
+                }
+            }
         }
         AiChatMessage.AssistantPaymentCustomerNotFound -> Text(
             text = stringResource(R.string.ai_payment_preview_customer_not_found),
@@ -546,6 +603,18 @@ private fun ChatMessageRow(message: AiChatMessage) {
                 }
             }
         }
+        is AiChatMessage.AssistantPaymentRecorded -> Text(
+            text = stringResource(R.string.ai_payment_recorded_success),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        AiChatMessage.AssistantPaymentStale -> Text(
+            text = stringResource(R.string.ai_payment_stale_message),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        AiChatMessage.AssistantPaymentRejected -> Text(
+            text = stringResource(R.string.ai_payment_rejected_message),
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 

@@ -463,4 +463,9 @@
     <string name="ai_payment_preview_draft_note">Draft: nothing is recorded</string>
     <string name="ai_payment_preview_blocked_no_debt">This customer has no outstanding debt.</string>
     <string name="ai_payment_preview_blocked_exceeds_debt">The proposed payment exceeds the current debt (%1$s). Cannot record a payment greater than the debt.</string>
+    <string name="ai_payment_confirm_action">Confirm payment</string>
+    <string name="ai_payment_confirm_cancel">Cancel</string>
+    <string name="ai_payment_recorded_success">Payment recorded successfully.</string>
+    <string name="ai_payment_stale_message">The customer\'s balance changed. Please request the payment again.</string>
+    <string name="ai_payment_rejected_message">Could not record the payment. Check the details and try again.</string>
 </resources>

@@ -463,4 +463,9 @@
     <string name="ai_payment_preview_draft_note">Borrador: no registra nada</string>
     <string name="ai_payment_preview_blocked_no_debt">Este cliente no tiene saldo pendiente por cobrar.</string>
     <string name="ai_payment_preview_blocked_exceeds_debt">El abono propuesto supera la deuda actual (%1$s). No se puede registrar un abono mayor a la deuda.</string>
+    <string name="ai_payment_confirm_action">Confirmar abono</string>
+    <string name="ai_payment_confirm_cancel">Cancelar</string>
+    <string name="ai_payment_recorded_success">Abono registrado con éxito.</string>
+    <string name="ai_payment_stale_message">El saldo del cliente cambió. Por favor solicita el abono nuevamente.</string>
+    <string name="ai_payment_rejected_message">No se pudo registrar el abono. Verifica los datos e intenta de nuevo.</string>
 </resources>
