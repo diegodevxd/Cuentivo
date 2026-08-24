@@ -5,12 +5,21 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * One non-financial daily-chat message, scoped by owner and device-local day.
+ * One local daily-chat message entity, scoped by owner and device-local day.
  *
- * [kind] holds an [com.cuentivo.app.ai.AiDailyMessageKind] name; [textContent] is local chat copy
- * only (USER_TEXT) and never proposal JSON, money, customer or product IDs. No parent table, no
- * foreign key, no sync/outbox, no financial writes. Greeting, out-of-scope and unavailable rows
- * persist only their kind: the UI renders deterministic constants.
+ * [kind] holds an [com.cuentivo.app.ai.AiDailyMessageKind] name.
+ * - For [com.cuentivo.app.ai.AiDailyMessageKind.USER_TEXT], [textContent] contains user-provided
+ *   business text, which may naturally include names or financial amounts typed by the user. It is
+ *   stored locally for up to 30 days and is never synced or uploaded to Firestore, gateway,
+ *   Analytics, Crashlytics or logs. No audio or photo data is persisted.
+ * - Assistant kinds ([com.cuentivo.app.ai.AiDailyMessageKind.ASSISTANT_GREETING],
+ *   [com.cuentivo.app.ai.AiDailyMessageKind.ASSISTANT_OUT_OF_SCOPE],
+ *   [com.cuentivo.app.ai.AiDailyMessageKind.ASSISTANT_UNAVAILABLE]) store `null` [textContent];
+ *   they contain no raw model output or proposal payload and render deterministic strings in UI.
+ *
+ * This table is completely isolated (no foreign keys, no sync/outbox tracking, no parent tables)
+ * and is not a financial source of truth. Real balances and movements remain in domain/audit
+ * entities.
  */
 @Entity(
     tableName = "ai_daily_messages",

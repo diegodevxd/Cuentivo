@@ -59,4 +59,18 @@ class AiDailyChatModelTest {
     fun `cutoff crosses year boundaries`() {
         assertEquals("2025-12-27", AiDailyChatModel.cutoffDayIso("2026-01-25", retainDays = 30))
     }
+
+    @Test
+    fun `kinds enum contains exactly the four allowed daily message kinds`() {
+        val names = AiDailyMessageKind.entries.map { it.name }
+        assertEquals(
+            listOf(
+                "USER_TEXT",
+                "ASSISTANT_GREETING",
+                "ASSISTANT_OUT_OF_SCOPE",
+                "ASSISTANT_UNAVAILABLE",
+            ),
+            names,
+        )
+    }
 }

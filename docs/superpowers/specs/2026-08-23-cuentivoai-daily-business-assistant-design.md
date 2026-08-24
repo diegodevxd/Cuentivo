@@ -31,13 +31,20 @@ respuesta de límite de alcance:
 
 ## Arquitectura y privacidad
 
-La persistencia es local, ligada al usuario autenticado actual y separada de
-ventas, pagos, auditoría y outbox. Se almacena sólo lo necesario para renderizar
-la conversación diaria: identificador local, fecha local, rol, estado del
-mensaje, texto/propuesta tipada y marcas de tiempo. No se sube a Firestore,
-Analytics, Crashlytics, logs ni gateway de control. Al cambiar de usuario se
-aplica la misma frontera de sesión local existente; nunca se muestra un chat de
-otro usuario.
+La persistencia es estrictamente local en SQLite/Room, ligada al usuario
+autenticado actual y completamente separada de tablas financieras (ventas, pagos,
+clientes, productos, auditoría y outbox). Los mensajes de usuario (`USER_TEXT`)
+almacenan texto comercial redactado por el usuario, el cual por naturaleza puede
+incluir nombres propios o términos/importes financieros ingresados por el usuario.
+Dichos mensajes se conservan localmente durante 30 días y luego se eliminan por
+limpieza o borrado manual. Nunca se suben ni sincronizan a Firestore, gateway,
+Analytics, Crashlytics o logs, y no se persiste audio ni fotos. Los estados
+deterministas del asistente (`ASSISTANT_GREETING`, `ASSISTANT_OUT_OF_SCOPE`,
+`ASSISTANT_UNAVAILABLE`) no contienen salida cruda de modelo ni payload de propuesta,
+persistiendo únicamente su tipo para renderizar constantes deterministas en la UI.
+El chat no es una fuente de verdad financiera; los saldos reales permanecen en el
+dominio y auditoría. Al cambiar de usuario se aplica la misma frontera de sesión local
+existente; nunca se muestra un chat de otro usuario.
 
 La clasificación de alcance tiene dos defensas. Una regla local evita enviar
 casos triviales fuera del negocio; el contrato Gemini permitido conserva una

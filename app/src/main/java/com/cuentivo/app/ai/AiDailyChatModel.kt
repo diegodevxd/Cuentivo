@@ -5,9 +5,18 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * Non-financial daily-chat message kinds. Only local chat copy is ever stored: no proposal JSON,
- * no money, no customer/product IDs. Greeting, out-of-scope and unavailable render deterministic
- * constants in the UI, so they persist only their kind.
+ * Daily-chat message kinds for local conversation history.
+ *
+ * - [USER_TEXT]: locally retained user-provided business text; may include user-written names,
+ *   customer references or financial amounts (e.g. "María abonó 150"). Retained locally for 30
+ *   days, subject to cleanup/manual delete. Never uploaded or synced to Firestore, gateway,
+ *   Analytics, Crashlytics or logs. No audio or photo is persisted.
+ * - Assistant deterministic kinds ([ASSISTANT_GREETING], [ASSISTANT_OUT_OF_SCOPE],
+ *   [ASSISTANT_UNAVAILABLE]): have no raw model output or proposal payload and render
+ *   deterministic constants in the UI, persisting only their kind.
+ *
+ * Local daily chat is an operational assistance transcript and is not a financial source of truth;
+ * real balances, operations and customer ledgers remain strictly in domain/audit tables.
  */
 enum class AiDailyMessageKind {
     USER_TEXT,
