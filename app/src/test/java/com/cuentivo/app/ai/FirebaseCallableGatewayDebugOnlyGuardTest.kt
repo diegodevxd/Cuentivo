@@ -40,6 +40,17 @@ class FirebaseCallableGatewayDebugOnlyGuardTest {
     }
 
     @Test
+    fun `blocking Tasks await runs on IO instead of the Android main thread`() {
+        val transportSource =
+            File("src/debug/java/com/cuentivo/app/ai/FirebaseCallableAiGateway.kt").readText()
+        assertTrue(
+            "Tasks.await must be isolated in Dispatchers.IO",
+            transportSource.contains("withContext(Dispatchers.IO)"),
+        )
+        assertTrue(transportSource.contains("Tasks.await(task)"))
+    }
+
+    @Test
     fun `release sources contain no callable references`() {
         val mainSources = File("src/main/java")
             .walkTopDown()

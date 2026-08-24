@@ -2,6 +2,8 @@ package com.cuentivo.app.ai
 
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.functions.FirebaseFunctions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Debug-only callable transport to the `us-south1` `interpretAiRequest` gateway (v2 typed
@@ -39,8 +41,10 @@ class FirebaseCallableAiGateway(
     suspend fun callContractV2(request: AiInterpretRequest): CallableAiProposalResult {
         val payload = buildCallablePayload2(request)
         return try {
-            val task = functions.getHttpsCallable(CALLABLE_NAME).call(payload)
-            parseCallableProposalResponse(Tasks.await(task).data, request.requestId)
+            withContext(Dispatchers.IO) {
+                val task = functions.getHttpsCallable(CALLABLE_NAME).call(payload)
+                parseCallableProposalResponse(Tasks.await(task).data, request.requestId)
+            }
         } catch (_: Exception) {
             CallableAiProposalResult.Unavailable
         }
