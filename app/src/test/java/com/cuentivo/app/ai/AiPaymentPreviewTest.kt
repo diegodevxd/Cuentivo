@@ -2,6 +2,7 @@ package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.CustomerEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AiPaymentPreviewTest {
@@ -10,8 +11,6 @@ class AiPaymentPreviewTest {
         id: String,
         name: String,
         businessId: String = "b1",
-        isActive: Boolean = true,
-        deletedAtEpochMillis: Long? = null,
     ) = CustomerEntity(
         id = id,
         businessId = businessId,
@@ -22,10 +21,10 @@ class AiPaymentPreviewTest {
         address = null,
         notes = null,
         creditLimitCents = null,
-        isActive = isActive,
+        isActive = true,
         createdAtEpochMillis = 0L,
         updatedAtEpochMillis = 0L,
-        deletedAtEpochMillis = deletedAtEpochMillis,
+        deletedAtEpochMillis = null,
     )
 
     @Test
@@ -55,8 +54,9 @@ class AiPaymentPreviewTest {
     }
 
     @Test
-    fun `accented query continues because there is no accent normalization`() {
-        // "¿Cómo estás?" has no exact entry in the allow-list; without accent stripping it must not match.
+    fun `punctuation in query is not stripped and prevents exact match`() {
+        // CustomerNameNormalizer.key preserves leading/trailing punctuation, so a query wrapped in
+        // inverted punctuation does not match the bare normalized name.
         val rows = listOf(customer("1", "Como Estas"))
         assertEquals(AiPaymentCustomerMatch.SelectionRequired(rows), AiPaymentCandidateMatcher.match("¿Cómo estás?", rows))
     }
@@ -78,6 +78,21 @@ class AiPaymentPreviewTest {
     }
 
     @Test
+    fun `selection result is an unmodifiable copy`() {
+        val source = mutableListOf(customer("1", "María"), customer("2", "Maria"))
+        val result = AiPaymentCandidateMatcher.match("María", source)
+        assertTrue("expected SelectionRequired", result is AiPaymentCustomerMatch.SelectionRequired)
+        val selection = result as AiPaymentCustomerMatch.SelectionRequired
+
+        // Casting to MutableList and mutating must throw, following the project's unmodifiable-list pattern.
+        mutateExpectingUnsupported(selection.candidates as MutableList<CustomerEntity>)
+
+        // Mutating the source list after matching must not change the result.
+        source.add(customer("3", "Extra"))
+        assertEquals(2, selection.candidates.size)
+    }
+
+    @Test
     fun `declared amount and balance stay as Long with no floating point`() {
         val preview = AiResolvedPaymentPreview(
             customerId = "c1",
@@ -87,5 +102,15 @@ class AiPaymentPreviewTest {
             projectedBalanceCents = 25_000L,
         )
         assertEquals(25_000L, preview.projectedBalanceCents)
+    }
+
+    private fun mutateExpectingUnsupported(candidates: MutableList<CustomerEntity>) {
+        var thrown = false
+        try {
+            candidates.add(customer("3", "Extra"))
+        } catch (expected: UnsupportedOperationException) {
+            thrown = true
+        }
+        assertTrue("candidates must be unmodifiable", thrown)
     }
 }

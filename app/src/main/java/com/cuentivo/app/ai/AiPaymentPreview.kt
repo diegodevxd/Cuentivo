@@ -1,6 +1,7 @@
 package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.CustomerEntity
+import java.util.Collections
 
 /** Result of matching a payment customer query against already repository-scoped candidate rows. */
 sealed interface AiPaymentCustomerMatch {
@@ -51,8 +52,12 @@ object AiPaymentCandidateMatcher {
         val exactMatches = candidates.filter { it.normalizedName == normalizedQuery }
         return when (exactMatches.size) {
             1 -> AiPaymentCustomerMatch.Exact(exactMatches.first())
-            0 -> if (candidates.isEmpty()) AiPaymentCustomerMatch.NotFound else AiPaymentCustomerMatch.SelectionRequired(candidates.toList())
-            else -> AiPaymentCustomerMatch.SelectionRequired(candidates.toList())
+            0 -> if (candidates.isEmpty()) {
+                AiPaymentCustomerMatch.NotFound
+            } else {
+                AiPaymentCustomerMatch.SelectionRequired(Collections.unmodifiableList(candidates.toList()))
+            }
+            else -> AiPaymentCustomerMatch.SelectionRequired(Collections.unmodifiableList(candidates.toList()))
         }
     }
 }
