@@ -248,7 +248,77 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `arithmetic overflow fails closed with Blocked ARITHMETIC_OVERFLOW or Unavailable`() = runBlocking {
+    fun `declared unit price zero remains zero and does not substitute catalog price`() = runBlocking {
+        val customer = testCustomer()
+        val product = testProduct(name = "Muestra Gratis", salePriceCents = 8000L)
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(customer) },
+            searchProducts = { _, _ -> listOf(product) },
+            newConfirmationKey = { "key-free" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Muestra Gratis", quantity = 3, unitPriceCents = 0L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+        assertEquals(0L, preview.totalCents)
+        assertEquals(0L, preview.remainderCents)
+        assertEquals(1, preview.lines.size)
+        assertEquals(0L, preview.lines[0].unitPriceCents)
+        assertEquals(0L, preview.lines[0].lineTotalCents)
+    }
+
+    @Test
+    fun `quantity less than or equal to zero returns Blocked INVALID_LINE_QUANTITY`() = runBlocking {
+        val customer = testCustomer()
+        val product = testProduct(name = "Jabón")
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(customer) },
+            searchProducts = { _, _ -> listOf(product) },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 0, unitPriceCents = 1000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertEquals(
+            AiSalePreviewResult.Blocked(AiSaleBlockReason.INVALID_LINE_QUANTITY, null),
+            result,
+        )
+    }
+
+    @Test
+    fun `negative unitPriceCents returns Blocked INVALID_LINE_PRICE`() = runBlocking {
+        val customer = testCustomer()
+        val product = testProduct(name = "Jabón")
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(customer) },
+            searchProducts = { _, _ -> listOf(product) },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = -500L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertEquals(
+            AiSalePreviewResult.Blocked(AiSaleBlockReason.INVALID_LINE_PRICE, null),
+            result,
+        )
+    }
+
+    @Test
+    fun `arithmetic overflow fails closed with exact Blocked ARITHMETIC_OVERFLOW`() = runBlocking {
         val customer = testCustomer()
         val product = testProduct(name = "Jabón", salePriceCents = Long.MAX_VALUE)
         val resolver = AiSalePreviewResolver(
@@ -266,10 +336,30 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("overflow must block or unavailable", result is AiSalePreviewResult.Blocked || result is AiSalePreviewResult.Unavailable)
-        if (result is AiSalePreviewResult.Blocked) {
-            assertEquals(AiSaleBlockReason.ARITHMETIC_OVERFLOW, result.reason)
-        }
+        assertEquals(
+            AiSalePreviewResult.Blocked(AiSaleBlockReason.ARITHMETIC_OVERFLOW, null),
+            result,
+        )
+    }
+
+    @Test
+    fun `empty or blank confirmation key fails closed to Unavailable`() = runBlocking {
+        val customer = testCustomer()
+        val product = testProduct(name = "Jabón")
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(customer) },
+            searchProducts = { _, _ -> listOf(product) },
+            newConfirmationKey = { "   " },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 5000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertEquals(AiSalePreviewResult.Unavailable, result)
     }
 
     @Test

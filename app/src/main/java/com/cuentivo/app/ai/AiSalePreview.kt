@@ -292,8 +292,14 @@ class AiSalePreviewResolver(
         var totalCents = 0L
 
         for (line in proposal.lines) {
-            if (line.quantity <= 0 || line.unitPriceCents < 0L || line.productName.isBlank()) {
+            if (line.productName.isBlank()) {
                 return AiSalePreviewResult.Unavailable
+            }
+            if (line.quantity <= 0) {
+                return AiSalePreviewResult.Blocked(AiSaleBlockReason.INVALID_LINE_QUANTITY, null)
+            }
+            if (line.unitPriceCents < 0L) {
+                return AiSalePreviewResult.Blocked(AiSaleBlockReason.INVALID_LINE_PRICE, null)
             }
             val rawProducts = searchProducts(businessId, line.productName)
                 .filter { it.businessId == businessId && it.isActive && it.deletedAtEpochMillis == null }
@@ -309,7 +315,7 @@ class AiSalePreviewResolver(
                 is AiSaleProductMatch.Exact -> productMatch.product
             }
 
-            val unitPrice = if (line.unitPriceCents > 0L) line.unitPriceCents else product.salePriceCents
+            val unitPrice = line.unitPriceCents
             val lineTotal = try {
                 Math.multiplyExact(line.quantity.toLong(), unitPrice)
             } catch (_: ArithmeticException) {
