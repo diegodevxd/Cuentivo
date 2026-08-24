@@ -56,6 +56,7 @@ import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
+import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.ui.theme.CuentivoTheme
 import com.cuentivo.app.data.local.CUENTIVO_MIGRATIONS
 import com.cuentivo.app.data.local.CuentivoDatabase
@@ -737,6 +738,16 @@ class MainActivity : ComponentActivity() {
                     // Bound to the signed-in owner, never to "the first business in the database".
                     DashboardViewModel { dashboardRepository.load(currentUserId) }
                 }
+                val aiDailyChatRepository = remember(currentUserId) {
+                    if (currentUserId.isBlank()) {
+                        null
+                    } else {
+                        AiDailyChatRepository(
+                            dao = database.aiDailyMessageDao(),
+                            ownerUserId = currentUserId,
+                        )
+                    }
+                }
                 val state by produceState<DashboardUiState>(initialValue = DashboardUiState.NoBusiness, refreshKey) { value = viewModel.load() }
                 val customers by produceState<List<CustomerBalanceRow>>(initialValue = emptyList(), state, refreshKey) {
                     value = (state as? DashboardUiState.Content)?.let { database.customerDao().activeWithBalances(it.businessId) } ?: emptyList()
@@ -855,7 +866,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                CuentivoApp(state, customers, products, tier, customerScores = customerScores, proPrice = proPriceState.value, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, pendingSaleCustomerId = pendingSaleCustomerId, onPendingSaleConsumed = { pendingSaleCustomerId = null }, isImportingBalances = isImportingBalances, balancesImportedToken = balancesImportedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, onCreateBusiness = {
+                CuentivoApp(state, customers, products, tier, customerScores = customerScores, proPrice = proPriceState.value, accountLabel = authenticationGateway.currentUserEmail, isSavingCustomer = isSavingCustomer, customerSavedToken = customerSavedToken, pendingSaleCustomerId = pendingSaleCustomerId, onPendingSaleConsumed = { pendingSaleCustomerId = null }, isImportingBalances = isImportingBalances, balancesImportedToken = balancesImportedToken, isSavingProduct = isSavingProduct, productSavedToken = productSavedToken, aiDailyChatRepository = aiDailyChatRepository, onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
                         val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)

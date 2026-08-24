@@ -429,7 +429,7 @@
     <string name="claim_blocked_retry">Try again</string>
     <string name="ai_debug_lab_entry">AI</string>
     <string name="ai_debug_lab_title">AI Lab</string>
-    <string name="ai_debug_lab_warning">Test draft - nothing is recorded</string>
+    <string name="ai_debug_lab_warning">Local history for 30 days. No draft records sales or payments without confirmation.</string>
     <string name="ai_debug_lab_close">Close</string>
     <string name="ai_debug_lab_input_hint">Describe a sale or payment</string>
     <string name="ai_debug_lab_send">Send</string>
@@ -450,4 +450,9 @@
     <string name="ai_debug_chat_draft_note">Draft - nothing is recorded</string>
     <string name="ai_daily_chat_greeting">Hi, I\'m CuentivoAI, your assistant to record sales faster. Tell me about a sale, a payment, a debt, or a business query; I\'ll prepare a draft for you to review before recording.</string>
     <string name="ai_daily_chat_out_of_scope">I\'m CuentivoAI, an assistant for your business. I cannot discuss personal topics, but I can help you with sales, payments, customers, products, debts, and collections.</string>
+    <string name="ai_daily_chat_clear_today">Clear day</string>
+    <string name="ai_daily_chat_clear_dialog_title">Clear today\'s conversation?</string>
+    <string name="ai_daily_chat_clear_dialog_message">Today\'s messages will be deleted from this device. This action cannot be undone.</string>
+    <string name="ai_daily_chat_clear_confirm">Clear</string>
+    <string name="ai_daily_chat_clear_cancel">Cancel</string>
 </resources>

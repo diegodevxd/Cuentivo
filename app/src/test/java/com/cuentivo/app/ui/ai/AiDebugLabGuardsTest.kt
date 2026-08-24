@@ -46,7 +46,9 @@ class AiDebugLabGuardsTest {
     fun `main ai lab sources never expose an executable financial action`() {
         for (source in sourcesOf(mainDir)) {
             val imports = source.lines().filter { it.startsWith("import ") }.joinToString("\n")
-            assertFalse("no Room/DAO imports in main", imports.contains("data.local"))
+            assertFalse("no financial DAO imports in main", imports.contains("Dao") || imports.contains("Entity") || imports.contains("CuentivoDatabase"))
+            assertFalse("no financial repository in main", imports.contains("DashboardRepository"))
+            assertFalse("no outbox or sync in main", imports.contains("sync") || imports.contains("SyncQueue"))
             assertFalse("no Room imports in main", imports.contains(".room."))
             assertFalse(
                 "no financial confirmation action in main",
@@ -70,9 +72,50 @@ class AiDebugLabGuardsTest {
             "close must invoke onClose after cancelling",
             screenSource.contains("onClose()"),
         )
+    }
+
+    @Test
+    fun `screen wires daily chat repository and turn policy safely without persisting proposals`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
         assertTrue(
-            "submit must go through the safe policy",
-            screenSource.contains("AiDebugLabSubmitPolicy.run"),
+            "submit must go through AiDebugLabTurnPolicy.run",
+            screenSource.contains("AiDebugLabTurnPolicy.run("),
+        )
+        assertFalse(
+            "submit must not use raw transport submit",
+            screenSource.contains("transport.submit("),
+        )
+        assertTrue(
+            "screen must load history on entry with openToday",
+            screenSource.contains("repository.openToday()"),
+        )
+        assertTrue(
+            "screen must append trimmed user text to repository",
+            screenSource.contains("repository.appendUserText("),
+        )
+        assertTrue(
+            "screen must append assistant out of scope",
+            screenSource.contains("repository.appendAssistant(AiDailyMessageKind.ASSISTANT_OUT_OF_SCOPE)"),
+        )
+        assertTrue(
+            "screen must append assistant unavailable",
+            screenSource.contains("repository.appendAssistant(AiDailyMessageKind.ASSISTANT_UNAVAILABLE)"),
+        )
+        assertFalse(
+            "proposal must never be persisted",
+            screenSource.contains("appendProposal") || screenSource.contains("appendAssistant(it.proposal"),
+        )
+        assertFalse(
+            "clarification must never be persisted",
+            screenSource.contains("appendClarification") || screenSource.contains("appendAssistant(it.clarification"),
+        )
+        assertTrue(
+            "screen must support clearing today via clearToday",
+            screenSource.contains("repository.clearToday()"),
+        )
+        assertTrue(
+            "screen must handle repository errors safely with runCatching",
+            screenSource.contains("runCatching"),
         )
     }
 
@@ -134,9 +177,12 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `app passes AI header callback only while debug transport exists`() {
+    fun `app passes AI header callback only while debug transport and repository exist`() {
         val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
-        assertTrue(source.contains("onOpenAi = debugAiLabTransport?.let"))
+        assertTrue(
+            "onOpenAi must check both debug transport and repository",
+            source.contains("debugAiLabTransport != null && aiDailyChatRepository != null"),
+        )
         assertFalse("floating entry must be removed", source.contains("AiDebugLabEntryButton"))
     }
 
@@ -214,5 +260,14 @@ class AiDebugLabGuardsTest {
         val source = debug.readText()
         assertTrue("debug transport must use the debug gateway", source.contains("FirebaseCallableAiGateway"))
         assertTrue("debug transport must implement the shared API", source.contains("AiDebugTransport"))
+    }
+
+    @Test
+    fun `main activity creates AiDailyChatRepository bound to currentUserId and dao`() {
+        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        assertTrue("must pass aiDailyMessageDao", source.contains("database.aiDailyMessageDao()"))
+        assertTrue("must bind ownerUserId to currentUserId", source.contains("ownerUserId = currentUserId"))
+        assertTrue("must check for blank currentUserId", source.contains("currentUserId.isBlank()"))
+        assertTrue("must pass aiDailyChatRepository to CuentivoApp", source.contains("aiDailyChatRepository = aiDailyChatRepository"))
     }
 }

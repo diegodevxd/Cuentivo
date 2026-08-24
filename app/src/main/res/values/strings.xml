@@ -429,7 +429,7 @@
     <string name="claim_blocked_retry">Reintentar</string>
     <string name="ai_debug_lab_entry">AI</string>
     <string name="ai_debug_lab_title">Prueba AI</string>
-    <string name="ai_debug_lab_warning">Borrador de prueba - no registra nada</string>
+    <string name="ai_debug_lab_warning">Historial local por 30 días. Ningún borrador registra ventas o abonos sin confirmación.</string>
     <string name="ai_debug_lab_close">Cerrar</string>
     <string name="ai_debug_lab_input_hint">Describe la venta o el pago</string>
     <string name="ai_debug_lab_send">Enviar</string>
@@ -450,4 +450,9 @@
     <string name="ai_debug_chat_draft_note">Borrador - no registra nada</string>
     <string name="ai_daily_chat_greeting">Hola, soy CuentivoAI, tu asistente para registrar ventas más rápido. Cuéntame una venta, un abono, una deuda o una consulta de tu negocio; prepararé un borrador para que lo revises antes de registrarlo.</string>
     <string name="ai_daily_chat_out_of_scope">Soy CuentivoAI, un asistente para tu negocio. No puedo conversar sobre temas personales, pero sí ayudarte con ventas, abonos, clientes, productos, deudas y cobros.</string>
+    <string name="ai_daily_chat_clear_today">Borrar día</string>
+    <string name="ai_daily_chat_clear_dialog_title">¿Borrar conversación de hoy?</string>
+    <string name="ai_daily_chat_clear_dialog_message">Se eliminarán los mensajes de hoy en este dispositivo. Esta acción no se puede deshacer.</string>
+    <string name="ai_daily_chat_clear_confirm">Borrar</string>
+    <string name="ai_daily_chat_clear_cancel">Cancelar</string>
 </resources>

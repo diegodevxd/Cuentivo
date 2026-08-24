@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -47,15 +48,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.cuentivo.app.R
+import com.cuentivo.app.ai.AiDailyMessageKind
 import com.cuentivo.app.ai.AiInterpretRequest
 import com.cuentivo.app.ai.AiProposal
 import com.cuentivo.app.ai.BusinessQueryProposal
+import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.CreateSaleProposal
 import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.capture.AiCameraCaptureStore
 import com.cuentivo.app.ai.capture.AiCapturePolicy
 import com.cuentivo.app.ai.capture.AiCaptureStore
 import com.cuentivo.app.ai.capture.AiOcrEngine
+import com.cuentivo.app.data.local.AiDailyChatRepository
 import java.io.File
 import java.math.BigDecimal
 import java.util.UUID
@@ -104,10 +108,13 @@ private val CaptureUriSaver = Saver<Uri?, String>(
 @Composable
 fun AiDebugLabScreen(
     transport: AiDebugTransport,
+    repository: AiDailyChatRepository,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
+    var isHydrated by remember { mutableStateOf(false) }
+    var showClearDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var showSourceSelector by remember { mutableStateOf(false) }
     var cameraUnavailable by remember { mutableStateOf(false) }
@@ -118,6 +125,16 @@ fun AiDebugLabScreen(
     val cameraStore = remember(context) { AiCameraCaptureStore(context) }
     var pendingCaptureUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
     val ocrEngine = remember(context) { debugAiOcrEngine(context) }
+
+    LaunchedEffect(repository) {
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching { repository.openToday() }.getOrNull()
+        }
+        if (loaded != null) {
+            model = AiDebugLabMachine.onHistoryLoaded(model, loaded.messages)
+        }
+        isHydrated = true
+    }
 
     // Sweeps captures orphaned by an earlier dialog when this one opens, not in onDispose:
     // leaving composition can mean the Activity was destroyed while the camera app was still
@@ -261,22 +278,23 @@ fun AiDebugLabScreen(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
-            // Bottom-aligned composer: text send uses the existing transport.
+            // Bottom-aligned composer: text send uses the turn policy.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = model.text,
                     onValueChange = { model = AiDebugLabMachine.onTextChanged(model, it) },
                     modifier = Modifier.weight(1f),
                     placeholder = { Text(stringResource(R.string.ai_debug_lab_input_hint)) },
-                    enabled = model.state != AiDebugLabState.Sending,
+                    enabled = isHydrated && model.state != AiDebugLabState.Sending,
                     maxLines = 4,
                 )
                 Spacer(Modifier.width(8.dp))
                 Button(
-                    enabled = model.canSubmit,
+                    enabled = isHydrated && model.canSubmit,
                     onClick = {
+                        val trimmedText = model.text.trim()
                         val request = AiInterpretRequest(
-                            text = model.text.trim(),
+                            text = trimmedText,
                             requestId = UUID.randomUUID().toString(),
                         )
                         val outcome = AiDebugLabMachine.onSubmit(model)
@@ -284,8 +302,27 @@ fun AiDebugLabScreen(
                             model = outcome.model
                             val token = outcome.generation
                             scope.launch {
-                                val result = AiDebugLabSubmitPolicy.run(transport, request)
-                                model = AiDebugLabMachine.onResult(model, result, token)
+                                withContext(Dispatchers.IO) {
+                                    runCatching { repository.appendUserText(trimmedText) }
+                                }
+                                val turnResult = AiDebugLabTurnPolicy.run(transport, request)
+                                when (turnResult) {
+                                    AiDebugLabTurnResult.OutOfScope -> {
+                                        withContext(Dispatchers.IO) {
+                                            runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_OUT_OF_SCOPE) }
+                                        }
+                                        model = AiDebugLabMachine.onOutOfScope(model)
+                                    }
+                                    is AiDebugLabTurnResult.Remote -> {
+                                        val result = turnResult.result
+                                        if (result is CallableAiProposalResult.Unavailable) {
+                                            withContext(Dispatchers.IO) {
+                                                runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_UNAVAILABLE) }
+                                            }
+                                        }
+                                        model = AiDebugLabMachine.onResult(model, result, token)
+                                    }
+                                }
                             }
                         }
                     },
@@ -294,18 +331,16 @@ fun AiDebugLabScreen(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = {
-                    pendingCaptureUri?.let(cameraStore::delete)
-                    pendingCaptureUri = null
-                    cameraStore.deleteStale(except = null)
-                    model = AiDebugLabMachine.onReset(model)
-                }) {
-                    Text(stringResource(R.string.ai_debug_lab_new))
+                TextButton(
+                    enabled = isHydrated && model.state != AiDebugLabState.Sending,
+                    onClick = { showClearDialog = true },
+                ) {
+                    Text(stringResource(R.string.ai_daily_chat_clear_today))
                 }
                 if (ocrEngine != null) {
                     Spacer(Modifier.width(8.dp))
                     TextButton(
-                        enabled = model.state != AiDebugLabState.Sending,
+                        enabled = isHydrated && model.state != AiDebugLabState.Sending,
                         onClick = { showSourceSelector = true },
                     ) {
                         Text(stringResource(R.string.ai_debug_lab_capture))
@@ -351,6 +386,38 @@ fun AiDebugLabScreen(
                     ) { Text(stringResource(R.string.ai_debug_lab_close)) }
                 }
             }
+        }
+        if (showClearDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearDialog = false },
+                title = { Text(stringResource(R.string.ai_daily_chat_clear_dialog_title)) },
+                text = { Text(stringResource(R.string.ai_daily_chat_clear_dialog_message)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showClearDialog = false
+                            pendingCaptureUri?.let(cameraStore::delete)
+                            pendingCaptureUri = null
+                            cameraStore.deleteStale(except = null)
+                            scope.launch {
+                                val cleared = withContext(Dispatchers.IO) {
+                                    runCatching { repository.clearToday() }.getOrNull()
+                                }
+                                if (cleared != null) {
+                                    model = AiDebugLabMachine.onHistoryLoaded(model, cleared.messages)
+                                }
+                            }
+                        },
+                    ) {
+                        Text(stringResource(R.string.ai_daily_chat_clear_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearDialog = false }) {
+                        Text(stringResource(R.string.ai_daily_chat_clear_cancel))
+                    }
+                },
+            )
         }
     }
 }

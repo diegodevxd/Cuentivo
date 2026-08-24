@@ -65,6 +65,7 @@ import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
+import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.ui.ai.AiDebugLabScreen
 import com.cuentivo.app.ui.ai.debugAiTransport
 import kotlinx.coroutines.Dispatchers
@@ -249,6 +250,7 @@ fun CuentivoApp(
      */
     openOverdueCustomers: Boolean = false,
     onOpenOverdueCustomersConsumed: () -> Unit = {},
+    aiDailyChatRepository: AiDailyChatRepository? = null,
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
@@ -338,7 +340,11 @@ fun CuentivoApp(
         onOpenAccount = { showAccount = true },
         onOpenLanguage = { showLanguage = true },
         onOpenAlerts = { showAlerts = true },
-        onOpenAi = debugAiLabTransport?.let { { showAiDebugLab = true } },
+        onOpenAi = if (debugAiLabTransport != null && aiDailyChatRepository != null) {
+            { showAiDebugLab = true }
+        } else {
+            null
+        },
         snackbarHost = { SnackbarHost(snackbar) },
         showBrandHeader = statementCustomer == null,
     ) { padding ->
@@ -445,9 +451,10 @@ fun CuentivoApp(
                 onCreatePayment = onCreatePayment,
             )
         }
-        if (debugAiLabTransport != null && showAiDebugLab) {
+        if (debugAiLabTransport != null && aiDailyChatRepository != null && showAiDebugLab) {
             AiDebugLabScreen(
                 transport = debugAiLabTransport,
+                repository = aiDailyChatRepository,
                 onClose = { showAiDebugLab = false },
             )
         }
