@@ -121,20 +121,27 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `missing customer returns CustomerNotFound`() = runBlocking {
+    fun `missing customer proposes NEW customer entity`() = runBlocking {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> listOf(testProduct()) },
+            newConfirmationKey = { "key-new-cust" },
+            newEntityId = { kind, name -> "$kind-${com.cuentivo.app.domain.CustomerNameNormalizer.key(name)}" },
         )
 
         val proposal = CreateSaleProposal(
             customerName = "Desconocido",
-            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 1000L)),
+            lines = listOf(AiProposalSaleLine("Jabón Corporal", quantity = 1, unitPriceCents = 1000L)),
             declaredInitialPaymentCents = 0L,
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertEquals(AiSalePreviewResult.CustomerNotFound, result)
+        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+        assertEquals("customer-desconocido", preview.customer.customerId)
+        assertEquals("Desconocido", preview.customer.displayName)
+        assertEquals(AiEntityResolutionMode.NEW, preview.customer.mode)
+        assertEquals(null, preview.customer.sourceFingerprint)
     }
 
     @Test
@@ -161,10 +168,12 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `missing product returns ProductNotFound with product name`() = runBlocking {
+    fun `missing product proposes NEW product entity`() = runBlocking {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> listOf(testCustomer()) },
             searchProducts = { _, _ -> emptyList() },
+            newConfirmationKey = { "key-new-prod" },
+            newEntityId = { kind, name -> "$kind-${com.cuentivo.app.domain.CustomerNameNormalizer.key(name)}" },
         )
 
         val proposal = CreateSaleProposal(
@@ -174,8 +183,13 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("must be ProductNotFound", result is AiSalePreviewResult.ProductNotFound)
-        assertEquals("Producto Inexistente", (result as AiSalePreviewResult.ProductNotFound).productName)
+        assertTrue("must be Ready", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+        val line = preview.lines[0]
+        assertEquals("product-producto inexistente", line.productId)
+        assertEquals("Producto Inexistente", line.productName)
+        assertEquals(AiEntityResolutionMode.NEW, line.resolutionMode)
+        assertEquals(null, line.sourceFingerprint)
     }
 
     @Test
@@ -377,7 +391,11 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertEquals(AiSalePreviewResult.CustomerNotFound, result)
+        assertTrue("result must be Ready with new customer", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+        assertEquals(AiEntityResolutionMode.NEW, preview.customer.mode)
+        assertFalse("must not use wrong customer ID", preview.customer.customerId == "c-wrong")
+        assertEquals(null, preview.customer.sourceFingerprint)
     }
 
     @Test
@@ -396,7 +414,12 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("product must not be found", result is AiSalePreviewResult.ProductNotFound)
+        assertTrue("result must be Ready with new product", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+        val line = preview.lines[0]
+        assertEquals(AiEntityResolutionMode.NEW, line.resolutionMode)
+        assertFalse("must not use wrong product ID", line.productId == "p-wrong")
+        assertEquals(null, line.sourceFingerprint)
     }
 
     @Test
@@ -427,5 +450,236 @@ class AiSalePreviewTest {
             threw = true
         }
         assertTrue("lines collection must be unmodifiable", threw)
+    }
+
+    @Test
+    fun `no candidates proposes new customer and new product with generated ID and null fingerprint`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> emptyList() },
+            searchProducts = { _, _ -> emptyList() },
+            newConfirmationKey = { "confirm-1" },
+            newEntityId = { kind, name -> "$kind-${com.cuentivo.app.domain.CustomerNameNormalizer.key(name)}" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "  Nuevo Cliente  ",
+            lines = listOf(AiProposalSaleLine("  Producto Nuevo  ", quantity = 3, unitPriceCents = 4500L)),
+            declaredInitialPaymentCents = 1000L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+
+        assertEquals("confirm-1", preview.confirmationKey)
+        assertEquals("customer-nuevo cliente", preview.customer.customerId)
+        assertEquals("Nuevo Cliente", preview.customer.displayName)
+        assertEquals("nuevo cliente", preview.customer.normalizedName)
+        assertEquals(AiEntityResolutionMode.NEW, preview.customer.mode)
+        assertEquals(null, preview.customer.sourceFingerprint)
+        assertEquals("customer-nuevo cliente", preview.customerId)
+        assertEquals("Nuevo Cliente", preview.customerName)
+
+        assertEquals(1, preview.lines.size)
+        val line = preview.lines[0]
+        assertEquals("product-producto nuevo", line.productId)
+        assertEquals("Producto Nuevo", line.productName)
+        assertEquals(3, line.quantity)
+        assertEquals(4500L, line.unitPriceCents)
+        assertEquals(13500L, line.lineTotalCents)
+        assertEquals(4500L, line.sourceDeclaredPriceCents)
+        assertEquals(null, line.sourceFingerprint)
+        assertEquals(AiEntityResolutionMode.NEW, line.resolutionMode)
+        assertEquals(13500L, preview.totalCents)
+        assertEquals(1000L, preview.initialPaymentCents)
+        assertEquals(12500L, preview.remainderCents)
+    }
+
+    @Test
+    fun `mixed existing and new products resolve with appropriate modes`() = runBlocking {
+        val existingCustomer = testCustomer(id = "cust-1", name = "María López", normalizedName = "maria lopez", updatedAt = 5000L)
+        val existingProduct = testProduct(id = "prod-1", name = "Jabón", salePriceCents = 5000L, updatedAt = 6000L)
+
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(existingCustomer) },
+            searchProducts = { _, query ->
+                if (query.contains("Jabón", ignoreCase = true)) listOf(existingProduct) else emptyList()
+            },
+            newConfirmationKey = { "confirm-mixed" },
+            newEntityId = { kind, name -> "$kind-${com.cuentivo.app.domain.CustomerNameNormalizer.key(name)}" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(
+                AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 5000L),
+                AiProposalSaleLine("Esponja", quantity = 2, unitPriceCents = 1500L),
+            ),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+
+        assertEquals(AiEntityResolutionMode.EXISTING, preview.customer.mode)
+        assertEquals("cust-1", preview.customer.customerId)
+        assertEquals("cust-1:5000", preview.customer.sourceFingerprint)
+
+        assertEquals(2, preview.lines.size)
+        val line1 = preview.lines[0]
+        assertEquals("prod-1", line1.productId)
+        assertEquals(AiEntityResolutionMode.EXISTING, line1.resolutionMode)
+        assertEquals("prod-1:6000:5000", line1.sourceFingerprint)
+
+        val line2 = preview.lines[1]
+        assertEquals("product-esponja", line2.productId)
+        assertEquals(AiEntityResolutionMode.NEW, line2.resolutionMode)
+        assertEquals(null, line2.sourceFingerprint)
+        assertEquals(1500L, line2.unitPriceCents)
+        assertEquals(3000L, line2.lineTotalCents)
+    }
+
+    @Test
+    fun `similar candidates never auto-create without explicit choice`() = runBlocking {
+        val candidate1 = testCustomer(id = "cust-1", name = "María López Gómez", normalizedName = "maria lopez gomez")
+        val candidate2 = testCustomer(id = "cust-2", name = "María López Pérez", normalizedName = "maria lopez perez")
+
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(candidate1, candidate2) },
+            searchProducts = { _, _ -> emptyList() },
+            newConfirmationKey = { "confirm-1" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 5000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertTrue("must require customer selection", result is AiSalePreviewResult.CustomerSelectionRequired)
+        val required = result as AiSalePreviewResult.CustomerSelectionRequired
+        assertEquals(2, required.candidates.size)
+    }
+
+    @Test
+    fun `explicit USE_EXISTING choice uses real candidate and fingerprint`() = runBlocking {
+        val candidate1 = testCustomer(id = "cust-1", name = "María López Gómez", normalizedName = "maria lopez gomez", updatedAt = 7000L)
+        val candidate2 = testCustomer(id = "cust-2", name = "María López Pérez", normalizedName = "maria lopez perez", updatedAt = 8000L)
+        val prodCandidate1 = testProduct(id = "prod-1", name = "Jabón Neutro", salePriceCents = 5000L, updatedAt = 9000L)
+        val prodCandidate2 = testProduct(id = "prod-2", name = "Jabón Líquido", salePriceCents = 6000L, updatedAt = 9500L)
+
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(candidate1, candidate2) },
+            searchProducts = { _, _ -> listOf(prodCandidate1, prodCandidate2) },
+            newConfirmationKey = { "confirm-use-existing" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 2, unitPriceCents = 6000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val choices = AiSaleResolutionChoices(
+            customer = AiEntityChoice.UseExisting("cust-2"),
+            productsByNormalizedName = mapOf("jabon" to AiEntityChoice.UseExisting("prod-2")),
+        )
+
+        val result = resolver.resolve("biz-1", proposal, choices)
+        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+
+        assertEquals("cust-2", preview.customer.customerId)
+        assertEquals("María López Pérez", preview.customer.displayName)
+        assertEquals(AiEntityResolutionMode.EXISTING, preview.customer.mode)
+        assertEquals("cust-2:8000", preview.customer.sourceFingerprint)
+
+        val line = preview.lines[0]
+        assertEquals("prod-2", line.productId)
+        assertEquals("Jabón Líquido", line.productName)
+        assertEquals(AiEntityResolutionMode.EXISTING, line.resolutionMode)
+        assertEquals("prod-2:9500:6000", line.sourceFingerprint)
+    }
+
+    @Test
+    fun `explicit CREATE_NEW choice forces new entity even when candidates exist`() = runBlocking {
+        val existingCustomer = testCustomer(id = "cust-1", name = "María López", normalizedName = "maria lopez", updatedAt = 7000L)
+        val existingProduct = testProduct(id = "prod-1", name = "Jabón", salePriceCents = 5000L, updatedAt = 9000L)
+
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(existingCustomer) },
+            searchProducts = { _, _ -> listOf(existingProduct) },
+            newConfirmationKey = { "confirm-create-new" },
+            newEntityId = { kind, name -> "$kind-created-${com.cuentivo.app.domain.CustomerNameNormalizer.key(name)}" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 5000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val choices = AiSaleResolutionChoices(
+            customer = AiEntityChoice.CreateNew,
+            productsByNormalizedName = mapOf("jabon" to AiEntityChoice.CreateNew),
+        )
+
+        val result = resolver.resolve("biz-1", proposal, choices)
+        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+
+        assertEquals("customer-created-maria lopez", preview.customer.customerId)
+        assertEquals(AiEntityResolutionMode.NEW, preview.customer.mode)
+        assertEquals(null, preview.customer.sourceFingerprint)
+
+        val line = preview.lines[0]
+        assertEquals("product-created-jabon", line.productId)
+        assertEquals(AiEntityResolutionMode.NEW, line.resolutionMode)
+        assertEquals(null, line.sourceFingerprint)
+    }
+
+    @Test
+    fun `explicit USE_EXISTING with non-existent or wrong-business ID returns Unavailable`() = runBlocking {
+        val customer = testCustomer(id = "cust-1", businessId = "biz-1", name = "María López")
+        val product = testProduct(id = "prod-1", businessId = "biz-1", name = "Jabón")
+
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(customer) },
+            searchProducts = { _, _ -> listOf(product) },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 5000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val badCustomerChoices = AiSaleResolutionChoices(customer = AiEntityChoice.UseExisting("cust-nonexistent"))
+        assertEquals(AiSalePreviewResult.Unavailable, resolver.resolve("biz-1", proposal, badCustomerChoices))
+
+        val badProductChoices = AiSaleResolutionChoices(
+            productsByNormalizedName = mapOf("jabon" to AiEntityChoice.UseExisting("prod-nonexistent")),
+        )
+        assertEquals(AiSalePreviewResult.Unavailable, resolver.resolve("biz-1", proposal, badProductChoices))
+    }
+
+    @Test
+    fun `blank generated entity ID fails closed with Unavailable`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> emptyList() },
+            searchProducts = { _, _ -> emptyList() },
+            newEntityId = { _, _ -> "   " },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 5000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertEquals(AiSalePreviewResult.Unavailable, result)
     }
 }
