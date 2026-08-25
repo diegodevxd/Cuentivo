@@ -494,7 +494,7 @@
     <string name="ai_query_title_debtors">Debtors query</string>
     <string name="ai_query_title_sales">Sales query</string>
     <string name="ai_query_customer_balance_format">Balance: %1$s</string>
-    <string name="ai_query_customer_no_debt">%1$s has no outstanding balance.</string>
+    <string name="ai_query_customer_no_debt">%1$s is up to date: no outstanding balance and no credit balance.</string>
     <string name="ai_query_customer_credit_format">Credit balance: %1$s</string>
     <string name="ai_query_debtors_title">Customers with debt</string>
     <string name="ai_query_no_debtors">No customers with outstanding debt.</string>
@@ -505,10 +505,10 @@
     <string name="ai_query_sales_period_collected">Total collected: %1$s</string>
     <string name="ai_query_sales_period_empty">No sales or collections recorded in this period.</string>
     <string name="ai_query_customer_selection_prompt">Choose the customer to check balance:</string>
-    <string name="ai_query_customer_not_found">No customer found with the name \"%1$s\".</string>
-    <string name="ai_query_blocked_invalid_date">The entered date does not exist in the calendar.</string>
-    <string name="ai_query_blocked_start_after_end">The start date cannot be after the end date.</string>
-    <string name="ai_query_blocked_period_too_long">The query period cannot exceed 366 days.</string>
+    <string name="ai_query_customer_not_found">No registered customer exists with the name \"%1$s\". Check the name in your customer list.</string>
+    <string name="ai_query_blocked_invalid_date">The queried date does not exist on the calendar. Try with a valid date (for example: \"yesterday sales\" or \"sales on August 15\").</string>
+    <string name="ai_query_blocked_start_after_end">The period is not valid because the start date is after the end date. Specify the earlier date first (for example: \"from August 1 to August 15\").</string>
+    <string name="ai_query_blocked_period_too_long">The queried period exceeds the 366-day limit. Query a shorter date range (for example: one month or one year).</string>
     <string name="ai_query_debtor_row_format">• %1$s: %2$s</string>
     <string name="ai_query_proposal_period_format">%1$s to %2$s</string>
 
