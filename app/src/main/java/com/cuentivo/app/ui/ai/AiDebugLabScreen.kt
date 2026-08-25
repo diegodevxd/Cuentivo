@@ -936,6 +936,7 @@ private fun ChatMessageRow(
             text = stringResource(R.string.ai_sale_limit_reached_message),
             style = MaterialTheme.typography.bodyMedium,
         )
+        is AiChatMessage.AssistantQueryAnswer -> Unit
     }
 }
 

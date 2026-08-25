@@ -1,5 +1,6 @@
 package com.cuentivo.app.ui.ai
 
+import com.cuentivo.app.ai.AiBusinessQueryResult
 import com.cuentivo.app.ai.AiDailyMessageKind
 import com.cuentivo.app.ai.AiPaymentBlockReason
 import com.cuentivo.app.ai.AiPaymentConfirmationRequest
@@ -17,6 +18,7 @@ import com.cuentivo.app.ai.AiSaleCustomerCandidate
 import com.cuentivo.app.ai.AiSaleExecutionResult
 import com.cuentivo.app.ai.AiSalePreviewResult
 import com.cuentivo.app.ai.AiSaleProductCandidate
+import com.cuentivo.app.ai.BusinessQueryProposal
 import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.ClarificationReason
 import com.cuentivo.app.ai.CreateSaleProposal
@@ -59,6 +61,13 @@ sealed interface AiDebugLabState {
         val choices: com.cuentivo.app.ai.AiSaleResolutionChoices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
     ) : AiDebugLabState
     data class SaleConfirming(val preview: AiResolvedSalePreview) : AiDebugLabState
+
+    /** Non-executable resolved business query states. */
+    data class QueryResolving(val proposal: BusinessQueryProposal) : AiDebugLabState
+    data class QueryAnswer(
+        val result: AiBusinessQueryResult,
+        val proposal: BusinessQueryProposal? = null,
+    ) : AiDebugLabState
 }
 
 sealed interface AiSaleChoiceOutcome {
@@ -70,6 +79,17 @@ sealed interface AiSaleChoiceOutcome {
     ) : AiSaleChoiceOutcome
 
     data object Ignored : AiSaleChoiceOutcome
+}
+
+sealed interface AiQueryChoiceOutcome {
+    data class Selected(
+        val model: AiDebugLabModel,
+        val proposal: BusinessQueryProposal,
+        val choice: com.cuentivo.app.ai.AiEntityChoice,
+        val generation: Long,
+    ) : AiQueryChoiceOutcome
+
+    data object Ignored : AiQueryChoiceOutcome
 }
 
 /** Immutable lab view state; [generation] is the single-flight/cancellation token. */
@@ -197,6 +217,7 @@ sealed interface AiChatMessage {
     data object AssistantSaleStale : AiChatMessage
     data object AssistantSaleRejected : AiChatMessage
     data object AssistantSaleLimitReached : AiChatMessage
+    data class AssistantQueryAnswer(val result: AiBusinessQueryResult) : AiChatMessage
 }
 
 sealed interface AiPaymentConfirmOutcome {
@@ -237,7 +258,8 @@ object AiDebugLabMachine {
             // Single-flight: editing is ignored while a request is in flight.
             AiDebugLabState.Sending,
             is AiDebugLabState.PaymentConfirming,
-            is AiDebugLabState.SaleConfirming -> model
+            is AiDebugLabState.SaleConfirming,
+            is AiDebugLabState.QueryResolving -> model
             AiDebugLabState.TextEditing -> model.copy(text = newText)
             // From a result state the next turn starts: accept text and return to editing.
             else -> model.copy(state = AiDebugLabState.TextEditing, text = newText)
@@ -742,6 +764,90 @@ object AiDebugLabMachine {
             state = newState,
             messages = messages,
             text = "",
+        )
+    }
+
+    /**
+     * Generation-safe transition from a raw query proposal or clarification choice to its resolved answer.
+     *
+     * Accepts only matching [generation] and only when the current state is ProposalPreview with a
+     * [BusinessQueryProposal], [AiDebugLabState.QueryResolving] or [AiDebugLabState.QueryAnswer].
+     * Replaces the pending/clarification message with the resolved answer; never writes to Room.
+     */
+    fun onQueryResult(
+        model: AiDebugLabModel,
+        result: AiBusinessQueryResult,
+        generation: Long,
+    ): AiDebugLabModel {
+        if (generation != model.generation) return model
+        val currentState = model.state
+        val currentProposal = when (currentState) {
+            is AiDebugLabState.ProposalPreview -> currentState.proposal as? BusinessQueryProposal
+            is AiDebugLabState.QueryResolving -> currentState.proposal
+            is AiDebugLabState.QueryAnswer -> currentState.proposal
+            else -> null
+        } ?: return model
+
+        val lastMessage = model.messages.lastOrNull() ?: return model
+        val isMatchingLastMessage = when (lastMessage) {
+            is AiChatMessage.AssistantProposal -> (lastMessage.proposal as? BusinessQueryProposal) == currentProposal
+            is AiChatMessage.AssistantQueryAnswer -> true
+            else -> false
+        }
+        if (!isMatchingLastMessage) return model
+
+        val assistantMessage: AiChatMessage = when (result) {
+            AiBusinessQueryResult.Unavailable -> AiChatMessage.AssistantUnavailable
+            else -> AiChatMessage.AssistantQueryAnswer(result)
+        }
+
+        val messages = if (model.messages.isNotEmpty()) {
+            model.messages.dropLast(1) + assistantMessage
+        } else {
+            model.messages
+        }
+        val newState = when (assistantMessage) {
+            AiChatMessage.AssistantUnavailable -> AiDebugLabState.Unavailable
+            is AiChatMessage.AssistantQueryAnswer -> AiDebugLabState.QueryAnswer(result, currentProposal)
+            else -> AiDebugLabState.TextEditing
+        }
+        return model.copy(
+            state = newState,
+            messages = messages,
+            text = "",
+        )
+    }
+
+    /**
+     * Applies a customer choice on a required query customer selection clarification.
+     *
+     * Validates that the customer ID exists in the active candidate list; arbitrary IDs are rejected.
+     * Transitions to [AiDebugLabState.QueryResolving] with an incremented generation token.
+     */
+    fun onChooseQueryCustomer(
+        model: AiDebugLabModel,
+        customerId: String,
+    ): AiQueryChoiceOutcome {
+        val state = model.state as? AiDebugLabState.QueryAnswer ?: return AiQueryChoiceOutcome.Ignored
+        val proposal = state.proposal ?: return AiQueryChoiceOutcome.Ignored
+        val selectionResult = state.result as? AiBusinessQueryResult.CustomerSelectionRequired ?: return AiQueryChoiceOutcome.Ignored
+        val lastMessage = model.messages.lastOrNull() as? AiChatMessage.AssistantQueryAnswer ?: return AiQueryChoiceOutcome.Ignored
+        val lastSelection = lastMessage.result as? AiBusinessQueryResult.CustomerSelectionRequired ?: return AiQueryChoiceOutcome.Ignored
+        if (selectionResult.candidates.none { it.customerId == customerId } || lastSelection.candidates.none { it.customerId == customerId }) {
+            return AiQueryChoiceOutcome.Ignored
+        }
+
+        val choice = com.cuentivo.app.ai.AiEntityChoice.UseExisting(customerId)
+        val nextGeneration = model.generation + 1
+        val nextModel = model.copy(
+            state = AiDebugLabState.QueryResolving(proposal),
+            generation = nextGeneration,
+        )
+        return AiQueryChoiceOutcome.Selected(
+            model = nextModel,
+            proposal = proposal,
+            choice = choice,
+            generation = nextGeneration,
         )
     }
 

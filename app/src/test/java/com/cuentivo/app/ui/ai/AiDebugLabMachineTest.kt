@@ -1451,6 +1451,244 @@ class AiDebugLabMachineTest {
     }
 
     @Test
+    fun `onResult with accepted BusinessQueryProposal transitions to ProposalPreview state and appends AssistantProposal`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana Gómez",
+        )
+        val initial = AiDebugLabModel(
+            state = AiDebugLabState.Sending,
+            generation = 2L,
+            messages = listOf(AiChatMessage.UserText("¿Cuánto me debe Ana?"), AiChatMessage.AssistantPending),
+        )
+
+        val updated = AiDebugLabMachine.onResult(
+            initial,
+            com.cuentivo.app.ai.CallableAiProposalResult.Proposal(proposal),
+            generation = 2L,
+        )
+
+        assertEquals(AiDebugLabState.ProposalPreview(proposal), updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantProposal(proposal),
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
+    fun `onQueryResult with valid Answer transitions to QueryAnswer state and replaces last message`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana Gómez",
+        )
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.ProposalPreview(proposal),
+            generation = 2L,
+            messages = listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantProposal(proposal),
+            ),
+        )
+
+        val answer = com.cuentivo.app.ai.AiBusinessQueryResult.Answer.CustomerBalance("c1", "Ana Gómez", 50000L)
+        val updated = AiDebugLabMachine.onQueryResult(model, answer, generation = 2L)
+
+        assertEquals(AiDebugLabState.QueryAnswer(answer, proposal), updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantQueryAnswer(answer),
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
+    fun `onQueryResult with CustomerSelectionRequired transitions to QueryAnswer state`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana",
+        )
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.ProposalPreview(proposal),
+            generation = 2L,
+            messages = listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantProposal(proposal),
+            ),
+        )
+
+        val selection = com.cuentivo.app.ai.AiBusinessQueryResult.CustomerSelectionRequired(
+            listOf(
+                com.cuentivo.app.ai.AiQueryCustomerCandidate("c1", "Ana Gómez"),
+                com.cuentivo.app.ai.AiQueryCustomerCandidate("c2", "Ana Sofía Gómez"),
+            ),
+        )
+        val updated = AiDebugLabMachine.onQueryResult(model, selection, generation = 2L)
+
+        assertEquals(AiDebugLabState.QueryAnswer(selection, proposal), updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantQueryAnswer(selection),
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
+    fun `onQueryResult with Unavailable transitions to Unavailable state`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMERS_WITH_DEBT,
+        )
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.ProposalPreview(proposal),
+            generation = 2L,
+            messages = listOf(
+                AiChatMessage.UserText("¿Quién me debe?"),
+                AiChatMessage.AssistantProposal(proposal),
+            ),
+        )
+
+        val updated = AiDebugLabMachine.onQueryResult(
+            model,
+            com.cuentivo.app.ai.AiBusinessQueryResult.Unavailable,
+            generation = 2L,
+        )
+
+        assertEquals(AiDebugLabState.Unavailable, updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("¿Quién me debe?"),
+                AiChatMessage.AssistantUnavailable,
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
+    fun `onQueryResult with stale generation is discarded and returns model unchanged`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana Gómez",
+        )
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.ProposalPreview(proposal),
+            generation = 3L,
+            messages = listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantProposal(proposal),
+            ),
+        )
+
+        val answer = com.cuentivo.app.ai.AiBusinessQueryResult.Answer.CustomerBalance("c1", "Ana Gómez", 50000L)
+        val updated = AiDebugLabMachine.onQueryResult(model, answer, generation = 2L)
+
+        assertEquals(model, updated)
+    }
+
+    @Test
+    fun `onChooseQueryCustomer with valid candidate starts QueryResolving with incremented generation`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana",
+        )
+        val selection = com.cuentivo.app.ai.AiBusinessQueryResult.CustomerSelectionRequired(
+            listOf(
+                com.cuentivo.app.ai.AiQueryCustomerCandidate("c1", "Ana Gómez"),
+                com.cuentivo.app.ai.AiQueryCustomerCandidate("c2", "Ana Sofía Gómez"),
+            ),
+        )
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.QueryAnswer(selection, proposal),
+            generation = 2L,
+            messages = listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantQueryAnswer(selection),
+            ),
+        )
+
+        val outcome = AiDebugLabMachine.onChooseQueryCustomer(model, "c2")
+        assertTrue(outcome is AiQueryChoiceOutcome.Selected)
+        val selected = outcome as AiQueryChoiceOutcome.Selected
+
+        assertEquals(3L, selected.generation)
+        assertEquals(proposal, selected.proposal)
+        assertEquals(com.cuentivo.app.ai.AiEntityChoice.UseExisting("c2"), selected.choice)
+        assertEquals(AiDebugLabState.QueryResolving(proposal), selected.model.state)
+        assertEquals(3L, selected.model.generation)
+    }
+
+    @Test
+    fun `onChooseQueryCustomer with invalid candidate ID is ignored`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana",
+        )
+        val selection = com.cuentivo.app.ai.AiBusinessQueryResult.CustomerSelectionRequired(
+            listOf(
+                com.cuentivo.app.ai.AiQueryCustomerCandidate("c1", "Ana Gómez"),
+            ),
+        )
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.QueryAnswer(selection, proposal),
+            generation = 2L,
+            messages = listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantQueryAnswer(selection),
+            ),
+        )
+
+        val outcome = AiDebugLabMachine.onChooseQueryCustomer(model, "c-unknown")
+        assertEquals(AiQueryChoiceOutcome.Ignored, outcome)
+    }
+
+    @Test
+    fun `onChooseQueryCustomer from invalid state is ignored`() {
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.TextEditing,
+            generation = 2L,
+        )
+
+        val outcome = AiDebugLabMachine.onChooseQueryCustomer(model, "c1")
+        assertEquals(AiQueryChoiceOutcome.Ignored, outcome)
+    }
+
+    @Test
+    fun `text editing is ignored while in QueryResolving state`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana",
+        )
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.QueryResolving(proposal),
+            text = "original",
+            generation = 2L,
+        )
+
+        val updated = AiDebugLabMachine.onTextChanged(model, "changed")
+        assertEquals("original", updated.text)
+        assertEquals(AiDebugLabState.QueryResolving(proposal), updated.state)
+    }
+
+    @Test
+    fun `text editing from QueryAnswer state transitions back to TextEditing`() {
+        val answer = com.cuentivo.app.ai.AiBusinessQueryResult.Answer.CustomerBalance("c1", "Ana Gómez", 50000L)
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.QueryAnswer(answer),
+            text = "",
+            generation = 2L,
+        )
+
+        val updated = AiDebugLabMachine.onTextChanged(model, "Nueva pregunta")
+        assertEquals(AiDebugLabState.TextEditing, updated.state)
+        assertEquals("Nueva pregunta", updated.text)
+    }
+
+    @Test
     fun `onReset cleans up confirmation and choice state`() {
         val model = saleConfirmationModel(generation = 4L)
         val resetModel = AiDebugLabMachine.onReset(model)
