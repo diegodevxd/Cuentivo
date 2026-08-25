@@ -691,6 +691,8 @@ class AiDebugLabGuardsTest {
         assertTrue("must format total debt for all customers in business", screenSource.contains("ai_query_total_debt_all_customers"))
         assertTrue("must render empty sales period notice", screenSource.contains("ai_query_sales_period_empty"))
         assertTrue("must render empty debtors notice", screenSource.contains("ai_query_no_debtors"))
+        assertTrue("must format debtor row with string resource", screenSource.contains("ai_query_debtor_row_format"))
+        assertTrue("must format proposal period with string resource", screenSource.contains("ai_query_proposal_period_format"))
     }
 
     @Test

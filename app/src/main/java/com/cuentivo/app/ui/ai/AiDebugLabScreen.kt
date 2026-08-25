@@ -1014,7 +1014,11 @@ private fun ChatMessageRow(
                     } else {
                         result.rows.forEach { row ->
                             Text(
-                                text = "• ${row.customerName}: ${formatCents(row.balanceCents)}",
+                                text = stringResource(
+                                    R.string.ai_query_debtor_row_format,
+                                    row.customerName,
+                                    formatCents(row.balanceCents),
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
@@ -1136,7 +1140,9 @@ private fun ProposalPreviewContent(proposal: AiProposal) {
                 Text(queryTitle, style = MaterialTheme.typography.titleMedium)
                 proposal.customerName?.let { Text(it) }
                 proposal.period?.let {
-                    Text("${it.startYear}-${it.startMonth}-${it.startDay} ... ${it.endYear}-${it.endMonth}-${it.endDay}")
+                    val start = "${it.startYear}-${it.startMonth}-${it.startDay}"
+                    val end = "${it.endYear}-${it.endMonth}-${it.endDay}"
+                    Text(stringResource(R.string.ai_query_proposal_period_format, start, end))
                 }
             }
             is com.cuentivo.app.ai.RequiresClarificationProposal -> Unit

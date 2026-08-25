@@ -507,4 +507,6 @@
     <string name="ai_query_blocked_invalid_date">La fecha ingresada no existe en el calendario.</string>
     <string name="ai_query_blocked_start_after_end">La fecha inicial no puede ser posterior a la fecha final.</string>
     <string name="ai_query_blocked_period_too_long">El periodo de consulta no puede superar 366 días.</string>
+    <string name="ai_query_debtor_row_format">• %1$s: %2$s</string>
+    <string name="ai_query_proposal_period_format">%1$s al %2$s</string>
 </resources>
