@@ -11,7 +11,7 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-25, sobre `c39b81a`.
+**Última actualización:** 2026-08-25, después del gate live de Fase 2 (`a6ffb7b`).
 
 ---
 
@@ -23,8 +23,9 @@ datos reales.
 
 **CuentivoAI.** Rama aislada `diegodevxd/feature-cuentivo-ai`. El gateway server-side existe: la
 key de Gemini vive en Secret Manager, la facturación Blaze está configurada y únicamente
-`interpretAiRequest` quedó desplegada en `us-south1`; `authorizeAiAction` **no** está desplegada.
-El APK debug habla con ese gateway vía Firebase Auth y App Check. Ninguna key entra al APK.
+`interpretAiRequest` y `authorizeAiAction` quedaron desplegadas en `us-south1` para la cohorte
+debug personal. El APK debug habla con el gateway vía Firebase Auth y App Check. Ninguna key entra
+al APK y la callable de autorización no tiene ligado el secreto Gemini.
 
 Aceptado físicamente en el A059P, no sólo por pruebas:
 
@@ -67,9 +68,11 @@ vive en el laboratorio debug, y su AAB, beta pública y activación general cont
 
 ## Último gate verificado
 
-En `a4f992d`: Functions **225/225**, TypeScript build/lint, JVM completo con `--rerun-tasks`,
-`assembleDebug`, `lintDebug` y `git diff --check`, todos verdes. Room sigue en versión 6 sin fallback
-destructivo. La idempotencia nace en la preview: reconfirmar la misma preview no duplica.
+Gate live de Fase 2: Functions **225/225**, TypeScript build/lint, Firestore Emulator **2/2**,
+Android JVM **767/767** con `--rerun-tasks`, `assembleDebug`, `lintDebug`, prueba física directa
+**2/2** y `git diff --check`. A059P probó autorización/replay, 401 sin App Check, cuota, rate limit
+y kill switch; cada denegación escribió cero y la configuración volvió a `true / true / 50 / 3`.
+Evidencia: `docs/superpowers/operations/2026-08-25-cuentivoai-phase-2-live-validation.md`.
 
 ## Orquestamiento
 
@@ -87,9 +90,8 @@ destructivo. La idempotencia nace en la preview: reconfirmar la misma preview no
 
 ## Qué sigue
 
-1. **Cerrar Fase 2 server-side antes de nuevas features:** desplegar y probar `authorizeAiAction`,
-   cuota transaccional, hard cap, rate limit y kill switch. Hoy sólo `interpretAiRequest` está
-   desplegada; el entitlement del A059P sigue creado manualmente.
+1. **Cerrar la parte comercial de Fase 2:** diseñar y probar que Play conceda/revoque el tier AI;
+   el entitlement del A059P todavía fue creado manualmente.
 2. Encender enforcement de App Check únicamente después de revisar tráfico válido del día.
 3. Voz a texto editable y endurecimiento/aceptación física del núcleo. OCR local/cámara ya existe
    parcialmente en el laboratorio.
@@ -100,8 +102,9 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
 
 ## Blockers y pendientes vigentes
 
-- **`authorizeAiAction` no está desplegada.** Sin cierre verificable de Fase 2 no hay cuota
-  server-side, hard cap ni kill switch probado; bloquea beta y AAB CuentivoAI.
+- **El control plane live personal está cerrado, pero no el entitlement comercial.** Cuota,
+  hard cap, rate limit y kill switch ya están desplegados/probados; Play todavía no concede ni
+  revoca el tier AI server-side, por lo que beta y AAB CuentivoAI continúan bloqueados.
 - **El entitlement AI actual fue creado manualmente para el usuario de prueba.** Billing/Play aún
   no concede ni revoca el tier CuentivoAI de forma server-side.
 - **El enforcement de App Check sigue apagado.** Falta leer el panel con tráfico posterior al

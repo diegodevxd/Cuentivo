@@ -1,20 +1,17 @@
 # CuentivoAI — arquitectura, seguridad y plan de ejecución
 
-> **Estado:** el lanzamiento público y cualquier AAB/activación para usuarios permanecen en **NO-GO**. En la rama aislada `diegodevxd/feature-cuentivo-ai`, Fase 0A, Fase 1B y Fase 2A local están cerradas. El 2026-08-24 se configuró el secreto server-side, se desplegó exclusivamente `interpretAiRequest` en `us-south1` y se habilitaron manualmente control global y entitlement temporal para el único usuario debug. Una prueba física confirmó texto → propuesta tipada no ejecutable; esto no autoriza operaciones financieras IA, AAB, Play ni activación para usuarios.
+> **Estado:** el lanzamiento público y cualquier AAB/activación para usuarios permanecen en **NO-GO**. En la rama aislada `diegodevxd/feature-cuentivo-ai`, Fase 0A, Fase 1B y Fase 2A local están cerradas. Para la cohorte debug personal también están desplegadas `interpretAiRequest` y `authorizeAiAction` en `us-south1`; cuota, rate limit, idempotencia y kill switch fueron probados físicamente y restaurados. Esto no completa entitlement Play, enforcement App Check de producción, beta, AAB ni activación para usuarios.
 >
 > **Source of truth:** este documento prevalece para CuentivoAI hasta que el propietario apruebe una fase explícitamente. Las decisiones y supuestos deben actualizarse aquí antes de cambiar producción.
 >
 > **Fecha de auditoría:** 2026-08-14. **Rama inspeccionada:** `codex/neo-fintech`.
 >
-> **Reconciliación actual (2026-08-24):** la rama vigente es `diegodevxd/feature-cuentivo-ai` y
-> el HEAD funcional auditado antes de esta actualización documental es `30641fa`; el HEAD vigente
-> tras aceptar la creación compuesta es `24014de`. El Gemini Debug Gateway
-> fue desplegado de forma acotada con su secreto ligado sólo a `interpretAiRequest`; la evidencia
-> de Firebase CLI confirma `interpretAiRequest(us-south1) Successful update operation` y
-> `Deploy complete!`. No se desplegó `authorizeAiAction`. El control plane de prueba fue creado
-> manualmente y la prueba física Auth/App Check/Gemini devolvió un borrador de pago candidato
-> para “María pagó 150 pesos”, sin registrar nada. No se marca
-> producción ni Fase 3 financiera como completadas; el release/AAB público sigue NO-GO.
+> **Reconciliación actual (2026-08-25):** la rama vigente es `diegodevxd/feature-cuentivo-ai`.
+> Firebase CLI desplegó de forma acotada `authorizeAiAction(us-south1)` además de la callable de
+> interpretación existente. En A059P se verificaron autorización y replay idempotente, rechazo
+> sin App Check, cuota agotada, rate limit y kill switch con cero escrituras en cada denegación;
+> los valores globales quedaron restaurados a `true / true / 50 / 3`. El control y entitlement
+> siguen siendo manuales para un solo usuario debug. Producción, AAB y activación pública siguen NO-GO.
 
 ## 0. Mandato y límites
 
@@ -58,7 +55,7 @@ Invariantes no negociables:
 
 | Hallazgo | Evidencia | Consecuencia para AI |
 |---|---|---|
-| Gateway server-side inicial | `functions/`, `interpretAiRequest` callable v2 fail-closed desplegada en `us-south1`; `authorizeAiAction` permanece local y no desplegada | Nunca exponer Gemini desde Android; todo proveedor queda detrás del gateway. |
+| Gateway server-side inicial | `functions/`; `interpretAiRequest` y `authorizeAiAction` desplegadas en `us-south1` para la cohorte debug personal | Nunca exponer Gemini desde Android; todo proveedor queda detrás del gateway. La automatización Play y el enforcement App Check de producción siguen pendientes. |
 | Billing es client-side | `BillingGateway`, `EntitlementStore` | Insuficiente para vender cuota AI; servidor debe verificar/autorizar. |
 | Hay base para confirmación segura | `OperationEntity`, DAOs transaccionales, auditoría | Reutilizarla; no inventar un ledger paralelo. |
 | Fotos no son cloud | `ProductImageStore` | OCR debe procesar temporalmente en dispositivo; no asumir archivo remoto. |
@@ -105,7 +102,7 @@ Android -- validación de dominio + preview + confirmación --> Room transaction
 
 Usar **Cloud Functions for Firebase v2 (callable/HTTP) en el proyecto Firebase existente**, con Secret Manager para la key del proveedor. Es el mínimo que reutiliza Auth, App Check, Firestore, emuladores y observabilidad. Alternativa aceptable si la carga/streaming exige más control: Cloud Run detrás de Firebase Auth/App Check; no se decide ni se crea hasta medir beta.
 
-El gateway no escribe operaciones financieras. La implementación local de Fase 2A propone sólo documentos de control Admin SDK: `aiControl/global`, `aiEntitlements/{uid}`, `aiUsage/{uid}_{YYYYMM}`, `aiRateWindows/{uid}_{YYYYMMDDHHmm}` y `aiRequestLedger/{uid}_{requestId}`. Las reglas de cliente no se han modificado y niegan acceso directo a esas rutas. Esta implementación no está desplegada ni concede entitlement real.
+El gateway no escribe operaciones financieras. El control plane usa sólo documentos Admin SDK: `aiControl/global`, `aiEntitlements/{uid}`, `aiUsage/{uid}_{YYYYMM}`, `aiRateWindows/{uid}_{YYYYMMDDHHmm}` y `aiRequestLedger/{uid}_{requestId}`. Las reglas de cliente no se han modificado y niegan acceso directo a esas rutas. `authorizeAiAction` está desplegada y validada únicamente para la cohorte debug personal; el entitlement fue creado manualmente y todavía no representa una compra Play verificada.
 
 ### Interfaces propuestas
 
@@ -252,6 +249,7 @@ Regla objetiva de escalamiento: Flash/Qwen → V4 Pro al primer contacto con din
 - Dependencias: Fase 1 y decisión de producto Play.
 - Modelo: V4 Pro + GLM.
 - Done: 500 es configuración remota, no literal cliente; reintentos no duplican consumo; usuario sin AI no llega a proveedor.
+- Estado 2026-08-25: **control plane live de la cohorte debug personal DONE**. `authorizeAiAction` está desplegada; autorización/replay, 401 sin App Check, cuota, rate limit y kill switch se probaron contra Firebase real con restauración exacta. **Fase 2 comercial sigue parcial**: falta que Play conceda/revoque entitlement y validar enforcement App Check antes de beta.
 
 ### Fase 3 — Texto a draft seguro
 - Contrato de intent versionado, Gemini 3.5 Flash-Lite mediante Structured Outputs/JSON Schema, candidates, preview y confirmación usando dominio/Room existentes.
@@ -482,6 +480,7 @@ La cuenta, facturación Blaze, presupuesto, API key Gemini en Secret Manager y e
 | 2026-08-24 | Incremento de confirmación y ejecución de abonos aceptado en APK debug (`35b05b7`, `d7cf311`, `66c80d3`, `7d4ef1f`, `6e9abee`, `a309544`, `fe4dbd0`, `1d7c0f2`, `ae513da`): Task 1 (identidad local estable de preview Ready vía `PaymentOperationIds`), Task 2 (`AiPaymentExecutionService` transaccional con repositorios desacoplados de AI y outbox `PAYMENT`, `PAYMENT_ALLOCATION`, `MOVEMENT`), Task 3 (aislamiento Room e idempotencia), Task 4 (confirmación explícita, single-flight y descarte de resultados obsoletos), y Task 5 (wiring debug con rechazo si el negocio activo no coincide). En A059P `00170157R000160`, después de autorizar el token App Check debug del dispositivo sin persistirlo en Git, el usuario confirmó “María López me pagó 150 pesos”: se creó un abono de $150 y el saldo real cambió de $500 a $350. | **Incremento DONE para el núcleo debug de abono confirmado.** Codex reejecutó 639/639 JVM, `assembleDebug`, `assembleRelease`, `lintDebug`, 36/36 instrumentadas y `git diff --check`; instaló `app-debug.apk` con SHA-256 `D09EE202C703ED5735422E4AA238256108AB0EB889C152F0D6A1F9F06CC5F999`. La prueba física confirmó el camino principal; concurrencia, retry, stale y aislamiento están cubiertos automáticamente. Release permanece cerrado: esto NO completa toda Fase 3, beta, AAB, Billing AI ni activación pública. |
 | 2026-08-24 | Creación compuesta aceptada en APK debug (`20f4f1e`, `febd8c3`, `32bc03c`, `b930ebf`, `24014de`): una sola frase crea el cliente y los productos faltantes dentro de la misma preview y la misma transacción Room. El precio hablado de un producto nuevo se guarda como precio habitual; costo, stock, categoría y barcode no se inventan. Los límites del plan Gratis se evalúan **antes** de cualquier escritura y el bloqueo abre el paywall en vez de fingir un error de datos. | **Incremento DONE para creación compuesta en debug.** Claude auditó el código y no el reporte del implementador, en rondas que devolvieron ocho hallazgos corregidos antes de aprobar. Gates reejecutados: JVM 729/729 con `--rerun-tasks`, `assembleDebug`, `assembleRelease`, `lintDebug`, paridad 443 = 443 y `git diff --check` limpio. Prueba física en A059P `00170157R000160` leída de la base real del dispositivo: “Ana se llevó dos cremas de $120 y pagó $100” dejó cliente `Ana`, producto `crema` a 12000 centavos, venta 24000, abono 10000 y saldo derivado 14000, con `costPriceCents`, `stock`, `category` y `sku` en NULL; dos frases produjeron exactamente 2 clientes, 2 productos, 2 ventas, 2 ítems, 2 abonos, 2 asignaciones, 4 movimientos y 4 operaciones, sin duplicados. APK SHA-256 `F649EEA8A9621487BE29C60B0867EFEC8B252BB86EB4B493524700B71F052E54`. Desviación registrada: el §7 pide pase adversarial GLM para dinero/idempotencia y el propietario decidió expresamente cerrar con auditoría de Claude más pruebas conectadas; no es omisión silenciosa. Abierto: no hay fila en `sync_state` pese a que el outbox se drenó, por lo que el *pull* no está confirmado. Fase 3 completa, beta, AAB y producción CuentivoAI siguen NOT DONE/NO-GO. |
 | 2026-08-25 | Consultas naturales deterministas cerradas (`d308cfe`, `bba0c8a`, `7d97c00`, `46746f1`, `0f0fcff`, `93bab19`, `3e70e4e`, `7123b56`, `b747314`, `5a10b76`, `c1e1486`, `a4f992d`): Gemini sólo propone una intención allow-listed; saldo, deudores, vendido y cobrado salen exclusivamente de DAOs Room filtrados por negocio. La corrección final entrega al proveedor una fecha obligatoria de `America/Mexico_City` y reglas temporales server-side; Android conserva la sesión en memoria al rotar sin persistir respuestas financieras nuevas. | **Incremento DONE en laboratorio debug.** Sol auditó los diffs y reejecutó Functions 225/225, TypeScript build/lint, JVM completo con `--rerun-tasks`, `assembleDebug`, `lintDebug` y `git diff --check`. `interpretAiRequest(us-south1)` fue desplegada solamente después de verificar proyecto y autenticación. APK SHA-256 `AEF6D27E034151E485DFB34DAC33CA75D12868F986DB6F03E3A74E5723548F7F`. En A059P, Diego confirmó resumen correcto por período y conservación del chat al girar. No hubo escrituras, `@Query` nuevas ni cambio de persistencia. Fase 2 server-side, App Check enforcement, voz, endurecimiento, beta, AAB y producción siguen NOT DONE/NO-GO. |
+| 2026-08-25 | Gate live del control plane de Fase 2 para la cohorte debug personal (`ae82078`, `18d1b11`, `b331ee3`, `a6ffb7b`): se desplegó únicamente `authorizeAiAction(us-south1)`, sin secreto Gemini. A059P confirmó contrato exacto, replay idéntico, rechazo HTTP 401 sin App Check, `AI_QUOTA_EXHAUSTED`, `AI_RATE_LIMITED` y `AI_DISABLED`; las tres denegaciones dejaron uso/ledger sin cambios. El kill switch dejó accesible Cuentivo normal y la configuración fue restaurada exactamente a `enabled=true`, `geminiEnabled=true`, cuota 50 y rate 3; una autorización final volvió a pasar. | **Control plane live personal DONE; Fase 2 comercial PARCIAL.** Gate fresco: Functions 225/225, build/lint, Firestore Emulator 2/2, Android JVM 767/767, `assembleDebug`, `lintDebug`, prueba conectada 2/2 y `git diff --check`. Evidencia redactada: `docs/superpowers/operations/2026-08-25-cuentivoai-phase-2-live-validation.md`. Siguen NOT DONE: entitlement automático/verificado por Play, enforcement App Check de producción, voz, beta, AAB y activación pública. |
 
 ## 17. HANDOFF A ORCA — FASE 0 INTERNA AUTORIZADA
 

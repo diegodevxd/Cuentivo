@@ -1,6 +1,6 @@
 # CuentivoAI Phase 2 Live Control Plane Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. All tracked steps below are complete.
 
 **Goal:** deploy and physically verify the existing Gemini-only authorization control plane for the single personal debug cohort, without Play Billing integration or financial mutations.
 
@@ -31,11 +31,11 @@
 - Consumes: deployed callable request `{ contractVersion: 1, requestId: UUID, action: "authorize_text" }`.
 - Produces: connected-test evidence for exact `AuthorizeAiActionResponse` and App Check rejection.
 
-- [ ] **Step 1: Remove the stale v1 `interpretAiRequest` expectation**
+- [x] **Step 1: Remove the stale v1 `interpretAiRequest` expectation**
 
 Delete `deployedCallableReturnsExactNotConfiguredContract`: the deployed interpretation callable is now v2 and configured, so `AI_NOT_CONFIGURED` is historical and false.
 
-- [ ] **Step 2: Add a reusable exact-response assertion**
+- [x] **Step 2: Add a reusable exact-response assertion**
 
 Add a private helper that accepts `requestId`, response data and expected decision, then asserts exactly these five keys:
 
@@ -58,7 +58,7 @@ private fun assertAuthorizeResponse(
 }
 ```
 
-- [ ] **Step 3: Add the authenticated App Check idempotency probe**
+- [x] **Step 3: Add the authenticated App Check idempotency probe**
 
 Use one UUID twice against `getHttpsCallable("authorizeAiAction")`. Read the expected decision from the instrumentation argument `cuentivoAiExpectedDecision`, defaulting to `AI_AUTHORIZED`. Assert both responses are exact and identical. Send no text or financial fields.
 
@@ -79,13 +79,13 @@ assertAuthorizeResponse(requestId, replay.data, expected)
 assertEquals(first.data, replay.data)
 ```
 
-- [ ] **Step 4: Retarget the missing-App-Check probe**
+- [x] **Step 4: Retarget the missing-App-Check probe**
 
 Keep the existing raw HTTPS test but change only its URL to
 `https://us-south1-organitazionlabs.cloudfunctions.net/authorizeAiAction`. It must still send a valid
 Auth bearer with no App Check header and expect HTTP 401. Never print the bearer.
 
-- [ ] **Step 5: Compile without invoking production**
+- [x] **Step 5: Compile without invoking production**
 
 Run:
 
@@ -97,7 +97,7 @@ $env:JAVA_TOOL_OPTIONS='-Djavax.net.ssl.trustStore=C:\tmp\cuentivo-jbr-cacerts -
 
 Expected: `BUILD SUCCESSFUL`. Do not run the connected class before deployment.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add app/src/androidTest/java/com/cuentivo/app/ai/FirebaseCallableGatewayInstrumentedTest.kt
@@ -114,7 +114,7 @@ git commit -m "test(ai): probe live authorization control plane"
 - Consumes: existing Phase 2A code at `c435c31` plus later gateway integration.
 - Produces: fresh evidence that the deployed source still satisfies the accepted invariants.
 
-- [ ] **Step 1: Run the complete Functions gate**
+- [x] **Step 1: Run the complete Functions gate**
 
 ```powershell
 npm --prefix functions test
@@ -131,13 +131,13 @@ The emulator wrapper is mandatory: `test:firestore-emulator` intentionally refus
 `FIRESTORE_EMULATOR_HOST`, so it can never target production accidentally. Expected: all Vitest files
 pass, TypeScript build/lint exit 0, Emulator concurrency tests 2/2 and diff check clean.
 
-- [ ] **Step 2: Audit the composition root**
+- [x] **Step 2: Audit the composition root**
 
 Verify in `functions/src/index.ts` that both callables share `AI_BOUNDARY`, including
 `region: "us-south1"`, `enforceAppCheck: true`, `maxInstances: 1`, `concurrency: 1`, 15 seconds and
 256 MiB; confirm `secrets: [geminiApiKey]` appears only on `interpretAiRequest`.
 
-- [ ] **Step 3: Stop on any defect**
+- [x] **Step 3: Stop on any defect**
 
 If the gate fails, write a focused failing regression test before modifying production code. Commit each verified correction separately. If no defect appears, Task 2 creates no commit.
 
@@ -149,11 +149,11 @@ If the gate fails, write a focused failing regression test before modifying prod
 - Consumes: commits approved from Tasks 1–2.
 - Produces: real deployed callable and baseline/replay/App Check evidence.
 
-- [ ] **Step 1: Sol audits the complete diff and reruns Task 2 gates**
+- [x] **Step 1: Sol audits the complete diff and reruns Task 2 gates**
 
 The implementer report is not evidence. XML/results must be generated after the audited commit and Android commands use `--rerun-tasks`.
 
-- [ ] **Step 2: Verify Firebase target and authentication**
+- [x] **Step 2: Verify Firebase target and authentication**
 
 ```powershell
 $env:NODE_OPTIONS='--use-system-ca'
@@ -164,7 +164,7 @@ npx -y firebase-tools@latest use
 
 Expected project: `organitazionlabs`. Stop if the account/project differs.
 
-- [ ] **Step 3: Deploy only the authorization callable**
+- [x] **Step 3: Deploy only the authorization callable**
 
 ```powershell
 $env:NODE_OPTIONS='--use-system-ca'
@@ -173,7 +173,7 @@ npx -y firebase-tools@latest deploy --only functions:authorizeAiAction --project
 
 Expected deployment output: `functions[authorizeAiAction(us-south1)] Successful ...`. It must not update `interpretAiRequest`, rules or Hosting.
 
-- [ ] **Step 4: Run baseline/replay on A059P**
+- [x] **Step 4: Run baseline/replay on A059P**
 
 ```powershell
 $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
@@ -192,13 +192,13 @@ Expected: authenticated/App Check call and replay both `AI_AUTHORIZED`; raw call
 - Consumes: deployed callable, existing `aiControl/global`, current test-user entitlement and Firestore Console.
 - Produces: redacted evidence of decisions and restored configuration.
 
-- [ ] **Step 1: Record safe before-state**
+- [x] **Step 1: Record safe before-state**
 
 In the operations document record only these control values: `enabled`, `geminiEnabled`,
 `monthlyActionLimit`, `perMinuteLimit`, plus the current month/minute `usedActions`. Do not record uid,
 document IDs, request IDs or entitlement values.
 
-- [ ] **Step 2: Prove monthly quota**
+- [x] **Step 2: Prove monthly quota**
 
 Temporarily set `monthlyActionLimit` equal to the existing monthly `usedActions` (if zero, first run one authorized probe). Keep `perMinuteLimit` above current use. Run the connected class with:
 
@@ -208,19 +208,19 @@ Temporarily set `monthlyActionLimit` equal to the existing monthly `usedActions`
 
 Inspect Firestore: no new ledger for the denied request and neither counter increased.
 
-- [ ] **Step 3: Prove per-minute limit**
+- [x] **Step 3: Prove per-minute limit**
 
 Restore the original monthly limit. Set `perMinuteLimit` equal to the current minute `usedActions`, run the same class expecting `AI_RATE_LIMITED`, and verify zero ledger/counter writes for the denial. Perform the probe within the same minute as the inspected rate-window document.
 
-- [ ] **Step 4: Prove global kill switch and Cuentivo independence**
+- [x] **Step 4: Prove global kill switch and Cuentivo independence**
 
 Set `enabled=false`, run the class expecting `AI_DISABLED`, then open the installed app and verify the AI lab reports unavailable while a normal local screen (customers/products/dashboard) remains usable. No financial write is required for this check.
 
-- [ ] **Step 5: Restore and verify recovery**
+- [x] **Step 5: Restore and verify recovery**
 
 Restore all four exact before-values. Run one final baseline expecting `AI_AUTHORIZED`. Record the restoration and result in the operations document.
 
-- [ ] **Step 6: Commit only the redacted operations evidence**
+- [x] **Step 6: Commit only the redacted operations evidence**
 
 ```powershell
 git add docs/superpowers/operations/2026-08-25-cuentivoai-phase-2-live-validation.md
@@ -234,19 +234,19 @@ git commit -m "docs(ai): record phase 2 live control plane gate"
 - Modify: `PROJECT_MEMORY.md`
 - Modify: this plan (checkboxes/evidence only)
 
-- [ ] **Step 1: Sol reviews real Firestore effects**
+- [x] **Step 1: Sol reviews real Firestore effects**
 
 Confirm one authorized ledger/counter increment, replay without another increment, three denials with zero writes and restored configuration. Any mismatch keeps Phase 2 open.
 
-- [ ] **Step 2: Run final local gates**
+- [x] **Step 2: Run final local gates**
 
 Run Functions test/build/lint/Emulator, Android JVM/assemble/lint, language parity if resources changed and `git diff --check`.
 
-- [ ] **Step 3: Update canonical truth**
+- [x] **Step 3: Update canonical truth**
 
 Record exact commits, deployment output, connected-test results and rollback restoration. Mark only the personal debug-cohort live control plane complete. Explicitly leave Play entitlement automation, App Check production enforcement, voice, beta, AAB and public activation NOT DONE.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md PROJECT_MEMORY.md docs/superpowers/plans/2026-08-25-cuentivoai-phase-2-live-control-plane.md
@@ -257,3 +257,13 @@ git commit -m "docs(ai): close personal phase 2 control plane gate"
 
 Operational rollback is `aiControl/global.enabled=false`. Deployment rollback removes only
 `authorizeAiAction`; never delete Firestore financial data or modify the stable Android release.
+
+## Completion evidence (2026-08-25)
+
+- Probe commits: `ae82078`, corrected contract `18d1b11`; safe emulator plan correction `b331ee3`.
+- Deployment: only `authorizeAiAction(us-south1)`, successful create; no Gemini secret binding.
+- Live A059P: authorization/replay and missing-App-Check checks passed 2/2; quota, rate and kill-switch denials returned their exact decisions with zero denial writes.
+- Recovery: normal Cuentivo resumed while AI was disabled; remote control restored to `true / true / 50 / 3`; final authorization passed 2/2.
+- Fresh final gate: Functions 225/225, build/lint, Firestore Emulator 2/2, Android JVM 767/767, `assembleDebug`, `lintDebug` and `git diff --check`.
+- Redacted operational record: `docs/superpowers/operations/2026-08-25-cuentivoai-phase-2-live-validation.md` (`a6ffb7b`).
+- Closure is limited to the personal debug-cohort control plane. Play entitlement automation, production App Check enforcement, voice, beta, AAB and public activation remain open.
