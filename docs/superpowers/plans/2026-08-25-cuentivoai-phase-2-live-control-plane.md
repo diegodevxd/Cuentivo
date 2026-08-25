@@ -28,7 +28,7 @@
 - Test: `app/src/androidTest/java/com/cuentivo/app/ai/FirebaseCallableGatewayInstrumentedTest.kt`
 
 **Interfaces:**
-- Consumes: deployed callable request `{ contractVersion: 1, requestId: UUID, action: "interpret_text" }`.
+- Consumes: deployed callable request `{ contractVersion: 1, requestId: UUID, action: "authorize_text" }`.
 - Produces: connected-test evidence for exact `AuthorizeAiActionResponse` and App Check rejection.
 
 - [ ] **Step 1: Remove the stale v1 `interpretAiRequest` expectation**
@@ -69,7 +69,7 @@ val requestId = UUID.randomUUID().toString()
 val payload = mapOf(
     "contractVersion" to 1,
     "requestId" to requestId,
-    "action" to "interpret_text",
+    "action" to "authorize_text",
 )
 val callable = FirebaseFunctions.getInstance("us-south1").getHttpsCallable("authorizeAiAction")
 val first = Tasks.await(callable.call(payload))

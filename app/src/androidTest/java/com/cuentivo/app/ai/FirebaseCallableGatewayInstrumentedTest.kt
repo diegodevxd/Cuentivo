@@ -71,7 +71,7 @@ class FirebaseCallableGatewayInstrumentedTest {
         val payload = mapOf(
             "contractVersion" to 1,
             "requestId" to requestId,
-            "action" to "interpret_text",
+            "action" to "authorize_text",
         )
 
         val callable = FirebaseFunctions.getInstance("us-south1").getHttpsCallable("authorizeAiAction")
@@ -93,7 +93,7 @@ class FirebaseCallableGatewayInstrumentedTest {
 
         // Raw HTTP probe: valid Authorization Bearer only, and deliberately no App Check header.
         // The callable wire protocol wraps the payload in a data envelope, so the body is exactly
-        // {"data": {"contractVersion":1, requestId, action:"interpret_text"}} with no text.
+        // {"data": {"contractVersion":1, requestId, action:"authorize_text"}} with no text.
         val idToken = Tasks.await(currentUser!!.getIdToken(false)).token
         val requestId = UUID.randomUUID().toString()
         val body = JSONObject()
@@ -102,7 +102,7 @@ class FirebaseCallableGatewayInstrumentedTest {
                 JSONObject()
                     .put("contractVersion", 1)
                     .put("requestId", requestId)
-                    .put("action", "interpret_text"),
+                    .put("action", "authorize_text"),
             )
             .toString()
 
