@@ -524,4 +524,17 @@
     <string name="ai_voice_unavailable_permission_denied">Se necesita permiso de micrófono para dictar. Actívalo en los ajustes de tu teléfono.</string>
     <string name="ai_voice_unavailable_no_speech">No se escuchó ninguna voz. Intenta hablar más claro o más cerca del micrófono.</string>
     <string name="ai_voice_unavailable_recognizer_error">Ocurrió un problema con el reconocedor de voz. Puedes ingresar el texto con el teclado.</string>
+    <!-- AI Clarification reasons and slots -->
+    <string name="ai_clarification_reason_ambiguous_customer">Hay varios clientes que coinciden con ese nombre. Por favor escribe el nombre completo.</string>
+    <string name="ai_clarification_reason_ambiguous_product">Hay varios productos que coinciden con esa descripción. Por favor indica el nombre exacto del producto.</string>
+    <string name="ai_clarification_reason_missing_customer">Falta indicar el cliente. Especifica a quién le vendiste o quién te abonó (por ejemplo: \"a María\").</string>
+    <string name="ai_clarification_reason_missing_product">Falta indicar el producto o la cantidad. Especifica qué vendiste y cuántas unidades (por ejemplo: \"2 cremas\").</string>
+    <string name="ai_clarification_reason_missing_amount">Falta indicar el monto o precio. Especifica la cantidad de dinero (por ejemplo: \"en 100 pesos\" o \"50 de abono\").</string>
+    <string name="ai_clarification_reason_unknown_input">No logramos entender todos los datos del mensaje. Por favor especifica la operación con claridad (por ejemplo: \"le vendí 2 cremas a María en 100\" o \"cuánto vendí ayer\").</string>
+    <string name="ai_clarification_missing_slots_format">Datos por aclarar: %1$s</string>
+    <string name="ai_slot_customer">Cliente</string>
+    <string name="ai_slot_product">Producto</string>
+    <string name="ai_slot_amount">Monto / Precio</string>
+    <string name="ai_slot_quantity">Cantidad</string>
+    <string name="ai_slot_period">Período / Fecha</string>
 </resources>

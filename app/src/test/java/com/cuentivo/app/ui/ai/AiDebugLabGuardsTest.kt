@@ -669,6 +669,39 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `clarification string resources maintain key parity across spanish and english and avoid raw enum names`() {
+        val esXml = File("src/main/res/values/strings.xml").readText()
+        val enXml = File("src/main/res/values-en/strings.xml").readText()
+        val requiredKeys = listOf(
+            "ai_clarification_reason_ambiguous_customer",
+            "ai_clarification_reason_ambiguous_product",
+            "ai_clarification_reason_missing_customer",
+            "ai_clarification_reason_missing_product",
+            "ai_clarification_reason_missing_amount",
+            "ai_clarification_reason_unknown_input",
+            "ai_clarification_missing_slots_format",
+            "ai_slot_customer",
+            "ai_slot_product",
+            "ai_slot_amount",
+            "ai_slot_quantity",
+            "ai_slot_period",
+        )
+        for (key in requiredKeys) {
+            assertTrue("Spanish strings must contain $key", esXml.contains("name=\"$key\""))
+            assertTrue("English strings must contain $key", enXml.contains("name=\"$key\""))
+        }
+
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val clarificationBlock = source.substring(
+            source.indexOf("is AiChatMessage.AssistantClarification"),
+            source.indexOf("is AiChatMessage.AssistantProposal"),
+        )
+        assertFalse("must not use raw enum name for clarification reason", clarificationBlock.contains(".name"))
+        assertTrue("must handle all clarification reasons", clarificationBlock.contains("ai_clarification_reason_unknown_input"))
+        assertTrue("must handle slots formatting", clarificationBlock.contains("ai_clarification_missing_slots_format"))
+    }
+
+    @Test
     fun `confirmSale rethrows CancellationException and falls back to Unavailable only for other exceptions`() {
         val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
         val confirmCallIndex = screenSource.indexOf("confirmSale(outcome.request)")

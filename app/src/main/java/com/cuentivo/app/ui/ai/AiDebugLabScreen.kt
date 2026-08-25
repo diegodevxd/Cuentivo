@@ -825,9 +825,39 @@ private fun ChatMessageRow(
         }
         AiChatMessage.AssistantUnavailable -> Text(stringResource(R.string.ai_debug_lab_unavailable))
         is AiChatMessage.AssistantClarification -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(R.string.ai_debug_lab_clarification))
-            Text(message.reason.name, style = MaterialTheme.typography.titleMedium)
-            Text(message.slots.joinToString { it.name }, style = MaterialTheme.typography.bodySmall)
+            val reasonText = when (message.reason) {
+                com.cuentivo.app.ai.ClarificationReason.AMBIGUOUS_CUSTOMER -> stringResource(R.string.ai_clarification_reason_ambiguous_customer)
+                com.cuentivo.app.ai.ClarificationReason.AMBIGUOUS_PRODUCT -> stringResource(R.string.ai_clarification_reason_ambiguous_product)
+                com.cuentivo.app.ai.ClarificationReason.MISSING_CUSTOMER -> stringResource(R.string.ai_clarification_reason_missing_customer)
+                com.cuentivo.app.ai.ClarificationReason.MISSING_PRODUCT -> stringResource(R.string.ai_clarification_reason_missing_product)
+                com.cuentivo.app.ai.ClarificationReason.MISSING_AMOUNT -> stringResource(R.string.ai_clarification_reason_missing_amount)
+                com.cuentivo.app.ai.ClarificationReason.UNKNOWN_INPUT -> stringResource(R.string.ai_clarification_reason_unknown_input)
+            }
+            Text(
+                text = reasonText,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (message.slots.isNotEmpty()) {
+                val customerSlotLabel = stringResource(R.string.ai_slot_customer)
+                val productSlotLabel = stringResource(R.string.ai_slot_product)
+                val amountSlotLabel = stringResource(R.string.ai_slot_amount)
+                val quantitySlotLabel = stringResource(R.string.ai_slot_quantity)
+                val periodSlotLabel = stringResource(R.string.ai_slot_period)
+                val slotsFormatted = message.slots.joinToString { slot ->
+                    when (slot) {
+                        com.cuentivo.app.ai.UnresolvedSlot.CUSTOMER -> customerSlotLabel
+                        com.cuentivo.app.ai.UnresolvedSlot.PRODUCT -> productSlotLabel
+                        com.cuentivo.app.ai.UnresolvedSlot.AMOUNT -> amountSlotLabel
+                        com.cuentivo.app.ai.UnresolvedSlot.QUANTITY -> quantitySlotLabel
+                        com.cuentivo.app.ai.UnresolvedSlot.PERIOD -> periodSlotLabel
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.ai_clarification_missing_slots_format, slotsFormatted),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         is AiChatMessage.AssistantProposal -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
