@@ -709,4 +709,14 @@ class AiDebugLabGuardsTest {
         assertTrue("query resolver maps to Unavailable", queryResolutionBlock.contains("AiBusinessQueryResult.Unavailable"))
         assertFalse("query resolver must not use runCatching", queryResolutionBlock.contains("runCatching"))
     }
+
+    @Test
+    fun `formatCents formats zero, positive, negative and Long MIN_VALUE safely without overflow`() {
+        assertEquals("$0.00", formatCents(0L))
+        assertEquals("$500.00", formatCents(50000L))
+        assertEquals("$-15.00", formatCents(-1500L))
+        assertEquals("$15.00", formatCents(-1500L, absolute = true))
+        assertEquals("$92233720368547758.08", formatCents(Long.MIN_VALUE, absolute = true))
+        assertEquals("$-92233720368547758.08", formatCents(Long.MIN_VALUE, absolute = false))
+    }
 }

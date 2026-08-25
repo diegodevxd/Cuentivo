@@ -90,8 +90,7 @@ fun AiDebugLabEntryButton(
             .background(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(50),
-            )
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            ),
     ) {
         TextButton(onClick = onOpen) {
             Text(stringResource(R.string.ai_debug_lab_entry))
@@ -991,7 +990,7 @@ private fun ChatMessageRow(
                         text = result.customerName,
                         style = MaterialTheme.typography.titleMedium,
                     )
-                    val balanceFormatted = formatCents(kotlin.math.abs(result.balanceCents))
+                    val balanceFormatted = formatCents(result.balanceCents, absolute = true)
                     val balanceText = when {
                         result.balanceCents > 0L -> stringResource(R.string.ai_query_customer_balance_format, balanceFormatted)
                         result.balanceCents == 0L -> stringResource(R.string.ai_query_customer_no_debt, result.customerName)
@@ -1146,4 +1145,8 @@ private fun ProposalPreviewContent(proposal: AiProposal) {
 }
 
 /** Candidate-only centavo formatting; the domain still computes any real totals. */
-private fun formatCents(cents: Long): String = "$" + BigDecimal.valueOf(cents, 2).toPlainString()
+internal fun formatCents(cents: Long, absolute: Boolean = false): String {
+    val decimal = BigDecimal.valueOf(cents, 2)
+    val formatted = if (absolute) decimal.abs() else decimal
+    return "$" + formatted.toPlainString()
+}
