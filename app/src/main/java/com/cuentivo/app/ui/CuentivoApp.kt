@@ -265,6 +265,7 @@ fun CuentivoApp(
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal, choices: com.cuentivo.app.ai.AiSaleResolutionChoices) -> AiSalePreviewResult)? = null,
     confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
+    businessQueryResolver: (suspend (businessId: String, proposal: com.cuentivo.app.ai.BusinessQueryProposal, choice: com.cuentivo.app.ai.AiEntityChoice?) -> com.cuentivo.app.ai.AiBusinessQueryResult)? = null,
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
@@ -473,6 +474,7 @@ fun CuentivoApp(
                     repository = aiDailyChatRepository,
                     paymentPreviewResolver = paymentPreviewResolver,
                     salePreviewResolver = salePreviewResolver,
+                    businessQueryResolver = businessQueryResolver,
                     activeBusinessId = activeBusinessId,
                     confirmPayment = confirmPayment,
                     confirmSale = confirmSale,

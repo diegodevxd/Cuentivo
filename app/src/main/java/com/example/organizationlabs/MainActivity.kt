@@ -56,6 +56,7 @@ import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
+import com.cuentivo.app.ai.AiBusinessQueryResolver
 import com.cuentivo.app.ai.AiPaymentExecutionResult
 import com.cuentivo.app.ai.AiPaymentExecutionService
 import com.cuentivo.app.ai.AiPaymentPreviewResolver
@@ -772,6 +773,15 @@ class MainActivity : ComponentActivity() {
                         searchProducts = productRepository::search,
                     )
                 }
+                val aiBusinessQueryResolver = remember {
+                    AiBusinessQueryResolver(
+                        searchCustomers = customerRepository::search,
+                        customerBalance = database.financialDao()::customerBalanceCents,
+                        customersWithBalances = database.customerDao()::activeWithBalances,
+                        salesTotal = database.financialDao()::salesTotalCents,
+                        collectedTotal = database.financialDao()::collectedTotalCents,
+                    )
+                }
                 val aiPaymentExecutionService = remember(currentUserId) {
                     val paymentRepository = PaymentRepository(database.financialDao())
                     AiPaymentExecutionService(
@@ -996,6 +1006,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    businessQueryResolver = aiBusinessQueryResolver::resolve,
                     onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()

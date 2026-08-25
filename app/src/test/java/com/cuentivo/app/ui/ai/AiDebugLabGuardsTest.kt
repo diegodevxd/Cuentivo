@@ -386,6 +386,18 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
+    fun `main activity constructs AiBusinessQueryResolver once using the five existing DAO method references and passes it to CuentivoApp`() {
+        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        assertTrue("must construct AiBusinessQueryResolver", source.contains("AiBusinessQueryResolver("))
+        assertTrue("must use customerRepository search reference", source.contains("searchCustomers = customerRepository::search"))
+        assertTrue("must use customerBalance reference", source.contains("customerBalance = database.financialDao()::customerBalanceCents"))
+        assertTrue("must use activeWithBalances reference", source.contains("customersWithBalances = database.customerDao()::activeWithBalances"))
+        assertTrue("must use salesTotal reference", source.contains("salesTotal = database.financialDao()::salesTotalCents"))
+        assertTrue("must use collectedTotal reference", source.contains("collectedTotal = database.financialDao()::collectedTotalCents"))
+        assertTrue("must pass businessQueryResolver to CuentivoApp", source.contains("businessQueryResolver = aiBusinessQueryResolver::resolve"))
+    }
+
+    @Test
     fun `cuentivo app derives active business id exclusively from DashboardUiState Content and passes dependencies`() {
         val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
         assertTrue(
@@ -403,12 +415,20 @@ class AiDebugLabGuardsTest {
                 source.contains("confirmSale = confirmSale"),
         )
         assertTrue(
+            "screen must receive businessQueryResolver",
+            source.contains("businessQueryResolver = businessQueryResolver"),
+        )
+        assertTrue(
             "CuentivoApp parameter confirmPayment must be nullable suspend callback",
             source.contains("confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null"),
         )
         assertTrue(
             "CuentivoApp parameter confirmSale must be nullable suspend callback",
             source.contains("confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null"),
+        )
+        assertTrue(
+            "CuentivoApp parameter businessQueryResolver must be nullable suspend callback",
+            source.contains("businessQueryResolver: (suspend (businessId: String, proposal: com.cuentivo.app.ai.BusinessQueryProposal, choice: com.cuentivo.app.ai.AiEntityChoice?) -> com.cuentivo.app.ai.AiBusinessQueryResult)? = null"),
         )
         assertTrue(
             "screen must receive confirmPayment",
@@ -720,5 +740,20 @@ class AiDebugLabGuardsTest {
         assertEquals("$15.00", formatCents(-1500L, absolute = true))
         assertEquals("$92233720368547758.08", formatCents(Long.MIN_VALUE, absolute = true))
         assertEquals("$-92233720368547758.08", formatCents(Long.MIN_VALUE, absolute = false))
+    }
+
+    @Test
+    fun `business query code path performs no writes, mutations, outbox enqueuing or audit logging`() {
+        val resolverSource = File("src/main/java/com/cuentivo/app/ai/AiBusinessQuery.kt").readLines()
+            .filter { !it.trimStart().startsWith("//") && !it.trimStart().startsWith("*") && !it.trimStart().startsWith("/*") }
+            .joinToString("\n")
+        assertFalse("must not reference syncQueue", resolverSource.contains("syncQueue") || resolverSource.contains("SyncQueue"))
+        assertFalse("must not reference audit", resolverSource.contains("audit") || resolverSource.contains("Audit"))
+        assertFalse("must not reference insert", resolverSource.contains(".insert("))
+        assertFalse("must not reference update", resolverSource.contains(".update("))
+        assertFalse("must not reference delete", resolverSource.contains(".delete("))
+        assertFalse("must not reference outbox", resolverSource.contains("outbox"))
+        assertFalse("must not import Room", resolverSource.contains("androidx.room"))
+        assertFalse("must not import Firestore", resolverSource.contains("com.google.firebase.firestore"))
     }
 }
