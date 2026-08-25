@@ -30,42 +30,46 @@
 
 Archivo nuevo `app/src/main/java/com/cuentivo/app/ai/AiBusinessQuery.kt`.
 
-- [ ] `AiBusinessQueryResolver` con seams por constructor: `searchCustomers`, `customerBalance`, `customersWithBalances`, `salesTotal`, `collectedTotal`. Sin dependencias de Android.
-- [ ] `suspend fun resolve(businessId, proposal, choice: AiEntityChoice? = null): AiBusinessQueryResult`, envuelto como el de venta: **relanza `CancellationException`** y convierte cualquier otra excepción en `Unavailable`.
-- [ ] `AiBusinessQueryResult` sellado: `Answer.CustomerBalance(customerId, customerName, balanceCents)`, `Answer.CustomersWithDebt(rows, totalCents)`, `Answer.SalesForPeriod(startEpochDay, endEpochDay, soldCents, collectedCents)`, `CustomerSelectionRequired(candidates)`, `CustomerNotFound(queriedName)`, `Blocked(reason)`, `Unavailable`.
-- [ ] `CUSTOMER_BALANCE`: resuelve el nombre reusando la semántica de `AiSaleCustomerMatch` — exacto resuelve, varios candidatos piden aclaración, ninguno devuelve `CustomerNotFound`. Nunca crea clientes: aquí **no** existe la rama "crear nuevo".
-- [ ] `CUSTOMERS_WITH_DEBT`: toma `customersWithBalances`, **filtra `balanceCents > 0`** y corta a los 20 primeros. Un saldo de 0 o a favor no es deuda. Devuelve además la suma de los positivos.
-- [ ] `SALES_FOR_PERIOD`: convierte `AiPeriodCandidate` a `epochDay`. Bloquea con motivo si la fecha no existe en el calendario, si `start > end` o si el rango excede 366 días.
-- [ ] Colecciones de la respuesta congeladas (`Collections.unmodifiableList`), igual que el resto de `ai/`.
-- [ ] Pruebas JVM: cada tipo de consulta, nombre ambiguo, nombre inexistente, deuda vacía, periodo inválido en sus tres formas, filtrado de saldos ≤ 0, aislamiento por `businessId`, propagación de `CancellationException` y que ninguna cifra provenga de la propuesta.
+- [x] `AiBusinessQueryResolver` con seams por constructor: `searchCustomers`, `customerBalance`, `customersWithBalances`, `salesTotal`, `collectedTotal`. Sin dependencias de Android.
+- [x] `suspend fun resolve(businessId, proposal, choice: AiEntityChoice? = null): AiBusinessQueryResult`, envuelto como el de venta: **relanza `CancellationException`** y convierte cualquier otra excepción en `Unavailable`.
+- [x] `AiBusinessQueryResult` sellado: `Answer.CustomerBalance(customerId, customerName, balanceCents)`, `Answer.CustomersWithDebt(rows, totalCents)`, `Answer.SalesForPeriod(startEpochDay, endEpochDay, soldCents, collectedCents)`, `CustomerSelectionRequired(candidates)`, `CustomerNotFound(queriedName)`, `Blocked(reason)`, `Unavailable`.
+- [x] `CUSTOMER_BALANCE`: resuelve el nombre reusando la semántica de `AiSaleCustomerMatch` — exacto resuelve, varios candidatos piden aclaración, ninguno devuelve `CustomerNotFound`. Nunca crea clientes: aquí **no** existe la rama "crear nuevo".
+- [x] `CUSTOMERS_WITH_DEBT`: toma `customersWithBalances`, **filtra `balanceCents > 0`** y corta a los 20 primeros. Un saldo de 0 o a favor no es deuda. Devuelve además la suma de los positivos.
+- [x] `SALES_FOR_PERIOD`: convierte `AiPeriodCandidate` a `epochDay`. Bloquea con motivo si la fecha no existe en el calendario, si `start > end` o si el rango excede 366 días.
+- [x] Colecciones de la respuesta congeladas (`Collections.unmodifiableList`), igual que el resto de `ai/`.
+- [x] Pruebas JVM: cada tipo de consulta, nombre ambiguo, nombre inexistente, deuda vacía, periodo inválido en sus tres formas, filtrado de saldos ≤ 0, aislamiento por `businessId`, propagación de `CancellationException` y que ninguna cifra provenga de la propuesta.
 
 ## Task 2 — Estado en el laboratorio
 
 `app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt`.
 
-- [ ] Estados `QueryResolving` y `QueryAnswer(result)`; mensaje `AssistantQueryAnswer(result)` en `AiChatMessage`.
-- [ ] Rama de `BusinessQueryProposal` en el despacho de propuestas, con el mismo token de `generation` y el mismo descarte de resultados rancios que ya usan venta y abono.
-- [ ] `onChooseQueryCustomer(customerId)`: valida el ID contra la lista de candidatos **local** y devuelve `Ignored` si no está. Nunca se resuelve escribiendo texto.
-- [ ] Single-flight: una consulta en vuelo no se puede relanzar.
-- [ ] Pruebas de máquina de estados para cada transición, incluidos resultado rancio y elección inválida.
+- [x] Estados `QueryResolving` y `QueryAnswer(result)`; mensaje `AssistantQueryAnswer(result)` en `AiChatMessage`.
+- [x] Rama de `BusinessQueryProposal` en el despacho de propuestas, con el mismo token de `generation` y el mismo descarte de resultados rancios que ya usan venta y abono.
+- [x] `onChooseQueryCustomer(customerId)`: valida el ID contra la lista de candidatos **local** y devuelve `Ignored` si no está. Nunca se resuelve escribiendo texto.
+- [x] Single-flight: una consulta en vuelo no se puede relanzar.
+- [x] Pruebas de máquina de estados para cada transición, incluidos resultado rancio y elección inválida.
 
 ## Task 3 — Presentación
 
 `AiDebugLabScreen.kt` y recursos.
 
-- [ ] Reemplazar el bloque actual de `BusinessQueryProposal`, que hoy imprime `proposal.queryType.name` crudo, por la respuesta real.
-- [ ] Saldo de cliente: nombre y monto. Deudores: lista con nombre y saldo, más el total. Periodo: vendido y cobrado, con las fechas del rango.
-- [ ] Estados vacíos con texto propio, distintos del de error.
-- [ ] Candidatos tocables para la aclaración, reusando el patrón de venta.
-- [ ] Cadenas en `values/` y `values-en/`; **puerta del idioma limpia y paridad de claves cuadrada** (cuenta, no confíes en el número escrito en `CLAUDE.md`).
+- [x] Reemplazar el bloque actual de `BusinessQueryProposal`, que hoy imprime `proposal.queryType.name` crudo, por la respuesta real.
+- [x] Saldo de cliente: nombre y monto. Deudores: lista con nombre y saldo, más el total. Periodo: vendido y cobrado, con las fechas del rango.
+- [x] Estados vacíos con texto propio, distintos del de error.
+- [x] Candidatos tocables para la aclaración, reusando el patrón de venta.
+- [x] Cadenas en `values/` y `values-en/`; **puerta del idioma limpia y paridad de claves cuadrada** (cuenta, no confíes en el número escrito en `CLAUDE.md`).
 
 ## Task 4 — Cableado del host y aceptación
 
 `app/src/main/java/com/example/organizationlabs/MainActivity.kt`.
 
-- [ ] Construir el resolvedor con los DAOs reales y el negocio activo. Ni un `@Query` nuevo.
-- [ ] Verificar que ninguna ruta de consulta encola nada en el outbox ni escribe auditoría.
-- [ ] Prueba física en el A059P con las tres preguntas, contrastando cada cifra contra la pantalla normal de la app.
+- [x] Construir el resolvedor con los DAOs reales y el negocio activo. Ni un `@Query` nuevo.
+- [x] Verificar que ninguna ruta de consulta encola nada en el outbox ni escribe auditoría.
+- [x] Prueba física en el A059P con las tres preguntas, contrastando cada cifra contra la pantalla normal de la app.
+
+### Cierre verificado — 2026-08-25
+
+Las cuatro tasks quedan cerradas. En el A059P, las consultas de saldo de cliente y clientes con deuda devolvieron cifras coherentes con Room; la consulta de ventas por período mostró su resumen después de corregir la falta de fecha/instrucción temporal del gateway. La rotación horizontal/vertical conservó el laboratorio y sus respuestas en memoria. Esto no amplía la persistencia local de respuestas financieras ni habilita CuentivoAI fuera del laboratorio debug.
 
 ## Gate
 
