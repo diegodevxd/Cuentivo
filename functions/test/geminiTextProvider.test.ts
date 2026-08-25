@@ -127,7 +127,7 @@ describe("createGeminiTextProvider", () => {
     expect(instruction).toContain("CUSTOMER_BALANCE");
     expect(instruction).toContain("CUSTOMERS_WITH_DEBT");
     expect(instruction).toContain("requires_clarification");
-    expect(instruction).toContain("Demian me pagó 92 de un boleto");
+    expect(instruction).toContain("Carlos me pagó 92 de un boleto");
     expect(instruction).toContain("declaredInitialPaymentCents");
   });
 
@@ -159,11 +159,11 @@ describe("createGeminiTextProvider", () => {
 
     // Cash sale discriminant rule: mentions product/service -> create_sale with declaredInitialPaymentCents
     expect(instruction).toContain("Si la frase menciona un producto, artículo o servicio");
-    expect(instruction).toContain("Demian me pagó 92 de un boleto");
+    expect(instruction).toContain("Carlos me pagó 92 de un boleto");
     expect(instruction).toContain("declaredInitialPaymentCents (venta de contado)");
     expect(instruction).toContain("AUNQUE el verbo sea pagar");
     expect(instruction).toContain("Un abono (record_payment) NUNCA nombra un producto o servicio");
-    expect(instruction).toContain("Demian me abonó 92");
+    expect(instruction).toContain("Carlos me abonó 92");
 
     // Clarification fallback
     expect(instruction).toContain("requires_clarification");

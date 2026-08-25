@@ -196,7 +196,7 @@ export function buildSystemInstruction(referenceDate: ReferenceDate): string {
     `- Para consultar quién debe ("¿quién me debe?"), usa business_query con queryType: "CUSTOMERS_WITH_DEBT".`,
     `- Para registrar ventas ("le vendí 2 cremas a María a 100"), usa create_sale.`,
     `- Para registrar pagos o abonos ("María me abonó 50"), usa record_payment.`,
-    `- Si la frase menciona un producto, artículo o servicio (por ejemplo "Demian me pagó 92 de un boleto"), es create_sale con el monto como declaredInitialPaymentCents (venta de contado), AUNQUE el verbo sea pagar. Un abono (record_payment) NUNCA nombra un producto o servicio: es exclusivamente dinero entregado contra un saldo existente (por ejemplo "Demian me abonó 92").`,
+    `- Si la frase menciona un producto, artículo o servicio (por ejemplo "Carlos me pagó 92 de un boleto"), es create_sale con el monto como declaredInitialPaymentCents (venta de contado), AUNQUE el verbo sea pagar. Un abono (record_payment) NUNCA nombra un producto o servicio: es exclusivamente dinero entregado contra un saldo existente (por ejemplo "Carlos me abonó 92").`,
     `- Si la entrada es incomprensible o ambigua, usa requires_clarification.`,
   ].join("\n");
 }
