@@ -239,7 +239,7 @@ El trabajo de i18n no está hecho hasta que esto salga vacío (salvo etiquetas d
 grep -rnE '(Text\(|text = |label = |title = |detail = |placeholder = |contentDescription = |emptyText = |actionLabel = |eyebrow = |note = |backDescription = )"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ¿¡][^"]*"' app/src/main/java/com/cuentivo/app/ui --include=*.kt | grep -vE '"\$ "|" · "|testTag|neo-action-press|"Cuentivo"'
 ```
 
-Y la paridad de claves debe seguir cuadrando (hoy 297 y 297):
+Y la paridad de claves debe seguir cuadrando (2026-08-24: 436 y 436). El número envejece, así que cuenta, no confíes en esta línea:
 
 ```bash
 grep -c "<string name=" app/src/main/res/values/strings.xml app/src/main/res/values-en/strings.xml
