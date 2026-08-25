@@ -1,6 +1,7 @@
 package com.cuentivo.app.ai
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
@@ -13,7 +14,6 @@ import javax.net.ssl.HttpsURLConnection
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,14 +40,33 @@ class FirebaseCallableGatewayInstrumentedTest {
         }
     }
 
+    private fun assertAuthorizeResponse(
+        requestId: String,
+        raw: Any?,
+        expectedDecision: String,
+    ) {
+        val data = raw as? Map<*, *> ?: error("callable response must be a map")
+        assertEquals(1L, (data["contractVersion"] as? Number)?.toLong())
+        assertEquals(requestId, data["requestId"])
+        assertEquals(expectedDecision, data["decision"])
+        assertEquals(if (expectedDecision == "AI_AUTHORIZED") "GEMINI" else null, data["provider"])
+        assertEquals(false, data["fallbackUsed"])
+        assertEquals(
+            setOf("contractVersion", "requestId", "decision", "provider", "fallbackUsed"),
+            data.keys.map(Any?::toString).toSet(),
+        )
+    }
+
     @Test
-    fun deployedCallableReturnsExactNotConfiguredContract() {
+    fun deployedAuthorizeCallableReturnsExactContractAndReplayIsIdentical() {
         val currentUser = FirebaseAuth.getInstance().currentUser
         assertNotNull(
             "Requires a Firebase user already authenticated on the device",
             currentUser,
         )
 
+        val expected = InstrumentationRegistry.getArguments()
+            .getString("cuentivoAiExpectedDecision", "AI_AUTHORIZED")!!
         val requestId = UUID.randomUUID().toString()
         val payload = mapOf(
             "contractVersion" to 1,
@@ -55,23 +74,13 @@ class FirebaseCallableGatewayInstrumentedTest {
             "action" to "interpret_text",
         )
 
-        val result = Tasks.await(
-            FirebaseFunctions.getInstance("us-south1")
-                .getHttpsCallable("interpretAiRequest")
-                .call(payload),
-        )
+        val callable = FirebaseFunctions.getInstance("us-south1").getHttpsCallable("authorizeAiAction")
+        val first = Tasks.await(callable.call(payload))
+        val replay = Tasks.await(callable.call(payload))
 
-        val dataMap = result.data as? Map<*, *>
-            ?: error("callable response must be a map")
-
-        assertEquals(1L, (dataMap["contractVersion"] as? Number)?.toLong())
-        assertEquals(requestId, dataMap["requestId"])
-        assertEquals("AI_NOT_CONFIGURED", dataMap["status"])
-        assertTrue(
-            "response must carry exactly the v1 keys",
-            dataMap.keys.map { it.toString() }.toSet() ==
-                setOf("contractVersion", "requestId", "status"),
-        )
+        assertAuthorizeResponse(requestId, first.data, expected)
+        assertAuthorizeResponse(requestId, replay.data, expected)
+        assertEquals(first.data, replay.data)
     }
 
     @Test
@@ -99,7 +108,7 @@ class FirebaseCallableGatewayInstrumentedTest {
 
         var statusCode = -1
         val connection = URL(
-            "https://us-south1-organitazionlabs.cloudfunctions.net/interpretAiRequest",
+            "https://us-south1-organitazionlabs.cloudfunctions.net/authorizeAiAction",
         ).openConnection() as HttpsURLConnection
         try {
             connection.requestMethod = "POST"
