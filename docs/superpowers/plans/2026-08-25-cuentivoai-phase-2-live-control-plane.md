@@ -117,16 +117,19 @@ git commit -m "test(ai): probe live authorization control plane"
 - [ ] **Step 1: Run the complete Functions gate**
 
 ```powershell
-Set-Location functions
-npm test
-npm run build
-npm run lint
-npm run test:firestore-emulator
-Set-Location ..
+npm --prefix functions test
+npm --prefix functions run build
+npm --prefix functions run lint
+$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
+$env:PATH='C:\Program Files\Android\Android Studio\jbr\bin;' + $env:PATH
+$env:JAVA_TOOL_OPTIONS='-Djavax.net.ssl.trustStore=C:\tmp\cuentivo-jbr-cacerts -Djavax.net.ssl.trustStorePassword=changeit'
+npx -y firebase-tools@latest emulators:exec --only firestore "npm --prefix functions run test:firestore-emulator" --project demo-cuentivoai-phase2a
 git diff --check
 ```
 
-Expected: all Vitest files pass, TypeScript build/lint exit 0, Emulator concurrency tests 2/2 and diff check clean.
+The emulator wrapper is mandatory: `test:firestore-emulator` intentionally refuses to run without
+`FIRESTORE_EMULATOR_HOST`, so it can never target production accidentally. Expected: all Vitest files
+pass, TypeScript build/lint exit 0, Emulator concurrency tests 2/2 and diff check clean.
 
 - [ ] **Step 2: Audit the composition root**
 
