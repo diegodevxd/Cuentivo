@@ -758,11 +758,17 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `MainActivity handles orientation and screenSize config changes in manifest to preserve in memory state`() {
+    fun `MainActivity handles exactly orientation and screenSize config changes in manifest to preserve in memory state`() {
         val manifest = File("src/main/AndroidManifest.xml").readText()
-        assertTrue("manifest must contain configChanges", manifest.contains("android:configChanges=\""))
-        val configChanges = manifest.substringAfter("android:configChanges=\"").substringBefore("\"")
-        assertTrue("configChanges must include orientation", configChanges.contains("orientation"))
-        assertTrue("configChanges must include screenSize", configChanges.contains("screenSize"))
+        val activityBlock = manifest.substringAfter("<activity").substringBefore("</activity>")
+        assertTrue("MainActivity must be declared", activityBlock.contains("android:name=\".MainActivity\""))
+        assertTrue("MainActivity must contain configChanges attribute", activityBlock.contains("android:configChanges=\""))
+        val configChangesRaw = activityBlock.substringAfter("android:configChanges=\"").substringBefore("\"")
+        val configChangesSet = configChangesRaw.split("|").map { it.trim() }.toSet()
+        assertEquals(
+            "MainActivity configChanges must contain exactly orientation and screenSize",
+            setOf("orientation", "screenSize"),
+            configChangesSet,
+        )
     }
 }

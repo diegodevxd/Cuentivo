@@ -263,7 +263,7 @@ export type GeminiClientFactory = (options: {
 }) => GeminiClientSeam;
 
 export interface TextInterpretationProvider {
-  interpret(input: Readonly<{ text: string; referenceDate?: ReferenceDate }>): Promise<SafeAiProposal | null>;
+  interpret(input: Readonly<{ text: string; referenceDate: ReferenceDate }>): Promise<SafeAiProposal | null>;
 }
 
 class GeminiTextProvider implements TextInterpretationProvider {
@@ -289,7 +289,7 @@ class GeminiTextProvider implements TextInterpretationProvider {
     }
   }
 
-  async interpret(input: Readonly<{ text: string; referenceDate?: ReferenceDate }>): Promise<SafeAiProposal | null> {
+  async interpret(input: Readonly<{ text: string; referenceDate: ReferenceDate }>): Promise<SafeAiProposal | null> {
     let timerId: ReturnType<typeof setTimeout> | undefined;
     try {
       const signal = AbortSignal.timeout(this.timeoutMillis);
@@ -298,7 +298,7 @@ class GeminiTextProvider implements TextInterpretationProvider {
         timerId = setTimeout(() => reject(new Error("provider-timeout")), this.timeoutMillis);
       });
 
-      const systemInstruction = input.referenceDate ? buildSystemInstruction(input.referenceDate) : undefined;
+      const systemInstruction = buildSystemInstruction(input.referenceDate);
 
       const generatePromise = this.client.models.generateContent({
         model: GEMINI_MODEL,

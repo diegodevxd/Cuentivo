@@ -4,6 +4,7 @@ import {
   SAFE_PROPOSAL_JSON_SCHEMA,
   type GeminiClientFactory,
   type GeminiClientSeam,
+  type ReferenceDate,
 } from "../src/ai/geminiTextProvider.js";
 
 const VALID_PROPOSAL = {
@@ -11,6 +12,14 @@ const VALID_PROPOSAL = {
   customerName: "María",
   declaredAmountCents: "15000",
 } as const;
+
+const TEST_REF_DATE: ReferenceDate = {
+  year: 2026,
+  month: 8,
+  day: 24,
+  isoDate: "2026-08-24",
+  weekday: "lunes",
+};
 
 function createMockClient(
   handler: (params: any) => Promise<{ text?: string | null }>,
@@ -39,7 +48,7 @@ describe("createGeminiTextProvider", () => {
       mockFactory,
     );
 
-    await provider.interpret({ text: "vendo zapatos" });
+    await provider.interpret({ text: "vendo zapatos", referenceDate: TEST_REF_DATE });
 
     expect(capturedFactoryOptions).toBeDefined();
     expect(capturedFactoryOptions.apiKey).toBe("test-fake-key");
@@ -51,7 +60,7 @@ describe("createGeminiTextProvider", () => {
     });
   });
 
-  test("requests model gemini-3.5-flash-lite with temperature 0, cap 512 tokens, application/json and the proposal schema", async () => {
+  test("requests model gemini-3.5-flash-lite with temperature 0, cap 512 tokens, application/json, proposal schema and systemInstruction", async () => {
     let capturedParams: any = null;
     const mockClient = createMockClient(async (params) => {
       capturedParams = params;
@@ -63,7 +72,7 @@ describe("createGeminiTextProvider", () => {
       mockClient,
     );
 
-    const result = await provider.interpret({ text: "vendo zapatos" });
+    const result = await provider.interpret({ text: "vendo zapatos", referenceDate: TEST_REF_DATE });
 
     expect(mockClient.models.generateContent).toHaveBeenCalledTimes(1);
     expect(capturedParams).toBeDefined();
@@ -75,6 +84,8 @@ describe("createGeminiTextProvider", () => {
       temperature: 0,
       maxOutputTokens: 512,
     });
+    expect(capturedParams.config.systemInstruction).toBeDefined();
+    expect(capturedParams.config.systemInstruction).toContain("2026-08-24");
     expect(capturedParams.config.responseSchema).toBeUndefined();
     expect(SAFE_PROPOSAL_JSON_SCHEMA.anyOf).toBeDefined();
     expect(result).toEqual(VALID_PROPOSAL);
@@ -223,7 +234,7 @@ describe("createGeminiTextProvider", () => {
       mockClient,
     );
 
-    const result = await provider.interpret({ text: "input" });
+    const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
     expect(result).toEqual(allowedProposal);
   });
 
@@ -237,7 +248,7 @@ describe("createGeminiTextProvider", () => {
         mockClient,
       );
 
-      const result = await provider.interpret({ text: "input" });
+      const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
       expect(result).toBeNull();
     }
   });
@@ -251,7 +262,7 @@ describe("createGeminiTextProvider", () => {
       mockClient,
     );
 
-    const result = await provider.interpret({ text: "input" });
+    const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
     expect(result).toBeNull();
   });
 
@@ -276,7 +287,7 @@ describe("createGeminiTextProvider", () => {
       mockClient,
     );
 
-    const result = await provider.interpret({ text: "input" });
+    const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
     expect(result).toBeNull();
   });
 
@@ -289,7 +300,7 @@ describe("createGeminiTextProvider", () => {
       mockClient,
     );
 
-    const result = await provider.interpret({ text: "input" });
+    const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
     expect(result).toBeNull();
     expect(mockClient.models.generateContent).toHaveBeenCalledTimes(1);
   });
@@ -309,7 +320,7 @@ describe("createGeminiTextProvider", () => {
       mockClient,
     );
 
-    const result = await provider.interpret({ text: "input" });
+    const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
     expect(result).toBeNull();
     expect(mockClient.models.generateContent).toHaveBeenCalledTimes(1);
   });
@@ -327,7 +338,7 @@ describe("createGeminiTextProvider", () => {
       mockClient,
     );
 
-    await provider.interpret({ text: "input" });
+    await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
     expect(generateFn).toHaveBeenCalledTimes(1);
   });
 
@@ -365,7 +376,7 @@ describe("createGeminiTextProvider", () => {
         mockClient,
       );
 
-      const result = await provider.interpret({ text: "sensitive user text" });
+      const result = await provider.interpret({ text: "sensitive user text", referenceDate: TEST_REF_DATE });
       expect(result).toBeNull();
       expect(failures).toEqual([
         {
@@ -391,7 +402,7 @@ describe("createGeminiTextProvider", () => {
         mockClient,
       );
 
-      await provider.interpret({ text: "vendo zapatos" });
+      await provider.interpret({ text: "vendo zapatos", referenceDate: TEST_REF_DATE });
       expect(failures).toEqual([
         {
           category: "PROVIDER_ERROR_OR_TIMEOUT",
@@ -413,7 +424,7 @@ describe("createGeminiTextProvider", () => {
         mockClient,
       );
 
-      const result = await provider.interpret({ text: "input" });
+      const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
       expect(result).toBeNull();
       expect(failures).toEqual([
         {
@@ -436,7 +447,7 @@ describe("createGeminiTextProvider", () => {
         mockClient,
       );
 
-      const result = await provider.interpret({ text: "input" });
+      const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
       expect(result).toBeNull();
       expect(failures).toEqual([
         {
@@ -461,7 +472,7 @@ describe("createGeminiTextProvider", () => {
         mockClient,
       );
 
-      const result = await provider.interpret({ text: "input" });
+      const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
       expect(result).toBeNull();
       expect(failures).toEqual([
         {
@@ -490,7 +501,7 @@ describe("createGeminiTextProvider", () => {
         mockClient,
       );
 
-      await provider.interpret({ text: "Secret Customer owes $500" });
+      await provider.interpret({ text: "Secret Customer owes $500", referenceDate: TEST_REF_DATE });
 
       expect(failures.length).toBe(1);
       const failure = failures[0];
@@ -521,7 +532,7 @@ describe("createGeminiTextProvider", () => {
         mockClient,
       );
 
-      const result = await provider.interpret({ text: "vendo zapatos" });
+      const result = await provider.interpret({ text: "vendo zapatos", referenceDate: TEST_REF_DATE });
       expect(result).toEqual(VALID_PROPOSAL);
       expect(failures).toHaveLength(0);
     });
@@ -542,7 +553,7 @@ describe("createGeminiTextProvider", () => {
         mockClient,
       );
 
-      const result = await provider.interpret({ text: "input" });
+      const result = await provider.interpret({ text: "input", referenceDate: TEST_REF_DATE });
       expect(result).toBeNull();
     });
   });

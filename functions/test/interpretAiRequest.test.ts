@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createInterpretAiHandler } from "../src/interpretAiRequest.js";
 import { createAiEdgeRequestGuard } from "../src/ai/edgeRequestGuard.js";
-import type { TextInterpretationProvider } from "../src/ai/geminiTextProvider.js";
+import type { ReferenceDate, TextInterpretationProvider } from "../src/ai/geminiTextProvider.js";
 import type { AuthorizeAiInput, AuthorizeAiResult } from "../src/ai/controlPlane.js";
 import type { SafeAiProposal } from "../src/contract.js";
 
@@ -41,10 +41,11 @@ function recordingDeps(overrides?: {
   providerThrows?: boolean;
   providerResult?: SafeAiProposal | null;
   guard?: ReturnType<typeof createAiEdgeRequestGuard>;
+  now?: () => number;
 }) {
   const authorizeInputs: AuthorizeAiInput[] = [];
   const claimInputs: Array<{ uid: string; requestId: string; nowEpochMillis: number }> = [];
-  const providerInputs: Array<{ text: string; referenceDate?: unknown }> = [];
+  const providerInputs: Array<{ text: string; referenceDate: ReferenceDate }> = [];
   const deps = {
     authorize: async (input: AuthorizeAiInput) => {
       authorizeInputs.push(input);
@@ -67,7 +68,7 @@ function recordingDeps(overrides?: {
     provider:
       overrides?.provider === undefined
         ? {
-            async interpret(input: { text: string; referenceDate?: unknown }) {
+            async interpret(input: { text: string; referenceDate: ReferenceDate }) {
               providerInputs.push(input);
               if (overrides?.providerThrows) {
                 throw new Error("provider down");
