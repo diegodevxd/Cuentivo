@@ -41,16 +41,16 @@ Después del núcleo: PDF de estados de cuenta y recibos, WhatsApp asistido, pro
 - Nada financiero queda DONE sin tests, build, lint, diff check y evidencia proporcional al riesgo.
 - No generar ni subir AAB hasta completar APK debug, prueba física, beta y gates documentados.
 
-## Checkpoint — 2026-08-24 (creación compuesta aceptada)
+## Checkpoint — 2026-08-25 (núcleo 3 de 5)
 
-- Rama: `diegodevxd/feature-cuentivo-ai`. HEAD: `24014de` (`fix(ai): enforce plan limits and offer upgrade on composite sale`).
-- **Creación compuesta cerrada.** Las cuatro tasks del plan `2026-08-24-cuentivoai-composite-sale-creation.md` están completas y auditadas de forma independiente sobre el código, no sobre el reporte del implementador: `20f4f1e`, `febd8c3`, `32bc03c`, `24014de`.
-- Gate automático verde reejecutado: JVM 729/729 con `--rerun-tasks`, `assembleDebug`, `assembleRelease`, `lintDebug`, paridad de idiomas 443 = 443, `git diff --check` limpio.
-- **Prueba física aceptada en el A059P `00170157R000160`**, leída de la base real del dispositivo y no del reporte del usuario. "Ana se llevó dos cremas de $120 y pagó $100" creó cliente `Ana`, producto `crema` con precio habitual 12000 centavos, venta de 24000, abono de 10000 y saldo derivado de 14000. Una segunda frase con otra clienta produjo el mismo resultado. Conteos finales: 2 clientes, 2 productos, 2 ventas, 2 ítems, 2 abonos, 2 asignaciones, 4 movimientos, 4 operaciones. **Cero duplicados.**
-- `costPriceCents`, `stock`, `category` y `sku` quedaron en NULL: se cumple la decisión de no inventar datos del producto nuevo.
-- APK auditada e instalada: `app/build/outputs/apk/debug/app-debug.apk`, SHA-256 `F649EEA8A9621487BE29C60B0867EFEC8B252BB86EB4B493524700B71F052E54`.
-- Pendiente menor observado: los productos nuevos se guardan con el token hablado tal cual, en minúscula (`crema`, `camisa`). El cliente sí conserva capitalización porque `name` y `normalizedName` son columnas distintas.
-- Pendiente abierto: no existe fila en `sync_state` para el negocio pese a que el outbox se drenó; falta confirmar que el *pull* complete.
-- Próximo incremento: **consultas naturales deterministas** (punto 4 del Tramo A en `specs/2026-08-24-cuentivo-fiado-catalogo-product-design.md`). Requiere su propio diseño y autorización.
+- Rama: `diegodevxd/feature-cuentivo-ai`. HEAD: `cc0df03`.
+- **Núcleo en 3 de 5.** Cerrados con prueba física: creación compuesta, consultas naturales deterministas y voz a texto editable. Faltan endurecimiento con aceptación física y la salida del laboratorio a beta con feature flags.
+- **Fase 2, mitad técnica cerrada.** `authorizeAiAction` desplegada en `us-south1`; cuota, rate limit, idempotencia y kill switch probados contra Firebase real con cero escrituras en cada denegación. Falta la mitad comercial: que Play conceda y revoque el tier AI. Diseñada y sin implementar en `specs/2026-08-25-cuentivoai-play-entitlement-design.md`, bloqueada porque no existe el producto de suscripción y el precio no debe fijarse antes de medir la beta.
+- **Venta de contado.** Una frase como "Demian me pagó 92 de un boleto" se clasificaba como abono y moría en un callejón. El camino de abonos no crea clientes a propósito y exige deuda previa: la frase era una venta pagada de contado. Regla discriminante agregada al servidor y desplegada; la base del A059P confirma saldo 0.
+- **Voz.** `RECORD_AUDIO` se declara sólo en el manifiesto de `src/debug`, verificado con `aapt2` sobre las APK empaquetadas: la app publicada **no** gana permiso de micrófono. La prueba física encontró que el motor en el dispositivo existía sin paquete de es-MX y fallaba antes de escuchar; corregido con reintento único al reconocedor del sistema.
+- Gate más reciente reejecutado de forma independiente: JVM **802/802** en 93 clases con `--rerun-tasks`, Functions **226/226**, `assembleDebug`, `assembleRelease`, `lintDebug`, paridad 471 = 471, puerta del idioma limpia y `git diff --check`.
+- Configuración vigente del control plane: `monthlyActionLimit = 500`, `perMinuteLimit = 20`. Los registros del gate de Fase 2 citan `50 / 3`, que fue el valor restaurado ese día.
+- Pendiente conocido: los seis caminos de rechazo de `interpretAiRequest` colapsan en un solo `AI_UNAVAILABLE`, así que la app no puede decir si se acabó la cuota, si hay que esperar o si la IA está apagada.
+- El contador `aiUsage` de agosto 2026 se sobrescribió a mano durante un diagnóstico: no sirve para medir consumo ni para validar el precio.
 - `docs/superpowers/handoffs/` continúa no rastreado y pertenece al usuario; no agregar, borrar ni modificar.
-- Estado de release: Cuentivo base está publicada en Play. **CuentivoAI sigue NO-GO**: laboratorio debug solamente; su AAB y activación pública continúan cerradas.
+- Estado de release: Cuentivo base publicada en Play. **CuentivoAI sigue NO-GO**: laboratorio debug solamente.

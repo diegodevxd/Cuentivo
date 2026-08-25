@@ -11,7 +11,7 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-25, después del gate live de Fase 2 (`a6ffb7b`).
+**Última actualización:** 2026-08-25, después de cerrar voz a texto (`cc0df03`).
 
 ---
 
@@ -33,21 +33,34 @@ Aceptado físicamente en el A059P, no sólo por pruebas:
 - venta con cliente y producto **existentes**, con abono inicial;
 - creación compuesta de cliente, producto, venta y abono sin duplicados;
 - consultas deterministas de saldo, deudores y ventas por período; las cifras salen de Room;
-- rotación horizontal/vertical conserva el laboratorio y sus respuestas en memoria.
+- rotación horizontal/vertical conserva el laboratorio y sus respuestas en memoria;
+- **venta de contado por IA**: cliente y producto nuevos creados y pagados al momento, saldo cero;
+- **dictado por voz**: texto reconocido, editado a mano y enviado, con Gemini devolviendo propuesta.
 
-**Creación compuesta cerrada.** Plan y evidencia completa:
-`docs/superpowers/plans/2026-08-24-cuentivoai-composite-sale-creation.md`. Las cuatro tasks están
-auditadas (`20f4f1e`, `febd8c3`, `32bc03c`, `24014de`); la base real del A059P confirmó la transacción
-cliente/producto/venta/abono, campos desconocidos en NULL y cero duplicados.
+**Incrementos cerrados con plan y evidencia propios** — el detalle vive en cada plan, no aquí:
+creación compuesta de cliente/producto/venta/abono sin duplicados
+(`2026-08-24-cuentivoai-composite-sale-creation.md`, `20f4f1e`…`24014de`) y consultas naturales
+deterministas cuyas cifras salen sólo de Room
+(`2026-08-24-cuentivoai-natural-queries.md`, `d308cfe`…`a4f992d`).
 
-**Incremento cerrado — consultas naturales deterministas.** Plan:
-`docs/superpowers/plans/2026-08-24-cuentivoai-natural-queries.md`. Las cuatro tasks están completas
-(`d308cfe`…`b747314`) y las regresiones físicas quedaron corregidas en `5a10b76`, `c1e1486` y
-`a4f992d`: el gateway entrega fecha obligatoria en `America/Mexico_City` e instrucciones de dominio
-a Gemini, y `MainActivity` conserva la sesión durante rotación sin persistir nuevas respuestas
-financieras. `interpretAiRequest(us-south1)` quedó desplegada. APK instalada SHA-256
-`AEF6D27E034151E485DFB34DAC33CA75D12868F986DB6F03E3A74E5723548F7F`. Diego confirmó en A059P
-que aparece el resumen por período y que al girar ya no sale del chat.
+**Incremento cerrado — venta de contado.** Salió de uso real, no de una prueba: "Demian me pagó 92
+de un boleto" se clasificaba como abono y moría en un callejón, porque el camino de abonos no crea
+clientes **a propósito** y exige deuda previa. La frase era una venta pagada de contado. `buildSystemInstruction`
+no tenía regla que la distinguiera; se agregó en `7f391da`/`4f7ee34` y se desplegó. La base del A059P
+confirma cliente `Demian`, producto a 9200 centavos, venta 9200, abono 9200 y **saldo 0**.
+
+**Incremento cerrado — voz a texto editable (N3).** Plan:
+`docs/superpowers/plans/2026-08-25-cuentivoai-voz-a-texto.md` (`0c46d55`…`cc0df03`). **La voz es un
+método de entrada para el cuadro de texto que ya existe**, no un pipeline nuevo. `RECORD_AUDIO` se
+declara **sólo** en `app/src/debug/AndroidManifest.xml`, verificado con `aapt2` sobre las APK
+empaquetadas: release `RECORD_AUDIO=0`, debug `=1` — la app publicada no gana permiso de micrófono.
+La prueba física encontró lo que 800 pruebas no podían: el motor en el dispositivo existía pero sin
+paquete de es-MX y fallaba con `ERROR_LANGUAGE_UNAVAILABLE` antes de escuchar; se trataba la
+disponibilidad del **motor** como si fuera la del **idioma**. Corregido con reintento único al
+reconocedor del sistema.
+
+**Núcleo: 3 de 5.** Cerrados creación compuesta y consultas naturales, más voz. Faltan endurecimiento
+con aceptación física y la salida del laboratorio a beta con feature flags.
 
 **Estado de release.** Cuentivo base está **publicada en Play**. **CuentivoAI sigue NO-GO**: sólo
 vive en el laboratorio debug, y su AAB, beta pública y activación general continúan cerradas.
@@ -68,17 +81,22 @@ vive en el laboratorio debug, y su AAB, beta pública y activación general cont
 
 ## Último gate verificado
 
-Gate live de Fase 2: Functions **225/225**, TypeScript build/lint, Firestore Emulator **2/2**,
-Android JVM **767/767** con `--rerun-tasks`, `assembleDebug`, `lintDebug`, prueba física directa
-**2/2** y `git diff --check`. A059P probó autorización/replay, 401 sin App Check, cuota, rate limit
-y kill switch; cada denegación escribió cero y la configuración volvió a `true / true / 50 / 3`.
-Evidencia: `docs/superpowers/operations/2026-08-25-cuentivoai-phase-2-live-validation.md`.
+Cierre de voz (`cc0df03`), reejecutado por Claude con XML posterior al commit: Android JVM
+**802/802** en 93 clases con `--rerun-tasks`, focal `VoiceRecognizerTest` 7/7, `assembleDebug`,
+`assembleRelease`, `lintDebug`, paridad de claves **471 = 471**, puerta del idioma limpia y
+`git diff --check`. Functions **226/226** con build/lint tras la regla de venta de contado.
+
+Gate live de Fase 2 (previo): Functions 225/225, Firestore Emulator 2/2, JVM 767/767, prueba física
+2/2. Evidencia: `docs/superpowers/operations/2026-08-25-cuentivoai-phase-2-live-validation.md`.
+**Ojo:** ese registro cita la configuración restaurada en `true / true / 50 / 3`. Los valores
+**vigentes** son `monthlyActionLimit = 500` y `perMinuteLimit = 20`, subidos a mano el 2026-08-25.
 
 ## Orquestamiento
 
-- **Sol/Codex** es la mente principal actual de arquitectura, auditoría, continuidad y gate. Claude
-  puede retomar ese rol leyendo este archivo, el source of truth y el plan vigente; no debe asumir
-  que un reporte de implementador equivale a evidencia.
+- **Claude** es la mente principal actual de arquitectura, auditoría, continuidad y gate; Sol/Codex
+  le devolvió el rol el 2026-08-25. Cualquiera de los dos puede retomarlo leyendo este archivo, el
+  source of truth y el plan vigente; nadie debe asumir que un reporte de implementador equivale a
+  evidencia.
 - **AGY** implementa. Su reporte **no** cierra una tarea; sólo la cierra evidencia reejecutada de
   forma independiente: pruebas, build/lint cuando aplique, diff e invariantes.
 - Dinero, Room, idempotencia o sync exigen TDD, transacción atómica, rollback probado y pruebas
@@ -90,12 +108,19 @@ Evidencia: `docs/superpowers/operations/2026-08-25-cuentivoai-phase-2-live-valid
 
 ## Qué sigue
 
-1. **Cerrar la parte comercial de Fase 2:** diseñar y probar que Play conceda/revoque el tier AI;
-   el entitlement del A059P todavía fue creado manualmente.
-2. Encender enforcement de App Check únicamente después de revisar tráfico válido del día.
-3. Voz a texto editable y endurecimiento/aceptación física del núcleo. OCR local/cámara ya existe
-   parcialmente en el laboratorio.
-4. Después del núcleo: cobranza/PDF/WhatsApp/barcode, catálogo y beta limitada, cada uno con plan propio.
+1. **Endurecimiento y aceptación física del núcleo (N4).** Ahí entra el callejón sin salida del camino
+   de abonos: cuando el modelo clasifique mal, debe decir "no tiene deuda registrada, ¿era una venta?"
+   y ofrecer la ruta, en vez de mostrar clientes que no son.
+2. **Decir por qué se rechazó.** `interpretAiRequest` colapsa seis caminos en un mismo `AI_UNAVAILABLE`
+   y ahí se pierden cuota agotada, rate limit, IA apagada y falta de entitlement. Propuesta escrita en
+   `.superpowers/sdd/propuesta-motivo-ai-unavailable.md`.
+3. **Salida del laboratorio a beta (N5)** con feature flags y observabilidad.
+4. Encender enforcement de App Check tras revisar tráfico válido del día, generándolo desde una
+   instalación de Play Store.
+5. **Parte comercial de Fase 2:** que Play conceda y revoque el tier AI. Diseño escrito y sin
+   implementar en `docs/superpowers/specs/2026-08-25-cuentivoai-play-entitlement-design.md`; bloqueado
+   porque no existe el producto de suscripción en Play y el precio no debe fijarse antes de la beta.
+6. Después del núcleo: cobranza/PDF/WhatsApp/barcode y catálogo, cada uno con plan propio.
 
 Cada punto exige su propio diseño, autorización y gates. Ninguno se adelanta dentro del commit
 de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de CuentivoAI.
@@ -112,9 +137,15 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
   evidencia está en el histórico; no volver a perseguirlo.
 - **No hay CI** y `.superpowers/` está ignorado: la evidencia SDD local no sobrevive a otro clon.
 - Falta enlace al aviso de privacidad dentro de la app; la política externa sí está publicada.
-- **No hay fila en `sync_state`** para el negocio del A059P, aunque el outbox se drenó tras la
-  prueba física. No está confirmado que la mitad de *pull* complete. Se verifica mirando si el
-  cliente creado aparece en `businesses/{id}/customers` de Firestore.
+- **Todos los rechazos de IA se ven igual.** Seis caminos devuelven el mismo `AI_UNAVAILABLE`. El
+  2026-08-25 costó una hora de diagnóstico descubrir que la cuota mensual estaba agotada. Un usuario
+  que pague $299 y agote su cuota leería "aún no disponible", como si la app estuviera descompuesta.
+- **El contador `aiUsage` de agosto 2026 se sobrescribió a mano** durante ese diagnóstico: ya no sirve
+  para medir acciones por usuario ni para validar el precio. La primera medición limpia empieza con un
+  contador que corra sin intervención.
+- Descartado el 2026-08-25, **no volver a perseguirlo**: que una reinstalación limpia no devuelva los
+  datos **no es un defecto**. El respaldo en la nube es beneficio de Pro (`SyncEntitlement.allowsCloudSync`)
+  y el dispositivo estaba en Free, así que nunca subió nada. `sync_state` vacío es lo correcto ahí.
 - `BackupCrypto.ITERATIONS` en 120 000 PBKDF2, por debajo de lo recomendado hoy. Subirlas no rompe
   respaldos viejos porque viajan en la cabecera; medir antes en un teléfono lento.
 
