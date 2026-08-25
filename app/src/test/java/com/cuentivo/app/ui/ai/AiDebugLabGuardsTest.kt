@@ -756,4 +756,13 @@ class AiDebugLabGuardsTest {
         assertFalse("must not import Room", resolverSource.contains("androidx.room"))
         assertFalse("must not import Firestore", resolverSource.contains("com.google.firebase.firestore"))
     }
+
+    @Test
+    fun `MainActivity handles orientation and screenSize config changes in manifest to preserve in memory state`() {
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+        assertTrue("manifest must contain configChanges", manifest.contains("android:configChanges=\""))
+        val configChanges = manifest.substringAfter("android:configChanges=\"").substringBefore("\"")
+        assertTrue("configChanges must include orientation", configChanges.contains("orientation"))
+        assertTrue("configChanges must include screenSize", configChanges.contains("screenSize"))
+    }
 }
