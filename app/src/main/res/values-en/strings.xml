@@ -468,8 +468,14 @@
     <string name="ai_payment_recorded_success">Payment recorded successfully.</string>
     <string name="ai_payment_stale_message">The customer\'s balance changed. Please request the payment again.</string>
     <string name="ai_payment_rejected_message">Could not record the payment. Check the details and try again.</string>
-    <string name="ai_sale_preview_product_not_found">Product \"%1$s\" not found. Check the name or register it in the catalog.</string>
-    <string name="ai_sale_preview_product_selection_required">Multiple products found for \"%1$s\". Please type the exact name:</string>
+    <string name="ai_sale_preview_customer_selection_prompt">Choose the customer for the sale:</string>
+    <string name="ai_sale_preview_product_selection_prompt">Choose the product for \"%1$s\":</string>
+    <string name="ai_sale_choice_create_new">Create new</string>
+    <string name="ai_entity_badge_existing">Existing</string>
+    <string name="ai_entity_badge_new">New</string>
+    <string name="ai_sale_preview_new_product_habitual_price">Habitual price: %1$s</string>
+    <string name="ai_sale_preview_candidate_with_price">%1$s (%2$s)</string>
+    <string name="ai_sale_preview_customer_format">Customer: %1$s (%2$s)</string>
     <string name="ai_sale_preview_total">Sale total: %1$s</string>
     <string name="ai_sale_preview_initial_payment">Initial payment: %1$s</string>
     <string name="ai_sale_preview_remainder">Remaining balance: %1$s</string>

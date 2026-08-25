@@ -468,8 +468,14 @@
     <string name="ai_payment_recorded_success">Abono registrado con éxito.</string>
     <string name="ai_payment_stale_message">El saldo del cliente cambió. Por favor solicita el abono nuevamente.</string>
     <string name="ai_payment_rejected_message">No se pudo registrar el abono. Verifica los datos e intenta de nuevo.</string>
-    <string name="ai_sale_preview_product_not_found">No encontramos el producto \"%1$s\". Revisa el nombre o regístralo en el catálogo.</string>
-    <string name="ai_sale_preview_product_selection_required">Se encontraron varios productos para \"%1$s\". Por favor escribe el nombre exacto:</string>
+    <string name="ai_sale_preview_customer_selection_prompt">Elige el cliente para la venta:</string>
+    <string name="ai_sale_preview_product_selection_prompt">Elige el producto para \"%1$s\":</string>
+    <string name="ai_sale_choice_create_new">Crear nuevo</string>
+    <string name="ai_entity_badge_existing">Existente</string>
+    <string name="ai_entity_badge_new">Nuevo</string>
+    <string name="ai_sale_preview_new_product_habitual_price">Precio habitual: %1$s</string>
+    <string name="ai_sale_preview_candidate_with_price">%1$s (%2$s)</string>
+    <string name="ai_sale_preview_customer_format">Cliente: %1$s (%2$s)</string>
     <string name="ai_sale_preview_total">Total de venta: %1$s</string>
     <string name="ai_sale_preview_initial_payment">Abono inicial: %1$s</string>
     <string name="ai_sale_preview_remainder">Saldo pendiente: %1$s</string>

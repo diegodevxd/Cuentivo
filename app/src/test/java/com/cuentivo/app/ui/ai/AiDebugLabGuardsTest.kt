@@ -522,8 +522,14 @@ class AiDebugLabGuardsTest {
         val esXml = File("src/main/res/values/strings.xml").readText()
         val enXml = File("src/main/res/values-en/strings.xml").readText()
         val requiredKeys = listOf(
-            "ai_sale_preview_product_not_found",
-            "ai_sale_preview_product_selection_required",
+            "ai_sale_preview_customer_selection_prompt",
+            "ai_sale_preview_product_selection_prompt",
+            "ai_sale_choice_create_new",
+            "ai_entity_badge_existing",
+            "ai_entity_badge_new",
+            "ai_sale_preview_new_product_habitual_price",
+            "ai_sale_preview_candidate_with_price",
+            "ai_sale_preview_customer_format",
             "ai_sale_preview_total",
             "ai_sale_preview_initial_payment",
             "ai_sale_preview_remainder",
@@ -566,7 +572,7 @@ class AiDebugLabGuardsTest {
         assertTrue("confirmSale is called with local request", confirmCallIndex != -1)
         val surroundingBlock = source.substring(
             source.lastIndexOf("onConfirmSale = if", confirmCallIndex),
-            source.indexOf("onCancelSale =", confirmCallIndex),
+            source.indexOf("onSelectCustomerCandidate =", confirmCallIndex),
         )
         assertFalse("sale confirmation must not invoke transport", surroundingBlock.contains("transport"))
         assertFalse("sale confirmation must not invoke turn policy", surroundingBlock.contains("AiDebugLabTurnPolicy"))
@@ -590,7 +596,7 @@ class AiDebugLabGuardsTest {
         assertTrue("payment resolver maps to Unavailable", paymentResolutionBlock.contains("AiPaymentPreviewResult.Unavailable"))
         assertFalse("payment resolver must not use runCatching", paymentResolutionBlock.contains("runCatching"))
 
-        val saleResolverIndex = screenSource.indexOf("salePreviewResolver(activeBusinessId, saleProposal)")
+        val saleResolverIndex = screenSource.indexOf("salePreviewResolver(activeBusinessId, saleProposal,")
         assertTrue("sale resolver is called", saleResolverIndex != -1)
         val saleResolutionBlock = screenSource.substring(
             screenSource.lastIndexOf("val resolutionResult = if", saleResolverIndex),

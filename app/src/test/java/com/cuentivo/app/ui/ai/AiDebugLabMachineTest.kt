@@ -987,7 +987,7 @@ class AiDebugLabMachineTest {
 
         val updated = AiDebugLabMachine.onSalePreviewResult(model, result, generation = 3L)
 
-        assertEquals(AiDebugLabState.SaleConfirmation(sampleSalePreview), updated.state)
+        assertEquals(AiDebugLabState.SaleConfirmation(sampleSalePreview, validSaleProposal), updated.state)
         assertEquals(
             listOf(
                 AiChatMessage.UserText("Venta a María"),
@@ -1010,15 +1010,6 @@ class AiDebugLabMachineTest {
     fun `onSalePreviewResult maps all unresolved and blocked variants`() {
         val model = saleProposalModel(generation = 3L)
 
-        // Customer not found
-        val notFound = AiDebugLabMachine.onSalePreviewResult(
-            model,
-            com.cuentivo.app.ai.AiSalePreviewResult.CustomerNotFound,
-            generation = 3L,
-        )
-        assertTrue(notFound.state is AiDebugLabState.SaleResolution)
-        assertEquals(listOf(AiChatMessage.UserText("Venta a María"), AiChatMessage.AssistantSaleCustomerNotFound), notFound.messages)
-
         // Customer selection
         val custCandidate = com.cuentivo.app.ai.AiSaleCustomerCandidate("c1", "María G.")
         val custSelection = AiDebugLabMachine.onSalePreviewResult(
@@ -1028,15 +1019,6 @@ class AiDebugLabMachineTest {
         )
         assertTrue(custSelection.state is AiDebugLabState.SaleResolution)
         assertTrue(custSelection.messages.last() is AiChatMessage.AssistantSaleCustomerSelection)
-
-        // Product not found
-        val prodNotFound = AiDebugLabMachine.onSalePreviewResult(
-            model,
-            com.cuentivo.app.ai.AiSalePreviewResult.ProductNotFound("Shampoo"),
-            generation = 3L,
-        )
-        assertTrue(prodNotFound.state is AiDebugLabState.SaleResolution)
-        assertEquals(listOf(AiChatMessage.UserText("Venta a María"), AiChatMessage.AssistantSaleProductNotFound("Shampoo")), prodNotFound.messages)
 
         // Product selection
         val prodCandidate = com.cuentivo.app.ai.AiSaleProductCandidate("p1", "Jabón Dove", 5000L)
@@ -1225,5 +1207,243 @@ class AiDebugLabMachineTest {
         val edited = AiDebugLabMachine.onTextChanged(started.model, "new typing")
 
         assertSame(started.model, edited)
+    }
+
+    @Test
+    fun `onChooseCustomer with UseExisting produces Selected outcome with UseExisting choice and incremented generation`() {
+        val candidate = com.cuentivo.app.ai.AiSaleCustomerCandidate("c1", "María G.")
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleResolution(
+                result = com.cuentivo.app.ai.AiSalePreviewResult.CustomerSelectionRequired(listOf(candidate)),
+                proposal = validSaleProposal,
+                choices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+            ),
+            generation = 3L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSaleCustomerSelection(listOf(candidate)),
+            ),
+        )
+
+        val outcome = AiDebugLabMachine.onChooseCustomer(model, com.cuentivo.app.ai.AiEntityChoice.UseExisting("c1"))
+        assertTrue("outcome must be Selected", outcome is AiSaleChoiceOutcome.Selected)
+        val selected = outcome as AiSaleChoiceOutcome.Selected
+
+        assertEquals(4L, selected.generation)
+        assertEquals(com.cuentivo.app.ai.AiEntityChoice.UseExisting("c1"), selected.choices.customer)
+        assertEquals(AiDebugLabState.ProposalPreview(validSaleProposal, selected.choices), selected.model.state)
+    }
+
+    @Test
+    fun `onChooseCustomer with CreateNew produces Selected outcome with CreateNew choice and incremented generation`() {
+        val candidate = com.cuentivo.app.ai.AiSaleCustomerCandidate("c1", "María G.")
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleResolution(
+                result = com.cuentivo.app.ai.AiSalePreviewResult.CustomerSelectionRequired(listOf(candidate)),
+                proposal = validSaleProposal,
+                choices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+            ),
+            generation = 3L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSaleCustomerSelection(listOf(candidate)),
+            ),
+        )
+
+        val outcome = AiDebugLabMachine.onChooseCustomer(model, com.cuentivo.app.ai.AiEntityChoice.CreateNew)
+        assertTrue("outcome must be Selected", outcome is AiSaleChoiceOutcome.Selected)
+        val selected = outcome as AiSaleChoiceOutcome.Selected
+
+        assertEquals(4L, selected.generation)
+        assertEquals(com.cuentivo.app.ai.AiEntityChoice.CreateNew, selected.choices.customer)
+    }
+
+    @Test
+    fun `onChooseCustomer ignores invalid candidate or wrong state`() {
+        val candidate = com.cuentivo.app.ai.AiSaleCustomerCandidate("c1", "María G.")
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleResolution(
+                result = com.cuentivo.app.ai.AiSalePreviewResult.CustomerSelectionRequired(listOf(candidate)),
+                proposal = validSaleProposal,
+                choices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+            ),
+            generation = 3L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSaleCustomerSelection(listOf(candidate)),
+            ),
+        )
+
+        // Non-existent candidate ID
+        assertEquals(
+            AiSaleChoiceOutcome.Ignored,
+            AiDebugLabMachine.onChooseCustomer(model, com.cuentivo.app.ai.AiEntityChoice.UseExisting("non-existent")),
+        )
+
+        // Wrong state
+        assertEquals(
+            AiSaleChoiceOutcome.Ignored,
+            AiDebugLabMachine.onChooseCustomer(AiDebugLabModel(), com.cuentivo.app.ai.AiEntityChoice.CreateNew),
+        )
+    }
+
+    @Test
+    fun `onChooseProduct with UseExisting and CreateNew produces Selected outcome with updated products map`() {
+        val candidate = com.cuentivo.app.ai.AiSaleProductCandidate("p1", "Jabón Dove", 5000L)
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleResolution(
+                result = com.cuentivo.app.ai.AiSalePreviewResult.ProductSelectionRequired("Jabón", listOf(candidate)),
+                proposal = validSaleProposal,
+                choices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+            ),
+            generation = 3L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSaleProductSelection("Jabón", listOf(candidate)),
+            ),
+        )
+
+        // Choose UseExisting
+        val outcomeExisting = AiDebugLabMachine.onChooseProduct(
+            model,
+            "Jabón",
+            com.cuentivo.app.ai.AiEntityChoice.UseExisting("p1"),
+        )
+        assertTrue(outcomeExisting is AiSaleChoiceOutcome.Selected)
+        val selectedExisting = outcomeExisting as AiSaleChoiceOutcome.Selected
+        assertEquals(com.cuentivo.app.ai.AiEntityChoice.UseExisting("p1"), selectedExisting.choices.productsByNormalizedName["jabon"])
+
+        // Choose CreateNew
+        val outcomeNew = AiDebugLabMachine.onChooseProduct(
+            model,
+            "Jabón",
+            com.cuentivo.app.ai.AiEntityChoice.CreateNew,
+        )
+        assertTrue(outcomeNew is AiSaleChoiceOutcome.Selected)
+        val selectedNew = outcomeNew as AiSaleChoiceOutcome.Selected
+        assertEquals(com.cuentivo.app.ai.AiEntityChoice.CreateNew, selectedNew.choices.productsByNormalizedName["jabon"])
+    }
+
+    @Test
+    fun `onChooseProduct ignores invalid candidate, wrong product name, or wrong state`() {
+        val candidate = com.cuentivo.app.ai.AiSaleProductCandidate("p1", "Jabón Dove", 5000L)
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleResolution(
+                result = com.cuentivo.app.ai.AiSalePreviewResult.ProductSelectionRequired("Jabón", listOf(candidate)),
+                proposal = validSaleProposal,
+                choices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+            ),
+            generation = 3L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSaleProductSelection("Jabón", listOf(candidate)),
+            ),
+        )
+
+        // Invalid candidate
+        assertEquals(
+            AiSaleChoiceOutcome.Ignored,
+            AiDebugLabMachine.onChooseProduct(model, "Jabón", com.cuentivo.app.ai.AiEntityChoice.UseExisting("p99")),
+        )
+
+        // Mismatched product name
+        assertEquals(
+            AiSaleChoiceOutcome.Ignored,
+            AiDebugLabMachine.onChooseProduct(model, "Shampoo", com.cuentivo.app.ai.AiEntityChoice.CreateNew),
+        )
+    }
+
+    @Test
+    fun `onCancel during SaleResolution returns to TextEditing with incremented generation`() {
+        val candidate = com.cuentivo.app.ai.AiSaleCustomerCandidate("c1", "María G.")
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleResolution(
+                result = com.cuentivo.app.ai.AiSalePreviewResult.CustomerSelectionRequired(listOf(candidate)),
+                proposal = validSaleProposal,
+                choices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+            ),
+            generation = 3L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSaleCustomerSelection(listOf(candidate)),
+            ),
+        )
+
+        val cancelled = AiDebugLabMachine.onCancel(model)
+        assertEquals(AiDebugLabState.TextEditing, cancelled.state)
+        assertEquals(4L, cancelled.generation)
+    }
+
+    @Test
+    fun `onConfirmSale with composite new entities maps newCustomer and newProducts specs`() {
+        val compositePreview = com.cuentivo.app.ai.AiResolvedSalePreview(
+            confirmationKey = "comp-key-ui-1",
+            customer = com.cuentivo.app.ai.AiResolvedSaleCustomer(
+                customerId = "cust-new-ui",
+                displayName = "Don Alberto",
+                normalizedName = "don alberto",
+                mode = com.cuentivo.app.ai.AiEntityResolutionMode.NEW,
+                sourceFingerprint = null,
+                explicitCreateNew = true,
+            ),
+            rawLines = listOf(
+                com.cuentivo.app.ai.AiResolvedSaleLine(
+                    productId = "prod-new-ui",
+                    productName = "Aceite de Oliva",
+                    quantity = 2,
+                    unitPriceCents = 15000L,
+                    lineTotalCents = 30000L,
+                    sourceDeclaredPriceCents = 15000L,
+                    sourceFingerprint = null,
+                    resolutionMode = com.cuentivo.app.ai.AiEntityResolutionMode.NEW,
+                    explicitCreateNew = false,
+                ),
+            ),
+            totalCents = 30000L,
+            initialPaymentCents = 0L,
+            remainderCents = 30000L,
+        )
+
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleConfirmation(compositePreview),
+            generation = 4L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a Don Alberto"),
+                AiChatMessage.AssistantSalePreview(compositePreview),
+            ),
+        )
+
+        val outcome = AiDebugLabMachine.onConfirmSale(model, "biz-123") as AiSaleConfirmOutcome.Started
+        assertEquals(compositePreview.newCustomer, outcome.request.newCustomer)
+        assertEquals(compositePreview.newProducts, outcome.request.newProducts)
+        assertEquals("cust-new-ui", outcome.request.newCustomer?.customerId)
+        assertEquals(true, outcome.request.newCustomer?.explicitCreateNew)
+        assertEquals(1, outcome.request.newProducts.size)
+        assertEquals("prod-new-ui", outcome.request.newProducts[0].productId)
+        assertEquals(15000L, outcome.request.newProducts[0].salePriceCents)
+        assertEquals(false, outcome.request.newProducts[0].explicitCreateNew)
+    }
+
+    @Test
+    fun `double confirm tap on confirmation produces only one confirmation`() {
+        val model = saleConfirmationModel(generation = 4L)
+
+        val firstOutcome = AiDebugLabMachine.onConfirmSale(model, "biz-123")
+        assertTrue(firstOutcome is AiSaleConfirmOutcome.Started)
+        val startedModel = (firstOutcome as AiSaleConfirmOutcome.Started).model
+
+        val secondOutcome = AiDebugLabMachine.onConfirmSale(startedModel, "biz-123")
+        assertEquals(AiSaleConfirmOutcome.Ignored, secondOutcome)
+    }
+
+    @Test
+    fun `onReset cleans up confirmation and choice state`() {
+        val model = saleConfirmationModel(generation = 4L)
+        val resetModel = AiDebugLabMachine.onReset(model)
+
+        assertEquals(AiDebugLabState.TextEditing, resetModel.state)
+        assertEquals(5L, resetModel.generation)
+        assertEquals(emptyList<AiChatMessage>(), resetModel.messages)
+        assertEquals("", resetModel.text)
     }
 }

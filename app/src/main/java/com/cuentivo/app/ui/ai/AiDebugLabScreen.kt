@@ -28,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -125,7 +126,7 @@ fun AiDebugLabScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
-    salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal) -> AiSalePreviewResult)? = null,
+    salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal, choices: com.cuentivo.app.ai.AiSaleResolutionChoices) -> AiSalePreviewResult)? = null,
     activeBusinessId: String? = null,
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
@@ -297,6 +298,10 @@ fun AiDebugLabScreen(
                         (model.state as? AiDebugLabState.SaleConfirmation)?.preview == message.preview ||
                             (model.state as? AiDebugLabState.SaleConfirming)?.preview == message.preview
                     )
+                    val isCurrentSaleCustomerSelection = message is AiChatMessage.AssistantSaleCustomerSelection &&
+                        (model.state as? AiDebugLabState.SaleResolution)?.result is com.cuentivo.app.ai.AiSalePreviewResult.CustomerSelectionRequired
+                    val isCurrentSaleProductSelection = message is AiChatMessage.AssistantSaleProductSelection &&
+                        (model.state as? AiDebugLabState.SaleResolution)?.result is com.cuentivo.app.ai.AiSalePreviewResult.ProductSelectionRequired
                     val isConfirming = model.state is AiDebugLabState.PaymentConfirming || model.state is AiDebugLabState.SaleConfirming
                     ChatMessageRow(
                         message = message,
@@ -345,7 +350,49 @@ fun AiDebugLabScreen(
                                 }
                             }
                         } else null,
-                        onCancelSale = if (isCurrentSalePreview && isHydrated) {
+                        onSelectCustomerCandidate = if (isCurrentSaleCustomerSelection && isHydrated && salePreviewResolver != null && activeBusinessId?.isNotBlank() == true) {
+                            { choice ->
+                                val outcome = AiDebugLabMachine.onChooseCustomer(model, choice)
+                                if (outcome is AiSaleChoiceOutcome.Selected) {
+                                    model = outcome.model
+                                    val token = outcome.generation
+                                    scope.launch {
+                                        val resolutionResult = withContext(Dispatchers.IO) {
+                                            try {
+                                                salePreviewResolver(activeBusinessId, outcome.proposal, outcome.choices)
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (_: Exception) {
+                                                com.cuentivo.app.ai.AiSalePreviewResult.Unavailable
+                                            }
+                                        }
+                                        model = AiDebugLabMachine.onSalePreviewResult(model, resolutionResult, token)
+                                    }
+                                }
+                            }
+                        } else null,
+                        onSelectProductCandidate = if (isCurrentSaleProductSelection && isHydrated && salePreviewResolver != null && activeBusinessId?.isNotBlank() == true) {
+                            { productName, choice ->
+                                val outcome = AiDebugLabMachine.onChooseProduct(model, productName, choice)
+                                if (outcome is AiSaleChoiceOutcome.Selected) {
+                                    model = outcome.model
+                                    val token = outcome.generation
+                                    scope.launch {
+                                        val resolutionResult = withContext(Dispatchers.IO) {
+                                            try {
+                                                salePreviewResolver(activeBusinessId, outcome.proposal, outcome.choices)
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (_: Exception) {
+                                                com.cuentivo.app.ai.AiSalePreviewResult.Unavailable
+                                            }
+                                        }
+                                        model = AiDebugLabMachine.onSalePreviewResult(model, resolutionResult, token)
+                                    }
+                                }
+                            }
+                        } else null,
+                        onCancelSale = if ((isCurrentSalePreview || isCurrentSaleCustomerSelection || isCurrentSaleProductSelection) && isHydrated) {
                             { model = AiDebugLabMachine.onCancel(model) }
                         } else null,
                         isConfirming = isConfirming,
@@ -430,7 +477,7 @@ fun AiDebugLabScreen(
                                             val resolutionResult = if (salePreviewResolver != null && activeBusinessId?.isNotBlank() == true) {
                                                 withContext(Dispatchers.IO) {
                                                     try {
-                                                        salePreviewResolver(activeBusinessId, saleProposal)
+                                                        salePreviewResolver(activeBusinessId, saleProposal, com.cuentivo.app.ai.AiSaleResolutionChoices())
                                                     } catch (e: CancellationException) {
                                                         throw e
                                                     } catch (_: Exception) {
@@ -550,6 +597,8 @@ private fun ChatMessageRow(
     onCancelPayment: (() -> Unit)? = null,
     onConfirmSale: (() -> Unit)? = null,
     onCancelSale: (() -> Unit)? = null,
+    onSelectCustomerCandidate: ((com.cuentivo.app.ai.AiEntityChoice) -> Unit)? = null,
+    onSelectProductCandidate: ((productName: String, choice: com.cuentivo.app.ai.AiEntityChoice) -> Unit)? = null,
     isConfirming: Boolean = false,
 ) {
     when (message) {
@@ -689,20 +738,47 @@ private fun ChatMessageRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+            val customerBadge = stringResource(
+                if (message.preview.customerMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
+                    R.string.ai_entity_badge_new
+                } else {
+                    R.string.ai_entity_badge_existing
+                },
+            )
             Text(
-                text = message.preview.customerName,
+                text = stringResource(
+                    R.string.ai_sale_preview_customer_format,
+                    message.preview.customerName,
+                    customerBadge,
+                ),
                 style = MaterialTheme.typography.titleMedium,
             )
             message.preview.lines.forEach { line ->
+                val productBadge = stringResource(
+                    if (line.resolutionMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
+                        R.string.ai_entity_badge_new
+                    } else {
+                        R.string.ai_entity_badge_existing
+                    },
+                )
                 Text(
                     text = stringResource(
                         R.string.ai_debug_lab_line_format,
-                        line.productName,
+                        line.productName + " (" + productBadge + ")",
                         line.quantity,
                         formatCents(line.lineTotalCents),
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                if (line.resolutionMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
+                    Text(
+                        text = stringResource(
+                            R.string.ai_sale_preview_new_product_habitual_price,
+                            formatCents(line.sourceDeclaredPriceCents),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
             Text(
                 text = stringResource(
@@ -756,36 +832,70 @@ private fun ChatMessageRow(
                 }
             }
         }
-        AiChatMessage.AssistantSaleCustomerNotFound -> Text(
-            text = stringResource(R.string.ai_payment_preview_customer_not_found),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        is AiChatMessage.AssistantSaleCustomerSelection -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        is AiChatMessage.AssistantSaleCustomerSelection -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = stringResource(R.string.ai_payment_preview_selection_required),
+                text = stringResource(R.string.ai_sale_preview_customer_selection_prompt),
                 style = MaterialTheme.typography.bodyMedium,
             )
             message.candidates.forEach { candidate ->
-                Text(
-                    text = "• " + candidate.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Button(
+                    onClick = { onSelectCustomerCandidate?.invoke(com.cuentivo.app.ai.AiEntityChoice.UseExisting(candidate.customerId)) },
+                    enabled = onSelectCustomerCandidate != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(candidate.displayName)
+                }
+            }
+            OutlinedButton(
+                onClick = { onSelectCustomerCandidate?.invoke(com.cuentivo.app.ai.AiEntityChoice.CreateNew) },
+                enabled = onSelectCustomerCandidate != null,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.ai_sale_choice_create_new))
+            }
+            if (onCancelSale != null) {
+                TextButton(
+                    onClick = onCancelSale,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.ai_sale_confirm_cancel))
+                }
             }
         }
-        is AiChatMessage.AssistantSaleProductNotFound -> Text(
-            text = stringResource(R.string.ai_sale_preview_product_not_found, message.productName),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        is AiChatMessage.AssistantSaleProductSelection -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        is AiChatMessage.AssistantSaleProductSelection -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = stringResource(R.string.ai_sale_preview_product_selection_required, message.requestedName),
+                text = stringResource(R.string.ai_sale_preview_product_selection_prompt, message.requestedName),
                 style = MaterialTheme.typography.bodyMedium,
             )
             message.candidates.forEach { candidate ->
-                Text(
-                    text = "• " + candidate.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Button(
+                    onClick = { onSelectProductCandidate?.invoke(message.requestedName, com.cuentivo.app.ai.AiEntityChoice.UseExisting(candidate.productId)) },
+                    enabled = onSelectProductCandidate != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.ai_sale_preview_candidate_with_price,
+                            candidate.displayName,
+                            formatCents(candidate.salePriceCents),
+                        ),
+                    )
+                }
+            }
+            OutlinedButton(
+                onClick = { onSelectProductCandidate?.invoke(message.requestedName, com.cuentivo.app.ai.AiEntityChoice.CreateNew) },
+                enabled = onSelectProductCandidate != null,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.ai_sale_choice_create_new))
+            }
+            if (onCancelSale != null) {
+                TextButton(
+                    onClick = onCancelSale,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.ai_sale_confirm_cancel))
+                }
             }
         }
         is AiChatMessage.AssistantSaleBlocked -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

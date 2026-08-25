@@ -56,6 +56,7 @@ data class AiResolvedSaleCustomer(
     val normalizedName: String,
     val mode: AiEntityResolutionMode,
     val sourceFingerprint: String?,
+    val explicitCreateNew: Boolean = false,
 )
 
 /** Result of matching a sale customer query against candidate rows. */
@@ -126,6 +127,7 @@ data class AiResolvedSaleLine(
     val sourceDeclaredPriceCents: Long,
     val sourceFingerprint: String? = null,
     val resolutionMode: AiEntityResolutionMode = AiEntityResolutionMode.EXISTING,
+    val explicitCreateNew: Boolean = false,
 ) {
     val sourceProductFingerprint: String get() = sourceFingerprint ?: ""
 }
@@ -148,6 +150,29 @@ class AiResolvedSalePreview private constructor(
     val sourceCustomerFingerprint: String get() = customer.sourceFingerprint ?: ""
     val customerMode: AiEntityResolutionMode get() = customer.mode
     val lines: List<AiResolvedSaleLine> = Collections.unmodifiableList(rawLines.toList())
+
+    val newCustomer: AiNewCustomerSpec?
+        get() = if (customer.mode == AiEntityResolutionMode.NEW) {
+            AiNewCustomerSpec(
+                customerId = customer.customerId,
+                displayName = customer.displayName,
+                normalizedName = customer.normalizedName,
+                explicitCreateNew = customer.explicitCreateNew,
+            )
+        } else null
+
+    val newProducts: List<AiNewProductSpec>
+        get() = lines
+            .filter { it.resolutionMode == AiEntityResolutionMode.NEW }
+            .distinctBy { it.productId }
+            .map { line ->
+                AiNewProductSpec(
+                    productId = line.productId,
+                    name = line.productName,
+                    salePriceCents = line.sourceDeclaredPriceCents,
+                    explicitCreateNew = line.explicitCreateNew,
+                )
+            }
 
     companion object {
         operator fun invoke(
@@ -222,6 +247,7 @@ class AiResolvedSalePreview private constructor(
         "AiResolvedSalePreview(confirmationKey=$confirmationKey, customer=$customer, lines=$lines, totalCents=$totalCents, initialPaymentCents=$initialPaymentCents, remainderCents=$remainderCents, promisedPaymentCandidate=$promisedPaymentCandidate)"
 }
 
+/** Pre-execution blocks that prevent confirming an impossible or contradictory sale. */
 enum class AiSaleBlockReason {
     INITIAL_PAYMENT_EXCEEDS_TOTAL,
     ARITHMETIC_OVERFLOW,
@@ -232,8 +258,6 @@ enum class AiSaleBlockReason {
 
 /** Outcome of resolving a validated sale proposal against the local catalog/customer data. */
 sealed interface AiSalePreviewResult {
-    data object CustomerNotFound : AiSalePreviewResult
-
     class CustomerSelectionRequired private constructor(
         rawCandidates: List<AiSaleCustomerCandidate>,
     ) : AiSalePreviewResult {
@@ -251,8 +275,6 @@ sealed interface AiSalePreviewResult {
 
         override fun toString(): String = "CustomerSelectionRequired(candidates=$candidates)"
     }
-
-    data class ProductNotFound(val productName: String) : AiSalePreviewResult
 
     class ProductSelectionRequired private constructor(
         val productName: String,
@@ -374,6 +396,7 @@ class AiSalePreviewResolver(
                     normalizedName = normalizedCustomerName,
                     mode = AiEntityResolutionMode.NEW,
                     sourceFingerprint = null,
+                    explicitCreateNew = true,
                 )
             }
             is AiEntityChoice.UseExisting -> {
@@ -481,6 +504,7 @@ class AiSalePreviewResolver(
                         sourceDeclaredPriceCents = line.unitPriceCents,
                         sourceFingerprint = null,
                         resolutionMode = AiEntityResolutionMode.NEW,
+                        explicitCreateNew = true,
                     )
                 }
                 is AiEntityChoice.UseExisting -> {

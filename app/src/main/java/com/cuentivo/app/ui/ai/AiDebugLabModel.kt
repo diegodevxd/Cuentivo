@@ -37,7 +37,10 @@ sealed interface AiDebugLabState {
     data object Sending : AiDebugLabState
     data object Unavailable : AiDebugLabState
     data class Clarification(val reason: ClarificationReason, val slots: Set<UnresolvedSlot>) : AiDebugLabState
-    data class ProposalPreview(val proposal: AiProposal) : AiDebugLabState
+    data class ProposalPreview(
+        val proposal: AiProposal,
+        val saleChoices: com.cuentivo.app.ai.AiSaleResolutionChoices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+    ) : AiDebugLabState
 
     /** Non-executable resolved payment preview state; never triggers financial writes. */
     data class PaymentResolution(val result: com.cuentivo.app.ai.AiPaymentPreviewResult) : AiDebugLabState
@@ -45,9 +48,28 @@ sealed interface AiDebugLabState {
     data class PaymentConfirming(val preview: AiResolvedPaymentPreview) : AiDebugLabState
 
     /** Non-executable resolved sale preview state; never triggers financial writes. */
-    data class SaleResolution(val result: AiSalePreviewResult) : AiDebugLabState
-    data class SaleConfirmation(val preview: AiResolvedSalePreview) : AiDebugLabState
+    data class SaleResolution(
+        val result: AiSalePreviewResult,
+        val proposal: CreateSaleProposal? = null,
+        val choices: com.cuentivo.app.ai.AiSaleResolutionChoices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+    ) : AiDebugLabState
+    data class SaleConfirmation(
+        val preview: AiResolvedSalePreview,
+        val proposal: CreateSaleProposal? = null,
+        val choices: com.cuentivo.app.ai.AiSaleResolutionChoices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+    ) : AiDebugLabState
     data class SaleConfirming(val preview: AiResolvedSalePreview) : AiDebugLabState
+}
+
+sealed interface AiSaleChoiceOutcome {
+    data class Selected(
+        val model: AiDebugLabModel,
+        val proposal: CreateSaleProposal,
+        val choices: com.cuentivo.app.ai.AiSaleResolutionChoices,
+        val generation: Long,
+    ) : AiSaleChoiceOutcome
+
+    data object Ignored : AiSaleChoiceOutcome
 }
 
 /** Immutable lab view state; [generation] is the single-flight/cancellation token. */
@@ -120,7 +142,6 @@ sealed interface AiChatMessage {
     data object AssistantPaymentRejected : AiChatMessage
 
     data class AssistantSalePreview(val preview: AiResolvedSalePreview) : AiChatMessage
-    data object AssistantSaleCustomerNotFound : AiChatMessage
     class AssistantSaleCustomerSelection private constructor(
         rawCandidates: List<com.cuentivo.app.ai.AiSaleCustomerCandidate>,
     ) : AiChatMessage {
@@ -141,7 +162,6 @@ sealed interface AiChatMessage {
 
         override fun toString(): String = "AssistantSaleCustomerSelection(candidates=$candidates)"
     }
-    data class AssistantSaleProductNotFound(val productName: String) : AiChatMessage
     class AssistantSaleProductSelection private constructor(
         val requestedName: String,
         rawCandidates: List<com.cuentivo.app.ai.AiSaleProductCandidate>,
@@ -503,7 +523,7 @@ object AiDebugLabMachine {
      * Generation-safe transition from a raw sale proposal to its resolved preview.
      *
      * Accepts only the current generation and only when the state is ProposalPreview whose
-     * proposal is a CreateSaleProposal AND the last message is the matching AssistantProposal.
+     * proposal is a CreateSaleProposal AND the last message is matching.
      * Replaces that last message with the resolved result; never appends duplicate UserText,
      * persists anything or exposes confirmation. Fail-closed: any mismatch returns [model] unchanged.
      */
@@ -516,17 +536,21 @@ object AiDebugLabMachine {
         val currentState = model.state
         if (currentState !is AiDebugLabState.ProposalPreview) return model
         val currentProposal = currentState.proposal as? CreateSaleProposal ?: return model
+        val currentChoices = currentState.saleChoices
         val lastMessage = model.messages.lastOrNull() ?: return model
-        if (lastMessage !is AiChatMessage.AssistantProposal) return model
-        val lastAsSale = lastMessage.proposal as? CreateSaleProposal ?: return model
-        if (lastAsSale != currentProposal) return model
+        val isMatchingLastMessage = when (lastMessage) {
+            is AiChatMessage.AssistantProposal -> (lastMessage.proposal as? CreateSaleProposal) == currentProposal
+            is AiChatMessage.AssistantSaleCustomerSelection -> true
+            is AiChatMessage.AssistantSaleProductSelection -> true
+            is AiChatMessage.AssistantSaleBlocked -> true
+            is AiChatMessage.AssistantSalePreview -> true
+            else -> false
+        }
+        if (!isMatchingLastMessage) return model
 
         val assistantMessage: AiChatMessage = when (result) {
-            is AiSalePreviewResult.CustomerNotFound -> AiChatMessage.AssistantSaleCustomerNotFound
             is AiSalePreviewResult.CustomerSelectionRequired ->
                 AiChatMessage.AssistantSaleCustomerSelection(result.candidates)
-            is AiSalePreviewResult.ProductNotFound ->
-                AiChatMessage.AssistantSaleProductNotFound(result.productName)
             is AiSalePreviewResult.ProductSelectionRequired ->
                 AiChatMessage.AssistantSaleProductSelection(result.productName, result.candidates)
             is AiSalePreviewResult.Ready ->
@@ -536,19 +560,90 @@ object AiDebugLabMachine {
             is AiSalePreviewResult.Unavailable -> AiChatMessage.AssistantUnavailable
         }
 
-        val messages = if (model.messages.isNotEmpty() &&
-            model.messages.last() is AiChatMessage.AssistantProposal
-        ) {
+        val messages = if (model.messages.isNotEmpty()) {
             model.messages.dropLast(1) + assistantMessage
         } else {
             model.messages
         }
         val newState: AiDebugLabState = when (assistantMessage) {
             AiChatMessage.AssistantUnavailable -> AiDebugLabState.Unavailable
-            is AiChatMessage.AssistantSalePreview -> AiDebugLabState.SaleConfirmation(assistantMessage.preview)
-            else -> AiDebugLabState.SaleResolution(result)
+            is AiChatMessage.AssistantSalePreview ->
+                AiDebugLabState.SaleConfirmation(assistantMessage.preview, currentProposal, currentChoices)
+            else ->
+                AiDebugLabState.SaleResolution(result, currentProposal, currentChoices)
         }
         return model.copy(state = newState, messages = messages, text = "")
+    }
+
+    /**
+     * Applies a customer choice on a required customer selection clarification.
+     */
+    fun onChooseCustomer(
+        model: AiDebugLabModel,
+        choice: com.cuentivo.app.ai.AiEntityChoice,
+    ): AiSaleChoiceOutcome {
+        val state = model.state as? AiDebugLabState.SaleResolution ?: return AiSaleChoiceOutcome.Ignored
+        val proposal = state.proposal ?: return AiSaleChoiceOutcome.Ignored
+        val lastMessage = model.messages.lastOrNull() as? AiChatMessage.AssistantSaleCustomerSelection ?: return AiSaleChoiceOutcome.Ignored
+        if (state.result !is AiSalePreviewResult.CustomerSelectionRequired) return AiSaleChoiceOutcome.Ignored
+        if (choice is com.cuentivo.app.ai.AiEntityChoice.UseExisting) {
+            if (lastMessage.candidates.none { it.customerId == choice.entityId }) {
+                return AiSaleChoiceOutcome.Ignored
+            }
+        }
+        val newChoices = com.cuentivo.app.ai.AiSaleResolutionChoices(
+            customer = choice,
+            productsByNormalizedName = state.choices.productsByNormalizedName,
+        )
+        val nextGeneration = model.generation + 1
+        val nextModel = model.copy(
+            state = AiDebugLabState.ProposalPreview(proposal, newChoices),
+            generation = nextGeneration,
+        )
+        return AiSaleChoiceOutcome.Selected(
+            model = nextModel,
+            proposal = proposal,
+            choices = newChoices,
+            generation = nextGeneration,
+        )
+    }
+
+    /**
+     * Applies a product choice on a required product selection clarification.
+     */
+    fun onChooseProduct(
+        model: AiDebugLabModel,
+        productName: String,
+        choice: com.cuentivo.app.ai.AiEntityChoice,
+    ): AiSaleChoiceOutcome {
+        val state = model.state as? AiDebugLabState.SaleResolution ?: return AiSaleChoiceOutcome.Ignored
+        val proposal = state.proposal ?: return AiSaleChoiceOutcome.Ignored
+        val lastMessage = model.messages.lastOrNull() as? AiChatMessage.AssistantSaleProductSelection ?: return AiSaleChoiceOutcome.Ignored
+        if (state.result !is AiSalePreviewResult.ProductSelectionRequired || lastMessage.requestedName != productName) {
+            return AiSaleChoiceOutcome.Ignored
+        }
+        if (choice is com.cuentivo.app.ai.AiEntityChoice.UseExisting) {
+            if (lastMessage.candidates.none { it.productId == choice.entityId }) {
+                return AiSaleChoiceOutcome.Ignored
+            }
+        }
+        val normalized = com.cuentivo.app.domain.CustomerNameNormalizer.key(productName)
+        val updatedMap = state.choices.productsByNormalizedName + (normalized to choice)
+        val newChoices = com.cuentivo.app.ai.AiSaleResolutionChoices(
+            customer = state.choices.customer,
+            productsByNormalizedName = updatedMap,
+        )
+        val nextGeneration = model.generation + 1
+        val nextModel = model.copy(
+            state = AiDebugLabState.ProposalPreview(proposal, newChoices),
+            generation = nextGeneration,
+        )
+        return AiSaleChoiceOutcome.Selected(
+            model = nextModel,
+            proposal = proposal,
+            choices = newChoices,
+            generation = nextGeneration,
+        )
     }
 
     /**
@@ -598,6 +693,8 @@ object AiDebugLabMachine {
             totalCents = preview.totalCents,
             initialPaymentCents = preview.initialPaymentCents,
             promisedPaymentEpochDay = promisedDay,
+            newCustomer = preview.newCustomer,
+            newProducts = preview.newProducts,
         )
         return AiSaleConfirmOutcome.Started(
             model = nextModel,
