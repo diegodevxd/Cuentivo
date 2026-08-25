@@ -194,8 +194,9 @@ export function buildSystemInstruction(referenceDate: ReferenceDate): string {
     `- "Hoy" corresponde a la fecha de referencia (${referenceDate.isoDate}).`,
     `- Para consultar saldo de un cliente ("¿cuánto me debe Juan?"), usa business_query con queryType: "CUSTOMER_BALANCE".`,
     `- Para consultar quién debe ("¿quién me debe?"), usa business_query con queryType: "CUSTOMERS_WITH_DEBT".`,
-    `- Para registrar ventas ("le vendí 2 cremas a María a 100"), usa create_sale.`,
+    `- Para registrar ventas ("le vendí 2 cremas a María a 100 pesos"), usa create_sale.`,
     `- Para registrar pagos o abonos ("María me abonó 50"), usa record_payment.`,
+    `- Regla estricta de unidades monetarias: todos los montos que expresa el usuario están en PESOS, NUNCA en centavos. Los campos del schema terminan en Cents (unitPriceCents, declaredInitialPaymentCents, declaredAmountCents) y esperan CENTAVOS: multiplica siempre por 100. Ejemplos de conversión: "en 100" -> "10000", "92 pesos" -> "9200", "$120" -> "12000", "10.50" -> "1050", "50 de abono" -> "5000". Aplica a unitPriceCents, declaredInitialPaymentCents y declaredAmountCents por igual.`,
     `- Si la frase menciona un producto, artículo o servicio (por ejemplo "Carlos me pagó 92 de un boleto"), es create_sale con el monto como declaredInitialPaymentCents (venta de contado), AUNQUE el verbo sea pagar. Un abono (record_payment) NUNCA nombra un producto o servicio: es exclusivamente dinero entregado contra un saldo existente (por ejemplo "Carlos me abonó 92").`,
     `- Si la entrada es incomprensible o ambigua, usa requires_clarification.`,
   ].join("\n");

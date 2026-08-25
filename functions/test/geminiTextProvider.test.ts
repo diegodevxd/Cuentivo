@@ -156,6 +156,18 @@ describe("createGeminiTextProvider", () => {
     // Sales & payments base rules
     expect(instruction).toContain("create_sale");
     expect(instruction).toContain("record_payment");
+    expect(instruction).toContain("le vendí 2 cremas a María a 100 pesos");
+
+    // Monetary units rule
+    expect(instruction).toContain("Regla estricta de unidades monetarias");
+    expect(instruction).toContain("todos los montos que expresa el usuario están en PESOS, NUNCA en centavos");
+    expect(instruction).toContain("esperan CENTAVOS: multiplica siempre por 100");
+    expect(instruction).toContain('"en 100" -> "10000"');
+    expect(instruction).toContain('"92 pesos" -> "9200"');
+    expect(instruction).toContain('"$120" -> "12000"');
+    expect(instruction).toContain('"10.50" -> "1050"');
+    expect(instruction).toContain('"50 de abono" -> "5000"');
+    expect(instruction).toContain("Aplica a unitPriceCents, declaredInitialPaymentCents y declaredAmountCents por igual");
 
     // Cash sale discriminant rule: mentions product/service -> create_sale with declaredInitialPaymentCents
     expect(instruction).toContain("Si la frase menciona un producto, artículo o servicio");
