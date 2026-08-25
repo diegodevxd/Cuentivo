@@ -1,4 +1,4 @@
-﻿package com.cuentivo.app.ai
+package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
@@ -15,9 +15,16 @@ class AiBusinessQueryTest {
 
     private val businessId = "biz-123"
 
-    private fun sampleCustomer(id: String, name: String, normalizedName: String = name.lowercase()) = CustomerEntity(
+    private fun sampleCustomer(
+        id: String,
+        name: String,
+        normalizedName: String = name.lowercase(),
+        bizId: String = businessId,
+        isActive: Boolean = true,
+        deletedAtEpochMillis: Long? = null,
+    ) = CustomerEntity(
         id = id,
-        businessId = businessId,
+        businessId = bizId,
         name = name,
         normalizedName = normalizedName,
         phone = null,
@@ -25,10 +32,10 @@ class AiBusinessQueryTest {
         address = null,
         notes = null,
         creditLimitCents = null,
-        isActive = true,
+        isActive = isActive,
         createdAtEpochMillis = 1000L,
         updatedAtEpochMillis = 1000L,
-        deletedAtEpochMillis = null,
+        deletedAtEpochMillis = deletedAtEpochMillis,
     )
 
     private fun createResolver(
@@ -75,11 +82,31 @@ class AiBusinessQueryTest {
     }
 
     @Test
+    fun `customer balance query ignores customers from another business, inactive, or deleted`() = runBlocking {
+        val foreign = sampleCustomer("c-other", "Ana Gómez", "ana gomez", bizId = "biz-other")
+        val inactive = sampleCustomer("c-inact", "Ana Gómez", "ana gomez", isActive = false)
+        val deleted = sampleCustomer("c-del", "Ana Gómez", "ana gomez", deletedAtEpochMillis = 5000L)
+        val resolver = createResolver(
+            searchCustomers = { _, _ -> listOf(foreign, inactive, deleted) },
+        )
+
+        val proposal = BusinessQueryProposal(
+            queryType = BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana Gómez",
+        )
+
+        val result = resolver.resolve(businessId, proposal)
+        assertTrue("Mismatched or inactive customers must be filtered, leading to CustomerNotFound", result is AiBusinessQueryResult.CustomerNotFound)
+        assertEquals("Ana Gómez", (result as AiBusinessQueryResult.CustomerNotFound).queriedName)
+    }
+
+    @Test
     fun `customer balance query with ambiguous match returns CustomerSelectionRequired with unmodifiable candidates`() = runBlocking {
         val c1 = sampleCustomer("c1", "Ana Gómez", "ana gomez")
         val c2 = sampleCustomer("c2", "Ana Sofía Gómez", "ana sofia gomez")
+        val foreign = sampleCustomer("c-other", "Ana Gómez", "ana gomez", bizId = "biz-other")
         val resolver = createResolver(
-            searchCustomers = { _, _ -> listOf(c1, c2) },
+            searchCustomers = { _, _ -> listOf(c1, c2, foreign) },
         )
 
         val proposal = BusinessQueryProposal(
@@ -129,10 +156,11 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customer balance query with UseExisting choice for non-candidate returns Unavailable`() = runBlocking {
+    fun `customer balance query with UseExisting choice for foreign or non-candidate returns Unavailable`() = runBlocking {
         val c1 = sampleCustomer("c1", "Ana Gómez", "ana gomez")
+        val foreign = sampleCustomer("c-other", "Ana Gómez", "ana gomez", bizId = "biz-other")
         val resolver = createResolver(
-            searchCustomers = { _, _ -> listOf(c1) },
+            searchCustomers = { _, _ -> listOf(c1, foreign) },
         )
 
         val proposal = BusinessQueryProposal(
@@ -140,8 +168,13 @@ class AiBusinessQueryTest {
             customerName = "Ana",
         )
 
-        val result = resolver.resolve(businessId, proposal, choice = AiEntityChoice.UseExisting("c-alien"))
-        assertEquals(AiBusinessQueryResult.Unavailable, result)
+        // Attempting to select foreign customer ID
+        val foreignResult = resolver.resolve(businessId, proposal, choice = AiEntityChoice.UseExisting("c-other"))
+        assertEquals(AiBusinessQueryResult.Unavailable, foreignResult)
+
+        // Attempting to select non-existent customer ID
+        val missingResult = resolver.resolve(businessId, proposal, choice = AiEntityChoice.UseExisting("c-alien"))
+        assertEquals(AiBusinessQueryResult.Unavailable, missingResult)
     }
 
     @Test
@@ -201,8 +234,8 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customers with debt filters out balanceCents non-positive and caps at 20 rows`() = runBlocking {
-        val rows = (1..25).map { i ->
+    fun `customers with debt filters out other business, inactive, deleted, and non-positive balances, and caps at 20 rows`() = runBlocking {
+        val validRows = (1..25).map { i ->
             CustomerBalanceRow(
                 customer = sampleCustomer("c$i", "Cliente $i"),
                 balanceCents = when (i) {
@@ -212,11 +245,23 @@ class AiBusinessQueryTest {
                 },
             )
         }
+        val foreignRow = CustomerBalanceRow(
+            customer = sampleCustomer("c-other", "Foreign", bizId = "biz-other"),
+            balanceCents = 999_000L,
+        )
+        val inactiveRow = CustomerBalanceRow(
+            customer = sampleCustomer("c-inact", "Inactive", isActive = false),
+            balanceCents = 999_000L,
+        )
+        val deletedRow = CustomerBalanceRow(
+            customer = sampleCustomer("c-del", "Deleted", deletedAtEpochMillis = 9000L),
+            balanceCents = 999_000L,
+        )
 
         val resolver = createResolver(
             customersWithBalances = { biz ->
                 assertEquals(businessId, biz)
-                rows
+                listOf(foreignRow, inactiveRow, deletedRow) + validRows
             },
         )
 
@@ -228,13 +273,13 @@ class AiBusinessQueryTest {
         assertTrue(result is AiBusinessQueryResult.Answer.CustomersWithDebt)
         val answer = result as AiBusinessQueryResult.Answer.CustomersWithDebt
 
-        // There were 23 positive debtors, capped at 20
+        // There were 23 positive debtors in validRows, foreign/inactive/deleted excluded, capped at 20
         assertEquals(20, answer.rows.size)
         assertEquals("c3", answer.rows.first().customerId)
         assertEquals(3000L, answer.rows.first().balanceCents)
         assertEquals("c22", answer.rows.last().customerId)
 
-        // Total cents is the sum of all positive balances (3..25 -> sum of 3000..25000 = 322000L)
+        // Total cents is the sum of all positive balances for the business (3..25 -> sum of 3000..25000 = 322000L)
         val expectedTotal = (3..25).sumOf { it * 1000L }
         assertEquals(expectedTotal, answer.totalCents)
 
@@ -251,6 +296,7 @@ class AiBusinessQueryTest {
         val rows = listOf(
             CustomerBalanceRow(customer = sampleCustomer("c1", "Cliente 1"), balanceCents = 0L),
             CustomerBalanceRow(customer = sampleCustomer("c2", "Cliente 2"), balanceCents = -10000L),
+            CustomerBalanceRow(customer = sampleCustomer("c3", "Foreign", bizId = "biz-other"), balanceCents = 50000L),
         )
 
         val resolver = createResolver(

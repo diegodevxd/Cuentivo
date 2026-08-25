@@ -1,4 +1,4 @@
-﻿package com.cuentivo.app.ai
+package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
@@ -153,6 +153,7 @@ class AiBusinessQueryResolver(
         }
 
         val candidates = searchCustomers(businessId, customerName)
+            .filter { it.businessId == businessId && it.isActive && it.deletedAtEpochMillis == null }
 
         if (choice != null) {
             return when (choice) {
@@ -206,6 +207,11 @@ class AiBusinessQueryResolver(
         businessId: String,
     ): AiBusinessQueryResult {
         val rows = customersWithBalances(businessId)
+            .filter {
+                it.customer.businessId == businessId &&
+                    it.customer.isActive &&
+                    it.customer.deletedAtEpochMillis == null
+            }
         val positiveRows = rows.filter { it.balanceCents > 0L }
         val totalCents = positiveRows.fold(0L) { acc, row -> Math.addExact(acc, row.balanceCents) }
         val top20 = positiveRows.take(20).map {
