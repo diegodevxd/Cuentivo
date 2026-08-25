@@ -1,4 +1,4 @@
-﻿package com.cuentivo.app.ai
+package com.cuentivo.app.ai
 
 /**
  * Reasons why voice capture cannot proceed or failed.
@@ -143,7 +143,4 @@ object VoiceCaptureMachine {
             generation = model.generation + 1,
         )
     }
-
-    fun onReset(model: VoiceCaptureModel): VoiceCaptureModel =
-        model.copy(state = VoiceCaptureState.Idle)
 }

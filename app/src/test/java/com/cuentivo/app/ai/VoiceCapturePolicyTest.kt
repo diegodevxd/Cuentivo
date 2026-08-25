@@ -1,4 +1,4 @@
-﻿package com.cuentivo.app.ai
+package com.cuentivo.app.ai
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -101,9 +101,9 @@ class VoiceCapturePolicyTest {
     @Test
     fun `onPartialResult updates partialText during Listening when generation matches`() {
         val initial = VoiceCaptureModel(state = VoiceCaptureState.Listening(), generation = 4L)
-        val next = VoiceCaptureMachine.onPartialResult(initial, partialText = "Demian me pagó", generation = 4L)
+        val next = VoiceCaptureMachine.onPartialResult(initial, partialText = "Carlos me pagó", generation = 4L)
 
-        assertEquals(VoiceCaptureState.Listening(partialText = "Demian me pagó"), next.state)
+        assertEquals(VoiceCaptureState.Listening(partialText = "Carlos me pagó"), next.state)
         assertEquals(4L, next.generation)
     }
 
@@ -128,9 +128,9 @@ class VoiceCapturePolicyTest {
     @Test
     fun `onFinalResult with valid speech transitions to Transcribed with trimmed text`() {
         val initial = VoiceCaptureModel(state = VoiceCaptureState.Listening(), generation = 2L)
-        val next = VoiceCaptureMachine.onFinalResult(initial, text = "  Demian me pagó 92 pesos  ", generation = 2L)
+        val next = VoiceCaptureMachine.onFinalResult(initial, text = "  Carlos me pagó 92 pesos  ", generation = 2L)
 
-        assertEquals(VoiceCaptureState.Transcribed(text = "Demian me pagó 92 pesos"), next.state)
+        assertEquals(VoiceCaptureState.Transcribed(text = "Carlos me pagó 92 pesos"), next.state)
         assertEquals(2L, next.generation)
     }
 
@@ -230,6 +230,30 @@ class VoiceCapturePolicyTest {
     }
 
     @Test
+    fun `onCancel from Transcribed transitions to Idle and increments generation`() {
+        val initial = VoiceCaptureModel(
+            state = VoiceCaptureState.Transcribed("texto consumido"),
+            generation = 8L,
+        )
+        val next = VoiceCaptureMachine.onCancel(initial)
+
+        assertEquals(VoiceCaptureState.Idle, next.state)
+        assertEquals(9L, next.generation)
+    }
+
+    @Test
+    fun `onCancel from Unavailable transitions to Idle and increments generation`() {
+        val initial = VoiceCaptureModel(
+            state = VoiceCaptureState.Unavailable(VoiceUnavailableReason.RECOGNIZER_ERROR),
+            generation = 8L,
+        )
+        val next = VoiceCaptureMachine.onCancel(initial)
+
+        assertEquals(VoiceCaptureState.Idle, next.state)
+        assertEquals(9L, next.generation)
+    }
+
+    @Test
     fun `onCancel when already Idle is no-op and preserves generation`() {
         val initial = VoiceCaptureModel(state = VoiceCaptureState.Idle, generation = 7L)
         val next = VoiceCaptureMachine.onCancel(initial)
@@ -237,17 +261,5 @@ class VoiceCapturePolicyTest {
         assertSame(initial, next)
         assertEquals(VoiceCaptureState.Idle, next.state)
         assertEquals(7L, next.generation)
-    }
-
-    @Test
-    fun `onReset resets state to Idle preserving generation`() {
-        val initial = VoiceCaptureModel(
-            state = VoiceCaptureState.Unavailable(VoiceUnavailableReason.RECOGNIZER_ERROR),
-            generation = 8L,
-        )
-        val next = VoiceCaptureMachine.onReset(initial)
-
-        assertEquals(VoiceCaptureState.Idle, next.state)
-        assertEquals(8L, next.generation)
     }
 }
