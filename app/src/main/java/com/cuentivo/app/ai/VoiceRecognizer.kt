@@ -22,6 +22,12 @@ fun mapSpeechRecognizerError(errorCode: Int): VoiceUnavailableReason =
     }
 
 /**
+ * Decision helper for recognizer offline preference based on on-device availability.
+ * Returns true only when on-device recognition is explicitly available.
+ */
+fun shouldPreferOfflineRecognition(isOnDeviceAvailable: Boolean): Boolean = isOnDeviceAvailable
+
+/**
  * Narrow seam for speech-to-text recognition.
  * Decouples speech recognition implementation from state machines and test runners.
  */
@@ -38,7 +44,8 @@ interface VoiceRecognizer {
 
 /**
  * Android framework [SpeechRecognizer] wrapper.
- * Prefers on-device recognition when available, configured for "es-MX".
+ * Prefers on-device recognition when available with EXTRA_PREFER_OFFLINE; falls back to
+ * system/network recognition without forcing offline mode. Configured for "es-MX".
  * Never stores or uploads audio recordings.
  */
 class AndroidVoiceRecognizer(
@@ -46,6 +53,11 @@ class AndroidVoiceRecognizer(
 ) : VoiceRecognizer {
 
     private var recognizer: SpeechRecognizer? = null
+
+    private data class RecognizerSelection(
+        val recognizer: SpeechRecognizer,
+        val preferOffline: Boolean,
+    )
 
     override fun isAvailable(): Boolean {
         return SpeechRecognizer.isRecognitionAvailable(context)
@@ -63,7 +75,8 @@ class AndroidVoiceRecognizer(
             return
         }
 
-        val speechRecognizer = createRecognizer()
+        val selection = createRecognizer()
+        val speechRecognizer = selection.recognizer
         recognizer = speechRecognizer
 
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
@@ -98,7 +111,9 @@ class AndroidVoiceRecognizer(
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, LOCALE_ES_MX)
             putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, LOCALE_ES_MX)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            if (shouldPreferOfflineRecognition(selection.preferOffline)) {
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            }
         }
 
         speechRecognizer.startListening(intent)
@@ -116,13 +131,20 @@ class AndroidVoiceRecognizer(
         recognizer = null
     }
 
-    private fun createRecognizer(): SpeechRecognizer {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+    private fun createRecognizer(): RecognizerSelection {
+        val isOnDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
-        ) {
-            SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+
+        return if (isOnDevice) {
+            RecognizerSelection(
+                recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context),
+                preferOffline = true,
+            )
         } else {
-            SpeechRecognizer.createSpeechRecognizer(context)
+            RecognizerSelection(
+                recognizer = SpeechRecognizer.createSpeechRecognizer(context),
+                preferOffline = false,
+            )
         }
     }
 

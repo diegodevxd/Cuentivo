@@ -36,6 +36,12 @@ class VoiceRecognizerTest {
     }
 
     @Test
+    fun `shouldPreferOfflineRecognition is true only when on-device recognizer is available`() {
+        assertTrue(shouldPreferOfflineRecognition(isOnDeviceAvailable = true))
+        assertFalse(shouldPreferOfflineRecognition(isOnDeviceAvailable = false))
+    }
+
+    @Test
     fun `RECORD_AUDIO is never in main manifest and present in debug manifest`() {
         val mainManifest = File("src/main/AndroidManifest.xml").readText()
         assertFalse(
