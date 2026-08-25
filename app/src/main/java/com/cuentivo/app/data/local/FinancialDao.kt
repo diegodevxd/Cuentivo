@@ -32,6 +32,8 @@ data class StoredSaleBundle(
     val items: List<SaleItemEntity>,
     val chargeMovement: AccountMovementEntity,
     val paymentBundle: StoredPaymentBundle?,
+    val createdCustomer: CustomerEntity? = null,
+    val createdProducts: List<ProductEntity> = emptyList(),
 )
 
 /**
@@ -168,6 +170,15 @@ interface FinancialDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertMovement(movement: AccountMovementEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertCustomer(customer: CustomerEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertProduct(product: ProductEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertProducts(products: List<ProductEntity>)
 
     // Remote adoption uses IGNORE, not ABORT: a document that already exists locally is the normal
     // reconvergence case, not an error. Nothing here can overwrite an existing financial row, which
@@ -659,6 +670,124 @@ interface FinancialDao {
                 return ExpectedSaleResult.StaleData
             }
         }
+        createSaleIdempotently(operation, sale, items, charge)
+        if (payment != null) {
+            requireNotNull(paymentMovement) { "Payment movement must be provided." }
+            require(paymentAllocations.isNotEmpty()) { "Payment allocations must be provided." }
+            require(payment.amountCents > 0L && payment.amountCents <= sale.totalCents) {
+                "Payment amount must be positive and not exceed sale total."
+            }
+            require(paymentAllocations.sumOf { it.amountCents } == payment.amountCents) {
+                "Payment allocations must sum to payment amount."
+            }
+            require(paymentAllocations.all { it.saleId == sale.id && it.paymentId == payment.id }) {
+                "Payment allocations must link payment to sale."
+            }
+            val paymentOperation = OperationEntity(
+                idempotencyKey = "payment-${payment.id}",
+                type = "PAYMENT",
+                resultId = payment.id,
+                createdAtEpochMillis = payment.createdAtEpochMillis,
+            )
+            registerPaymentIdempotently(paymentOperation, payment, paymentAllocations, paymentMovement)
+        }
+        return ExpectedSaleResult.Recorded(sale.id, payment?.id)
+    }
+
+    @Query("SELECT * FROM customers WHERE businessId = :businessId AND normalizedName = :normalizedName AND isActive = 1 AND deletedAtEpochMillis IS NULL LIMIT 1")
+    suspend fun activeCustomerByNormalizedName(businessId: String, normalizedName: String): CustomerEntity?
+
+    @Query("SELECT * FROM products WHERE businessId = :businessId AND isActive = 1 AND deletedAtEpochMillis IS NULL")
+    suspend fun activeProductsForBusiness(businessId: String): List<ProductEntity>
+
+    @Transaction
+    suspend fun registerCompositeSaleAgainstPreviewIdempotently(
+        operation: OperationEntity,
+        sale: SaleEntity,
+        items: List<SaleItemEntity>,
+        charge: AccountMovementEntity,
+        expectedCustomerFingerprint: String,
+        expectedProductFingerprints: Map<String, String>,
+        payment: PaymentEntity?,
+        paymentMovement: AccountMovementEntity?,
+        paymentAllocations: List<PaymentAllocationEntity>,
+        expectedInitialPaymentId: String,
+        newCustomer: CustomerEntity?,
+        explicitCustomerCreateNew: Boolean,
+        newProducts: List<ProductEntity>,
+        explicitProductCreateNewByProductId: Map<String, Boolean>,
+    ): ExpectedSaleResult {
+        operationResultId(operation.idempotencyKey)?.let { saleId ->
+            val existingSale = saleForId(saleId) ?: return ExpectedSaleResult.StaleData
+            if (existingSale.businessId != sale.businessId) return ExpectedSaleResult.StaleData
+            val hasInitialPayment = hasAllocationForPaymentAndSale(expectedInitialPaymentId, saleId)
+            val actualPaymentId = if (hasInitialPayment) expectedInitialPaymentId else null
+            return ExpectedSaleResult.Recorded(saleId, actualPaymentId)
+        }
+
+        if (newCustomer != null) {
+            if (customerForPayment(newCustomer.id) != null) {
+                return ExpectedSaleResult.StaleData
+            }
+            if (!explicitCustomerCreateNew) {
+                if (activeCustomerByNormalizedName(newCustomer.businessId, newCustomer.normalizedName) != null) {
+                    return ExpectedSaleResult.StaleData
+                }
+            }
+            insertCustomer(newCustomer)
+        } else {
+            val customer = customerForPayment(sale.customerId) ?: return ExpectedSaleResult.StaleData
+            if (customer.businessId != sale.businessId || !customer.isActive || customer.deletedAtEpochMillis != null) {
+                return ExpectedSaleResult.StaleData
+            }
+            val currentCustFingerprint = "${customer.id}:${customer.updatedAtEpochMillis}"
+            if (currentCustFingerprint != expectedCustomerFingerprint) {
+                return ExpectedSaleResult.StaleData
+            }
+        }
+
+        val existingActiveProducts = if (newProducts.isNotEmpty()) {
+            activeProductsForBusiness(sale.businessId)
+        } else {
+            emptyList()
+        }
+
+        for (newProd in newProducts) {
+            if (productForSale(newProd.id) != null) {
+                return ExpectedSaleResult.StaleData
+            }
+            val explicitCreateNew = explicitProductCreateNewByProductId[newProd.id] ?: false
+            if (!explicitCreateNew) {
+                val normalizedNewName = com.cuentivo.app.domain.CustomerNameNormalizer.key(newProd.name)
+                val existsSameName = existingActiveProducts.any {
+                    com.cuentivo.app.domain.CustomerNameNormalizer.key(it.name) == normalizedNewName
+                }
+                if (existsSameName) {
+                    return ExpectedSaleResult.StaleData
+                }
+            }
+        }
+        if (newProducts.isNotEmpty()) {
+            insertProducts(newProducts)
+        }
+
+        val createdProductIds = newProducts.map { it.id }.toSet()
+        for (item in items) {
+            require(item.productNameSnapshot.isNotBlank()) { "Product name snapshot must not be blank." }
+            val productId = item.productId ?: return ExpectedSaleResult.StaleData
+            if (productId !in createdProductIds) {
+                val product = productForSale(productId) ?: return ExpectedSaleResult.StaleData
+                if (product.businessId != sale.businessId || !product.isActive || product.deletedAtEpochMillis != null) {
+                    return ExpectedSaleResult.StaleData
+                }
+                val currentProdFingerprint = "${product.id}:${product.updatedAtEpochMillis}:${product.salePriceCents}"
+                val expectedFingerprint = expectedProductFingerprints[productId]
+                if (currentProdFingerprint != expectedFingerprint) {
+                    return ExpectedSaleResult.StaleData
+                }
+            }
+        }
+
         createSaleIdempotently(operation, sale, items, charge)
         if (payment != null) {
             requireNotNull(paymentMovement) { "Payment movement must be provided." }

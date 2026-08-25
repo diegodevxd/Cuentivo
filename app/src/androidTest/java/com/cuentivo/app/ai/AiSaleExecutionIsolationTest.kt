@@ -115,8 +115,8 @@ class AiSaleExecutionIsolationTest {
     private fun createService(
         onEnqueue: (suspend (StoredSaleBundle) -> Unit)? = null,
     ) = AiSaleExecutionService(
-        registerSale = { key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId ->
-            saleRepository.registerAgainstPreview(
+        registerSale = { key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId, newCust, expCust, newProds, expProdMap ->
+            saleRepository.registerCompositeAgainstPreview(
                 idempotencyKey = key,
                 sale = sale,
                 items = items,
@@ -127,6 +127,10 @@ class AiSaleExecutionIsolationTest {
                 paymentMovement = paymentMovement,
                 paymentAllocations = allocations,
                 expectedInitialPaymentId = expectedInitialPaymentId,
+                newCustomer = newCust,
+                explicitCustomerCreateNew = expCust,
+                newProducts = newProds,
+                explicitProductCreateNewByProductId = expProdMap,
             )
         },
         loadStoredBundle = saleRepository::storedBundle,
@@ -899,5 +903,567 @@ class AiSaleExecutionIsolationTest {
         assertEquals(1, database.financialDao().allSalesForBackfill(businessId).size)
         assertEquals(1, database.financialDao().itemsForSale(committedSaleId).size)
         assertNotNull(database.financialDao().chargeMovementForSale(committedSaleId))
+    }
+
+    private data class TableCounts(
+        val customers: Int,
+        val products: Int,
+        val sales: Int,
+        val saleItems: Int,
+        val movements: Int,
+        val payments: Int,
+        val allocations: Int,
+        val auditLogs: Int,
+    )
+
+    private suspend fun countAllTables(): TableCounts = TableCounts(
+        customers = database.customerDao().allForBackfill(businessId).size,
+        products = database.productDao().allForBackfill(businessId).size,
+        sales = database.financialDao().allSalesForBackfill(businessId).size,
+        saleItems = database.financialDao().allSaleItemsForBackfill(businessId).size,
+        movements = database.financialDao().allMovementsForBackfill(businessId).size,
+        payments = database.financialDao().allPaymentsForBackfill(businessId).size,
+        allocations = database.financialDao().allAllocationsForBackfill(businessId).size,
+        auditLogs = database.auditDao().forBusiness(businessId).size,
+    )
+
+    @Test
+    fun compositeExecutionCreatesNewCustomerNewProductSaleAndPaymentInOneTransaction() = runBlocking {
+        val service = createService()
+        val newCustId = "cust-new-atomic"
+        val newProdId = "prod-new-atomic"
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-1",
+            businessId = businessId,
+            customerId = newCustId,
+            sourceCustomerFingerprint = "",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = newProdId,
+                    productNameSnapshot = "Aceite de Oliva Extra",
+                    quantity = 2,
+                    unitPriceCents = 15000L,
+                    lineTotalCents = 30000L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 30000L,
+            initialPaymentCents = 10000L,
+            promisedPaymentEpochDay = 20600L,
+            newCustomer = AiNewCustomerSpec(
+                customerId = newCustId,
+                displayName = "Don Alberto",
+                normalizedName = "don alberto",
+                explicitCreateNew = false,
+            ),
+            newProducts = listOf(
+                AiNewProductSpec(
+                    productId = newProdId,
+                    name = "Aceite de Oliva Extra",
+                    salePriceCents = 15000L,
+                    explicitCreateNew = false,
+                ),
+            ),
+        )
+
+        val result = service.confirm(request)
+        assertTrue(result is AiSaleExecutionResult.Recorded)
+        val recorded = result as AiSaleExecutionResult.Recorded
+        assertNotNull(recorded.saleId)
+        assertNotNull(recorded.paymentId)
+
+        // Customer was created in Room
+        val createdCust = database.customerDao().byId(newCustId)
+        assertNotNull(createdCust)
+        assertEquals("Don Alberto", createdCust?.name)
+        assertEquals("don alberto", createdCust?.normalizedName)
+        assertEquals(true, createdCust?.isActive)
+
+        // Product was created in Room
+        val createdProd = database.productDao().byId(newProdId)
+        assertNotNull(createdProd)
+        assertEquals("Aceite de Oliva Extra", createdProd?.name)
+        assertEquals(15000L, createdProd?.salePriceCents)
+        assertEquals(true, createdProd?.isActive)
+
+        // Sale and payment records exist
+        val sale = database.financialDao().saleForId(recorded.saleId)
+        assertNotNull(sale)
+        assertEquals(30000L, sale?.totalCents)
+        val payment = database.financialDao().paymentForId(recorded.paymentId!!)
+        assertNotNull(payment)
+        assertEquals(10000L, payment?.amountCents)
+    }
+
+    @Test
+    fun compositeExecutionMixedExistingAndNewProductsSucceeds() = runBlocking {
+        val service = createService()
+        val newProdId = "prod-new-mixed"
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-mixed",
+            businessId = businessId,
+            customerId = customerId, // existing customer
+            sourceCustomerFingerprint = "$customerId:10000",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = productId, // existing product
+                    productNameSnapshot = "Jabón Corporal",
+                    quantity = 1,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 5000L,
+                    sourceProductFingerprint = "$productId:10000:5000",
+                ),
+                AiSaleConfirmationLine(
+                    productId = newProdId, // new product
+                    productNameSnapshot = "Shampoo Anticaspa",
+                    quantity = 2,
+                    unitPriceCents = 8000L,
+                    lineTotalCents = 16000L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 21000L,
+            initialPaymentCents = 0L,
+            newCustomer = null,
+            newProducts = listOf(
+                AiNewProductSpec(
+                    productId = newProdId,
+                    name = "Shampoo Anticaspa",
+                    salePriceCents = 8000L,
+                    explicitCreateNew = false,
+                ),
+            ),
+        )
+
+        val result = service.confirm(request)
+        assertTrue(result is AiSaleExecutionResult.Recorded)
+        val recorded = result as AiSaleExecutionResult.Recorded
+
+        val items = database.financialDao().itemsForSale(recorded.saleId)
+        assertEquals(2, items.size)
+
+        val newProductInDb = database.productDao().byId(newProdId)
+        assertNotNull(newProductInDb)
+        assertEquals(8000L, newProductInDb?.salePriceCents)
+    }
+
+    @Test
+    fun spokenPriceIsPersistedAsSalePriceCentsAndNoOptionalFieldsInvented() = runBlocking {
+        val service = createService()
+        val newCustId = "cust-no-pii"
+        val newProdId = "prod-no-pii"
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-pii",
+            businessId = businessId,
+            customerId = newCustId,
+            sourceCustomerFingerprint = "",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = newProdId,
+                    productNameSnapshot = "Miel Pura",
+                    quantity = 1,
+                    unitPriceCents = 7500L,
+                    lineTotalCents = 7500L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 7500L,
+            initialPaymentCents = 0L,
+            newCustomer = AiNewCustomerSpec(
+                customerId = newCustId,
+                displayName = "Pedro Picapiedra",
+                normalizedName = "pedro picapiedra",
+                explicitCreateNew = false,
+            ),
+            newProducts = listOf(
+                AiNewProductSpec(
+                    productId = newProdId,
+                    name = "Miel Pura",
+                    salePriceCents = 7500L,
+                    explicitCreateNew = false,
+                ),
+            ),
+        )
+
+        val result = service.confirm(request)
+        assertTrue(result is AiSaleExecutionResult.Recorded)
+
+        val cust = database.customerDao().byId(newCustId)!!
+        assertNull("phone must be null", cust.phone)
+        assertNull("email must be null", cust.email)
+        assertNull("address must be null", cust.address)
+        assertNull("notes must be null", cust.notes)
+        assertNull("creditLimitCents must be null", cust.creditLimitCents)
+        assertNull("deletedAtEpochMillis must be null", cust.deletedAtEpochMillis)
+
+        val prod = database.productDao().byId(newProdId)!!
+        assertEquals(7500L, prod.salePriceCents)
+        assertNull("description must be null", prod.description)
+        assertNull("sku must be null", prod.sku)
+        assertNull("category must be null", prod.category)
+        assertNull("costPriceCents must be null", prod.costPriceCents)
+        assertNull("stock must be null", prod.stock)
+        assertNull("imageUri must be null", prod.imageUri)
+        assertNull("deletedAtEpochMillis must be null", prod.deletedAtEpochMillis)
+    }
+
+    @Test
+    fun doubleConfirmationWithSameKeyReplaysAtomicallyWithoutDuplicateRows() = runBlocking {
+        val service = createService()
+        val newCustId = "cust-double-tap"
+        val newProdId = "prod-double-tap"
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-replay",
+            businessId = businessId,
+            customerId = newCustId,
+            sourceCustomerFingerprint = "",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = newProdId,
+                    productNameSnapshot = "Galletas Avena",
+                    quantity = 1,
+                    unitPriceCents = 3500L,
+                    lineTotalCents = 3500L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 3500L,
+            initialPaymentCents = 1000L,
+            newCustomer = AiNewCustomerSpec(newCustId, "Laura Gomez", "laura gomez", false),
+            newProducts = listOf(AiNewProductSpec(newProdId, "Galletas Avena", 3500L, false)),
+        )
+
+        val firstResult = service.confirm(request) as AiSaleExecutionResult.Recorded
+        val countsAfterFirst = countAllTables()
+
+        val secondResult = service.confirm(request) as AiSaleExecutionResult.Recorded
+        val countsAfterSecond = countAllTables()
+
+        assertEquals(firstResult.saleId, secondResult.saleId)
+        assertEquals(firstResult.paymentId, secondResult.paymentId)
+        assertEquals("No rows should be duplicated on replay", countsAfterFirst, countsAfterSecond)
+    }
+
+    @Test
+    fun normalizedNameRaceWhenExplicitCreateNewIsFalseReturnsStaleDataAndZeroWrites() = runBlocking {
+        val service = createService()
+        val newCustId = "cust-race-name"
+        val newProdId = "prod-race-name"
+
+        // Concurrently insert a customer with same normalized name
+        val competingCustomer = CustomerEntity(
+            id = "cust-competing-1",
+            businessId = businessId,
+            name = "Ernesto Zedillo",
+            normalizedName = "ernesto zedillo",
+            phone = null,
+            email = null,
+            address = null,
+            notes = null,
+            creditLimitCents = null,
+            isActive = true,
+            createdAtEpochMillis = 15_000L,
+            updatedAtEpochMillis = 15_000L,
+            deletedAtEpochMillis = null,
+        )
+        database.customerDao().insert(competingCustomer)
+
+        val countsBefore = countAllTables()
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-race-fail",
+            businessId = businessId,
+            customerId = newCustId,
+            sourceCustomerFingerprint = "",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = newProdId,
+                    productNameSnapshot = "Té Verde",
+                    quantity = 1,
+                    unitPriceCents = 4000L,
+                    lineTotalCents = 4000L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 4000L,
+            initialPaymentCents = 0L,
+            newCustomer = AiNewCustomerSpec(newCustId, "Ernesto Zedillo", "ernesto zedillo", explicitCreateNew = false),
+            newProducts = listOf(AiNewProductSpec(newProdId, "Té Verde", 4000L, false)),
+        )
+
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.StalePreview, result)
+
+        val countsAfter = countAllTables()
+        assertEquals("Must write zero rows on normalized name race", countsBefore, countsAfter)
+    }
+
+    @Test
+    fun normalizedNameDuplicateWhenExplicitCreateNewIsTrueSucceeds() = runBlocking {
+        val service = createService()
+        val newCustId = "cust-explicit-dup"
+        val newProdId = "prod-explicit-dup"
+
+        // Existing customer with same normalized name
+        val existingCustomer = CustomerEntity(
+            id = "cust-existing-same-name",
+            businessId = businessId,
+            name = "Ernesto Zedillo",
+            normalizedName = "ernesto zedillo",
+            phone = null,
+            email = null,
+            address = null,
+            notes = null,
+            creditLimitCents = null,
+            isActive = true,
+            createdAtEpochMillis = 15_000L,
+            updatedAtEpochMillis = 15_000L,
+            deletedAtEpochMillis = null,
+        )
+        database.customerDao().insert(existingCustomer)
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-explicit-dup-ok",
+            businessId = businessId,
+            customerId = newCustId,
+            sourceCustomerFingerprint = "",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = newProdId,
+                    productNameSnapshot = "Té Verde",
+                    quantity = 1,
+                    unitPriceCents = 4000L,
+                    lineTotalCents = 4000L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 4000L,
+            initialPaymentCents = 0L,
+            newCustomer = AiNewCustomerSpec(newCustId, "Ernesto Zedillo", "ernesto zedillo", explicitCreateNew = true),
+            newProducts = listOf(AiNewProductSpec(newProdId, "Té Verde", 4000L, false)),
+        )
+
+        val result = service.confirm(request)
+        assertTrue(result is AiSaleExecutionResult.Recorded)
+
+        val newCustomer = database.customerDao().byId(newCustId)
+        assertNotNull(newCustomer)
+        assertEquals("Ernesto Zedillo", newCustomer?.name)
+    }
+
+    @Test
+    fun idCollisionAgainstExistingEntityReturnsStaleDataAndZeroWrites() = runBlocking {
+        val service = createService()
+        val countsBefore = countAllTables()
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-id-col",
+            businessId = businessId,
+            customerId = customerId, // Already exists in database!
+            sourceCustomerFingerprint = "", // but request claims it is new
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = "prod-new-id-col",
+                    productNameSnapshot = "Café Molido",
+                    quantity = 1,
+                    unitPriceCents = 6000L,
+                    lineTotalCents = 6000L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 6000L,
+            initialPaymentCents = 0L,
+            newCustomer = AiNewCustomerSpec(customerId, "María Gómez", "maria gomez", false),
+            newProducts = listOf(AiNewProductSpec("prod-new-id-col", "Café Molido", 6000L, false)),
+        )
+
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.StalePreview, result)
+
+        val countsAfter = countAllTables()
+        assertEquals("Must write zero rows on ID collision", countsBefore, countsAfter)
+    }
+
+    @Test
+    fun rollbackOnPaymentFailureLeavesZeroCatalogZeroSaleZeroMovementsZeroAudit() = runBlocking {
+        val newCustId = "cust-rollback-all"
+        val newProdId = "prod-rollback-all"
+        val countsBefore = countAllTables()
+
+        // Service with invalid payment allocation sum causing require() to fail in Room transaction
+        val service = AiSaleExecutionService(
+            registerSale = { key, sale, items, charge, custFp, prodFps, payment, paymentMovement, _, expectedInitialPaymentId, newCust, expCust, newProds, expProdMap ->
+                val invalidAllocations = listOf(
+                    PaymentAllocationEntity(
+                        id = "alloc-invalid",
+                        paymentId = payment!!.id,
+                        saleId = sale.id,
+                        amountCents = 999999L, // Mismatches payment.amountCents -> throws IllegalArgumentException
+                    ),
+                )
+                saleRepository.registerCompositeAgainstPreview(
+                    idempotencyKey = key,
+                    sale = sale,
+                    items = items,
+                    charge = charge,
+                    expectedCustomerFingerprint = custFp,
+                    expectedProductFingerprints = prodFps,
+                    payment = payment,
+                    paymentMovement = paymentMovement,
+                    paymentAllocations = invalidAllocations,
+                    expectedInitialPaymentId = expectedInitialPaymentId,
+                    newCustomer = newCust,
+                    explicitCustomerCreateNew = expCust,
+                    newProducts = newProds,
+                    explicitProductCreateNewByProductId = expProdMap,
+                )
+            },
+            currentUserId = { userId },
+            nowMillis = { 20_000L },
+            todayEpochDay = { 20_500L },
+        )
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-rollback",
+            businessId = businessId,
+            customerId = newCustId,
+            sourceCustomerFingerprint = "",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = newProdId,
+                    productNameSnapshot = "Vino Tinto",
+                    quantity = 1,
+                    unitPriceCents = 25000L,
+                    lineTotalCents = 25000L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 25000L,
+            initialPaymentCents = 5000L,
+            newCustomer = AiNewCustomerSpec(newCustId, "Gonzalo", "gonzalo", false),
+            newProducts = listOf(AiNewProductSpec(newProdId, "Vino Tinto", 25000L, false)),
+        )
+
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.Unavailable, result)
+
+        val countsAfter = countAllTables()
+        assertEquals("Full rollback must leave zero writes across all tables", countsBefore, countsAfter)
+        assertNull(database.customerDao().byId(newCustId))
+        assertNull(database.productDao().byId(newProdId))
+    }
+
+    @Test
+    fun staleExistingProductFingerprintReturnsStaleDataAndZeroWrites() = runBlocking {
+        val service = createService()
+        val countsBefore = countAllTables()
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-stale-prod",
+            businessId = businessId,
+            customerId = customerId,
+            sourceCustomerFingerprint = "$customerId:10000",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = productId,
+                    productNameSnapshot = "Jabón Corporal",
+                    quantity = 1,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 5000L,
+                    sourceProductFingerprint = "$productId:99999:5000", // Stale fingerprint!
+                ),
+            ),
+            totalCents = 5000L,
+            initialPaymentCents = 0L,
+        )
+
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.StalePreview, result)
+
+        val countsAfter = countAllTables()
+        assertEquals("Must write zero rows on stale product fingerprint", countsBefore, countsAfter)
+    }
+
+    @Test
+    fun wrongBusinessAndBlankUserAreRejected() = runBlocking {
+        val service = createService()
+
+        // Wrong business
+        val requestWrongBiz = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-wrong-biz",
+            businessId = "wrong-biz-999",
+            customerId = customerId,
+            sourceCustomerFingerprint = "$customerId:10000",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = productId,
+                    productNameSnapshot = "Jabón Corporal",
+                    quantity = 1,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 5000L,
+                    sourceProductFingerprint = "$productId:10000:5000",
+                ),
+            ),
+            totalCents = 5000L,
+            initialPaymentCents = 0L,
+        )
+        val resultWrongBiz = service.confirm(requestWrongBiz)
+        assertEquals(AiSaleExecutionResult.StalePreview, resultWrongBiz)
+
+        // Blank user
+        val serviceBlankUser = AiSaleExecutionService(
+            registerSale = { key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId ->
+                saleRepository.registerAgainstPreview(key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId)
+            },
+            currentUserId = { "   " },
+            nowMillis = { 20_000L },
+            todayEpochDay = { 20_500L },
+        )
+        val resultBlankUser = serviceBlankUser.confirm(requestWrongBiz.copy(businessId = businessId))
+        assertEquals(AiSaleExecutionResult.Unavailable, resultBlankUser)
+    }
+
+    @Test
+    fun outboxPayloadContainsPersistedCreatedEntities() = runBlocking {
+        var capturedBundle: StoredSaleBundle? = null
+        val service = createService(
+            onEnqueue = { bundle -> capturedBundle = bundle },
+        )
+        val newCustId = "cust-outbox-1"
+        val newProdId = "prod-outbox-1"
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "comp-conf-outbox-test",
+            businessId = businessId,
+            customerId = newCustId,
+            sourceCustomerFingerprint = "",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = newProdId,
+                    productNameSnapshot = "Pan Integral",
+                    quantity = 1,
+                    unitPriceCents = 4500L,
+                    lineTotalCents = 4500L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 4500L,
+            initialPaymentCents = 0L,
+            newCustomer = AiNewCustomerSpec(newCustId, "Beatriz", "beatriz", false),
+            newProducts = listOf(AiNewProductSpec(newProdId, "Pan Integral", 4500L, false)),
+        )
+
+        val result = service.confirm(request)
+        assertTrue(result is AiSaleExecutionResult.Recorded)
+        assertNotNull(capturedBundle)
+        assertEquals(newCustId, capturedBundle?.createdCustomer?.id)
+        assertEquals("Beatriz", capturedBundle?.createdCustomer?.name)
+        assertEquals(1, capturedBundle?.createdProducts?.size)
+        assertEquals(newProdId, capturedBundle?.createdProducts?.first()?.id)
+        assertEquals("Pan Integral", capturedBundle?.createdProducts?.first()?.name)
     }
 }

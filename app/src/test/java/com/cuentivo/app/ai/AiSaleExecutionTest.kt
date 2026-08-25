@@ -1,9 +1,11 @@
 package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.AccountMovementEntity
+import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ExpectedSaleResult
 import com.cuentivo.app.data.local.PaymentAllocationEntity
 import com.cuentivo.app.data.local.PaymentEntity
+import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
 import com.cuentivo.app.domain.SaleOperationIds
@@ -290,5 +292,243 @@ class AiSaleExecutionTest {
         val result = service.confirm(validRequest)
         assertTrue(result is AiSaleExecutionResult.StalePreview)
         assertEquals(false, enqueued)
+    }
+
+    @Test
+    fun `successful composite sale passes new entity specs to registerSale and loads persisted entities`() = runBlocking {
+        val newCustSpec = AiNewCustomerSpec(
+            customerId = "new-cust-1",
+            displayName = "Carlos Santana",
+            normalizedName = "carlos santana",
+            explicitCreateNew = false,
+        )
+        val newProdSpec = AiNewProductSpec(
+            productId = "new-prod-1",
+            name = "Aceite de Oliva",
+            salePriceCents = 12000L,
+            explicitCreateNew = true,
+        )
+        val compositeLine = AiSaleConfirmationLine(
+            productId = "new-prod-1",
+            productNameSnapshot = "Aceite de Oliva",
+            quantity = 1,
+            unitPriceCents = 12000L,
+            lineTotalCents = 12000L,
+            sourceProductFingerprint = "", // empty fingerprint for new product
+        )
+        val compositeRequest = AiSaleConfirmationRequest(
+            confirmationKey = "key-comp-1",
+            businessId = "biz-1",
+            customerId = "new-cust-1",
+            sourceCustomerFingerprint = "", // empty fingerprint for new customer
+            lines = listOf(compositeLine),
+            totalCents = 12000L,
+            initialPaymentCents = 0L,
+            newCustomer = newCustSpec,
+            newProducts = listOf(newProdSpec),
+        )
+
+        var passedNewCustomer: CustomerEntity? = null
+        var passedNewProducts: List<ProductEntity>? = null
+        var passedExplicitCustCreateNew = false
+        var passedExplicitProdCreateNew = false
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, newCust, expCust, newProds, expProdMap ->
+                passedNewCustomer = newCust
+                passedNewProducts = newProds
+                passedExplicitCustCreateNew = expCust
+                passedExplicitProdCreateNew = expProdMap["new-prod-1"] ?: false
+                ExpectedSaleResult.Recorded(sale.id, null)
+            },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(compositeRequest)
+        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertNotNull(passedNewCustomer)
+        assertEquals("new-cust-1", passedNewCustomer?.id)
+        assertEquals("Carlos Santana", passedNewCustomer?.name)
+        assertEquals("carlos santana", passedNewCustomer?.normalizedName)
+        assertEquals(false, passedExplicitCustCreateNew)
+
+        assertEquals(1, passedNewProducts?.size)
+        assertEquals("new-prod-1", passedNewProducts?.first()?.id)
+        assertEquals("Aceite de Oliva", passedNewProducts?.first()?.name)
+        assertEquals(12000L, passedNewProducts?.first()?.salePriceCents)
+        assertEquals(true, passedExplicitProdCreateNew)
+    }
+
+    @Test
+    fun `empty customer fingerprint without newCustomer spec is Rejected`() = runBlocking {
+        val request = validRequest.copy(sourceCustomerFingerprint = "", newCustomer = null)
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.Rejected, result)
+    }
+
+    @Test
+    fun `non-empty customer fingerprint with newCustomer spec is Rejected`() = runBlocking {
+        val request = validRequest.copy(
+            sourceCustomerFingerprint = "cust-1:1000",
+            newCustomer = AiNewCustomerSpec("cust-1", "María", "maria", false),
+        )
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.Rejected, result)
+    }
+
+    @Test
+    fun `newCustomer customerId mismatching request customerId is Rejected`() = runBlocking {
+        val request = validRequest.copy(
+            customerId = "cust-1",
+            sourceCustomerFingerprint = "",
+            newCustomer = AiNewCustomerSpec("other-cust", "María", "maria", false),
+        )
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.Rejected, result)
+    }
+
+    @Test
+    fun `blank newCustomer displayName or normalizedName is Rejected`() = runBlocking {
+        val request1 = validRequest.copy(
+            customerId = "cust-1",
+            sourceCustomerFingerprint = "",
+            newCustomer = AiNewCustomerSpec("cust-1", "   ", "maria", false),
+        )
+        val request2 = validRequest.copy(
+            customerId = "cust-1",
+            sourceCustomerFingerprint = "",
+            newCustomer = AiNewCustomerSpec("cust-1", "María", "   ", false),
+        )
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(request1))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(request2))
+    }
+
+    @Test
+    fun `empty product fingerprint without corresponding newProduct spec is Rejected`() = runBlocking {
+        val lineWithoutFp = validLine.copy(sourceProductFingerprint = "")
+        val request = validRequest.copy(lines = listOf(lineWithoutFp), newProducts = emptyList())
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(request))
+    }
+
+    @Test
+    fun `non-empty product fingerprint with corresponding newProduct spec is Rejected`() = runBlocking {
+        val request = validRequest.copy(
+            lines = listOf(validLine), // has non-empty fingerprint
+            newProducts = listOf(AiNewProductSpec("prod-1", "Jabón", 5000L, false)),
+        )
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(request))
+    }
+
+    @Test
+    fun `orphan newProduct spec without matching sale line is Rejected`() = runBlocking {
+        val lineWithoutFp = validLine.copy(productId = "prod-1", sourceProductFingerprint = "")
+        val request = validRequest.copy(
+            lines = listOf(lineWithoutFp),
+            newProducts = listOf(
+                AiNewProductSpec("prod-1", "Jabón", 5000L, false),
+                AiNewProductSpec("prod-orphan", "Shampoo", 8000L, false),
+            ),
+        )
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(request))
+    }
+
+    @Test
+    fun `newProduct spec with non-positive salePriceCents is Rejected`() = runBlocking {
+        val lineWithoutFp = validLine.copy(productId = "prod-1", sourceProductFingerprint = "", unitPriceCents = 5000L)
+        val requestZero = validRequest.copy(
+            lines = listOf(lineWithoutFp),
+            newProducts = listOf(AiNewProductSpec("prod-1", "Jabón", 0L, false)),
+        )
+        val requestNegative = validRequest.copy(
+            lines = listOf(lineWithoutFp),
+            newProducts = listOf(AiNewProductSpec("prod-1", "Jabón", -5000L, false)),
+        )
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(requestZero))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(requestNegative))
+    }
+
+    @Test
+    fun `newProduct spec with blank name or productId is Rejected`() = runBlocking {
+        val lineWithoutFp = validLine.copy(productId = "prod-1", sourceProductFingerprint = "")
+        val requestBlankName = validRequest.copy(
+            lines = listOf(lineWithoutFp),
+            newProducts = listOf(AiNewProductSpec("prod-1", "   ", 5000L, false)),
+        )
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(requestBlankName))
+    }
+
+    @Test
+    fun `duplicate newProduct specs with same productId is Rejected`() = runBlocking {
+        val lineWithoutFp = validLine.copy(productId = "prod-1", sourceProductFingerprint = "")
+        val request = validRequest.copy(
+            lines = listOf(lineWithoutFp),
+            newProducts = listOf(
+                AiNewProductSpec("prod-1", "Jabón", 5000L, false),
+                AiNewProductSpec("prod-1", "Jabón Duplicado", 5000L, true),
+            ),
+        )
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(request))
     }
 }

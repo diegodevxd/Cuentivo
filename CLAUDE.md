@@ -85,12 +85,12 @@ Innegociables. Vienen del prompt maestro y están codificadas en el esquema:
 
 ### Room es la fuente de verdad
 
-`data/local/CuentivoDatabase.kt` — `version = 4`, `exportSchema = true` → `app/schemas/`. 13 entidades, 8 DAOs.
+`data/local/CuentivoDatabase.kt` — `version = 6`, `exportSchema = true` → `app/schemas/`. 14 entidades, 9 DAOs.
 
-**No hay `fallbackToDestructiveMigration()` y no debe haberlo.** Existe una sola migración, `MIGRATION_3_4` (crea `sync_state`), exportada junto con las demás en el arreglo `CUENTIVO_MIGRATIONS`. Si subes `version`:
+**No hay `fallbackToDestructiveMigration()` y no debe haberlo.** Hay tres migraciones — `MIGRATION_3_4`, `MIGRATION_4_5` y `MIGRATION_5_6` — exportadas en el arreglo `CUENTIVO_MIGRATIONS`. Si subes `version`:
 
 1. Escribe la `Migration` y agrégala a `CUENTIVO_MIGRATIONS`.
-2. Registra el arreglo en **todos** los builders de `"cuentivo.db"` — hoy son dos, `MainActivity.onCreate` y `SyncWorker.doWork`. Olvidar uno hace que solo truene esa ruta.
+2. Registra el arreglo en **todos** los builders de `"cuentivo.db"` — hoy son **tres**: `MainActivity.onCreate`, `SyncWorker.doWork` y `CollectionReminderWorker.doWork`. Olvidar uno hace que solo truene esa ruta, y las dos rutas de WorkManager pueden correr en un proceso donde la Activity nunca arrancó. Verifica con `grep -rn '"cuentivo.db"' app/src/main` en vez de confiar en esta lista.
 3. Verifica el SQL contra `createSql` del esquema recién exportado en `app/schemas/.../{version}.json`. Room valida un hash de identidad: si tu `CREATE TABLE` difiere aunque sea en un backtick, la migración corre y *aun así* falla al abrir.
 
 Tampoco hay `@ForeignKey` en ninguna entidad: la integridad referencial se aplica con `require(...)` dentro de las transacciones de `FinancialDao`.
@@ -133,7 +133,7 @@ Todo en `com.cuentivo.app.domain`, plano. Los calculadores son `object` de Kotli
 | `FinancialCalculator` | Suma de movimientos con signo por `MovementType`. Aritmética entera pura. |
 | `SaleStatusCalculator` | Estado derivado de la venta. |
 | `PaymentAllocator` | Asignación greedy por vencimiento más antiguo, con desempate determinista `dueDate → saleDate → id`. El remanente se conserva como `creditCents`, nunca se descarta. |
-| `CustomerNameNormalizer` | NFD → quita acentos → minúsculas → colapsa espacios. Alimenta `customers.normalizedName`, mitad del índice único `(businessId, normalizedName)` que impide clientes duplicados. |
+| `CustomerNameNormalizer` | NFD → quita acentos → minúsculas → colapsa espacios. Alimenta `customers.normalizedName`, mitad del índice `(businessId, normalizedName)`. **El índice NO es único y no debe serlo**: el nombre es ayuda de búsqueda, nunca identidad, y un "Diego" archivado no puede impedir crear otro Diego. La identidad es `customer.id`. El propio `CustomerEntity` lo documenta. |
 | `LegacyMigrationPlanner` | Planifica la importación desde la web original. **Puro: planifica pero nunca escribe.** IDs deterministas (`legacy-movimiento-{id}`) para que replanificar sea idempotente. |
 
 `LegacyMigrationRepository` es el único de la capa que toca la API de Room (`withTransaction`) y el único que exige `plan.rejected.isEmpty()` — la importación es todo-o-nada.

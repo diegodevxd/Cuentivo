@@ -1,14 +1,30 @@
 package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.AccountMovementEntity
+import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ExpectedSaleResult
 import com.cuentivo.app.data.local.PaymentAllocationEntity
 import com.cuentivo.app.data.local.PaymentEntity
+import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
 import com.cuentivo.app.data.local.StoredSaleBundle
 import com.cuentivo.app.domain.SaleOperationIds
 import kotlinx.coroutines.CancellationException
+
+data class AiNewCustomerSpec(
+    val customerId: String,
+    val displayName: String,
+    val normalizedName: String,
+    val explicitCreateNew: Boolean,
+)
+
+data class AiNewProductSpec(
+    val productId: String,
+    val name: String,
+    val salePriceCents: Long,
+    val explicitCreateNew: Boolean,
+)
 
 data class AiSaleConfirmationLine(
     val productId: String,
@@ -28,6 +44,8 @@ data class AiSaleConfirmationRequest(
     val totalCents: Long,
     val initialPaymentCents: Long,
     val promisedPaymentEpochDay: Long? = null,
+    val newCustomer: AiNewCustomerSpec? = null,
+    val newProducts: List<AiNewProductSpec> = emptyList(),
 )
 
 sealed interface AiSaleExecutionResult {
@@ -49,13 +67,49 @@ class AiSaleExecutionService(
         paymentMovement: AccountMovementEntity?,
         paymentAllocations: List<PaymentAllocationEntity>,
         expectedInitialPaymentId: String,
+        newCustomer: CustomerEntity?,
+        explicitCustomerCreateNew: Boolean,
+        newProducts: List<ProductEntity>,
+        explicitProductCreateNewByProductId: Map<String, Boolean>,
     ) -> ExpectedSaleResult,
-    private val loadStoredBundle: (suspend (businessId: String, saleId: String) -> StoredSaleBundle?)? = null,
+    private val loadStoredBundle: (suspend (businessId: String, saleId: String, createdCustomerId: String?, createdProductIds: List<String>) -> StoredSaleBundle?)? = null,
     private val enqueueStoredBundle: (suspend (StoredSaleBundle) -> Unit)? = null,
     private val currentUserId: () -> String,
     private val nowMillis: () -> Long,
     private val todayEpochDay: () -> Long,
 ) {
+    // Secondary constructor for backward-compatibility with 10-arg registerSale and 2-arg loadStoredBundle
+    constructor(
+        registerSale: suspend (
+            idempotencyKey: String,
+            sale: SaleEntity,
+            items: List<SaleItemEntity>,
+            charge: AccountMovementEntity,
+            expectedCustomerFingerprint: String,
+            expectedProductFingerprints: Map<String, String>,
+            payment: PaymentEntity?,
+            paymentMovement: AccountMovementEntity?,
+            paymentAllocations: List<PaymentAllocationEntity>,
+            expectedInitialPaymentId: String,
+        ) -> ExpectedSaleResult,
+        loadStoredBundle: (suspend (businessId: String, saleId: String) -> StoredSaleBundle?)? = null,
+        enqueueStoredBundle: (suspend (StoredSaleBundle) -> Unit)? = null,
+        currentUserId: () -> String,
+        nowMillis: () -> Long,
+        todayEpochDay: () -> Long,
+    ) : this(
+        registerSale = { key, sale, items, charge, custFp, prodFps, pay, payMov, payAllocs, payId, _, _, _, _ ->
+            registerSale(key, sale, items, charge, custFp, prodFps, pay, payMov, payAllocs, payId)
+        },
+        loadStoredBundle = loadStoredBundle?.let { loader ->
+            { bizId, saleId, _, _ -> loader(bizId, saleId) }
+        },
+        enqueueStoredBundle = enqueueStoredBundle,
+        currentUserId = currentUserId,
+        nowMillis = nowMillis,
+        todayEpochDay = todayEpochDay,
+    )
+
     suspend fun confirm(request: AiSaleConfirmationRequest): AiSaleExecutionResult {
         if (request.confirmationKey.isBlank() ||
             request.businessId.isBlank() ||
@@ -68,6 +122,35 @@ class AiSaleExecutionService(
             return AiSaleExecutionResult.Rejected
         }
 
+        // D3 cross-validation: Customer spec vs fingerprint
+        if (request.newCustomer != null) {
+            val spec = request.newCustomer
+            if (spec.customerId != request.customerId ||
+                request.sourceCustomerFingerprint.isNotEmpty() ||
+                spec.customerId.isBlank() ||
+                spec.displayName.isBlank() ||
+                spec.normalizedName.isBlank()
+            ) {
+                return AiSaleExecutionResult.Rejected
+            }
+        } else {
+            if (request.sourceCustomerFingerprint.isEmpty()) {
+                return AiSaleExecutionResult.Rejected
+            }
+        }
+
+        // D3 cross-validation: Product specs vs lines
+        val newProductMap = HashMap<String, AiNewProductSpec>(request.newProducts.size)
+        for (spec in request.newProducts) {
+            if (spec.productId.isBlank() || spec.name.isBlank() || spec.salePriceCents <= 0L) {
+                return AiSaleExecutionResult.Rejected
+            }
+            if (newProductMap.put(spec.productId, spec) != null) {
+                return AiSaleExecutionResult.Rejected // duplicate spec
+            }
+        }
+
+        val lineProductIds = HashSet<String>(request.lines.size)
         var calculatedTotal = 0L
         for (line in request.lines) {
             if (line.productId.isBlank() ||
@@ -78,6 +161,18 @@ class AiSaleExecutionService(
             ) {
                 return AiSaleExecutionResult.Rejected
             }
+            lineProductIds.add(line.productId)
+
+            if (line.sourceProductFingerprint.isEmpty()) {
+                if (!newProductMap.containsKey(line.productId)) {
+                    return AiSaleExecutionResult.Rejected
+                }
+            } else {
+                if (newProductMap.containsKey(line.productId)) {
+                    return AiSaleExecutionResult.Rejected
+                }
+            }
+
             val expectedLineTotal = try {
                 Math.multiplyExact(line.quantity.toLong(), line.unitPriceCents)
             } catch (_: ArithmeticException) {
@@ -89,6 +184,13 @@ class AiSaleExecutionService(
             calculatedTotal = try {
                 Math.addExact(calculatedTotal, line.lineTotalCents)
             } catch (_: ArithmeticException) {
+                return AiSaleExecutionResult.Rejected
+            }
+        }
+
+        // Check for orphan product specs
+        for (spec in request.newProducts) {
+            if (!lineProductIds.contains(spec.productId)) {
                 return AiSaleExecutionResult.Rejected
             }
         }
@@ -207,6 +309,45 @@ class AiSaleExecutionService(
                 paymentAllocations = emptyList()
             }
 
+            val newCustomerEntity = request.newCustomer?.let { spec ->
+                CustomerEntity(
+                    id = spec.customerId,
+                    businessId = request.businessId,
+                    name = spec.displayName,
+                    normalizedName = spec.normalizedName,
+                    phone = null,
+                    email = null,
+                    address = null,
+                    notes = null,
+                    creditLimitCents = null,
+                    isActive = true,
+                    createdAtEpochMillis = now,
+                    updatedAtEpochMillis = now,
+                    deletedAtEpochMillis = null,
+                )
+            }
+
+            val newProductEntities = request.newProducts.map { spec ->
+                ProductEntity(
+                    id = spec.productId,
+                    businessId = request.businessId,
+                    name = spec.name,
+                    description = null,
+                    sku = null,
+                    category = null,
+                    salePriceCents = spec.salePriceCents,
+                    costPriceCents = null,
+                    stock = null,
+                    imageUri = null,
+                    isActive = true,
+                    createdAtEpochMillis = now,
+                    updatedAtEpochMillis = now,
+                    deletedAtEpochMillis = null,
+                )
+            }
+
+            val explicitProductCreateNewMap = request.newProducts.associate { it.productId to it.explicitCreateNew }
+
             val result = registerSale(
                 idempotencyKey,
                 sale,
@@ -218,12 +359,18 @@ class AiSaleExecutionService(
                 paymentMovement,
                 paymentAllocations,
                 initialPaymentId,
+                newCustomerEntity,
+                request.newCustomer?.explicitCreateNew ?: false,
+                newProductEntities,
+                explicitProductCreateNewMap,
             )
 
             when (result) {
                 is ExpectedSaleResult.StaleData -> AiSaleExecutionResult.StalePreview
                 is ExpectedSaleResult.Recorded -> {
-                    val bundle = loadStoredBundle?.invoke(request.businessId, result.saleId)
+                    val createdCustId = request.newCustomer?.customerId
+                    val createdProdIds = request.newProducts.map { it.productId }
+                    val bundle = loadStoredBundle?.invoke(request.businessId, result.saleId, createdCustId, createdProdIds)
                     if (bundle != null) {
                         enqueueStoredBundle?.invoke(bundle)
                     }
