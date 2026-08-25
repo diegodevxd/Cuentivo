@@ -401,6 +401,37 @@ class OperationDaoTest {
         assertEquals(2, dao.allForBackfill("business-1").size)
     }
 
+    @Test fun customer_searchActive_matches_exact_and_partial_names_without_empty_phone_wildcard_leaks() = runBlocking {
+        val dao = database.customerDao()
+        val c1 = CustomerEntity("c-1", "business-1", "Carina", "carina", null, null, null, null, null, true, 1, 1, null)
+        val c2 = CustomerEntity("c-2", "business-1", "Demian", "demian", "5551234", null, null, null, null, true, 1, 1, null)
+        val cForeign = CustomerEntity("c-foreign", "business-2", "Demian", "demian", "5551234", null, null, null, null, true, 1, 1, null)
+        val cInactive = CustomerEntity("c-inactive", "business-1", "Demian Inactive", "demian inactive", "5559999", null, null, null, null, false, 1, 1, null)
+        val cDeleted = CustomerEntity("c-deleted", "business-1", "Demian Deleted", "demian deleted", "5558888", null, null, null, null, true, 1, 1, 100L)
+
+        dao.insert(c1)
+        dao.insert(c2)
+        dao.insert(cForeign)
+        dao.insert(cInactive)
+        dao.insert(cDeleted)
+
+        // 1. Non-existent name without digits returns empty list (the bug that matched all rows via empty phone LIKE '%%')
+        val nonExistent = dao.searchActive("business-1", "fulano", "")
+        assertEquals(0, nonExistent.size)
+
+        // 2. Partial name matches only matching active customers in the same business
+        val partialName = dao.searchActive("business-1", "dem", "")
+        assertEquals(listOf("c-2"), partialName.map { it.id })
+
+        // 3. Search with digits matches by phone number
+        val byPhone = dao.searchActive("business-1", "555", "555")
+        assertEquals(listOf("c-2"), byPhone.map { it.id })
+
+        // 4. Both empty queries list all active customers in the business (contract preserved)
+        val allActive = dao.searchActive("business-1", "", "")
+        assertEquals(listOf("c-1", "c-2"), allActive.map { it.id })
+    }
+
     @Test fun product_search_and_archive_keep_catalog_entries_without_deleting_them() = runBlocking {
         val dao = database.productDao()
         val product = ProductEntity("product-1", "business-1", "Cuaderno", null, "CUA-1", "Papeler?a", 2_500, null, null, null, true, 1, 1, null)
