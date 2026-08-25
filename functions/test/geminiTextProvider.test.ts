@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import {
+  buildSystemInstruction,
   createGeminiTextProvider,
   SAFE_PROPOSAL_JSON_SCHEMA,
   type GeminiClientFactory,
@@ -122,6 +123,50 @@ describe("createGeminiTextProvider", () => {
     expect(instruction).toContain("lunes a domingo");
     expect(instruction).toContain("MISSING_PRODUCT");
     expect(instruction).toContain("create_sale");
+    expect(instruction).toContain("record_payment");
+    expect(instruction).toContain("CUSTOMER_BALANCE");
+    expect(instruction).toContain("CUSTOMERS_WITH_DEBT");
+    expect(instruction).toContain("requires_clarification");
+    expect(instruction).toContain("Demian me pagó 92 de un boleto");
+    expect(instruction).toContain("declaredInitialPaymentCents");
+  });
+
+  test("buildSystemInstruction includes all domain rules and the cash sale vs payment discriminant rule without PII", () => {
+    const refDate = {
+      year: 2026,
+      month: 8,
+      day: 24,
+      isoDate: "2026-08-24",
+      weekday: "lunes",
+    };
+
+    const instruction = buildSystemInstruction(refDate);
+
+    // Reference date and timezone
+    expect(instruction).toContain("2026-08-24 (lunes)");
+    expect(instruction).toContain("America/Mexico_City");
+    expect(instruction).toContain("No calculas cifras, no inventas datos y no ejecutas mutaciones financieras.");
+
+    // Natural queries rules
+    expect(instruction).toContain("queryType: \"SALES_FOR_PERIOD\"");
+    expect(instruction).toContain("queryType: \"CUSTOMER_BALANCE\"");
+    expect(instruction).toContain("queryType: \"CUSTOMERS_WITH_DEBT\"");
+    expect(instruction).toContain("La semana va de lunes a domingo.");
+
+    // Sales & payments base rules
+    expect(instruction).toContain("create_sale");
+    expect(instruction).toContain("record_payment");
+
+    // Cash sale discriminant rule: mentions product/service -> create_sale with declaredInitialPaymentCents
+    expect(instruction).toContain("Si la frase menciona un producto, artículo o servicio");
+    expect(instruction).toContain("Demian me pagó 92 de un boleto");
+    expect(instruction).toContain("declaredInitialPaymentCents (venta de contado)");
+    expect(instruction).toContain("AUNQUE el verbo sea pagar");
+    expect(instruction).toContain("Un abono (record_payment) NUNCA nombra un producto o servicio");
+    expect(instruction).toContain("Demian me abonó 92");
+
+    // Clarification fallback
+    expect(instruction).toContain("requires_clarification");
   });
 
   test("proposal schema is independent exact kind-schemas covering all four kinds", () => {
