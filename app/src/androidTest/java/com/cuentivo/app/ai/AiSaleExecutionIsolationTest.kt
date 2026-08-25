@@ -1416,8 +1416,8 @@ class AiSaleExecutionIsolationTest {
 
         // Blank user
         val serviceBlankUser = AiSaleExecutionService(
-            registerSale = { key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId ->
-                saleRepository.registerAgainstPreview(key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId)
+            registerSale = { key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId, newCust, expCust, newProds, expProdMap ->
+                saleRepository.registerCompositeAgainstPreview(key, sale, items, charge, custFp, prodFps, payment, paymentMovement, allocations, expectedInitialPaymentId, newCust, expCust, newProds, expProdMap)
             },
             currentUserId = { "   " },
             nowMillis = { 20_000L },
@@ -1643,5 +1643,128 @@ class AiSaleExecutionIsolationTest {
 
         val countsAfter = countAllTables()
         assertEquals("Must write zero rows when two new products share normalized name without explicit createNew", countsBefore, countsAfter)
+    }
+
+    @Test
+    fun outboxPayloadEnqueuesCustomerAndProductsBeforeSaleInCorrectOrder() = runBlocking {
+        val enqueuedRecords = mutableListOf<Triple<String, String, Map<String, Any?>>>()
+        val mockEnqueue: suspend (StoredSaleBundle) -> Unit = { bundle ->
+            val sale = bundle.sale
+            val now = sale.createdAtEpochMillis
+            bundle.createdCustomer?.let {
+                enqueuedRecords.add(Triple("CUSTOMER", it.id, SyncPayloads.customer(it)))
+            }
+            bundle.createdProducts.forEach {
+                enqueuedRecords.add(Triple("PRODUCT", it.id, SyncPayloads.product(it)))
+            }
+            enqueuedRecords.add(Triple("SALE", sale.id, SyncPayloads.sale(sale)))
+            bundle.items.forEach { item ->
+                enqueuedRecords.add(Triple("SALE_ITEM", item.id, SyncPayloads.saleItem(item)))
+            }
+            enqueuedRecords.add(Triple("MOVEMENT", bundle.chargeMovement.id, SyncPayloads.movement(bundle.chargeMovement)))
+            bundle.paymentBundle?.let { pBundle ->
+                val payment = pBundle.payment
+                enqueuedRecords.add(Triple("PAYMENT", payment.id, SyncPayloads.payment(payment)))
+                pBundle.allocations.forEach { allocation ->
+                    enqueuedRecords.add(Triple("PAYMENT_ALLOCATION", allocation.id, SyncPayloads.allocation(allocation)))
+                }
+                enqueuedRecords.add(Triple("MOVEMENT", pBundle.movement.id, SyncPayloads.movement(pBundle.movement)))
+            }
+        }
+
+        val service = createService(onEnqueue = mockEnqueue)
+        val newCustId = "cust-order-test"
+        val newProdId = "prod-order-test"
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "conf-order-test",
+            businessId = businessId,
+            customerId = newCustId,
+            sourceCustomerFingerprint = "",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = newProdId,
+                    productNameSnapshot = "Jabón Neutro",
+                    quantity = 2,
+                    unitPriceCents = 3000L,
+                    lineTotalCents = 6000L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 6000L,
+            initialPaymentCents = 2000L,
+            newCustomer = AiNewCustomerSpec(newCustId, "Carlos Mendoza", "carlos mendoza", false),
+            newProducts = listOf(AiNewProductSpec(newProdId, "Jabón Neutro", 3000L, false)),
+        )
+
+        val result = service.confirm(request)
+        assertTrue(result is AiSaleExecutionResult.Recorded)
+
+        // Verify ordering: CUSTOMER, PRODUCT, SALE, SALE_ITEM, MOVEMENT (charge), PAYMENT, PAYMENT_ALLOCATION, MOVEMENT (payment)
+        val types = enqueuedRecords.map { it.first }
+        assertEquals(
+            listOf("CUSTOMER", "PRODUCT", "SALE", "SALE_ITEM", "MOVEMENT", "PAYMENT", "PAYMENT_ALLOCATION", "MOVEMENT"),
+            types,
+        )
+
+        // Verify CUSTOMER payload
+        val custRecord = enqueuedRecords[0]
+        assertEquals("CUSTOMER", custRecord.first)
+        assertEquals(newCustId, custRecord.second)
+        assertEquals("Carlos Mendoza", custRecord.third["name"])
+        assertEquals("carlos mendoza", custRecord.third["normalizedName"])
+
+        // Verify PRODUCT payload
+        val prodRecord = enqueuedRecords[1]
+        assertEquals("PRODUCT", prodRecord.first)
+        assertEquals(newProdId, prodRecord.second)
+        assertEquals("Jabón Neutro", prodRecord.third["name"])
+        assertEquals(3000L, prodRecord.third["salePriceCents"])
+    }
+
+    @Test
+    fun recoveryAfterPartialEnqueueWithSameConfirmationKeyIsIdempotent() = runBlocking {
+        var enqueueCount = 0
+        val service = createService(
+            onEnqueue = { enqueueCount++ },
+        )
+        val newCustId = "cust-retry-test"
+        val newProdId = "prod-retry-test"
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "conf-retry-idem-test",
+            businessId = businessId,
+            customerId = newCustId,
+            sourceCustomerFingerprint = "",
+            lines = listOf(
+                AiSaleConfirmationLine(
+                    productId = newProdId,
+                    productNameSnapshot = "Aceite",
+                    quantity = 1,
+                    unitPriceCents = 5000L,
+                    lineTotalCents = 5000L,
+                    sourceProductFingerprint = "",
+                ),
+            ),
+            totalCents = 5000L,
+            initialPaymentCents = 0L,
+            newCustomer = AiNewCustomerSpec(newCustId, "David", "david", false),
+            newProducts = listOf(AiNewProductSpec(newProdId, "Aceite", 5000L, false)),
+        )
+
+        val result1 = service.confirm(request)
+        assertTrue(result1 is AiSaleExecutionResult.Recorded)
+        assertEquals(1, enqueueCount)
+
+        val countsAfterFirst = countAllTables()
+
+        // Re-execute with identical request (retry / recovery)
+        val result2 = service.confirm(request)
+        assertTrue(result2 is AiSaleExecutionResult.Recorded)
+        assertEquals((result1 as AiSaleExecutionResult.Recorded).saleId, (result2 as AiSaleExecutionResult.Recorded).saleId)
+        assertEquals(2, enqueueCount)
+
+        val countsAfterSecond = countAllTables()
+        assertEquals("Retry must not duplicate DB rows", countsAfterFirst, countsAfterSecond)
     }
 }

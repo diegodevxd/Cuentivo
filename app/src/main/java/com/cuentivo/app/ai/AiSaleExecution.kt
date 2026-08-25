@@ -78,38 +78,6 @@ class AiSaleExecutionService(
     private val nowMillis: () -> Long,
     private val todayEpochDay: () -> Long,
 ) {
-    // Secondary constructor for backward-compatibility with 10-arg registerSale and 2-arg loadStoredBundle
-    constructor(
-        registerSale: suspend (
-            idempotencyKey: String,
-            sale: SaleEntity,
-            items: List<SaleItemEntity>,
-            charge: AccountMovementEntity,
-            expectedCustomerFingerprint: String,
-            expectedProductFingerprints: Map<String, String>,
-            payment: PaymentEntity?,
-            paymentMovement: AccountMovementEntity?,
-            paymentAllocations: List<PaymentAllocationEntity>,
-            expectedInitialPaymentId: String,
-        ) -> ExpectedSaleResult,
-        loadStoredBundle: (suspend (businessId: String, saleId: String) -> StoredSaleBundle?)? = null,
-        enqueueStoredBundle: (suspend (StoredSaleBundle) -> Unit)? = null,
-        currentUserId: () -> String,
-        nowMillis: () -> Long,
-        todayEpochDay: () -> Long,
-    ) : this(
-        registerSale = { key, sale, items, charge, custFp, prodFps, pay, payMov, payAllocs, payId, _, _, _, _ ->
-            registerSale(key, sale, items, charge, custFp, prodFps, pay, payMov, payAllocs, payId)
-        },
-        loadStoredBundle = loadStoredBundle?.let { loader ->
-            { bizId, saleId, _, _ -> loader(bizId, saleId) }
-        },
-        enqueueStoredBundle = enqueueStoredBundle,
-        currentUserId = currentUserId,
-        nowMillis = nowMillis,
-        todayEpochDay = todayEpochDay,
-    )
-
     suspend fun confirm(request: AiSaleConfirmationRequest): AiSaleExecutionResult {
         if (request.confirmationKey.isBlank() ||
             request.businessId.isBlank() ||

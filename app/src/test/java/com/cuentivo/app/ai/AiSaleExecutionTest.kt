@@ -48,7 +48,7 @@ class AiSaleExecutionTest {
         var recordedPayment: PaymentEntity? = null
 
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, items, charge, _, _, payment, _, _, _ ->
+            registerSale = { _, sale, items, charge, _, _, payment, _, _, _, _, _, _, _ ->
                 recordedSale = sale
                 recordedItems = items
                 recordedCharge = charge
@@ -85,7 +85,7 @@ class AiSaleExecutionTest {
         val request = validRequest.copy(initialPaymentCents = 4000L)
 
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, payment, paymentMovement, allocations, _ ->
+            registerSale = { _, sale, _, _, _, _, payment, paymentMovement, allocations, _, _, _, _, _ ->
                 recordedPayment = payment
                 recordedPaymentMovement = paymentMovement
                 recordedAllocations = allocations
@@ -113,7 +113,7 @@ class AiSaleExecutionTest {
     @Test
     fun `stale customer or product data returns StalePreview`() = runBlocking {
         val service = AiSaleExecutionService(
-            registerSale = { _, _, _, _, _, _, _, _, _, _ ->
+            registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 ExpectedSaleResult.StaleData
             },
             currentUserId = { "user-1" },
@@ -128,7 +128,7 @@ class AiSaleExecutionTest {
     @Test
     fun `invalid request parameters are rejected fail-closed`() = runBlocking {
         val service = AiSaleExecutionService(
-            registerSale = { _, _, _, _, _, _, _, _, _, _ ->
+            registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 ExpectedSaleResult.Recorded("s", null)
             },
             currentUserId = { "user-1" },
@@ -167,7 +167,7 @@ class AiSaleExecutionTest {
     @Test
     fun `missing user id returns Unavailable`() = runBlocking {
         val service = AiSaleExecutionService(
-            registerSale = { _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded("s", null) },
+            registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded("s", null) },
             currentUserId = { "" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -180,7 +180,7 @@ class AiSaleExecutionTest {
     @Test
     fun `cancellation exception is rethrown`() = runBlocking {
         val service = AiSaleExecutionService(
-            registerSale = { _, _, _, _, _, _, _, _, _, _ -> throw CancellationException("test cancel") },
+            registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> throw CancellationException("test cancel") },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -262,8 +262,8 @@ class AiSaleExecutionTest {
         )
 
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
-            loadStoredBundle = { businessId, _ ->
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            loadStoredBundle = { businessId, _, _, _ ->
                 if (businessId == "biz-1") mockBundle else null
             },
             enqueueStoredBundle = { bundle -> enqueuedBundle = bundle },
@@ -281,8 +281,8 @@ class AiSaleExecutionTest {
     fun `confirm on StaleData does not enqueue stored bundle`() = runBlocking {
         var enqueued = false
         val service = AiSaleExecutionService(
-            registerSale = { _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.StaleData },
-            loadStoredBundle = { _, _ -> fail("Should not load bundle on StaleData"); null },
+            registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.StaleData },
+            loadStoredBundle = { _, _, _, _ -> fail("Should not load bundle on StaleData"); null },
             enqueueStoredBundle = { enqueued = true },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
@@ -365,7 +365,7 @@ class AiSaleExecutionTest {
     fun `empty customer fingerprint without newCustomer spec is Rejected`() = runBlocking {
         val request = validRequest.copy(sourceCustomerFingerprint = "", newCustomer = null)
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -381,7 +381,7 @@ class AiSaleExecutionTest {
             newCustomer = AiNewCustomerSpec("cust-1", "María", "maria", false),
         )
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -398,7 +398,7 @@ class AiSaleExecutionTest {
             newCustomer = AiNewCustomerSpec("other-cust", "María", "maria", false),
         )
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -420,7 +420,7 @@ class AiSaleExecutionTest {
             newCustomer = AiNewCustomerSpec("cust-1", "María", "   ", false),
         )
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -434,7 +434,7 @@ class AiSaleExecutionTest {
         val lineWithoutFp = validLine.copy(sourceProductFingerprint = "")
         val request = validRequest.copy(lines = listOf(lineWithoutFp), newProducts = emptyList())
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -449,7 +449,7 @@ class AiSaleExecutionTest {
             newProducts = listOf(AiNewProductSpec("prod-1", "Jabón", 5000L, false)),
         )
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -468,7 +468,7 @@ class AiSaleExecutionTest {
             ),
         )
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -488,7 +488,7 @@ class AiSaleExecutionTest {
             newProducts = listOf(AiNewProductSpec("prod-1", "Jabón", -5000L, false)),
         )
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -505,7 +505,7 @@ class AiSaleExecutionTest {
             newProducts = listOf(AiNewProductSpec("prod-1", "   ", 5000L, false)),
         )
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },
@@ -524,7 +524,7 @@ class AiSaleExecutionTest {
             ),
         )
         val service = AiSaleExecutionService(
-            registerSale = { _, sale, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
             nowMillis = { 5000L },
             todayEpochDay = { 20500L },

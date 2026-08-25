@@ -793,11 +793,13 @@ class MainActivity : ComponentActivity() {
                 val aiSaleExecutionService = remember(currentUserId) {
                     val saleRepository = SaleRepository(database.financialDao())
                     AiSaleExecutionService(
-                        registerSale = saleRepository::registerAgainstPreview,
+                        registerSale = saleRepository::registerCompositeAgainstPreview,
                         loadStoredBundle = saleRepository::storedBundle,
                         enqueueStoredBundle = { bundle ->
                             val sale = bundle.sale
                             val now = sale.createdAtEpochMillis
+                            bundle.createdCustomer?.let { syncQueue.enqueue(it.businessId, "CUSTOMER", it.id, now, SyncPayloads.customer(it)) }
+                            bundle.createdProducts.forEach { syncQueue.enqueue(it.businessId, "PRODUCT", it.id, now, SyncPayloads.product(it)) }
                             syncQueue.enqueue(sale.businessId, "SALE", sale.id, now, SyncPayloads.sale(sale))
                             bundle.items.forEach { item ->
                                 syncQueue.enqueue(sale.businessId, "SALE_ITEM", item.id, now, SyncPayloads.saleItem(item))
@@ -969,6 +971,10 @@ class MainActivity : ComponentActivity() {
                     confirmSale = { request ->
                         val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
                         if (activeBusinessId == null || activeBusinessId != request.businessId || currentUserId.isBlank()) {
+                            AiSaleExecutionResult.Rejected
+                        } else if (request.newCustomer != null &&
+                            FeatureAccessManager.canAddCustomer(tier, customers.size) is AccessDecision.Blocked
+                        ) {
                             AiSaleExecutionResult.Rejected
                         } else {
                             val result = aiSaleExecutionService.confirm(request)

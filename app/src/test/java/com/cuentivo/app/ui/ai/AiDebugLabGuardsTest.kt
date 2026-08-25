@@ -1,6 +1,7 @@
 package com.cuentivo.app.ui.ai
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -330,8 +331,10 @@ class AiDebugLabGuardsTest {
         val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
         assertTrue("must construct SaleRepository", source.contains("SaleRepository(database.financialDao())"))
         assertTrue("must construct AiSaleExecutionService", source.contains("AiSaleExecutionService("))
-        assertTrue("must wire registerAgainstPreview", source.contains("saleRepository::registerAgainstPreview"))
+        assertTrue("must wire registerCompositeAgainstPreview", source.contains("saleRepository::registerCompositeAgainstPreview"))
         assertTrue("must wire storedBundle", source.contains("saleRepository::storedBundle"))
+        assertTrue("must enqueue CUSTOMER", source.contains("\"CUSTOMER\""))
+        assertTrue("must enqueue PRODUCT", source.contains("\"PRODUCT\""))
         assertTrue("must enqueue SALE", source.contains("\"SALE\""))
         assertTrue("must enqueue SALE_ITEM", source.contains("\"SALE_ITEM\""))
         assertTrue("must enqueue MOVEMENT", source.contains("\"MOVEMENT\""))
@@ -341,6 +344,16 @@ class AiDebugLabGuardsTest {
         assertTrue("must validate active business ID from DashboardUiState.Content", source.contains("(state as? DashboardUiState.Content)?.businessId"))
         assertTrue("must reject null or mismatched businessId or blank user", source.contains("activeBusinessId == null || activeBusinessId != request.businessId || currentUserId.isBlank()"))
         assertTrue("must return Rejected on mismatch", source.contains("AiSaleExecutionResult.Rejected"))
+        assertTrue("must check customer limit when new customer is created", source.contains("FeatureAccessManager.canAddCustomer(tier, customers.size)"))
+    }
+
+    @Test
+    fun `AiSaleExecutionService has single constructor and does not expose deprecated 10-arg bridge`() {
+        val nonSyntheticConstructors = com.cuentivo.app.ai.AiSaleExecutionService::class.java.declaredConstructors
+            .filter { !it.isSynthetic && !it.parameterTypes.any { param -> param.name.contains("DefaultConstructorMarker") } }
+        assertEquals("AiSaleExecutionService must have exactly 1 constructor", 1, nonSyntheticConstructors.size)
+        val constructor = nonSyntheticConstructors.first()
+        assertEquals("Primary constructor must have 6 parameters", 6, constructor.parameterTypes.size)
     }
 
     @Test
