@@ -932,6 +932,10 @@ private fun ChatMessageRow(
             text = stringResource(R.string.ai_sale_rejected_message),
             style = MaterialTheme.typography.bodyMedium,
         )
+        AiChatMessage.AssistantSaleLimitReached -> Text(
+            text = stringResource(R.string.ai_sale_limit_reached_message),
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 

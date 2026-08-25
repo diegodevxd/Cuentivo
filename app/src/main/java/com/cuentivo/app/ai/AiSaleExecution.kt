@@ -53,6 +53,7 @@ sealed interface AiSaleExecutionResult {
     data object StalePreview : AiSaleExecutionResult
     data object Rejected : AiSaleExecutionResult
     data object Unavailable : AiSaleExecutionResult
+    data object LimitReached : AiSaleExecutionResult
 }
 
 class AiSaleExecutionService(

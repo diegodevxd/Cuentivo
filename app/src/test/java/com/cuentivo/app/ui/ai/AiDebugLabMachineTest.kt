@@ -1437,6 +1437,20 @@ class AiDebugLabMachineTest {
     }
 
     @Test
+    fun `onSaleExecutionResult with LimitReached transitions to TextEditing and updates message`() {
+        val model = saleConfirmationModel(generation = 4L)
+        val started = AiDebugLabMachine.onConfirmSale(model, "biz-123") as AiSaleConfirmOutcome.Started
+
+        val limitReached = AiDebugLabMachine.onSaleExecutionResult(
+            started.model,
+            com.cuentivo.app.ai.AiSaleExecutionResult.LimitReached,
+            generation = 5L,
+        )
+        assertEquals(AiDebugLabState.TextEditing, limitReached.state)
+        assertEquals(listOf(AiChatMessage.UserText("Venta a María"), AiChatMessage.AssistantSaleLimitReached), limitReached.messages)
+    }
+
+    @Test
     fun `onReset cleans up confirmation and choice state`() {
         val model = saleConfirmationModel(generation = 4L)
         val resetModel = AiDebugLabMachine.onReset(model)

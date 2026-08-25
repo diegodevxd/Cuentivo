@@ -487,4 +487,5 @@
     <string name="ai_sale_recorded_success">Venta registrada con éxito.</string>
     <string name="ai_sale_stale_message">Los datos del cliente o producto cambiaron. Por favor solicita la venta nuevamente.</string>
     <string name="ai_sale_rejected_message">No se pudo registrar la venta. Verifica los datos e intenta de nuevo.</string>
+    <string name="ai_sale_limit_reached_message">Alcanzaste el límite de tu plan. Actualiza a Pro o CuentivoAI para continuar registrando.</string>
 </resources>

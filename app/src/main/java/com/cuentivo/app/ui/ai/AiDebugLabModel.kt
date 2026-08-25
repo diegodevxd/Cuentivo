@@ -196,6 +196,7 @@ sealed interface AiChatMessage {
     data class AssistantSaleRecorded(val saleId: String, val paymentId: String?) : AiChatMessage
     data object AssistantSaleStale : AiChatMessage
     data object AssistantSaleRejected : AiChatMessage
+    data object AssistantSaleLimitReached : AiChatMessage
 }
 
 sealed interface AiPaymentConfirmOutcome {
@@ -725,6 +726,7 @@ object AiDebugLabMachine {
             is AiSaleExecutionResult.StalePreview -> AiChatMessage.AssistantSaleStale
             is AiSaleExecutionResult.Rejected -> AiChatMessage.AssistantSaleRejected
             is AiSaleExecutionResult.Unavailable -> AiChatMessage.AssistantUnavailable
+            is AiSaleExecutionResult.LimitReached -> AiChatMessage.AssistantSaleLimitReached
         }
 
         val messages = if (model.messages.isNotEmpty() && model.messages.last() is AiChatMessage.AssistantSalePreview) {

@@ -972,16 +972,28 @@ class MainActivity : ComponentActivity() {
                         val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
                         if (activeBusinessId == null || activeBusinessId != request.businessId || currentUserId.isBlank()) {
                             AiSaleExecutionResult.Rejected
-                        } else if (request.newCustomer != null &&
-                            FeatureAccessManager.canAddCustomer(tier, customers.size) is AccessDecision.Blocked
-                        ) {
-                            AiSaleExecutionResult.Rejected
                         } else {
-                            val result = aiSaleExecutionService.confirm(request)
-                            if (result is AiSaleExecutionResult.Recorded) {
-                                refreshKey++
+                            val salesSoFar = database.financialDao().registeredSaleCount(request.businessId)
+                            val customerDecision = if (request.newCustomer != null) {
+                                FeatureAccessManager.canAddCustomer(tier, customers.size)
+                            } else {
+                                AccessDecision.Allowed
                             }
-                            result
+                            val saleDecision = FeatureAccessManager.canRegisterSale(tier, salesSoFar)
+
+                            if (customerDecision is AccessDecision.Blocked) {
+                                blocked = customerDecision
+                                AiSaleExecutionResult.LimitReached
+                            } else if (saleDecision is AccessDecision.Blocked) {
+                                blocked = saleDecision
+                                AiSaleExecutionResult.LimitReached
+                            } else {
+                                val result = aiSaleExecutionService.confirm(request)
+                                if (result is AiSaleExecutionResult.Recorded) {
+                                    refreshKey++
+                                }
+                                result
+                            }
                         }
                     },
                     onCreateBusiness = {

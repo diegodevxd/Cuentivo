@@ -345,6 +345,35 @@ class AiDebugLabGuardsTest {
         assertTrue("must reject null or mismatched businessId or blank user", source.contains("activeBusinessId == null || activeBusinessId != request.businessId || currentUserId.isBlank()"))
         assertTrue("must return Rejected on mismatch", source.contains("AiSaleExecutionResult.Rejected"))
         assertTrue("must check customer limit when new customer is created", source.contains("FeatureAccessManager.canAddCustomer(tier, customers.size)"))
+        assertTrue("must check registered sale count", source.contains("database.financialDao().registeredSaleCount(request.businessId)"))
+        assertTrue("must check sale limit", source.contains("FeatureAccessManager.canRegisterSale(tier, salesSoFar)"))
+        assertTrue("must assign blocked state on customer limit blocked", source.contains("blocked = customerDecision"))
+        assertTrue("must assign blocked state on sale limit blocked", source.contains("blocked = saleDecision"))
+        assertTrue("must return LimitReached on limit blocked", source.contains("AiSaleExecutionResult.LimitReached"))
+    }
+
+    @Test
+    fun `plan limit evaluation blocks new customer and sales when free limit reached and allows when pro`() {
+        val freeTier = com.cuentivo.app.domain.SubscriptionTier.FREE
+        val proTier = com.cuentivo.app.domain.SubscriptionTier.PRO
+
+        val customerBlocked = com.cuentivo.app.domain.FeatureAccessManager.canAddCustomer(freeTier, 5)
+        assertTrue("5 customers in Free must be blocked", customerBlocked is com.cuentivo.app.domain.AccessDecision.Blocked)
+
+        val customerAllowedUnder = com.cuentivo.app.domain.FeatureAccessManager.canAddCustomer(freeTier, 4)
+        assertEquals("4 customers in Free must be allowed", com.cuentivo.app.domain.AccessDecision.Allowed, customerAllowedUnder)
+
+        val customerAllowedPro = com.cuentivo.app.domain.FeatureAccessManager.canAddCustomer(proTier, 100)
+        assertEquals("Pro tier must allow unlimited customers", com.cuentivo.app.domain.AccessDecision.Allowed, customerAllowedPro)
+
+        val saleBlocked = com.cuentivo.app.domain.FeatureAccessManager.canRegisterSale(freeTier, 30)
+        assertTrue("30 sales in Free must be blocked", saleBlocked is com.cuentivo.app.domain.AccessDecision.Blocked)
+
+        val saleAllowedUnder = com.cuentivo.app.domain.FeatureAccessManager.canRegisterSale(freeTier, 29)
+        assertEquals("29 sales in Free must be allowed", com.cuentivo.app.domain.AccessDecision.Allowed, saleAllowedUnder)
+
+        val saleAllowedPro = com.cuentivo.app.domain.FeatureAccessManager.canRegisterSale(proTier, 1000)
+        assertEquals("Pro tier must allow unlimited sales", com.cuentivo.app.domain.AccessDecision.Allowed, saleAllowedPro)
     }
 
     @Test
@@ -554,6 +583,7 @@ class AiDebugLabGuardsTest {
             "ai_sale_recorded_success",
             "ai_sale_stale_message",
             "ai_sale_rejected_message",
+            "ai_sale_limit_reached_message",
         )
         for (key in requiredKeys) {
             assertTrue("Spanish strings must contain $key", esXml.contains("name=\"$key\""))
