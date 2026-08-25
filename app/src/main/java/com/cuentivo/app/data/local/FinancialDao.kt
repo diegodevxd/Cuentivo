@@ -726,11 +726,13 @@ interface FinancialDao {
         }
 
         if (newCustomer != null) {
+            if (newCustomer.businessId != sale.businessId) return ExpectedSaleResult.StaleData
+            if (expectedCustomerFingerprint.isNotEmpty()) return ExpectedSaleResult.StaleData
             if (customerForPayment(newCustomer.id) != null) {
                 return ExpectedSaleResult.StaleData
             }
             if (!explicitCustomerCreateNew) {
-                if (activeCustomerByNormalizedName(newCustomer.businessId, newCustomer.normalizedName) != null) {
+                if (activeCustomerByNormalizedName(sale.businessId, newCustomer.normalizedName) != null) {
                     return ExpectedSaleResult.StaleData
                 }
             }
@@ -752,13 +754,20 @@ interface FinancialDao {
             emptyList()
         }
 
+        val seenNormalizedNewProductNames = HashSet<String>(newProducts.size)
         for (newProd in newProducts) {
+            if (newProd.businessId != sale.businessId) {
+                return ExpectedSaleResult.StaleData
+            }
             if (productForSale(newProd.id) != null) {
                 return ExpectedSaleResult.StaleData
             }
+            val normalizedNewName = com.cuentivo.app.domain.CustomerNameNormalizer.key(newProd.name)
             val explicitCreateNew = explicitProductCreateNewByProductId[newProd.id] ?: false
             if (!explicitCreateNew) {
-                val normalizedNewName = com.cuentivo.app.domain.CustomerNameNormalizer.key(newProd.name)
+                if (seenNormalizedNewProductNames.contains(normalizedNewName)) {
+                    return ExpectedSaleResult.StaleData
+                }
                 val existsSameName = existingActiveProducts.any {
                     com.cuentivo.app.domain.CustomerNameNormalizer.key(it.name) == normalizedNewName
                 }
@@ -766,6 +775,7 @@ interface FinancialDao {
                     return ExpectedSaleResult.StaleData
                 }
             }
+            seenNormalizedNewProductNames.add(normalizedNewName)
         }
         if (newProducts.isNotEmpty()) {
             insertProducts(newProducts)

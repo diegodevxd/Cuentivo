@@ -1466,4 +1466,182 @@ class AiSaleExecutionIsolationTest {
         assertEquals(newProdId, capturedBundle?.createdProducts?.first()?.id)
         assertEquals("Pan Integral", capturedBundle?.createdProducts?.first()?.name)
     }
+
+    @Test
+    fun newCustomerWithAlienBusinessIdReturnsStaleDataAndZeroWrites() = runBlocking {
+        val countsBefore = countAllTables()
+
+        val alienCustomer = CustomerEntity(
+            id = "cust-alien-biz",
+            businessId = "alien-business-999", // Does NOT match sale businessId
+            name = "Alien Customer",
+            normalizedName = "alien customer",
+            phone = null,
+            email = null,
+            address = null,
+            notes = null,
+            creditLimitCents = null,
+            isActive = true,
+            createdAtEpochMillis = 10_000L,
+            updatedAtEpochMillis = 10_000L,
+            deletedAtEpochMillis = null,
+        )
+
+        val saleId = com.cuentivo.app.domain.SaleOperationIds.sale("ai-sale-alien-test")
+        val sale = SaleEntity(
+            id = saleId,
+            businessId = businessId,
+            customerId = "cust-alien-biz",
+            sellerUserId = userId,
+            saleNumber = "V-alien-1",
+            saleDateEpochDay = 20500L,
+            dueDateEpochDay = null,
+            subtotalCents = 5000L,
+            discountCents = 0L,
+            totalCents = 5000L,
+            isCanceled = false,
+            notes = null,
+            createdAtEpochMillis = 10_000L,
+            updatedAtEpochMillis = 10_000L,
+        )
+        val item = SaleItemEntity(
+            id = "item-alien-1",
+            saleId = saleId,
+            productId = productId,
+            productNameSnapshot = "Jabón",
+            quantity = 1L,
+            unitPriceCents = 5000L,
+            discountCents = 0L,
+            subtotalCents = 5000L,
+        )
+        val charge = AccountMovementEntity(
+            id = "charge-alien-1",
+            businessId = businessId,
+            customerId = "cust-alien-biz",
+            saleId = saleId,
+            paymentId = null,
+            type = "CHARGE",
+            amountCents = 5000L,
+            direction = "DEBIT",
+            occurredAtEpochMillis = 10_000L,
+            createdByUserId = userId,
+            reversesMovementId = null,
+            notes = null,
+        )
+
+        val result = saleRepository.registerCompositeAgainstPreview(
+            idempotencyKey = "ai-sale-alien-test",
+            sale = sale,
+            items = listOf(item),
+            charge = charge,
+            expectedCustomerFingerprint = "",
+            expectedProductFingerprints = mapOf(productId to "$productId:10000:5000"),
+            payment = null,
+            paymentMovement = null,
+            paymentAllocations = emptyList(),
+            newCustomer = alienCustomer,
+            explicitCustomerCreateNew = false,
+            newProducts = emptyList(),
+        )
+
+        assertEquals(com.cuentivo.app.data.local.ExpectedSaleResult.StaleData, result)
+
+        val countsAfter = countAllTables()
+        assertEquals("Must write zero rows when new customer has alien businessId", countsBefore, countsAfter)
+    }
+
+    @Test
+    fun twoNewProductsWithSameNormalizedNameWithoutExplicitCreateNewReturnsStaleDataAndZeroWrites() = runBlocking {
+        val countsBefore = countAllTables()
+
+        val newProd1 = ProductEntity(
+            id = "prod-dup-name-1",
+            businessId = businessId,
+            name = "Jabón De Miel",
+            description = null,
+            sku = null,
+            category = null,
+            salePriceCents = 6000L,
+            costPriceCents = null,
+            stock = null,
+            imageUri = null,
+            isActive = true,
+            createdAtEpochMillis = 10_000L,
+            updatedAtEpochMillis = 10_000L,
+            deletedAtEpochMillis = null,
+        )
+        val newProd2 = ProductEntity(
+            id = "prod-dup-name-2", // Different ID, but same normalized name "jabon de miel"
+            businessId = businessId,
+            name = "jabón de miel",
+            description = null,
+            sku = null,
+            category = null,
+            salePriceCents = 6000L,
+            costPriceCents = null,
+            stock = null,
+            imageUri = null,
+            isActive = true,
+            createdAtEpochMillis = 10_000L,
+            updatedAtEpochMillis = 10_000L,
+            deletedAtEpochMillis = null,
+        )
+
+        val saleId = com.cuentivo.app.domain.SaleOperationIds.sale("ai-sale-dup-prod-test")
+        val sale = SaleEntity(
+            id = saleId,
+            businessId = businessId,
+            customerId = customerId,
+            sellerUserId = userId,
+            saleNumber = "V-dup-prod-1",
+            saleDateEpochDay = 20500L,
+            dueDateEpochDay = null,
+            subtotalCents = 12000L,
+            discountCents = 0L,
+            totalCents = 12000L,
+            isCanceled = false,
+            notes = null,
+            createdAtEpochMillis = 10_000L,
+            updatedAtEpochMillis = 10_000L,
+        )
+        val items = listOf(
+            SaleItemEntity("item-dup-1", saleId, "prod-dup-name-1", "Jabón De Miel", 1L, 6000L, 0L, 6000L),
+            SaleItemEntity("item-dup-2", saleId, "prod-dup-name-2", "jabón de miel", 1L, 6000L, 0L, 6000L),
+        )
+        val charge = AccountMovementEntity(
+            id = "charge-dup-1",
+            businessId = businessId,
+            customerId = customerId,
+            saleId = saleId,
+            paymentId = null,
+            type = "CHARGE",
+            amountCents = 12000L,
+            direction = "DEBIT",
+            occurredAtEpochMillis = 10_000L,
+            createdByUserId = userId,
+            reversesMovementId = null,
+            notes = null,
+        )
+
+        val result = saleRepository.registerCompositeAgainstPreview(
+            idempotencyKey = "ai-sale-dup-prod-test",
+            sale = sale,
+            items = items,
+            charge = charge,
+            expectedCustomerFingerprint = "$customerId:10000",
+            expectedProductFingerprints = emptyMap(),
+            payment = null,
+            paymentMovement = null,
+            paymentAllocations = emptyList(),
+            newCustomer = null,
+            explicitCustomerCreateNew = false,
+            newProducts = listOf(newProd1, newProd2),
+            explicitProductCreateNewByProductId = mapOf("prod-dup-name-1" to false, "prod-dup-name-2" to false),
+        )
+
+        assertEquals(com.cuentivo.app.data.local.ExpectedSaleResult.StaleData, result)
+
+        val countsAfter = countAllTables()
+        assertEquals("Must write zero rows when two new products share normalized name without explicit createNew", countsBefore, countsAfter)
+    }
 }
