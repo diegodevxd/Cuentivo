@@ -803,7 +803,8 @@ private fun ChatMessageRow(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 AiSaleBlockReason.INVALID_LINE_PRICE,
-                AiSaleBlockReason.INVALID_LINE_QUANTITY -> Text(
+                AiSaleBlockReason.INVALID_LINE_QUANTITY,
+                AiSaleBlockReason.INCONSISTENT_NEW_PRODUCT_PRICE -> Text(
                     text = stringResource(R.string.ai_sale_preview_blocked_invalid_line),
                     style = MaterialTheme.typography.bodyMedium,
                 )

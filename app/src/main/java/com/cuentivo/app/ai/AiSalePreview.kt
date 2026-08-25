@@ -221,33 +221,12 @@ class AiResolvedSalePreview private constructor(
         "AiResolvedSalePreview(confirmationKey=$confirmationKey, customer=$customer, lines=$lines, totalCents=$totalCents, initialPaymentCents=$initialPaymentCents, remainderCents=$remainderCents, promisedPaymentCandidate=$promisedPaymentCandidate)"
 }
 
-class AiSaleBlockReason private constructor(val name: String) {
-    companion object {
-        val INITIAL_PAYMENT_EXCEEDS_TOTAL = AiSaleBlockReason("INITIAL_PAYMENT_EXCEEDS_TOTAL")
-        val ARITHMETIC_OVERFLOW = AiSaleBlockReason("ARITHMETIC_OVERFLOW")
-        val INVALID_LINE_QUANTITY = AiSaleBlockReason("INVALID_LINE_QUANTITY")
-        val INVALID_LINE_PRICE = AiSaleBlockReason("INVALID_LINE_PRICE")
-        val INCONSISTENT_NEW_PRODUCT_PRICE = AiSaleBlockReason("INCONSISTENT_NEW_PRODUCT_PRICE")
-
-        fun values(): Array<AiSaleBlockReason> = arrayOf(
-            INITIAL_PAYMENT_EXCEEDS_TOTAL,
-            ARITHMETIC_OVERFLOW,
-            INVALID_LINE_QUANTITY,
-            INVALID_LINE_PRICE,
-            INCONSISTENT_NEW_PRODUCT_PRICE,
-        )
-
-        fun valueOf(name: String): AiSaleBlockReason =
-            values().firstOrNull { it.name == name }
-                ?: throw IllegalArgumentException("No enum constant AiSaleBlockReason.$name")
-    }
-
-    override fun equals(other: Any?): Boolean =
-        this === other || (other is AiSaleBlockReason && name == other.name)
-
-    override fun hashCode(): Int = name.hashCode()
-
-    override fun toString(): String = name
+enum class AiSaleBlockReason {
+    INITIAL_PAYMENT_EXCEEDS_TOTAL,
+    ARITHMETIC_OVERFLOW,
+    INVALID_LINE_QUANTITY,
+    INVALID_LINE_PRICE,
+    INCONSISTENT_NEW_PRODUCT_PRICE,
 }
 
 /** Outcome of resolving a validated sale proposal against the local catalog/customer data. */
@@ -483,7 +462,7 @@ class AiSalePreviewResolver(
                         newProductIds.getValue(normalizedProductName)
                     } else {
                         val newId = newEntityId("product", line.productName).trim()
-                        if (newId.isBlank() || newId == resolvedCustomer.customerId || newProductIds.values.contains(newId)) {
+                        if (newId.isBlank() || newProductIds.values.contains(newId)) {
                             return AiSalePreviewResult.Unavailable
                         }
                         newProductIds[normalizedProductName] = newId
@@ -503,9 +482,6 @@ class AiSalePreviewResolver(
                 is AiEntityChoice.UseExisting -> {
                     val existing = rawProducts.firstOrNull { it.id == productChoice.entityId }
                         ?: return AiSalePreviewResult.Unavailable
-                    if (existing.id == resolvedCustomer.customerId || newProductIds.values.contains(existing.id)) {
-                        return AiSalePreviewResult.Unavailable
-                    }
                     resolvedLine = AiResolvedSaleLine(
                         productId = existing.id,
                         productName = existing.name,
@@ -531,7 +507,7 @@ class AiSalePreviewResolver(
                                 newProductIds.getValue(normalizedProductName)
                             } else {
                                 val newId = newEntityId("product", line.productName).trim()
-                                if (newId.isBlank() || newId == resolvedCustomer.customerId || newProductIds.values.contains(newId)) {
+                                if (newId.isBlank() || newProductIds.values.contains(newId)) {
                                     return AiSalePreviewResult.Unavailable
                                 }
                                 newProductIds[normalizedProductName] = newId
@@ -556,9 +532,6 @@ class AiSalePreviewResolver(
                         )
                         is AiSaleProductMatch.Exact -> {
                             val exact = productMatch.product
-                            if (exact.id == resolvedCustomer.customerId || newProductIds.values.contains(exact.id)) {
-                                return AiSalePreviewResult.Unavailable
-                            }
                             resolvedLine = AiResolvedSaleLine(
                                 productId = exact.id,
                                 productName = exact.name,

@@ -788,11 +788,19 @@ class AiSalePreviewTest {
 
     @Test
     fun `colliding generated entity IDs within preview fails closed with Unavailable`() = runBlocking {
+        var productGenerationCount = 0
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> emptyList() },
             newConfirmationKey = { "key-1" },
-            newEntityId = { _, _ -> "same-id-for-everything" },
+            newEntityId = { kind, _ ->
+                if (kind == "customer") {
+                    "new-customer-id"
+                } else {
+                    productGenerationCount++
+                    "colliding-product-id"
+                }
+            },
         )
 
         val proposal = CreateSaleProposal(
@@ -806,5 +814,34 @@ class AiSalePreviewTest {
 
         val result = resolver.resolve("biz-1", proposal)
         assertEquals(AiSalePreviewResult.Unavailable, result)
+        assertEquals(
+            "must have generated product ID twice and failed on the second product collision",
+            2,
+            productGenerationCount,
+        )
+    }
+
+    @Test
+    fun `same generated ID for customer and product is permitted across distinct namespaces`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> emptyList() },
+            searchProducts = { _, _ -> emptyList() },
+            newConfirmationKey = { "key-1" },
+            newEntityId = { _, _ -> "shared-id-123" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(
+                AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 5000L),
+            ),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertTrue("must be Ready even when customer and product share the same ID", result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+        assertEquals("shared-id-123", preview.customer.customerId)
+        assertEquals("shared-id-123", preview.lines[0].productId)
     }
 }
