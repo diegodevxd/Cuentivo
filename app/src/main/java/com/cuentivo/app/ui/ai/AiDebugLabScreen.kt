@@ -1,10 +1,12 @@
 package com.cuentivo.app.ui.ai
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,14 +27,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +52,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import com.cuentivo.app.ai.AndroidVoiceRecognizer
+import com.cuentivo.app.ai.VoiceCaptureMachine
+import com.cuentivo.app.ai.VoiceCaptureModel
+import com.cuentivo.app.ai.VoiceCaptureState
+import com.cuentivo.app.ai.VoiceRecognizer
+import com.cuentivo.app.ai.VoiceUnavailableReason
 import com.cuentivo.app.R
 import com.cuentivo.app.ai.AiBusinessQueryResult
 import com.cuentivo.app.ai.AiDailyMessageKind
@@ -133,20 +144,29 @@ fun AiDebugLabScreen(
     activeBusinessId: String? = null,
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
+    voiceRecognizer: VoiceRecognizer? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
+    var voiceModel by remember { mutableStateOf(VoiceCaptureModel()) }
     var isHydrated by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var showSourceSelector by remember { mutableStateOf(false) }
     var cameraUnavailable by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val effectiveVoiceRecognizer = voiceRecognizer ?: remember(context) { AndroidVoiceRecognizer(context) }
     val captureStore = remember(context) {
         com.cuentivo.app.ai.capture.AiCaptureStore(java.io.File(context.cacheDir, "ai-capture"))
     }
     val cameraStore = remember(context) { AiCameraCaptureStore(context) }
     var pendingCaptureUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
     val ocrEngine = remember(context) { debugAiOcrEngine(context) }
+
+    DisposableEffect(effectiveVoiceRecognizer) {
+        onDispose {
+            effectiveVoiceRecognizer.destroy()
+        }
+    }
 
     LaunchedEffect(repository) {
         isHydrated = false
@@ -167,14 +187,81 @@ fun AiDebugLabScreen(
     }
 
     // One close action: cancel the in-flight request (generation bump) BEFORE closing, so a late
-    // transport result is always invalidated. Also sweeps all capture temp files.
+    // transport result is always invalidated. Also sweeps all capture temp files and releases recognizer.
     val closeLab = {
+        effectiveVoiceRecognizer.destroy()
+        voiceModel = VoiceCaptureMachine.onCancel(voiceModel)
         model = AiDebugLabMachine.onCancel(model)
         captureStore.cleanupAll()
         pendingCaptureUri?.let(cameraStore::delete)
         pendingCaptureUri = null
         cameraStore.deleteStale(except = null)
         onClose()
+    }
+
+    val cancelVoiceCapture = {
+        effectiveVoiceRecognizer.cancel()
+        voiceModel = VoiceCaptureMachine.onCancel(voiceModel)
+    }
+
+    val startVoiceListening: (Long) -> Unit = { generation ->
+        effectiveVoiceRecognizer.startListening(
+            onPartialResult = { partial ->
+                voiceModel = VoiceCaptureMachine.onPartialResult(voiceModel, partial, generation)
+            },
+            onFinalResult = { text ->
+                val nextModel = VoiceCaptureMachine.onFinalResult(voiceModel, text, generation)
+                voiceModel = nextModel
+                if (nextModel.state is VoiceCaptureState.Transcribed) {
+                    val transcribedText = nextModel.state.text
+                    // The recognized text enters the editable field without auto-submitting
+                    model = AiDebugLabMachine.onTextChanged(model, transcribedText)
+                    voiceModel = VoiceCaptureMachine.onCancel(nextModel)
+                }
+            },
+            onError = { reason ->
+                voiceModel = VoiceCaptureMachine.onError(voiceModel, reason, generation)
+            },
+        )
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val nextModel = if (granted) {
+            VoiceCaptureMachine.onPermissionGranted(
+                voiceModel,
+                isRecognizerAvailable = effectiveVoiceRecognizer.isAvailable(),
+            )
+        } else {
+            VoiceCaptureMachine.onPermissionDenied(voiceModel)
+        }
+        voiceModel = nextModel
+        if (nextModel.state is VoiceCaptureState.Listening) {
+            startVoiceListening(nextModel.generation)
+        }
+    }
+
+    val onMicTapped = {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        val isAvailable = effectiveVoiceRecognizer.isAvailable()
+        val nextModel = VoiceCaptureMachine.onMicTapped(voiceModel, hasPermission, isAvailable)
+        voiceModel = nextModel
+
+        when (nextModel.state) {
+            VoiceCaptureState.PermissionRequired -> {
+                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            is VoiceCaptureState.Listening -> {
+                startVoiceListening(nextModel.generation)
+            }
+            else -> {
+                // Unavailable state handled in UI
+            }
+        }
     }
 
     BackHandler(onBack = closeLab)
@@ -433,6 +520,52 @@ fun AiDebugLabScreen(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            if (voiceModel.state is VoiceCaptureState.Listening) {
+                val partial = (voiceModel.state as VoiceCaptureState.Listening).partialText
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = if (partial.isNotBlank()) partial else stringResource(R.string.ai_voice_listening),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = cancelVoiceCapture) {
+                            Text(stringResource(R.string.ai_voice_cancel))
+                        }
+                    }
+                }
+            } else if (voiceModel.state is VoiceCaptureState.Unavailable) {
+                val reason = (voiceModel.state as VoiceCaptureState.Unavailable).reason
+                val message = when (reason) {
+                    VoiceUnavailableReason.NO_RECOGNIZER -> stringResource(R.string.ai_voice_unavailable_no_recognizer)
+                    VoiceUnavailableReason.PERMISSION_DENIED -> stringResource(R.string.ai_voice_unavailable_permission_denied)
+                    VoiceUnavailableReason.NO_SPEECH -> stringResource(R.string.ai_voice_unavailable_no_speech)
+                    VoiceUnavailableReason.RECOGNIZER_ERROR -> stringResource(R.string.ai_voice_unavailable_recognizer_error)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = cancelVoiceCapture) {
+                        Text(stringResource(R.string.ai_debug_lab_close))
+                    }
+                }
+            }
             // Bottom-aligned composer: text send uses the turn policy.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
@@ -440,9 +573,28 @@ fun AiDebugLabScreen(
                     onValueChange = { model = AiDebugLabMachine.onTextChanged(model, it) },
                     modifier = Modifier.weight(1f),
                     placeholder = { Text(stringResource(R.string.ai_debug_lab_input_hint)) },
-                    enabled = isHydrated && model.state != AiDebugLabState.Sending,
+                    enabled = isHydrated && model.state != AiDebugLabState.Sending && voiceModel.state !is VoiceCaptureState.Listening,
                     maxLines = 4,
                 )
+                Spacer(Modifier.width(8.dp))
+                TextButton(
+                    enabled = isHydrated && model.state != AiDebugLabState.Sending,
+                    onClick = {
+                        if (voiceModel.state is VoiceCaptureState.Listening) {
+                            cancelVoiceCapture()
+                        } else {
+                            onMicTapped()
+                        }
+                    },
+                ) {
+                    Text(
+                        if (voiceModel.state is VoiceCaptureState.Listening) {
+                            stringResource(R.string.ai_voice_cancel)
+                        } else {
+                            stringResource(R.string.ai_voice_button)
+                        },
+                    )
+                }
                 Spacer(Modifier.width(8.dp))
                 Button(
                     enabled = isHydrated && model.canSubmit,

@@ -509,4 +509,13 @@
     <string name="ai_query_blocked_period_too_long">The query period cannot exceed 366 days.</string>
     <string name="ai_query_debtor_row_format">• %1$s: %2$s</string>
     <string name="ai_query_proposal_period_format">%1$s to %2$s</string>
+
+    <!-- Voice to text (AiDebugLabScreen / VoiceCapturePolicy) -->
+    <string name="ai_voice_button">Voice</string>
+    <string name="ai_voice_listening">Listening… speak now</string>
+    <string name="ai_voice_cancel">Cancel</string>
+    <string name="ai_voice_unavailable_no_recognizer">Your device does not have a speech recognition service available.</string>
+    <string name="ai_voice_unavailable_permission_denied">Microphone permission is needed to dictate. Enable it in your phone settings.</string>
+    <string name="ai_voice_unavailable_no_speech">No speech was heard. Try speaking more clearly or closer to the microphone.</string>
+    <string name="ai_voice_unavailable_recognizer_error">A problem occurred with the speech recognizer. You can enter the text using the keyboard.</string>
 </resources>

@@ -509,4 +509,13 @@
     <string name="ai_query_blocked_period_too_long">El periodo de consulta no puede superar 366 días.</string>
     <string name="ai_query_debtor_row_format">• %1$s: %2$s</string>
     <string name="ai_query_proposal_period_format">%1$s al %2$s</string>
+
+    <!-- Voice to text (AiDebugLabScreen / VoiceCapturePolicy) -->
+    <string name="ai_voice_button">Voz</string>
+    <string name="ai_voice_listening">Escuchando… habla ahora</string>
+    <string name="ai_voice_cancel">Cancelar</string>
+    <string name="ai_voice_unavailable_no_recognizer">Tu dispositivo no cuenta con un servicio de reconocimiento de voz disponible.</string>
+    <string name="ai_voice_unavailable_permission_denied">Se necesita permiso de micrófono para dictar. Actívalo en los ajustes de tu teléfono.</string>
+    <string name="ai_voice_unavailable_no_speech">No se escuchó ninguna voz. Intenta hablar más claro o más cerca del micrófono.</string>
+    <string name="ai_voice_unavailable_recognizer_error">Ocurrió un problema con el reconocedor de voz. Puedes ingresar el texto con el teclado.</string>
 </resources>

@@ -208,15 +208,45 @@ class AiDebugLabGuardsTest {
     @Test
     fun `camera capture uses existing store and take picture contract without permissions or network`() {
         val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val cameraBlock = source.substring(
+            source.indexOf("val cameraLauncher"),
+            source.indexOf("Dialog("),
+        )
         assertTrue("must use the existing CameraCaptureStore", source.contains("CameraCaptureStore"))
-        assertTrue("must use TakePicture contract", source.contains("ActivityResultContracts.TakePicture"))
+        assertTrue("must use TakePicture contract", cameraBlock.contains("ActivityResultContracts.TakePicture"))
         assertTrue("must create a capture URI", source.contains("createCaptureUri"))
         assertTrue("must sweep stale captures", source.contains("deleteStale"))
-        assertTrue("must delete the capture after the callback", source.contains("cameraStore.delete"))
-        assertFalse("no CAMERA permission", source.contains("CAMERA"))
-        assertFalse("no RECORD_AUDIO", source.contains("RECORD_AUDIO"))
+        assertTrue("must delete the capture after the callback", cameraBlock.contains("cameraStore.delete"))
+        assertFalse("no CAMERA permission in camera", cameraBlock.contains("CAMERA"))
         assertFalse("no Gemini client", source.contains("Gemini"))
         assertFalse("no network", source.contains("http"))
+    }
+
+    @Test
+    fun `voice capture releases recognizer on screen exit and cleans up on dispose`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("must use DisposableEffect for recognizer cleanup", source.contains("DisposableEffect(effectiveVoiceRecognizer)"))
+        assertTrue("must call destroy on dispose", source.contains("effectiveVoiceRecognizer.destroy()"))
+        assertTrue("closeLab must destroy recognizer", source.contains("effectiveVoiceRecognizer.destroy()"))
+        assertTrue("must use VoiceCaptureMachine for state transitions", source.contains("VoiceCaptureMachine"))
+        assertFalse("must not create direct SpeechRecognizer in screen", source.contains("SpeechRecognizer.createSpeechRecognizer"))
+    }
+
+    @Test
+    fun `voice transcription fills text field without auto-submitting`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val onFinalResultBlock = source.substring(
+            source.indexOf("onFinalResult = {"),
+            source.indexOf("onError = {"),
+        )
+        assertTrue(
+            "transcription must feed onTextChanged",
+            onFinalResultBlock.contains("AiDebugLabMachine.onTextChanged(model, transcribedText)"),
+        )
+        assertFalse(
+            "transcription must NEVER call onSubmit automatically",
+            onFinalResultBlock.contains("onSubmit"),
+        )
     }
 
     @Test
