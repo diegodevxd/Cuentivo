@@ -1120,10 +1120,16 @@ private fun ChatMessageRow(
         is AiChatMessage.AssistantSaleBlocked -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             when (message.reason) {
                 AiSaleBlockReason.INITIAL_PAYMENT_EXCEEDS_TOTAL -> {
-                    val initialFormatted = message.preview?.let { formatCents(it.initialPaymentCents) }.orEmpty()
-                    val totalFormatted = message.preview?.let { formatCents(it.totalCents) }.orEmpty()
+                    val preview = message.preview
+                    val text = if (preview != null) {
+                        val initialFormatted = formatCents(preview.initialPaymentCents)
+                        val totalFormatted = formatCents(preview.totalCents)
+                        stringResource(R.string.ai_sale_preview_blocked_overpayment, initialFormatted, totalFormatted)
+                    } else {
+                        stringResource(R.string.ai_sale_preview_blocked_overpayment_no_details)
+                    }
                     Text(
-                        text = stringResource(R.string.ai_sale_preview_blocked_overpayment, initialFormatted, totalFormatted),
+                        text = text,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -1131,10 +1137,16 @@ private fun ChatMessageRow(
                     text = stringResource(R.string.ai_sale_preview_blocked_overflow),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                AiSaleBlockReason.INVALID_LINE_PRICE,
-                AiSaleBlockReason.INVALID_LINE_QUANTITY,
+                AiSaleBlockReason.INVALID_LINE_QUANTITY -> Text(
+                    text = stringResource(R.string.ai_sale_preview_blocked_invalid_quantity),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                AiSaleBlockReason.INVALID_LINE_PRICE -> Text(
+                    text = stringResource(R.string.ai_sale_preview_blocked_invalid_price),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 AiSaleBlockReason.INCONSISTENT_NEW_PRODUCT_PRICE -> Text(
-                    text = stringResource(R.string.ai_sale_preview_blocked_invalid_line),
+                    text = stringResource(R.string.ai_sale_preview_blocked_inconsistent_new_product_price),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

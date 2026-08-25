@@ -638,7 +638,11 @@ class AiDebugLabGuardsTest {
             "ai_sale_preview_initial_payment",
             "ai_sale_preview_remainder",
             "ai_sale_preview_blocked_overpayment",
+            "ai_sale_preview_blocked_overpayment_no_details",
             "ai_sale_preview_blocked_overflow",
+            "ai_sale_preview_blocked_invalid_quantity",
+            "ai_sale_preview_blocked_invalid_price",
+            "ai_sale_preview_blocked_inconsistent_new_product_price",
             "ai_sale_preview_blocked_invalid_line",
             "ai_sale_confirm_action",
             "ai_sale_confirm_cancel",
@@ -651,6 +655,17 @@ class AiDebugLabGuardsTest {
             assertTrue("Spanish strings must contain $key", esXml.contains("name=\"$key\""))
             assertTrue("English strings must contain $key", enXml.contains("name=\"$key\""))
         }
+    }
+
+    @Test
+    fun `sale blocked states render distinct actionable messages without generic walls`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("must handle overpayment with details", source.contains("ai_sale_preview_blocked_overpayment"))
+        assertTrue("must handle overpayment no details fallback", source.contains("ai_sale_preview_blocked_overpayment_no_details"))
+        assertTrue("must handle overflow with actionable text", source.contains("ai_sale_preview_blocked_overflow"))
+        assertTrue("must handle invalid quantity with actionable text", source.contains("ai_sale_preview_blocked_invalid_quantity"))
+        assertTrue("must handle invalid price with actionable text", source.contains("ai_sale_preview_blocked_invalid_price"))
+        assertTrue("must handle inconsistent price with actionable text", source.contains("ai_sale_preview_blocked_inconsistent_new_product_price"))
     }
 
     @Test
