@@ -127,11 +127,11 @@ describe("createGeminiTextProvider", () => {
     expect(instruction).toContain("CUSTOMER_BALANCE");
     expect(instruction).toContain("CUSTOMERS_WITH_DEBT");
     expect(instruction).toContain("requires_clarification");
-    expect(instruction).toContain("Carlos me pagó 92 de un boleto");
+    expect(instruction).toContain("María me pagó 92 de un boleto");
     expect(instruction).toContain("declaredInitialPaymentCents");
   });
 
-  test("buildSystemInstruction includes all domain rules and the cash sale vs payment discriminant rule without PII", () => {
+  test("buildSystemInstruction includes all domain rules, monetary units rule and credit vs cash sale discriminant rules", () => {
     const refDate = {
       year: 2026,
       month: 8,
@@ -169,11 +169,12 @@ describe("createGeminiTextProvider", () => {
     expect(instruction).toContain('"50 de abono" -> "5000"');
     expect(instruction).toContain("Aplica a unitPriceCents, declaredInitialPaymentCents y declaredAmountCents por igual");
 
-    // Cash sale discriminant rule: mentions product/service -> create_sale with declaredInitialPaymentCents
-    expect(instruction).toContain("Si la frase menciona un producto, artículo o servicio");
-    expect(instruction).toContain("Carlos me pagó 92 de un boleto");
-    expect(instruction).toContain("declaredInitialPaymentCents (venta de contado)");
-    expect(instruction).toContain("AUNQUE el verbo sea pagar");
+    // Initial payment & credit sale rules (3 cases)
+    expect(instruction).toContain('Regla de abono inicial en ventas (create_sale): declaredInitialPaymentCents es "0" salvo que la frase indique explícitamente que el cliente entregó dinero');
+    expect(instruction).toContain("Vender no implica cobrar: Cuentivo es una app de venta a crédito y lo normal es que no se haya pagado");
+    expect(instruction).toContain('"le vendí 2 cremas a María en 100" -> create_sale con declaredInitialPaymentCents = "0" (fiado)');
+    expect(instruction).toContain('"María me pagó 92 de un boleto" -> create_sale con declaredInitialPaymentCents = "9200"');
+    expect(instruction).toContain('"le vendí 2 cremas a María en 100 y me pagó 40" -> create_sale con unitPriceCents = "10000" y declaredInitialPaymentCents = "4000"');
     expect(instruction).toContain("Un abono (record_payment) NUNCA nombra un producto o servicio");
     expect(instruction).toContain("Carlos me abonó 92");
 
