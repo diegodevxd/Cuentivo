@@ -952,7 +952,7 @@ class AiDebugLabMachineTest {
                 unitPriceCents = 5000L,
                 lineTotalCents = 10000L,
                 sourceDeclaredPriceCents = 5000L,
-                sourceProductFingerprint = "prod-1:10000:5000",
+                sourceFingerprint = "prod-1:10000:5000",
             ),
         ),
         totalCents = 10000L,

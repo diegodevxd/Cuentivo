@@ -126,8 +126,9 @@ data class AiResolvedSaleLine(
     val sourceDeclaredPriceCents: Long,
     val sourceFingerprint: String? = null,
     val resolutionMode: AiEntityResolutionMode = AiEntityResolutionMode.EXISTING,
-    val sourceProductFingerprint: String = sourceFingerprint ?: "",
-)
+) {
+    val sourceProductFingerprint: String get() = sourceFingerprint ?: ""
+}
 
 /**
  * Resolved sale preview. All money fields are whole centavos in [Long].
@@ -452,6 +453,9 @@ class AiSalePreviewResolver(
 
             when (productChoice) {
                 is AiEntityChoice.CreateNew -> {
+                    if (unitPrice <= 0L) {
+                        return AiSalePreviewResult.Blocked(AiSaleBlockReason.INVALID_LINE_PRICE, null)
+                    }
                     val priorPrice = newProductDeclaredPrices[normalizedProductName]
                     if (priorPrice != null && priorPrice != unitPrice) {
                         return AiSalePreviewResult.Blocked(AiSaleBlockReason.INCONSISTENT_NEW_PRODUCT_PRICE, null)
@@ -497,6 +501,9 @@ class AiSalePreviewResolver(
                     val productMatch = AiSaleCandidateMatcher.matchProduct(line.productName, rawProducts)
                     when (productMatch) {
                         is AiSaleProductMatch.NotFound -> {
+                            if (unitPrice <= 0L) {
+                                return AiSalePreviewResult.Blocked(AiSaleBlockReason.INVALID_LINE_PRICE, null)
+                            }
                             val priorPrice = newProductDeclaredPrices[normalizedProductName]
                             if (priorPrice != null && priorPrice != unitPrice) {
                                 return AiSalePreviewResult.Blocked(AiSaleBlockReason.INCONSISTENT_NEW_PRODUCT_PRICE, null)

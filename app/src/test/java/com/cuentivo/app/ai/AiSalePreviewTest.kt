@@ -844,4 +844,98 @@ class AiSalePreviewTest {
         assertEquals("shared-id-123", preview.customer.customerId)
         assertEquals("shared-id-123", preview.lines[0].productId)
     }
+
+    @Test
+    fun `CancellationException in searchCustomers propagates without catching`() {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> throw kotlinx.coroutines.CancellationException("test cancel customers") },
+            searchProducts = { _, _ -> emptyList() },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 1000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        var caughtCancellation = false
+        try {
+            runBlocking {
+                resolver.resolve("biz-1", proposal)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            assertEquals("test cancel customers", e.message)
+            caughtCancellation = true
+        }
+        assertTrue("CancellationException from searchCustomers must propagate", caughtCancellation)
+    }
+
+    @Test
+    fun `CancellationException in searchProducts propagates without catching`() {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(testCustomer()) },
+            searchProducts = { _, _ -> throw kotlinx.coroutines.CancellationException("test cancel products") },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 1000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        var caughtCancellation = false
+        try {
+            runBlocking {
+                resolver.resolve("biz-1", proposal)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            assertEquals("test cancel products", e.message)
+            caughtCancellation = true
+        }
+        assertTrue("CancellationException from searchProducts must propagate", caughtCancellation)
+    }
+
+    @Test
+    fun `new product via NotFound with unitPriceCents zero returns Blocked INVALID_LINE_PRICE`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(testCustomer()) },
+            searchProducts = { _, _ -> emptyList() },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Producto Nuevo", quantity = 1, unitPriceCents = 0L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertEquals(
+            AiSalePreviewResult.Blocked(AiSaleBlockReason.INVALID_LINE_PRICE, null),
+            result,
+        )
+    }
+
+    @Test
+    fun `new product via CreateNew with unitPriceCents zero returns Blocked INVALID_LINE_PRICE`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> listOf(testCustomer()) },
+            searchProducts = { _, _ -> listOf(testProduct(name = "Jabón")) },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 0L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val choices = AiSaleResolutionChoices(
+            productsByNormalizedName = mapOf("jabon" to AiEntityChoice.CreateNew),
+        )
+
+        val result = resolver.resolve("biz-1", proposal, choices)
+        assertEquals(
+            AiSalePreviewResult.Blocked(AiSaleBlockReason.INVALID_LINE_PRICE, null),
+            result,
+        )
+    }
 }
