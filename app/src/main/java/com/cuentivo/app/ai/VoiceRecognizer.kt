@@ -9,6 +9,26 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 
 /**
+ * Standard Android SpeechRecognizer error codes for language pack availability.
+ */
+const val ERROR_LANGUAGE_UNAVAILABLE_CODE = 12
+const val ERROR_LANGUAGE_NOT_SUPPORTED_CODE = 13
+
+/**
+ * Returns true if the error code indicates a missing or unsupported language pack.
+ */
+fun isLanguageUnavailableError(errorCode: Int): Boolean =
+    errorCode == ERROR_LANGUAGE_UNAVAILABLE_CODE || errorCode == ERROR_LANGUAGE_NOT_SUPPORTED_CODE
+
+/**
+ * Returns true if a speech recognition failure on the on-device engine
+ * was caused by missing or unsupported language packs and should trigger
+ * a one-time fallback to the system/network recognizer.
+ */
+fun shouldRetryWithSystemRecognizer(isOnDevice: Boolean, errorCode: Int): Boolean =
+    isOnDevice && isLanguageUnavailableError(errorCode)
+
+/**
  * Maps Android framework [SpeechRecognizer] error codes to pure [VoiceUnavailableReason].
  */
 fun mapSpeechRecognizerError(errorCode: Int): VoiceUnavailableReason =
@@ -45,7 +65,8 @@ interface VoiceRecognizer {
 /**
  * Android framework [SpeechRecognizer] wrapper.
  * Prefers on-device recognition when available with EXTRA_PREFER_OFFLINE; falls back to
- * system/network recognition without forcing offline mode. Configured for "es-MX".
+ * system/network recognition without forcing offline mode if the on-device engine lacks
+ * the requested language pack. Configured for "es-MX".
  * Never stores or uploads audio recordings.
  */
 class AndroidVoiceRecognizer(
@@ -56,6 +77,7 @@ class AndroidVoiceRecognizer(
 
     private data class RecognizerSelection(
         val recognizer: SpeechRecognizer,
+        val isOnDevice: Boolean,
         val preferOffline: Boolean,
     )
 
@@ -75,7 +97,31 @@ class AndroidVoiceRecognizer(
             return
         }
 
-        val selection = createRecognizer()
+        startListeningInternal(
+            allowOnDevice = true,
+            onPartialResult = onPartialResult,
+            onFinalResult = onFinalResult,
+            onError = onError,
+        )
+    }
+
+    private fun startListeningInternal(
+        allowOnDevice: Boolean,
+        onPartialResult: (String) -> Unit,
+        onFinalResult: (String) -> Unit,
+        onError: (VoiceUnavailableReason) -> Unit,
+    ) {
+        destroy()
+
+        val selection = if (allowOnDevice) {
+            createRecognizer()
+        } else {
+            RecognizerSelection(
+                recognizer = SpeechRecognizer.createSpeechRecognizer(context),
+                isOnDevice = false,
+                preferOffline = false,
+            )
+        }
         val speechRecognizer = selection.recognizer
         recognizer = speechRecognizer
 
@@ -87,7 +133,17 @@ class AndroidVoiceRecognizer(
             override fun onEndOfSpeech() {}
 
             override fun onError(error: Int) {
-                onError(mapSpeechRecognizerError(error))
+                if (shouldRetryWithSystemRecognizer(selection.isOnDevice, error)) {
+                    // Retry EXACTLY ONCE with the system/network recognizer, releasing the on-device one first
+                    startListeningInternal(
+                        allowOnDevice = false,
+                        onPartialResult = onPartialResult,
+                        onFinalResult = onFinalResult,
+                        onError = onError,
+                    )
+                } else {
+                    onError(mapSpeechRecognizerError(error))
+                }
             }
 
             override fun onResults(results: Bundle?) {
@@ -138,11 +194,13 @@ class AndroidVoiceRecognizer(
         return if (isOnDevice) {
             RecognizerSelection(
                 recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context),
+                isOnDevice = true,
                 preferOffline = true,
             )
         } else {
             RecognizerSelection(
                 recognizer = SpeechRecognizer.createSpeechRecognizer(context),
+                isOnDevice = false,
                 preferOffline = false,
             )
         }

@@ -29,10 +29,38 @@ class VoiceRecognizerTest {
             SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
             SpeechRecognizer.ERROR_SERVER,
             SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+            ERROR_LANGUAGE_UNAVAILABLE_CODE,
+            ERROR_LANGUAGE_NOT_SUPPORTED_CODE,
         )
         for (err in genericErrors) {
             assertEquals(VoiceUnavailableReason.RECOGNIZER_ERROR, mapSpeechRecognizerError(err))
         }
+    }
+
+    @Test
+    fun `isLanguageUnavailableError identifies error codes 12 and 13`() {
+        assertTrue(isLanguageUnavailableError(12))
+        assertTrue(isLanguageUnavailableError(13))
+        assertFalse(isLanguageUnavailableError(SpeechRecognizer.ERROR_AUDIO))
+        assertFalse(isLanguageUnavailableError(SpeechRecognizer.ERROR_NO_MATCH))
+        assertFalse(isLanguageUnavailableError(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS))
+    }
+
+    @Test
+    fun `shouldRetryWithSystemRecognizer retries error 12 and 13 on on-device recognizer only`() {
+        // On-device engine missing language pack -> retry with system recognizer
+        assertTrue(shouldRetryWithSystemRecognizer(isOnDevice = true, errorCode = 12))
+        assertTrue(shouldRetryWithSystemRecognizer(isOnDevice = true, errorCode = 13))
+
+        // System recognizer missing language pack -> DO NOT retry (prevents infinite loop)
+        assertFalse(shouldRetryWithSystemRecognizer(isOnDevice = false, errorCode = 12))
+        assertFalse(shouldRetryWithSystemRecognizer(isOnDevice = false, errorCode = 13))
+
+        // Other errors on on-device engine -> DO NOT retry
+        assertFalse(shouldRetryWithSystemRecognizer(isOnDevice = true, errorCode = SpeechRecognizer.ERROR_AUDIO))
+        assertFalse(shouldRetryWithSystemRecognizer(isOnDevice = true, errorCode = SpeechRecognizer.ERROR_NO_MATCH))
+        assertFalse(shouldRetryWithSystemRecognizer(isOnDevice = true, errorCode = SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS))
+        assertFalse(shouldRetryWithSystemRecognizer(isOnDevice = true, errorCode = SpeechRecognizer.ERROR_SPEECH_TIMEOUT))
     }
 
     @Test
