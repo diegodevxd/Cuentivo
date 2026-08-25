@@ -682,4 +682,129 @@ class AiSalePreviewTest {
         val result = resolver.resolve("biz-1", proposal)
         assertEquals(AiSalePreviewResult.Unavailable, result)
     }
+
+    @Test
+    fun `AiSaleResolutionChoices defensive copy protects against mutation of input map`() {
+        val mutableProducts = mutableMapOf<String, AiEntityChoice>("jabon" to AiEntityChoice.CreateNew)
+        val choices = AiSaleResolutionChoices(
+            customer = AiEntityChoice.CreateNew,
+            productsByNormalizedName = mutableProducts,
+        )
+        mutableProducts["shampoo"] = AiEntityChoice.CreateNew
+        mutableProducts["jabon"] = AiEntityChoice.UseExisting("prod-mutated")
+
+        assertEquals(1, choices.productsByNormalizedName.size)
+        assertEquals(AiEntityChoice.CreateNew, choices.productsByNormalizedName["jabon"])
+        assertFalse(choices.productsByNormalizedName.containsKey("shampoo"))
+    }
+
+    @Test
+    fun `customerName normalizing to empty string fails closed with Unavailable`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> emptyList() },
+            searchProducts = { _, _ -> emptyList() },
+            newConfirmationKey = { "key-1" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "   \u0300\u0301   ", // non-blank before normalization, but normalizes to empty string
+            lines = listOf(AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 1000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertEquals(AiSalePreviewResult.Unavailable, result)
+    }
+
+    @Test
+    fun `productName normalizing to empty string fails closed with Unavailable`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> emptyList() },
+            searchProducts = { _, _ -> emptyList() },
+            newConfirmationKey = { "key-1" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(AiProposalSaleLine("   \u0300\u0301   ", quantity = 1, unitPriceCents = 1000L)),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertEquals(AiSalePreviewResult.Unavailable, result)
+    }
+
+    @Test
+    fun `inconsistent declared prices for same new product returns Blocked INCONSISTENT_NEW_PRODUCT_PRICE`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> emptyList() },
+            searchProducts = { _, _ -> emptyList() },
+            newConfirmationKey = { "key-1" },
+            newEntityId = { kind, name -> "$kind-${com.cuentivo.app.domain.CustomerNameNormalizer.key(name)}" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(
+                AiProposalSaleLine("Jabón Artesanal", quantity = 2, unitPriceCents = 5000L),
+                AiProposalSaleLine("jabón artesanal", quantity = 1, unitPriceCents = 6000L),
+            ),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertEquals(
+            AiSalePreviewResult.Blocked(AiSaleBlockReason.INCONSISTENT_NEW_PRODUCT_PRICE, null),
+            result,
+        )
+    }
+
+    @Test
+    fun `consistent declared prices for same new product reuses product ID and succeeds`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> emptyList() },
+            searchProducts = { _, _ -> emptyList() },
+            newConfirmationKey = { "key-1" },
+            newEntityId = { kind, name -> "$kind-${com.cuentivo.app.domain.CustomerNameNormalizer.key(name)}" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(
+                AiProposalSaleLine("Jabón Artesanal", quantity = 2, unitPriceCents = 5000L),
+                AiProposalSaleLine("jabón artesanal", quantity = 1, unitPriceCents = 5000L),
+            ),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertTrue(result is AiSalePreviewResult.Ready)
+        val preview = (result as AiSalePreviewResult.Ready).preview
+        assertEquals(2, preview.lines.size)
+        assertEquals(preview.lines[0].productId, preview.lines[1].productId)
+        assertEquals("product-jabon artesanal", preview.lines[0].productId)
+        assertEquals(15000L, preview.totalCents)
+    }
+
+    @Test
+    fun `colliding generated entity IDs within preview fails closed with Unavailable`() = runBlocking {
+        val resolver = AiSalePreviewResolver(
+            searchCustomers = { _, _ -> emptyList() },
+            searchProducts = { _, _ -> emptyList() },
+            newConfirmationKey = { "key-1" },
+            newEntityId = { _, _ -> "same-id-for-everything" },
+        )
+
+        val proposal = CreateSaleProposal(
+            customerName = "María López",
+            lines = listOf(
+                AiProposalSaleLine("Jabón", quantity = 1, unitPriceCents = 5000L),
+                AiProposalSaleLine("Shampoo", quantity = 1, unitPriceCents = 8000L),
+            ),
+            declaredInitialPaymentCents = 0L,
+        )
+
+        val result = resolver.resolve("biz-1", proposal)
+        assertEquals(AiSalePreviewResult.Unavailable, result)
+    }
 }
