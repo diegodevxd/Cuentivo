@@ -11,7 +11,7 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-24, sobre `20f4f1e`.
+**Última actualización:** 2026-08-24, sobre `24014de`.
 
 ---
 
@@ -31,16 +31,18 @@ Aceptado físicamente en el A059P, no sólo por pruebas:
 - abono natural: $500 → $150 → $350 sobre la deuda real de una clienta;
 - venta con cliente y producto **existentes**, con abono inicial.
 
-**Incremento en curso — creación compuesta.** Crear cliente y producto faltantes dentro de la misma
-preview y transacción. Plan: `docs/superpowers/plans/2026-08-24-cuentivoai-composite-sale-creation.md`.
+**Incremento cerrado — creación compuesta.** Una sola frase crea el cliente y los productos que
+faltan dentro de la misma preview y la misma transacción. Plan:
+`docs/superpowers/plans/2026-08-24-cuentivoai-composite-sale-creation.md`. Las cuatro tasks están
+completas y auditadas (`20f4f1e`, `febd8c3`, `32bc03c`, `24014de`), y la **aceptación física está
+observada en la base real del A059P**, no reportada de palabra: dos frases produjeron 2 clientes,
+2 productos, 2 ventas, 2 ítems, 2 abonos, 2 asignaciones, 4 movimientos y 4 operaciones — cero
+duplicados. "Ana se llevó dos cremas de $120 y pagó $100" guardó `crema` a 12000 centavos, venta de
+24000, abono de 10000 y saldo derivado de 14000. `costPriceCents`, `stock`, `category` y `sku`
+quedaron en NULL: no se inventó nada.
 
-- Task 1 (resolución existente/nuevo/aclaración, sólo lectura): **completa**, rango
-  `2156756..20f4f1e`, auditada en dos rondas.
-- Task 2 (creación atómica y ejecución financiera): **en progreso** con AGY.
-- Tasks 3 y 4: bloqueadas hasta cerrar la anterior.
-
-**Estado de release: NO-GO.** APK debug interna solamente. AAB, beta pública y activación general
-siguen cerradas.
+**Estado de release.** Cuentivo base está **publicada en Play**. **CuentivoAI sigue NO-GO**: sólo
+vive en el laboratorio debug, y su AAB, beta pública y activación general continúan cerradas.
 
 ## Invariantes que ningún incremento rompe
 
@@ -67,7 +69,10 @@ Estos estaban mal en la documentación y se corrigieron contra el código:
   `grep -rn '"cuentivo.db"' app/src/main`, no con una lista escrita.
 - El índice `customers (businessId, normalizedName)` **NO es único y no debe serlo**: el nombre es
   ayuda de búsqueda, nunca identidad. La identidad es `customer.id`.
-- Suite JVM en `20f4f1e`: **706 pruebas, 0 fallos**, 90 clases. Paridad de idiomas **436 = 436**.
+- Suite JVM en `24014de`: **729 pruebas, 0 fallos**, 90 clases. Paridad de idiomas **443 = 443**.
+- La clave de idempotencia de una venta IA nace en la **preview** (`newConfirmationKey()` en
+  `AiSalePreview.kt`), no en el toque de confirmar: reconfirmar la misma preview reusa la clave y
+  no duplica. Dos previews distintas son dos ventas distintas, y así debe ser.
 
 ## Orquestamiento
 
@@ -84,12 +89,13 @@ Estos estaban mal en la documentación y se corrigieron contra el código:
 
 ## Qué sigue
 
-1. Cerrar Task 2 y luego Tasks 3 y 4 del incremento actual, con prueba física en el A059P.
-2. Consultas naturales deterministas (allow-list de intents; el dominio consulta las cifras).
-3. Voz y OCR por lotes con texto editable, mismo pipeline.
-4. Cobranza explicable, PDF, WhatsApp con aprobación humana y barcode local Pro.
-5. Pedidos y campañas de catálogo — un pedido **no** crea deuda antes de la entrega.
-6. Beta limitada con observabilidad, hard caps y rollback ensayado; después producción gradual.
+1. Consultas naturales deterministas — punto 4 del Tramo A en
+   `docs/superpowers/specs/2026-08-24-cuentivo-fiado-catalogo-product-design.md`. Allow-list de
+   intents; las cifras las contesta el dominio, nunca Gemini.
+2. Voz y OCR por lotes con texto editable, mismo pipeline.
+3. Cobranza explicable, PDF, WhatsApp con aprobación humana y barcode local Pro.
+4. Pedidos y campañas de catálogo — un pedido **no** crea deuda antes de la entrega.
+5. Beta limitada con observabilidad, hard caps y rollback ensayado; después producción gradual.
 
 Cada punto exige su propio diseño, autorización y gates. Ninguno se adelanta dentro del commit
 de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de CuentivoAI.
@@ -102,9 +108,12 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
 - **No hay CI.** Nada valida el código salvo lo que se ejecute localmente.
 - **`.superpowers/` está en `.gitignore`.** Los briefs, reportes y `progress.md` del trabajo SDD
   viven sólo en este disco: no sobreviven a un clon nuevo ni llegan a otra máquina.
-- **No hay aviso de privacidad dentro de la app**, y la app guarda nombre y teléfono de terceros.
-  Privacidad, términos y Data Safety deben revisarse antes de cualquier beta con datos reales.
-- **Falta `docs/checklist-publicacion.md`**; cada release se redescubre a mano.
+- **No hay enlace al aviso de privacidad dentro de la app.** La política **sí** está publicada como
+  sitio externo (repo `Cuentivo-politicasdeprivacidad`, Vercel) y Play la tiene; lo que falta es el
+  enlace en pantalla. Es detalle de UX, ya no blocker de publicación.
+- **No hay fila en `sync_state`** para el negocio del A059P, aunque el outbox se drenó tras la
+  prueba física. No está confirmado que la mitad de *pull* complete. Se verifica mirando si el
+  cliente creado aparece en `businesses/{id}/customers` de Firestore.
 - `BackupCrypto.ITERATIONS` en 120 000 PBKDF2, por debajo de lo recomendado hoy. Subirlas no rompe
   respaldos viejos porque viajan en la cabecera; medir antes en un teléfono lento.
 
