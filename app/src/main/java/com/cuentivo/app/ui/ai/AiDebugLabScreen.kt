@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.cuentivo.app.R
+import com.cuentivo.app.ai.AiBusinessQueryResult
 import com.cuentivo.app.ai.AiDailyMessageKind
 import com.cuentivo.app.ai.AiInterpretRequest
 import com.cuentivo.app.ai.AiPaymentBlockReason
@@ -71,6 +72,7 @@ import com.cuentivo.app.ai.capture.AiOcrEngine
 import com.cuentivo.app.data.local.AiDailyChatRepository
 import java.io.File
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -88,7 +90,8 @@ fun AiDebugLabEntryButton(
             .background(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(50),
-            ),
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
         TextButton(onClick = onOpen) {
             Text(stringResource(R.string.ai_debug_lab_entry))
@@ -127,6 +130,7 @@ fun AiDebugLabScreen(
     modifier: Modifier = Modifier,
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
     salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal, choices: com.cuentivo.app.ai.AiSaleResolutionChoices) -> AiSalePreviewResult)? = null,
+    businessQueryResolver: (suspend (businessId: String, proposal: BusinessQueryProposal, choice: com.cuentivo.app.ai.AiEntityChoice?) -> com.cuentivo.app.ai.AiBusinessQueryResult)? = null,
     activeBusinessId: String? = null,
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
@@ -302,6 +306,9 @@ fun AiDebugLabScreen(
                         (model.state as? AiDebugLabState.SaleResolution)?.result is com.cuentivo.app.ai.AiSalePreviewResult.CustomerSelectionRequired
                     val isCurrentSaleProductSelection = message is AiChatMessage.AssistantSaleProductSelection &&
                         (model.state as? AiDebugLabState.SaleResolution)?.result is com.cuentivo.app.ai.AiSalePreviewResult.ProductSelectionRequired
+                    val isCurrentQuerySelection = message is AiChatMessage.AssistantQueryAnswer &&
+                        message.result is com.cuentivo.app.ai.AiBusinessQueryResult.CustomerSelectionRequired &&
+                        (model.state as? AiDebugLabState.QueryAnswer)?.result is com.cuentivo.app.ai.AiBusinessQueryResult.CustomerSelectionRequired
                     val isConfirming = model.state is AiDebugLabState.PaymentConfirming || model.state is AiDebugLabState.SaleConfirming
                     ChatMessageRow(
                         message = message,
@@ -388,6 +395,27 @@ fun AiDebugLabScreen(
                                             }
                                         }
                                         model = AiDebugLabMachine.onSalePreviewResult(model, resolutionResult, token)
+                                    }
+                                }
+                            }
+                        } else null,
+                        onSelectQueryCustomerCandidate = if (isCurrentQuerySelection && isHydrated && businessQueryResolver != null && activeBusinessId?.isNotBlank() == true) {
+                            { customerId ->
+                                val outcome = AiDebugLabMachine.onChooseQueryCustomer(model, customerId)
+                                if (outcome is com.cuentivo.app.ui.ai.AiQueryChoiceOutcome.Selected) {
+                                    model = outcome.model
+                                    val token = outcome.generation
+                                    scope.launch {
+                                        val queryResult = withContext(Dispatchers.IO) {
+                                            try {
+                                                businessQueryResolver(activeBusinessId, outcome.proposal, outcome.choice)
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (_: Exception) {
+                                                com.cuentivo.app.ai.AiBusinessQueryResult.Unavailable
+                                            }
+                                        }
+                                        model = AiDebugLabMachine.onQueryResult(model, queryResult, token)
                                     }
                                 }
                             }
@@ -488,6 +516,25 @@ fun AiDebugLabScreen(
                                                 AiSalePreviewResult.Unavailable
                                             }
                                             model = AiDebugLabMachine.onSalePreviewResult(model, resolutionResult, token)
+                                        } else if (result is CallableAiProposalResult.Proposal &&
+                                            result.proposal is BusinessQueryProposal &&
+                                            nextModel.state is AiDebugLabState.ProposalPreview
+                                        ) {
+                                            val queryProposal = result.proposal
+                                            val queryResolutionResult = if (businessQueryResolver != null && activeBusinessId?.isNotBlank() == true) {
+                                                withContext(Dispatchers.IO) {
+                                                    try {
+                                                        businessQueryResolver(activeBusinessId, queryProposal, null)
+                                                    } catch (e: CancellationException) {
+                                                        throw e
+                                                    } catch (_: Exception) {
+                                                        com.cuentivo.app.ai.AiBusinessQueryResult.Unavailable
+                                                    }
+                                                }
+                                            } else {
+                                                com.cuentivo.app.ai.AiBusinessQueryResult.Unavailable
+                                            }
+                                            model = AiDebugLabMachine.onQueryResult(model, queryResolutionResult, token)
                                         }
                                     }
                                 }
@@ -599,6 +646,7 @@ private fun ChatMessageRow(
     onCancelSale: (() -> Unit)? = null,
     onSelectCustomerCandidate: ((com.cuentivo.app.ai.AiEntityChoice) -> Unit)? = null,
     onSelectProductCandidate: ((productName: String, choice: com.cuentivo.app.ai.AiEntityChoice) -> Unit)? = null,
+    onSelectQueryCustomerCandidate: ((customerId: String) -> Unit)? = null,
     isConfirming: Boolean = false,
 ) {
     when (message) {
@@ -936,7 +984,117 @@ private fun ChatMessageRow(
             text = stringResource(R.string.ai_sale_limit_reached_message),
             style = MaterialTheme.typography.bodyMedium,
         )
-        is AiChatMessage.AssistantQueryAnswer -> Unit
+        is AiChatMessage.AssistantQueryAnswer -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            when (val result = message.result) {
+                is AiBusinessQueryResult.Answer.CustomerBalance -> {
+                    Text(
+                        text = result.customerName,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    val balanceFormatted = formatCents(kotlin.math.abs(result.balanceCents))
+                    val balanceText = when {
+                        result.balanceCents > 0L -> stringResource(R.string.ai_query_customer_balance_format, balanceFormatted)
+                        result.balanceCents == 0L -> stringResource(R.string.ai_query_customer_no_debt, result.customerName)
+                        else -> stringResource(R.string.ai_query_customer_credit_format, balanceFormatted)
+                    }
+                    Text(
+                        text = balanceText,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                is AiBusinessQueryResult.Answer.CustomersWithDebt -> {
+                    Text(
+                        text = stringResource(R.string.ai_query_debtors_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (result.rows.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.ai_query_no_debtors),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    } else {
+                        result.rows.forEach { row ->
+                            Text(
+                                text = "• ${row.customerName}: ${formatCents(row.balanceCents)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        if (result.rows.size >= 20) {
+                            Text(
+                                text = stringResource(R.string.ai_query_debtors_top_20_notice),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.ai_query_total_debt_all_customers, formatCents(result.totalCents)),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                    }
+                }
+                is AiBusinessQueryResult.Answer.SalesForPeriod -> {
+                    val startStr = LocalDate.ofEpochDay(result.startEpochDay).toString()
+                    val endStr = LocalDate.ofEpochDay(result.endEpochDay).toString()
+                    Text(
+                        text = stringResource(R.string.ai_query_sales_period_title, startStr, endStr),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (result.soldCents == 0L && result.collectedCents == 0L) {
+                        Text(
+                            text = stringResource(R.string.ai_query_sales_period_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(R.string.ai_query_sales_period_sold, formatCents(result.soldCents)),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = stringResource(R.string.ai_query_sales_period_collected, formatCents(result.collectedCents)),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+                is AiBusinessQueryResult.CustomerSelectionRequired -> {
+                    Text(
+                        text = stringResource(R.string.ai_query_customer_selection_prompt),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    result.candidates.forEach { candidate ->
+                        Button(
+                            onClick = { onSelectQueryCustomerCandidate?.invoke(candidate.customerId) },
+                            enabled = onSelectQueryCustomerCandidate != null,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(candidate.displayName)
+                        }
+                    }
+                }
+                is AiBusinessQueryResult.CustomerNotFound -> {
+                    Text(
+                        text = stringResource(R.string.ai_query_customer_not_found, result.queriedName),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                is AiBusinessQueryResult.Blocked -> {
+                    val blockedText = when (result.reason) {
+                        com.cuentivo.app.ai.AiQueryBlockReason.INVALID_DATE -> stringResource(R.string.ai_query_blocked_invalid_date)
+                        com.cuentivo.app.ai.AiQueryBlockReason.START_AFTER_END -> stringResource(R.string.ai_query_blocked_start_after_end)
+                        com.cuentivo.app.ai.AiQueryBlockReason.PERIOD_TOO_LONG -> stringResource(R.string.ai_query_blocked_period_too_long)
+                    }
+                    Text(
+                        text = blockedText,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                AiBusinessQueryResult.Unavailable -> {
+                    Text(
+                        text = stringResource(R.string.ai_debug_lab_unavailable),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -971,10 +1129,16 @@ private fun ProposalPreviewContent(proposal: AiProposal) {
                 Text(stringResource(R.string.ai_debug_lab_declared_payment, formatCents(proposal.declaredAmountCents)))
             }
             is BusinessQueryProposal -> {
-                // The query shows intent only, never a financial result.
-                Text(stringResource(R.string.ai_debug_lab_proposal_query), style = MaterialTheme.typography.titleMedium)
-                Text(proposal.queryType.name)
+                val queryTitle = when (proposal.queryType) {
+                    com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE -> stringResource(R.string.ai_query_title_balance)
+                    com.cuentivo.app.ai.BusinessQueryType.CUSTOMERS_WITH_DEBT -> stringResource(R.string.ai_query_title_debtors)
+                    com.cuentivo.app.ai.BusinessQueryType.SALES_FOR_PERIOD -> stringResource(R.string.ai_query_title_sales)
+                }
+                Text(queryTitle, style = MaterialTheme.typography.titleMedium)
                 proposal.customerName?.let { Text(it) }
+                proposal.period?.let {
+                    Text("${it.startYear}-${it.startMonth}-${it.startDay} ... ${it.endYear}-${it.endMonth}-${it.endDay}")
+                }
             }
             is com.cuentivo.app.ai.RequiresClarificationProposal -> Unit
         }

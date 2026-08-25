@@ -488,4 +488,23 @@
     <string name="ai_sale_stale_message">Customer or product data changed. Please request the sale again.</string>
     <string name="ai_sale_rejected_message">Could not record the sale. Check the details and try again.</string>
     <string name="ai_sale_limit_reached_message">You reached your plan limit. Upgrade to Pro or CuentivoAI to continue recording.</string>
+    <string name="ai_query_title_balance">Balance query</string>
+    <string name="ai_query_title_debtors">Debtors query</string>
+    <string name="ai_query_title_sales">Sales query</string>
+    <string name="ai_query_customer_balance_format">Balance: %1$s</string>
+    <string name="ai_query_customer_no_debt">%1$s has no outstanding balance.</string>
+    <string name="ai_query_customer_credit_format">Credit balance: %1$s</string>
+    <string name="ai_query_debtors_title">Customers with debt</string>
+    <string name="ai_query_no_debtors">No customers with outstanding debt.</string>
+    <string name="ai_query_total_debt_all_customers">Total debt across all customers in business: %1$s</string>
+    <string name="ai_query_debtors_top_20_notice">Showing top 20 debtors</string>
+    <string name="ai_query_sales_period_title">Period summary (%1$s to %2$s)</string>
+    <string name="ai_query_sales_period_sold">Total sold: %1$s</string>
+    <string name="ai_query_sales_period_collected">Total collected: %1$s</string>
+    <string name="ai_query_sales_period_empty">No sales or collections recorded in this period.</string>
+    <string name="ai_query_customer_selection_prompt">Choose the customer to check balance:</string>
+    <string name="ai_query_customer_not_found">No customer found with the name \"%1$s\".</string>
+    <string name="ai_query_blocked_invalid_date">The entered date does not exist in the calendar.</string>
+    <string name="ai_query_blocked_start_after_end">The start date cannot be after the end date.</string>
+    <string name="ai_query_blocked_period_too_long">The query period cannot exceed 366 days.</string>
 </resources>

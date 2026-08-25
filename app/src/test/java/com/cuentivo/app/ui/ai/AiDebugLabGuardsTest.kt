@@ -675,5 +675,38 @@ class AiDebugLabGuardsTest {
         assertTrue("onConfirmSale requires isNotBlank", screenSource.contains("onConfirmSale = if (isCurrentSalePreview && isHydrated && confirmSale != null && activeBusinessId?.isNotBlank() == true)"))
         assertTrue("payment resolution requires isNotBlank", screenSource.contains("paymentPreviewResolver != null && activeBusinessId?.isNotBlank() == true"))
         assertTrue("sale resolution requires isNotBlank", screenSource.contains("salePreviewResolver != null && activeBusinessId?.isNotBlank() == true"))
+        assertTrue("query resolution requires isNotBlank", screenSource.contains("businessQueryResolver != null && activeBusinessId?.isNotBlank() == true"))
+    }
+
+    @Test
+    fun `chat message row renders natural query results with localized strings and candidate selection`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("must handle AssistantQueryAnswer", screenSource.contains("is AiChatMessage.AssistantQueryAnswer"))
+        assertTrue("must handle CustomerBalance", screenSource.contains("is AiBusinessQueryResult.Answer.CustomerBalance"))
+        assertTrue("must handle CustomersWithDebt", screenSource.contains("is AiBusinessQueryResult.Answer.CustomersWithDebt"))
+        assertTrue("must handle SalesForPeriod", screenSource.contains("is AiBusinessQueryResult.Answer.SalesForPeriod"))
+        assertTrue("must handle CustomerSelectionRequired", screenSource.contains("is AiBusinessQueryResult.CustomerSelectionRequired"))
+        assertTrue("must handle CustomerNotFound", screenSource.contains("is AiBusinessQueryResult.CustomerNotFound"))
+        assertTrue("must handle Blocked", screenSource.contains("is AiBusinessQueryResult.Blocked"))
+        assertTrue("must format total debt for all customers in business", screenSource.contains("ai_query_total_debt_all_customers"))
+        assertTrue("must render empty sales period notice", screenSource.contains("ai_query_sales_period_empty"))
+        assertTrue("must render empty debtors notice", screenSource.contains("ai_query_no_debtors"))
+    }
+
+    @Test
+    fun `business query resolution handles cancellation and maps exceptions safely`() {
+        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val queryResolverIndex = screenSource.indexOf("businessQueryResolver(activeBusinessId, queryProposal, null)")
+        assertTrue("query resolver is called in onSubmit", queryResolverIndex != -1)
+        val queryResolutionBlock = screenSource.substring(
+            screenSource.lastIndexOf("val queryResolutionResult = if", queryResolverIndex),
+            screenSource.indexOf("model = AiDebugLabMachine.onQueryResult", queryResolverIndex),
+        )
+        assertTrue("query resolver explicitly catches CancellationException", queryResolutionBlock.contains("catch (e: CancellationException)"))
+        assertTrue("query resolver rethrows CancellationException", queryResolutionBlock.contains("throw e"))
+        assertTrue("query resolver catches Exception", queryResolutionBlock.contains("catch (_: Exception)"))
+        assertFalse("query resolver must not catch Throwable", queryResolutionBlock.contains("catch (_: Throwable)"))
+        assertTrue("query resolver maps to Unavailable", queryResolutionBlock.contains("AiBusinessQueryResult.Unavailable"))
+        assertFalse("query resolver must not use runCatching", queryResolutionBlock.contains("runCatching"))
     }
 }

@@ -488,4 +488,23 @@
     <string name="ai_sale_stale_message">Los datos del cliente o producto cambiaron. Por favor solicita la venta nuevamente.</string>
     <string name="ai_sale_rejected_message">No se pudo registrar la venta. Verifica los datos e intenta de nuevo.</string>
     <string name="ai_sale_limit_reached_message">Alcanzaste el límite de tu plan. Actualiza a Pro o CuentivoAI para continuar registrando.</string>
+    <string name="ai_query_title_balance">Consulta de saldo</string>
+    <string name="ai_query_title_debtors">Consulta de deudores</string>
+    <string name="ai_query_title_sales">Consulta de ventas</string>
+    <string name="ai_query_customer_balance_format">Saldo: %1$s</string>
+    <string name="ai_query_customer_no_debt">%1$s no tiene saldo pendiente.</string>
+    <string name="ai_query_customer_credit_format">Saldo a favor: %1$s</string>
+    <string name="ai_query_debtors_title">Clientes con deuda</string>
+    <string name="ai_query_no_debtors">No hay clientes con deuda pendiente.</string>
+    <string name="ai_query_total_debt_all_customers">Total adeudado en todo el negocio: %1$s</string>
+    <string name="ai_query_debtors_top_20_notice">Mostrando los 20 principales deudores</string>
+    <string name="ai_query_sales_period_title">Resumen del periodo (%1$s al %2$s)</string>
+    <string name="ai_query_sales_period_sold">Total vendido: %1$s</string>
+    <string name="ai_query_sales_period_collected">Total cobrado: %1$s</string>
+    <string name="ai_query_sales_period_empty">No se registraron ventas ni cobros en este periodo.</string>
+    <string name="ai_query_customer_selection_prompt">Elige el cliente para consultar su saldo:</string>
+    <string name="ai_query_customer_not_found">No se encontró ningún cliente con el nombre \"%1$s\".</string>
+    <string name="ai_query_blocked_invalid_date">La fecha ingresada no existe en el calendario.</string>
+    <string name="ai_query_blocked_start_after_end">La fecha inicial no puede ser posterior a la fecha final.</string>
+    <string name="ai_query_blocked_period_too_long">El periodo de consulta no puede superar 366 días.</string>
 </resources>
