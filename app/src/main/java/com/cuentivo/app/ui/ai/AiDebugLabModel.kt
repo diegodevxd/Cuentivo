@@ -770,8 +770,9 @@ object AiDebugLabMachine {
     /**
      * Generation-safe transition from a raw query proposal or clarification choice to its resolved answer.
      *
-     * Accepts only matching [generation] and only when the current state is ProposalPreview with a
-     * [BusinessQueryProposal], [AiDebugLabState.QueryResolving] or [AiDebugLabState.QueryAnswer].
+     * Accepts only matching [generation] and only when the current state is [AiDebugLabState.ProposalPreview]
+     * with a [BusinessQueryProposal] (initial resolution) or [AiDebugLabState.QueryResolving] (subsequent
+     * choice resolution). Any already finalized state such as [AiDebugLabState.QueryAnswer] is ignored.
      * Replaces the pending/clarification message with the resolved answer; never writes to Room.
      */
     fun onQueryResult(
@@ -784,14 +785,16 @@ object AiDebugLabMachine {
         val currentProposal = when (currentState) {
             is AiDebugLabState.ProposalPreview -> currentState.proposal as? BusinessQueryProposal
             is AiDebugLabState.QueryResolving -> currentState.proposal
-            is AiDebugLabState.QueryAnswer -> currentState.proposal
             else -> null
         } ?: return model
 
         val lastMessage = model.messages.lastOrNull() ?: return model
-        val isMatchingLastMessage = when (lastMessage) {
-            is AiChatMessage.AssistantProposal -> (lastMessage.proposal as? BusinessQueryProposal) == currentProposal
-            is AiChatMessage.AssistantQueryAnswer -> true
+        val isMatchingLastMessage = when (currentState) {
+            is AiDebugLabState.ProposalPreview ->
+                lastMessage is AiChatMessage.AssistantProposal &&
+                    lastMessage.proposal == currentProposal
+            is AiDebugLabState.QueryResolving ->
+                lastMessage is AiChatMessage.AssistantQueryAnswer
             else -> false
         }
         if (!isMatchingLastMessage) return model

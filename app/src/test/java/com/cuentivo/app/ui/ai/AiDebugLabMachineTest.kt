@@ -1689,6 +1689,63 @@ class AiDebugLabMachineTest {
     }
 
     @Test
+    fun `onQueryResult from already finalized QueryAnswer is ignored even with same generation`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana Gómez",
+        )
+        val initialAnswer = com.cuentivo.app.ai.AiBusinessQueryResult.Answer.CustomerBalance("c1", "Ana Gómez", 50000L)
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.QueryAnswer(initialAnswer, proposal),
+            generation = 2L,
+            messages = listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantQueryAnswer(initialAnswer),
+            ),
+        )
+
+        val duplicateDifferentAnswer = com.cuentivo.app.ai.AiBusinessQueryResult.Answer.CustomerBalance("c1", "Ana Gómez", 99999L)
+        val result = AiDebugLabMachine.onQueryResult(model, duplicateDifferentAnswer, generation = 2L)
+
+        assertEquals(model, result)
+        assertEquals(initialAnswer, (result.state as AiDebugLabState.QueryAnswer).result)
+    }
+
+    @Test
+    fun `onQueryResult from QueryResolving transitions to QueryAnswer and replaces clarification message`() {
+        val proposal = com.cuentivo.app.ai.BusinessQueryProposal(
+            queryType = com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE,
+            customerName = "Ana",
+        )
+        val selection = com.cuentivo.app.ai.AiBusinessQueryResult.CustomerSelectionRequired(
+            listOf(
+                com.cuentivo.app.ai.AiQueryCustomerCandidate("c1", "Ana Gómez"),
+                com.cuentivo.app.ai.AiQueryCustomerCandidate("c2", "Ana Sofía Gómez"),
+            ),
+        )
+        val resolvingModel = AiDebugLabModel(
+            state = AiDebugLabState.QueryResolving(proposal),
+            generation = 3L,
+            messages = listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantQueryAnswer(selection),
+            ),
+        )
+
+        val resolvedAnswer = com.cuentivo.app.ai.AiBusinessQueryResult.Answer.CustomerBalance("c2", "Ana Sofía Gómez", 32000L)
+        val updated = AiDebugLabMachine.onQueryResult(resolvingModel, resolvedAnswer, generation = 3L)
+
+        assertEquals(AiDebugLabState.QueryAnswer(resolvedAnswer, proposal), updated.state)
+        assertEquals(
+            listOf(
+                AiChatMessage.UserText("¿Cuánto me debe Ana?"),
+                AiChatMessage.AssistantQueryAnswer(resolvedAnswer),
+            ),
+            updated.messages,
+        )
+    }
+
+    @Test
     fun `onReset cleans up confirmation and choice state`() {
         val model = saleConfirmationModel(generation = 4L)
         val resetModel = AiDebugLabMachine.onReset(model)
