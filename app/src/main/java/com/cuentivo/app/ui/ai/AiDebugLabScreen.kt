@@ -906,14 +906,34 @@ private fun ChatMessageRow(
         }
         is AiChatMessage.AssistantPaymentBlocked -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             when (message.reason) {
-                AiPaymentBlockReason.NO_OUTSTANDING_DEBT -> Text(
-                    text = stringResource(R.string.ai_payment_preview_blocked_no_debt),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT -> {
-                    val debtFormatted = message.preview?.let { formatCents(it.currentBalanceCents) }.orEmpty()
+                AiPaymentBlockReason.NO_OUTSTANDING_DEBT -> {
+                    val customerName = message.preview?.customerName
+                    val text = if (!customerName.isNullOrBlank()) {
+                        stringResource(R.string.ai_payment_preview_blocked_no_debt_with_name, customerName)
+                    } else {
+                        stringResource(R.string.ai_payment_preview_blocked_no_debt)
+                    }
                     Text(
-                        text = stringResource(R.string.ai_payment_preview_blocked_exceeds_debt, debtFormatted),
+                        text = text,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT -> {
+                    val preview = message.preview
+                    val text = if (preview != null) {
+                        val debtFormatted = formatCents(preview.currentBalanceCents)
+                        val paymentFormatted = formatCents(preview.declaredAmountCents)
+                        stringResource(
+                            R.string.ai_payment_preview_blocked_exceeds_debt,
+                            preview.customerName,
+                            debtFormatted,
+                            paymentFormatted,
+                        )
+                    } else {
+                        stringResource(R.string.ai_payment_preview_blocked_exceeds_debt_no_details)
+                    }
+                    Text(
+                        text = text,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }

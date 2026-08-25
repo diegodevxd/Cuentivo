@@ -455,14 +455,16 @@
     <string name="ai_daily_chat_clear_dialog_message">Se eliminarán los mensajes de hoy en este dispositivo. Esta acción no se puede deshacer.</string>
     <string name="ai_daily_chat_clear_confirm">Borrar</string>
     <string name="ai_daily_chat_clear_cancel">Cancelar</string>
-    <string name="ai_payment_preview_customer_not_found">No encontramos al cliente. Por favor escribe su nombre completo tal como está registrado.</string>
+    <string name="ai_payment_preview_customer_not_found">No encontramos a ese cliente. Los abonos solo aplican a clientes con deuda ya registrada. Si querías registrar una venta, dilo así: \"le vendí [producto] a [cliente] en [monto]\" (ejemplo: \"le vendí un boleto a Carlos en 90\").</string>
     <string name="ai_payment_preview_selection_required">Se encontraron varios clientes. Por favor escribe el nombre completo:</string>
     <string name="ai_payment_preview_current_balance">Saldo actual: %1$s</string>
     <string name="ai_payment_preview_proposed_amount">Abono propuesto: %1$s</string>
     <string name="ai_payment_preview_projected_balance">Saldo después del abono: %1$s</string>
     <string name="ai_payment_preview_draft_note">Borrador: no registra nada</string>
-    <string name="ai_payment_preview_blocked_no_debt">Este cliente no tiene saldo pendiente por cobrar.</string>
-    <string name="ai_payment_preview_blocked_exceeds_debt">El abono propuesto supera la deuda actual (%1$s). No se puede registrar un abono mayor a la deuda.</string>
+    <string name="ai_payment_preview_blocked_no_debt">Este cliente no tiene saldo pendiente por cobrar. Los abonos solo aplican a clientes con deuda. Si era una venta nueva, dilo así: \"le vendí [producto] al cliente en [monto]\".</string>
+    <string name="ai_payment_preview_blocked_no_debt_with_name">%1$s no tiene saldo pendiente por cobrar. Los abonos solo aplican a clientes con deuda. Si era una venta nueva, dilo así: \"le vendí [producto] a %1$s en [monto]\".</string>
+    <string name="ai_payment_preview_blocked_exceeds_debt">%1$s te debe %2$s y el abono propuesto es de %3$s. No se puede registrar un abono mayor a la deuda pendiente.</string>
+    <string name="ai_payment_preview_blocked_exceeds_debt_no_details">El abono propuesto supera la deuda pendiente del cliente. No se puede registrar un abono mayor a la deuda.</string>
     <string name="ai_payment_confirm_action">Confirmar abono</string>
     <string name="ai_payment_confirm_cancel">Cancelar</string>
     <string name="ai_payment_recorded_success">Abono registrado con éxito.</string>
@@ -492,7 +494,7 @@
     <string name="ai_query_title_debtors">Consulta de deudores</string>
     <string name="ai_query_title_sales">Consulta de ventas</string>
     <string name="ai_query_customer_balance_format">Saldo: %1$s</string>
-    <string name="ai_query_customer_no_debt">%1$s no tiene saldo pendiente.</string>
+    <string name="ai_query_customer_no_debt">%1$s está al día: no tiene saldo pendiente por cobrar ni saldo a favor.</string>
     <string name="ai_query_customer_credit_format">Saldo a favor: %1$s</string>
     <string name="ai_query_debtors_title">Clientes con deuda</string>
     <string name="ai_query_no_debtors">No hay clientes con deuda pendiente.</string>
@@ -503,10 +505,10 @@
     <string name="ai_query_sales_period_collected">Total cobrado: %1$s</string>
     <string name="ai_query_sales_period_empty">No se registraron ventas ni cobros en este periodo.</string>
     <string name="ai_query_customer_selection_prompt">Elige el cliente para consultar su saldo:</string>
-    <string name="ai_query_customer_not_found">No se encontró ningún cliente con el nombre \"%1$s\".</string>
-    <string name="ai_query_blocked_invalid_date">La fecha ingresada no existe en el calendario.</string>
-    <string name="ai_query_blocked_start_after_end">La fecha inicial no puede ser posterior a la fecha final.</string>
-    <string name="ai_query_blocked_period_too_long">El periodo de consulta no puede superar 366 días.</string>
+    <string name="ai_query_customer_not_found">No existe ningún cliente registrado con el nombre \"%1$s\". Verifica el nombre en tu lista de clientes.</string>
+    <string name="ai_query_blocked_invalid_date">La fecha consultada no existe en el calendario. Intenta con una fecha válida (por ejemplo: \"ventas de ayer\" o \"ventas del 15 de agosto\").</string>
+    <string name="ai_query_blocked_start_after_end">El período no es válido porque la fecha inicial es posterior a la final. Especifica primero la fecha más antigua (por ejemplo: \"del 1 al 15 de agosto\").</string>
+    <string name="ai_query_blocked_period_too_long">El período consultado supera el límite de 366 días. Consulta un rango de fechas más corto (por ejemplo: un mes o un año).</string>
     <string name="ai_query_debtor_row_format">• %1$s: %2$s</string>
     <string name="ai_query_proposal_period_format">%1$s al %2$s</string>
 

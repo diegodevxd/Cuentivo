@@ -596,7 +596,9 @@ class AiDebugLabGuardsTest {
             "ai_payment_preview_projected_balance",
             "ai_payment_preview_draft_note",
             "ai_payment_preview_blocked_no_debt",
+            "ai_payment_preview_blocked_no_debt_with_name",
             "ai_payment_preview_blocked_exceeds_debt",
+            "ai_payment_preview_blocked_exceeds_debt_no_details",
             "ai_payment_confirm_action",
             "ai_payment_confirm_cancel",
             "ai_payment_recorded_success",
@@ -607,6 +609,16 @@ class AiDebugLabGuardsTest {
             assertTrue("Spanish strings must contain $key", esXml.contains("name=\"$key\""))
             assertTrue("English strings must contain $key", enXml.contains("name=\"$key\""))
         }
+    }
+
+    @Test
+    fun `payment and query blocked states render distinct actionable messages without generic walls`() {
+        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        assertTrue("must handle blocked with customer name", source.contains("ai_payment_preview_blocked_no_debt_with_name"))
+        assertTrue("must handle blocked debt with no details fallback", source.contains("ai_payment_preview_blocked_exceeds_debt_no_details"))
+        assertTrue("must handle invalid query date with actionable text", source.contains("ai_query_blocked_invalid_date"))
+        assertTrue("must handle invalid query start after end", source.contains("ai_query_blocked_start_after_end"))
+        assertTrue("must handle invalid query period too long", source.contains("ai_query_blocked_period_too_long"))
     }
 
     @Test
