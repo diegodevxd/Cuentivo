@@ -80,6 +80,39 @@ describe("createGeminiTextProvider", () => {
     expect(result).toEqual(VALID_PROPOSAL);
   });
 
+  test("passes official systemInstruction containing reference date and domain rules in config", async () => {
+    let capturedParams: any = null;
+    const mockClient = createMockClient(async (params) => {
+      capturedParams = params;
+      return { text: JSON.stringify(VALID_PROPOSAL) };
+    });
+
+    const provider = createGeminiTextProvider(
+      { apiKey: "test-fake-key", timeoutMillis: 5000 },
+      mockClient,
+    );
+
+    const refDate = {
+      year: 2026,
+      month: 8,
+      day: 24,
+      isoDate: "2026-08-24",
+      weekday: "lunes",
+    };
+
+    await provider.interpret({ text: "¿cuánto vendí esta semana?", referenceDate: refDate });
+
+    expect(capturedParams).toBeDefined();
+    expect(capturedParams.config.systemInstruction).toBeDefined();
+    const instruction: string = capturedParams.config.systemInstruction;
+    expect(instruction).toContain("2026-08-24");
+    expect(instruction).toContain("America/Mexico_City");
+    expect(instruction).toContain("SALES_FOR_PERIOD");
+    expect(instruction).toContain("lunes a domingo");
+    expect(instruction).toContain("MISSING_PRODUCT");
+    expect(instruction).toContain("create_sale");
+  });
+
   test("proposal schema is independent exact kind-schemas covering all four kinds", () => {
     const branches = SAFE_PROPOSAL_JSON_SCHEMA.anyOf as readonly any[];
     expect(branches.length).toBe(6);

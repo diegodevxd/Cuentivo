@@ -44,7 +44,7 @@ function recordingDeps(overrides?: {
 }) {
   const authorizeInputs: AuthorizeAiInput[] = [];
   const claimInputs: Array<{ uid: string; requestId: string; nowEpochMillis: number }> = [];
-  const providerInputs: Array<{ text: string }> = [];
+  const providerInputs: Array<{ text: string; referenceDate?: unknown }> = [];
   const deps = {
     authorize: async (input: AuthorizeAiInput) => {
       authorizeInputs.push(input);
@@ -67,7 +67,7 @@ function recordingDeps(overrides?: {
     provider:
       overrides?.provider === undefined
         ? {
-            async interpret(input: { text: string }) {
+            async interpret(input: { text: string; referenceDate?: unknown }) {
               providerInputs.push(input);
               if (overrides?.providerThrows) {
                 throw new Error("provider down");
@@ -81,7 +81,7 @@ function recordingDeps(overrides?: {
           }
         : overrides.provider,
     guard: overrides?.guard ?? openGuard(),
-    now: () => NOW,
+    now: overrides && "now" in overrides && typeof overrides.now === "function" ? overrides.now : () => NOW,
   };
   return { deps, authorizeInputs, claimInputs, providerInputs };
 }
@@ -168,7 +168,7 @@ describe("createInterpretAiHandler", () => {
     expect(providerInputs).toHaveLength(0);
   });
 
-  test("authorized request claims durably then calls the provider exactly once", async () => {
+  test("authorized request claims durably then calls the provider exactly once with typed reference date", async () => {
     const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler();
 
     const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
@@ -179,12 +179,39 @@ describe("createInterpretAiHandler", () => {
     expect(claimInputs).toEqual([
       { uid: "test-user", requestId: VALID_DATA.requestId, nowEpochMillis: NOW },
     ]);
-    expect(providerInputs).toEqual([{ text: VALID_DATA.text }]);
+    expect(providerInputs).toHaveLength(1);
+    expect(providerInputs[0].text).toBe(VALID_DATA.text);
+    expect(providerInputs[0].referenceDate).toEqual({
+      year: 1969,
+      month: 12,
+      day: 31,
+      isoDate: "1969-12-31",
+      weekday: "miércoles",
+    });
     expect(result).toEqual({
       contractVersion: 2,
       requestId: VALID_DATA.requestId,
       status: "AI_PROPOSAL",
       proposal: PROPOSAL,
+    });
+  });
+
+  test("computes correct America/Mexico_City reference date when UTC date differs (edge case)", async () => {
+    // 2026-08-25T02:00:00.000Z is 2026-08-24 20:00:00 (Monday) in America/Mexico_City (UTC-6)
+    const edgeTimestamp = Date.parse("2026-08-25T02:00:00.000Z");
+    const { handler, providerInputs } = makeHandler({
+      now: () => edgeTimestamp,
+    } as any);
+
+    await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+
+    expect(providerInputs).toHaveLength(1);
+    expect(providerInputs[0].referenceDate).toEqual({
+      year: 2026,
+      month: 8,
+      day: 24,
+      isoDate: "2026-08-24",
+      weekday: "lunes",
     });
   });
 

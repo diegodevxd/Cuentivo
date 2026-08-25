@@ -3,7 +3,7 @@ import {
   type InterpretAiResponse,
   type SafeAiProposal,
 } from "./contract";
-import type { TextInterpretationProvider } from "./ai/geminiTextProvider.js";
+import { computeReferenceDate, type TextInterpretationProvider } from "./ai/geminiTextProvider.js";
 import type { AiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import type { AuthorizeAiInput, AuthorizeAiResult } from "./ai/controlPlane";
 
@@ -60,6 +60,7 @@ export function createInterpretAiHandler(
     }
     const { requestId, text } = validation.value;
     const nowEpochMillis = deps.now();
+    const referenceDate = computeReferenceDate(nowEpochMillis);
 
     const guardDecision = deps.guard.beforeRepository(uid, requestId, nowEpochMillis);
     if (guardDecision.kind === "RATE_LIMITED") {
@@ -104,7 +105,7 @@ export function createInterpretAiHandler(
     }
 
     try {
-      const proposal = await deps.provider.interpret({ text });
+      const proposal = await deps.provider.interpret({ text, referenceDate });
       if (proposal === null) {
         return UNAVAILABLE(requestId);
       }

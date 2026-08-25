@@ -133,12 +133,80 @@ export const SAFE_PROPOSAL_JSON_SCHEMA = {
   ],
 } as const;
 
+export type ReferenceDate = Readonly<{
+  year: number;
+  month: number;
+  day: number;
+  isoDate: string;
+  weekday: string;
+}>;
+
+const WEEKDAY_ES_BY_EN: Readonly<Record<string, string>> = {
+  Monday: "lunes",
+  Tuesday: "martes",
+  Wednesday: "miércoles",
+  Thursday: "jueves",
+  Friday: "viernes",
+  Saturday: "sábado",
+  Sunday: "domingo",
+};
+
+export function computeReferenceDate(nowEpochMillis: number): ReferenceDate {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "long",
+  });
+  const parts = formatter.formatToParts(new Date(nowEpochMillis));
+  let year = 0;
+  let month = 0;
+  let day = 0;
+  let weekdayEn = "";
+  for (const part of parts) {
+    if (part.type === "year") year = parseInt(part.value, 10);
+    if (part.type === "month") month = parseInt(part.value, 10);
+    if (part.type === "day") day = parseInt(part.value, 10);
+    if (part.type === "weekday") weekdayEn = part.value;
+  }
+  const weekday = WEEKDAY_ES_BY_EN[weekdayEn] ?? weekdayEn.toLowerCase();
+  const mm = String(month).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return {
+    year,
+    month,
+    day,
+    isoDate: `${year}-${mm}-${dd}`,
+    weekday,
+  };
+}
+
+export function buildSystemInstruction(referenceDate: ReferenceDate): string {
+  return [
+    `Eres el asistente de Cuentivo, una app de gestión de ventas y cobros para pequeños negocios.`,
+    `Tu función es clasificar la intención del usuario y proponer la estructura adecuada según el schema JSON.`,
+    `No calculas cifras, no inventas datos y no ejecutas mutaciones financieras.`,
+    `Fecha actual de referencia: ${referenceDate.isoDate} (${referenceDate.weekday}) en zona horaria America/Mexico_City.`,
+    `Reglas de dominio:`,
+    `- Preguntas de consulta como "¿cuánto vendí?", "¿cuánto cobré?", "ventas de esta semana", "resumen del mes" o ventas por periodo son consultas de tipo business_query con queryType: "SALES_FOR_PERIOD". NUNCA deben clasificarse como create_sale ni como requires_clarification con MISSING_PRODUCT.`,
+    `- La semana va de lunes a domingo. "Esta semana" corresponde al periodo desde el lunes de la semana actual hasta el domingo de la semana actual (o hasta hoy si el usuario consulta lo que lleva vendido).`,
+    `- "Hoy" corresponde a la fecha de referencia (${referenceDate.isoDate}).`,
+    `- Para consultar saldo de un cliente ("¿cuánto me debe Juan?"), usa business_query con queryType: "CUSTOMER_BALANCE".`,
+    `- Para consultar quién debe ("¿quién me debe?"), usa business_query con queryType: "CUSTOMERS_WITH_DEBT".`,
+    `- Para registrar ventas ("le vendí 2 cremas a María a 100"), usa create_sale.`,
+    `- Para registrar pagos o abonos ("María me abonó 50"), usa record_payment.`,
+    `- Si la entrada es incomprensible o ambigua, usa requires_clarification.`,
+  ].join("\n");
+}
+
 export interface GeminiClientSeam {
   models: {
     generateContent(params: {
       model: string;
       contents: string;
       config?: {
+        systemInstruction?: string;
         responseMimeType?: string;
         responseJsonSchema?: unknown;
         temperature?: number;
@@ -195,7 +263,7 @@ export type GeminiClientFactory = (options: {
 }) => GeminiClientSeam;
 
 export interface TextInterpretationProvider {
-  interpret(input: Readonly<{ text: string }>): Promise<SafeAiProposal | null>;
+  interpret(input: Readonly<{ text: string; referenceDate?: ReferenceDate }>): Promise<SafeAiProposal | null>;
 }
 
 class GeminiTextProvider implements TextInterpretationProvider {
@@ -221,7 +289,7 @@ class GeminiTextProvider implements TextInterpretationProvider {
     }
   }
 
-  async interpret(input: Readonly<{ text: string }>): Promise<SafeAiProposal | null> {
+  async interpret(input: Readonly<{ text: string; referenceDate?: ReferenceDate }>): Promise<SafeAiProposal | null> {
     let timerId: ReturnType<typeof setTimeout> | undefined;
     try {
       const signal = AbortSignal.timeout(this.timeoutMillis);
@@ -230,10 +298,13 @@ class GeminiTextProvider implements TextInterpretationProvider {
         timerId = setTimeout(() => reject(new Error("provider-timeout")), this.timeoutMillis);
       });
 
+      const systemInstruction = input.referenceDate ? buildSystemInstruction(input.referenceDate) : undefined;
+
       const generatePromise = this.client.models.generateContent({
         model: GEMINI_MODEL,
         contents: input.text,
         config: {
+          systemInstruction,
           responseMimeType: "application/json",
           responseJsonSchema: SAFE_PROPOSAL_JSON_SCHEMA,
           temperature: 0,
