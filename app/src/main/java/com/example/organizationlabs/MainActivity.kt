@@ -394,7 +394,7 @@ class MainActivity : ComponentActivity() {
                     // whether the plan allows the cloud, so seeding while it still reads FREE would
                     // have every enqueue return early and publish nothing at all.
                     entitlementStore.remember(decision.userId, decision.publish)
-                    if (decision.publish.isPaid) {
+                    if (decision.publish.includesProBenefits) {
                         lifecycleScope.launch {
                             // Nothing was queued while the plan was free, so there is no pile to
                             // drain — there is a full database and an empty outbox. Seeding is what
@@ -870,7 +870,7 @@ class MainActivity : ComponentActivity() {
                     // remote's own timestamps so this row can never win a merge against the copy it
                     // was adopted from and rename it back to the default.
                     val remote = found as? BusinessLookupResult.Found
-                    if (claim is BusinessClaim.AdoptRemote && !tier.isPaid && remote != null) {
+                    if (claim is BusinessClaim.AdoptRemote && !tier.includesProBenefits && remote != null) {
                         val adopted = BusinessEntity(
                             remote.businessId, remote.name, currentUserId, remote.currency,
                             remote.timezone, remote.createdAtEpochMillis, remote.updatedAtEpochMillis,

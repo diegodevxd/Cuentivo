@@ -36,7 +36,8 @@ requisitos de este mismo release.
 `AI` y no se toca esa línea, **el que pague $299 pierde el respaldo en la nube** que sí tiene el de
 $199. Compila, pasa las pruebas actuales y falla en manos del cliente que más paga.
 
-La regla correcta es `tier != FREE`, y va con prueba propia que la fije.
+La regla correcta es preguntar por un rasgo declarado del plan, `tier.includesProBenefits`, y va con
+prueba propia que la fije.
 
 ### 2. La voz no existe en release
 
@@ -51,11 +52,19 @@ voz entra en una versión posterior con su propio plan. La regla de N3 sigue en 
 ## Decisión de planes
 
 **CuentivoAI incluye todo lo de Pro.** Decidido el 2026-08-26: no es un complemento que se sume a
-$199, es un plan superior de $299 que trae la IA **más** respaldo en la nube, fotos, Excel, equipo y
-auditoría. El usuario elige entre tres: Gratis, Pro $199 y CuentivoAI $299.
+$199, es un plan superior que trae la IA **más** respaldo en la nube, fotos, Excel, equipo y
+auditoría. El usuario elige entre tres: Gratis, Pro y CuentivoAI.
+
+**Precio inicial para prueba cerrada: $299 MXN/mes.** Sigue **sujeto a revisión** antes de
+producción general, según los costos y la conversión que se observen. La fuente de verdad anterior
+lo llamaba experimental y no se declara validado aquí: el contador de `aiUsage` de agosto de 2026
+está contaminado por una escritura manual, así que ese mes se **excluye del análisis** — la
+colección está particionada por uid y `YYYYMM`, de modo que basta descartar ese uid y arrancar
+ventana limpia. Eso **no bloquea** el AAB ni la prueba cerrada; lo único prohibido es afirmar que
+$299 quedó validado con esos datos.
 
 Eso hace que el hallazgo 1 no sea un detalle sino la regla central del tier: **cualquier plan
-pagado da los beneficios de Pro**, y por eso `allowsCloudSync` pasa a `tier != FREE`.
+pagado da los beneficios de Pro**, y por eso `allowsCloudSync` pregunta por `includesProBenefits`.
 
 ## Tareas
 
@@ -70,19 +79,54 @@ puede escribirse, pero no verificarse de punta a punta.
 
 `SubscriptionTier.AI` + `AI_PRODUCT_ID`. `SubscriptionStatus.tierFrom` con precedencia
 **AI > PRO > FREE**, para que una cuenta con ambas compras resuelva al mayor. `allowsCloudSync`
-pasa a `tier != FREE` con la prueba del hallazgo 1. `FeatureAccessManager` deja de comparar
-`== PRO`.
+deja de comparar `== PRO` y pregunta por `includesProBenefits`, con la prueba del hallazgo 1.
+`FeatureAccessManager` igual.
 
-### T2 — Billing consulta los dos productos
+**Endurecimiento pedido en la revisión de Sol.** El enum declara los dos hechos en vez de
+inferirlos:
+
+```kotlin
+enum class SubscriptionTier(val rank: Int, val includesProBenefits: Boolean) {
+    FREE(0, false), PRO(10, true), AI(20, true),
+}
+```
+
+y `tierFrom` resuelve con `maxByOrNull { it.rank }`. Así reordenar el enum por legibilidad no
+cambia entitlements en silencio, y un futuro `TRIAL`, `INTERNAL` o `LEGACY` **no** hereda los
+beneficios de Pro por el mero hecho de no ser `FREE`.
+
+### T2 — Billing consulta los dos productos, y sabe cambiar de plan
 
 `BillingGateway` consulta ambos ids, acusa recibo de ambos y `EntitlementStore` guarda el tier
 resultante. La caducidad de 24 h y la comparación por uid no se tocan.
 
+**Dos cosas que T1 no cubre y que se descubrieron en la revisión de Sol (2026-08-26):**
+
+1. **Cambio de plan, no segunda compra.** `tierFrom` resuelve bien el *acceso* cuando Play reporta
+   ambas compras, pero eso no impide **dos suscripciones activas cobrando a la vez**.
+   `BillingGateway.kt:196` `launchPurchase` abre hoy una compra normal. T2 tiene que:
+   - lanzar Pro → AI como **reemplazo**, usando el `purchaseToken` de la suscripción anterior;
+   - fijar una política de prorrateo explícita y escrita, no la que Play traiga por defecto;
+   - cubrir la baja AI → Pro si se ofrece;
+   - **impedir** que alguien acabe pagando $199 + $299;
+   - probar el estado transitorio en que Play todavía reporta ambas.
+
+   La frase "nadie paga dos a la vez" es hoy una afirmación de este documento; T2 es donde pasa a
+   estar garantizada por código.
+
+2. **T2 prepara los datos que T3 necesita, o T3 queda desconectada.** `BillingGateway.kt:209` no
+   configura identidad ofuscada. Antes de T3 hacen falta: un `obfuscatedAccountId` estable y **no
+   reversible** a partir del uid, captura segura del `purchaseToken`, y el envío de ese token a la
+   callable de verificación. **El token nunca se registra en logs, Analytics ni Crashlytics**, y el
+   tier calculado en Android **nunca** concede la IA por sí solo — sólo la respuesta del servidor.
+
 ### T3 — Entitlement server-side desde Play *(el trabajo más largo)*
 
 Sustituir el entitlement creado a mano por uno derivado de la compra: función que valide el token
-contra la Play Developer API y escriba `aiEntitlement/{uid}` con su `expiresAtEpochMillis`. Cierra
-el criterio 4 de Fase 2 y el bloqueo B3. Requiere cuenta de servicio con acceso a la API de Play.
+contra la Play Developer API y escriba **`aiEntitlements/{uid}`** — plural, es la colección que ya
+usa el backend; crear la singular daría dos fuentes de verdad — con su `expiresAtEpochMillis`.
+Cierra el criterio 4 de Fase 2 y el bloqueo B3. Requiere cuenta de servicio con acceso a la API de
+Play.
 
 ### T4 — Decir por qué se rechazó *(B6)*
 
@@ -92,8 +136,17 @@ cuota es un reembolso, no un bug.
 
 ### T5 — Flag remoto y apagador en el cliente
 
-El cliente lee la config del control plane para decidir si muestra la entrada. Apagar desde
-Firestore tiene que quitar CuentivoAI de la app **sin publicar nada**.
+Apagar CuentivoAI de forma remota tiene que quitarlo de la app **sin publicar nada**.
+
+**Lo que esto no puede significar:** que el APK lea `aiControl/global`. Esa ruta está cerrada al
+cliente a propósito y no se relaja. Las dos formas aceptables son:
+
+- una **callable autenticada** que devuelva sólo una capacidad pública sanitizada
+  (`aiAvailable: true/false`), sin exponer cuotas, costos ni configuración interna; o
+- **Remote Config** para la visibilidad de la entrada.
+
+En ambos casos el apagador **autoritativo** se queda en Functions: el cliente sólo decide si pinta
+la entrada, el servidor decide si atiende. Uno no sustituye al otro.
 
 ### T6 — Transporte de release
 
@@ -105,6 +158,10 @@ deja de ser "debug". Aquí aplica la decisión de la voz.
 Pantalla de CuentivoAI: qué es, qué incluye, precio, botón de suscripción. Muro cuando el tier no
 es AI, siguiendo el patrón de `SubscriptionSheet`. Textos en `values/` y `values-en/` con **paridad
 de claves**; nada de literales en Composables.
+
+**Regresión de UI obligatoria** (pedida por Sol): en Gratis y en Pro, tocar "Registrar abono" entra
+al abono y **nunca** al muro. El muro sólo aparece en la entrada de CuentivoAI. Es la invariante de
+abonos hecha prueba, no comentario.
 
 ### T8 — Observabilidad y simulacro de rollback
 

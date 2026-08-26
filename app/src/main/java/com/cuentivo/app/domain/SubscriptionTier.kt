@@ -6,23 +6,28 @@ package com.cuentivo.app.domain
  *
  * **The plans nest, they do not stack.** [AI] is not an add-on bought on top of [PRO]; it is a
  * higher plan that includes everything Pro has plus the assistant. Nobody pays for two at once.
- * That is why code asks [isPaid] rather than comparing against [PRO]: an `== PRO` check would take
- * cloud backup or photos away from the customer paying the most, and it would do it silently.
+ * That is why code asks [includesProBenefits] rather than comparing against [PRO]: an `== PRO`
+ * check would take cloud backup or photos away from the customer paying the most, silently.
  *
- * Declared cheapest first so [ordinal] is the plan ranking, which is what resolves someone who
- * briefly holds two subscriptions while upgrading.
+ * **Both facts are declared, never inferred.** [rank] is the commercial ordering, not [ordinal]:
+ * reordering the constants for readability must not change who gets what. And
+ * [includesProBenefits] is stated per plan rather than derived as "anything that is not FREE", so a
+ * future TRIAL, INTERNAL or LEGACY tier starts closed and has to be opened on purpose.
  *
  * Every limit lives here and nowhere else. Tightening the free plan must be a one-line change in
  * this file, never a hunt through Composables.
+ *
+ * @param rank where this plan sits commercially; higher wins when someone holds two subscriptions.
+ * @param includesProBenefits whether this plan carries everything Pro has.
  */
-enum class SubscriptionTier {
-    FREE,
-    PRO,
-    AI,
+enum class SubscriptionTier(
+    val rank: Int,
+    val includesProBenefits: Boolean,
+) {
+    FREE(rank = 0, includesProBenefits = false),
+    PRO(rank = 10, includesProBenefits = true),
+    AI(rank = 20, includesProBenefits = true),
     ;
-
-    /** Whether this plan carries the Pro benefits. Every paid plan does; only [FREE] does not. */
-    val isPaid: Boolean get() = this != FREE
 
     companion object {
         /** Play Console product id for the Pro subscription. */
@@ -67,7 +72,7 @@ object FeatureAccessManager {
     private const val UPGRADE = "Actualiza a Cuentivo Pro para quitar los límites."
 
     fun canAddCustomer(tier: SubscriptionTier, activeCustomers: Int): AccessDecision =
-        if (tier.isPaid || activeCustomers < FREE_CUSTOMER_LIMIT) {
+        if (tier.includesProBenefits || activeCustomers < FREE_CUSTOMER_LIMIT) {
             AccessDecision.Allowed
         } else {
             AccessDecision.Blocked(
@@ -77,7 +82,7 @@ object FeatureAccessManager {
         }
 
     fun canRegisterSale(tier: SubscriptionTier, salesRecorded: Int): AccessDecision =
-        if (tier.isPaid || salesRecorded < FREE_SALE_LIMIT) {
+        if (tier.includesProBenefits || salesRecorded < FREE_SALE_LIMIT) {
             AccessDecision.Allowed
         } else {
             AccessDecision.Blocked(
@@ -87,7 +92,7 @@ object FeatureAccessManager {
         }
 
     fun canUse(tier: SubscriptionTier, feature: PaidFeature): AccessDecision =
-        if (tier.isPaid) {
+        if (tier.includesProBenefits) {
             AccessDecision.Allowed
         } else {
             AccessDecision.Blocked(

@@ -23,9 +23,9 @@ class PaidTierTest {
 
     @Test
     fun `free is the only unpaid plan`() {
-        assertFalse(SubscriptionTier.FREE.isPaid)
-        assertTrue(SubscriptionTier.PRO.isPaid)
-        assertTrue(SubscriptionTier.AI.isPaid)
+        assertFalse(SubscriptionTier.FREE.includesProBenefits)
+        assertTrue(SubscriptionTier.PRO.includesProBenefits)
+        assertTrue(SubscriptionTier.AI.includesProBenefits)
     }
 
     @Test
@@ -98,6 +98,25 @@ class PaidTierTest {
             CloudRestoreDecision.Attempt,
             CloudRestorePolicy.decide(SubscriptionTier.AI, hasLocalBusiness = false, alreadyAttempted = false),
         )
+    }
+
+    @Test
+    fun `the commercial ranking is declared, not inherited from declaration order`() {
+        // Ranking by `ordinal` would make moving a constant for readability change who gets what.
+        // These are the numbers the resolver actually uses.
+        assertTrue(SubscriptionTier.AI.rank > SubscriptionTier.PRO.rank)
+        assertTrue(SubscriptionTier.PRO.rank > SubscriptionTier.FREE.rank)
+        SubscriptionTier.entries.forEach { tier ->
+            assertEquals("$tier must rank above nothing but FREE at most", tier == SubscriptionTier.FREE, tier.rank == 0)
+        }
+    }
+
+    @Test
+    fun `every plan states its benefits instead of deriving them from not being free`() {
+        // A future TRIAL or INTERNAL tier must start closed: `!= FREE` would have opened it by
+        // accident the moment it was added to the enum.
+        val paying = SubscriptionTier.entries.filter { it.includesProBenefits }
+        assertEquals(listOf(SubscriptionTier.PRO, SubscriptionTier.AI), paying)
     }
 
     @Test

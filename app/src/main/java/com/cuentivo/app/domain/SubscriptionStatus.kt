@@ -28,12 +28,15 @@ object SubscriptionStatus {
      *
      * Highest, not first: upgrading from Pro to CuentivoAI leaves both subscriptions reported for a
      * while, and answering PRO there would take the assistant away from someone already paying for
-     * it. [SubscriptionTier] is declared cheapest first, so `maxOrNull` is the ranking.
+     * it.
+     *
+     * Ranked by [SubscriptionTier.rank], never by declaration order: what someone is entitled to is
+     * a commercial rule, and it must not change because a constant was moved for readability.
      */
     fun tierFrom(purchases: List<PlayPurchase>): SubscriptionTier =
         purchases.filter { it.isPurchased }
             .mapNotNull { it.grantedTier() }
-            .maxOrNull()
+            .maxByOrNull { it.rank }
             ?: SubscriptionTier.FREE
 
     /**

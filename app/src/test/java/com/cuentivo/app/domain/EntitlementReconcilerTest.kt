@@ -80,4 +80,38 @@ class EntitlementReconcilerTest {
     fun `a blank uid counts as nobody`() {
         assertEquals(SubscriptionTier.FREE, EntitlementReconciler.resolve(SubscriptionTier.PRO, "", "").publish)
     }
+
+    @Test
+    fun `the ai plan reconciles exactly like pro does`() {
+        val decision = EntitlementReconciler.resolve(SubscriptionTier.AI, sessionUserId = ana, currentUserId = ana)
+
+        assertEquals(SubscriptionTier.AI, decision.publish)
+        assertTrue(decision.persist)
+        assertEquals(ana, decision.userId)
+    }
+
+    @Test
+    fun `an ai answer belonging to another account never unlocks the assistant`() {
+        // The $299 plan raises the stakes of the uid mismatch, not the rule: Ana's subscription
+        // must not give Beto the assistant on a shared phone.
+        val decision = EntitlementReconciler.resolve(SubscriptionTier.AI, sessionUserId = ana, currentUserId = beto)
+
+        assertEquals(SubscriptionTier.FREE, decision.publish)
+        assertFalse(decision.persist)
+        assertNull(decision.userId)
+    }
+
+    @Test
+    fun `a phone that stored pro before the ai plan existed still reads as pro`() {
+        // The upgrade path: the tier is persisted by name, so a device that has been sitting on
+        // "PRO" since before the third plan shipped keeps exactly what it paid for.
+        assertEquals(SubscriptionTier.PRO, SyncEntitlement.tierFor(ana, "PRO", ana))
+        assertEquals(SubscriptionTier.AI, SyncEntitlement.tierFor(ana, "AI", ana))
+    }
+
+    @Test
+    fun `a stored ai plan does not survive a change of account`() {
+        assertEquals(SubscriptionTier.FREE, SyncEntitlement.tierFor(ana, "AI", beto))
+        assertEquals(SubscriptionTier.FREE, SyncEntitlement.tierFor(ana, "AI", null))
+    }
 }
