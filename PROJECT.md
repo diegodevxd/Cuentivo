@@ -54,4 +54,6 @@ Después del núcleo: PDF de estados de cuenta y recibos, WhatsApp asistido, pro
 - Pendiente conocido: los seis caminos de rechazo de `interpretAiRequest` colapsan en un solo `AI_UNAVAILABLE`, así que la app no puede decir si se acabó la cuota, si hay que esperar o si la IA está apagada.
 - El contador `aiUsage` de agosto 2026 se sobrescribió a mano durante un diagnóstico: no sirve para medir consumo ni para validar el precio.
 - `docs/superpowers/handoffs/` continúa no rastreado y pertenece al usuario; no agregar, borrar ni modificar.
+- **Actualización de retención publicada:** `versionCode 32` / `versionName 1.17.0` (`d9350c3`), primera desde la baseline 31 / 1.16.6. Deja entrar sin cuenta, conserva los datos al registrarse y pide confirmación antes de cambiar de cuenta. **No lleva CuentivoAI**: son pistas separadas a propósito, para que la medición de retención sea limpia. AAB firmado con la misma llave que el v28, verificado con `jarsigner` y comparación de SHA1.
+- La aceptación física encontró **cinco bugs que ningún test vio**, todos la misma pregunta sin responder: *¿esta pantalla tiene salida?*
 - Estado de release: Cuentivo base publicada en Play. **CuentivoAI sigue NO-GO**: laboratorio debug solamente.

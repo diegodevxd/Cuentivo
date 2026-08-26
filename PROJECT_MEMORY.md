@@ -11,7 +11,7 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-25, después de cerrar el endurecimiento (`d451b08`).
+**Última actualización:** 2026-08-25, tras publicar la actualización de retención (`d9350c3`, versionCode 32).
 
 ---
 
@@ -69,6 +69,27 @@ centavos, y ventas a crédito registradas como pagadas. Los dos desplegados y ve
 
 **Núcleo: 4 de 5.** Falta sólo la salida del laboratorio a beta con feature flags.
 
+**Actualización de retención publicada — `versionCode 32` / `versionName 1.17.0`.** Primera versión
+desde la baseline congelada 31 / 1.16.6, y **no lleva CuentivoAI**: son pistas separadas a propósito.
+Plan: `docs/superpowers/plans/2026-08-25-cuentivo-retencion-puerta-abierta.md`; decisiones de producto
+en `specs/2026-08-25-cuentivo-invitado-decisiones.md`.
+
+**Por qué:** Firebase mostró que la retención a la semana 1 se desplomó de 20-29% a **0.7%** el 5 de
+agosto, el día que entró la verificación de correo obligatoria, y que **219 de 385 instalaciones
+terminan en desinstalación**. El argumento decisivo salió del propio código: la nube es beneficio de
+Pro y Room es la fuente de verdad, así que a un usuario Gratis se le pedía cuenta y verificación **a
+cambio de cero beneficio**, antes de que viera si la app le servía.
+
+**Qué cambió:** sesión anónima de Firebase al primer arranque; `linkWithCredential` que **conserva el
+uid**, con guarda en tiempo de ejecución que rechaza cualquier resultado con uid distinto; rechazo
+explícito de anónimos en el gateway antes de tocar cuota o ledger; primera pantalla "¿Quién te debe?";
+y confirmación explícita —nombrando la cuenta destino— antes de cambiar de cuenta con datos locales.
+La verificación de correo **no se eliminó, se movió** al momento en que hay respaldo que proteger.
+
+**La task 2 se auditó dos veces**, por Claude y por Sol, por ser la más peligrosa del proyecto. Sol
+encontró que la prueba conectada **simulaba** el enlace —el mismo error que Claude había bloqueado esa
+mañana en otro trabajo— y de ahí salió la guarda en tiempo de ejecución.
+
 **Estado de release.** Cuentivo base está **publicada en Play**. **CuentivoAI sigue NO-GO**: sólo
 vive en el laboratorio debug, y su AAB, beta pública y activación general continúan cerradas.
 
@@ -115,9 +136,10 @@ Gate live de Fase 2 (previo): Functions 225/225, Firestore Emulator 2/2, JVM 767
 
 ## Qué sigue
 
-1. **Endurecimiento y aceptación física del núcleo (N4).** Ahí entra el callejón sin salida del camino
-   de abonos: cuando el modelo clasifique mal, debe decir "no tiene deuda registrada, ¿era una venta?"
-   y ofrecer la ruta, en vez de mostrar clientes que no son.
+1. **Medir la cohorte de la v32.** Es la única métrica que importa ahora: si la retención a la semana
+   vuelve a 20-29%, el muro era el problema. Si sigue en el suelo, era otra cosa y se sabrá con datos
+   limpios. Publicada al 20% para atrapar fallas del build minificado; **subir a 100% pronto**, porque
+   en lanzamiento parcial la cohorte se mezcla y la medición se ensucia.
 2. **Decir por qué se rechazó.** `interpretAiRequest` colapsa seis caminos en un mismo `AI_UNAVAILABLE`
    y ahí se pierden cuota agotada, rate limit, IA apagada y falta de entitlement. Propuesta escrita en
    `.superpowers/sdd/propuesta-motivo-ai-unavailable.md`.
