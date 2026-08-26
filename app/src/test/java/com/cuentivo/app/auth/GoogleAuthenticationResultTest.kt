@@ -39,4 +39,16 @@ class GoogleAuthenticationResultTest {
             GoogleAuthenticationResult.fromCredentialFailure(isCancellation = false),
         )
     }
+
+    @Test
+    fun account_already_exists_collision_returns_account_already_exists() {
+        assertEquals(
+            GoogleAuthenticationResult.AccountAlreadyExists,
+            GoogleAuthenticationResult.fromFirebaseErrorCode("ERROR_CREDENTIAL_ALREADY_IN_USE"),
+        )
+        assertEquals(
+            GoogleAuthenticationResult.AccountAlreadyExists,
+            GoogleAuthenticationResult.fromFirebaseErrorCode("ERROR_EMAIL_ALREADY_IN_USE"),
+        )
+    }
 }

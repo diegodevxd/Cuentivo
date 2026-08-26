@@ -6,6 +6,14 @@ package com.cuentivo.app.auth
  * The gateway never hands raw Firebase or Credential Manager exceptions to the UI:
  * cancellation is silence, an existing manual account is an instruction, and everything
  * else is one generic failure. No PII, error codes or tokens ever reach the screen.
+ *
+ * Regla de oro de identidad y datos locales:
+ * Ante la duda se conservan los datos locales y se le pregunta al usuario.
+ * NUNCA se borra para resolver un conflicto de identidad.
+ *
+ * When linking an anonymous guest session fails because the Google account already belongs
+ * to another user ([AccountAlreadyExists]), the guest session and all its local ledger data
+ * remain preserved and untouched.
  */
 sealed interface GoogleAuthenticationResult {
     /** The Google account became (or was added to) the signed-in Firebase session. */
@@ -16,6 +24,9 @@ sealed interface GoogleAuthenticationResult {
 
     /** The email already has a password account here; sign in with the password first. */
     data object ManualAccountNeedsPassword : GoogleAuthenticationResult
+
+    /** The account already exists; linking is refused while preserving local guest data. */
+    data object AccountAlreadyExists : GoogleAuthenticationResult
 
     /** Anything else — shown as one localized generic message. */
     data object Failed : GoogleAuthenticationResult
@@ -29,13 +40,13 @@ sealed interface GoogleAuthenticationResult {
             if (isCancellation) Cancelled else Failed
 
         /**
-         * Maps a Firebase Auth error code. The only code the host can act on is the one that says
-         * the email already has a manual account: the fix is to sign in with the password and link
-         * from there, never to merge two UIDs silently.
+         * Maps a Firebase Auth error code. The only codes the host acts on are those explaining
+         * password presence or existing account collisions, preserving the local session.
          */
         fun fromFirebaseErrorCode(errorCode: String?): GoogleAuthenticationResult =
             when (errorCode) {
                 "ERROR_ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL" -> ManualAccountNeedsPassword
+                "ERROR_CREDENTIAL_ALREADY_IN_USE", "ERROR_EMAIL_ALREADY_IN_USE" -> AccountAlreadyExists
                 else -> Failed
             }
     }

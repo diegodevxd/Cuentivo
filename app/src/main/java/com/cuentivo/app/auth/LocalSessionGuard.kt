@@ -8,6 +8,10 @@ import kotlinx.coroutines.withContext
 /**
  * Makes sure the local database belongs to whoever is signed in right now.
  *
+ * Regla de oro de identidad y datos locales:
+ * Ante la duda se conservan los datos locales y se le pregunta al usuario.
+ * NUNCA se borra para resolver un conflicto de identidad.
+ *
  * Room is the source of truth and it lives on the device, not in the account. Signing out only
  * dropped the uid held in memory, so the next person to sign in on the same phone opened a database
  * still full of the previous owner's business, customers and sales — which is exactly what was
@@ -15,6 +19,10 @@ import kotlinx.coroutines.withContext
  *
  * Scoping every read by owner (see `BusinessDao.firstOwnedBy`) fixes what is *shown*. This fixes
  * what is *stored*: another person's ledger has no business sitting on this phone at all.
+ *
+ * Linking an anonymous guest session preserves the same Firebase UID (`previousUserId == userId`),
+ * so NO wipe occurs and all guest rows remain intact. A wipe only occurs when a genuinely different
+ * owner signs in (`previousUserId != userId`).
  */
 class LocalSessionGuard(
     context: Context,

@@ -147,6 +147,38 @@ import com.cuentivo.app.sync.OwnerMembershipBootstrap
 import com.cuentivo.app.sync.SyncPayloads
 import com.cuentivo.app.sync.SyncQueue
 import com.google.firebase.auth.FirebaseAuthException
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Surface
+import com.cuentivo.app.ui.NeoShapes
+import com.cuentivo.app.ui.NeoAction
+import com.cuentivo.app.ui.NeoFintechLayoutPolicy
+import com.cuentivo.app.ui.NeoPanel
+import com.cuentivo.app.ui.NeoSpacing
 
 private const val TAG = "MainActivity"
 
@@ -391,6 +423,26 @@ class MainActivity : ComponentActivity() {
                 // Bumped whenever the account is re-read, so the access decision below recomposes
                 // the moment somebody comes back from clicking the link in their inbox.
                 var verificationKey by remember { mutableIntStateOf(0) }
+
+                // Guest anonymous session startup
+                var isStartingAnonymousSession by remember { mutableStateOf(authenticationGateway.currentUserId == null) }
+                var anonymousStartupFailed by remember { mutableStateOf(false) }
+                var showManualAuthentication by remember { mutableStateOf(false) }
+
+                LaunchedEffect(Unit) {
+                    if (authenticationGateway.currentUserId == null && !showManualAuthentication) {
+                        authenticationGateway.signInAnonymously { result ->
+                            isStartingAnonymousSession = false
+                            result.onSuccess { userId ->
+                                authenticatedUserId = userId
+                                anonymousStartupFailed = false
+                            }.onFailure {
+                                anonymousStartupFailed = true
+                            }
+                        }
+                    }
+                }
+
                 // The daily reminder is a local, per-phone preference. State mirrors preferences so
                 // the Account sheet reflects changes immediately; the permission launcher only asks
                 // on API 33+ and only after the owner tries to turn the setting on.
@@ -419,91 +471,188 @@ class MainActivity : ComponentActivity() {
                         isSignedIn = authenticatedUserId != null,
                         isEmailVerified = authenticationGateway.isEmailVerified,
                         accountCreatedAtEpochMillis = authenticationGateway.accountCreatedAtEpochMillis,
+                        isAnonymous = authenticationGateway.isAnonymous,
                     )
                 }
                 if (authenticatedUserId == null) {
-                    val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
-                    val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
-                    val emailInUseMessage = stringResource(R.string.auth_email_in_use)
-                    val googleFailedMessage = stringResource(R.string.auth_google_failed)
-                    val googleManualPasswordMessage = stringResource(R.string.auth_google_manual_password_needed)
-                    val handleGoogleResult: (GoogleAuthenticationResult) -> Unit = { result ->
-                        isAuthenticating = false
-                        when (result) {
-                            is GoogleAuthenticationResult.SignedIn -> authenticatedUserId = result.userId
-                            GoogleAuthenticationResult.ManualAccountNeedsPassword ->
-                                authenticationMessage = googleManualPasswordMessage
-                            GoogleAuthenticationResult.Failed -> {
-                                authenticationMessage = googleFailedMessage
-                                crashReporter.report(CrashEvent.AUTH_FAILURE)
-                            }
-                            // Cancellation: nothing happened, nothing to say, session untouched.
-                            GoogleAuthenticationResult.Cancelled -> Unit
+                    if (isStartingAnonymousSession) {
+                        Box(
+                            modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         }
-                    }
-                    AuthenticationScreen(
-                        isWorking = isAuthenticating,
-                        message = authenticationMessage,
-                        onSignIn = { email, password ->
-                            isAuthenticating = true
-                            authenticationMessage = null
-                            authenticationGateway.signIn(email, password) { result ->
-                                isAuthenticating = false
-                                result.onSuccess { authenticatedUserId = it }
-                                    .onFailure {
-                                        authenticationMessage = signInFailedMessage
-                                        crashReporter.report(CrashEvent.AUTH_FAILURE)
-                                    }
-                            }
-                        },
-                        onSignUp = { email, password ->
-                            isAuthenticating = true
-                            authenticationMessage = null
-                            authenticationGateway.signUp(email, password) { result ->
-                                isAuthenticating = false
-                                result.onSuccess { userId ->
-                                    // Sent straight away: the verification screen this lands on is
-                                    // useless without the mail it tells people to go and open.
-                                    authenticationGateway.sendEmailVerification { }
-                                    // Recorded here and nowhere else: this is the only moment the
-                                    // app can know an account owns nothing without asking the cloud.
-                                    signedUpUserId = userId
-                                    authenticatedUserId = userId
-                                    verificationKey++
-                                }.onFailure { error ->
-                                    // The one failure worth naming: "that address already has an
-                                    // account, sign in instead" is actionable, and Firebase already
-                                    // discloses it. Everything else stays generic.
-                                    authenticationMessage =
-                                        if (error is FirebaseAuthUserCollisionException) emailInUseMessage
-                                        else {
-                                            crashReporter.report(CrashEvent.AUTH_FAILURE)
-                                            signUpFailedMessage
+                    } else if (anonymousStartupFailed && !showManualAuthentication) {
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
+                            val layout = NeoFintechLayoutPolicy.forWidth(maxWidth.value.toInt())
+                            val horizontalGutter = maxOf(16, layout.horizontalPaddingDp)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(horizontal = horizontalGutter.dp, vertical = 24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                NeoPanel(modifier = Modifier.widthIn(max = 480.dp)) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(NeoSpacing.lg),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
+                                    ) {
+                                        Surface(
+                                            shape = NeoShapes.card,
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)),
+                                            modifier = Modifier.size(56.dp),
+                                        ) {
+                                            Image(
+                                                painter = painterResource(R.mipmap.ic_launcher_foreground),
+                                                contentDescription = "Cuentivo",
+                                                modifier = Modifier.fillMaxSize().scale(1.5f),
+                                            )
                                         }
+                                        Text(
+                                            text = stringResource(R.string.auth_first_launch_offline_title),
+                                            style = MaterialTheme.typography.titleLarge,
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.auth_first_launch_offline_message),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        NeoAction(
+                                            label = stringResource(R.string.auth_first_launch_offline_retry),
+                                            enabled = !isStartingAnonymousSession,
+                                            onClick = {
+                                                isStartingAnonymousSession = true
+                                                anonymousStartupFailed = false
+                                                authenticationGateway.signInAnonymously { result ->
+                                                    isStartingAnonymousSession = false
+                                                    result.onSuccess { userId ->
+                                                        authenticatedUserId = userId
+                                                        anonymousStartupFailed = false
+                                                    }.onFailure {
+                                                        anonymousStartupFailed = true
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        TextButton(
+                                            onClick = { showManualAuthentication = true },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Text(stringResource(R.string.auth_first_launch_offline_switch_to_sign_in))
+                                        }
+                                    }
                                 }
                             }
-                        },
-                        onModeChange = { authenticationMessage = null },
-                        onResetPassword = { email ->
-                            // The result is deliberately ignored. The screen says the same thing
-                            // either way, so a stranger cannot use this to discover who has an
-                            // account here.
-                            authenticationGateway.sendPasswordReset(email) { }
-                        },
-                        onGoogleSignIn = {
-                            isAuthenticating = true
-                            authenticationMessage = null
-                            // Signed out: Google creates or signs into the session. Signed in (a
-                            // race, since this screen only renders without a session): linking
-                            // adds Google to the existing account, preserving its UID instead of
-                            // minting a second one.
-                            if (authenticationGateway.currentUserId == null) {
-                                authenticationGateway.signInWithGoogle(this@MainActivity, handleGoogleResult)
-                            } else {
-                                authenticationGateway.linkGoogle(this@MainActivity, handleGoogleResult)
+                        }
+                    } else {
+                        val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
+                        val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
+                        val emailInUseMessage = stringResource(R.string.auth_email_in_use)
+                        val googleFailedMessage = stringResource(R.string.auth_google_failed)
+                        val googleManualPasswordMessage = stringResource(R.string.auth_google_manual_password_needed)
+                        val handleGoogleResult: (GoogleAuthenticationResult) -> Unit = { result ->
+                            isAuthenticating = false
+                            when (result) {
+                                is GoogleAuthenticationResult.SignedIn -> {
+                                    authenticatedUserId = result.userId
+                                    verificationKey++
+                                }
+                                GoogleAuthenticationResult.ManualAccountNeedsPassword ->
+                                    authenticationMessage = googleManualPasswordMessage
+                                GoogleAuthenticationResult.AccountAlreadyExists ->
+                                    authenticationMessage = emailInUseMessage
+                                GoogleAuthenticationResult.Failed -> {
+                                    authenticationMessage = googleFailedMessage
+                                    crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                }
+                                // Cancellation: nothing happened, nothing to say, session untouched.
+                                GoogleAuthenticationResult.Cancelled -> Unit
                             }
-                        },
-                    )
+                        }
+                        AuthenticationScreen(
+                            isWorking = isAuthenticating,
+                            message = authenticationMessage,
+                            onSignIn = { email, password ->
+                                isAuthenticating = true
+                                authenticationMessage = null
+                                authenticationGateway.signIn(email, password) { result ->
+                                    isAuthenticating = false
+                                    result.onSuccess { authenticatedUserId = it }
+                                        .onFailure {
+                                            authenticationMessage = signInFailedMessage
+                                            crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                        }
+                                }
+                            },
+                            onSignUp = { email, password ->
+                                isAuthenticating = true
+                                authenticationMessage = null
+                                // Regla de oro de identidad y datos locales:
+                                // Ante la duda se conservan los datos locales y se le pregunta al usuario.
+                                // NUNCA se borra para resolver un conflicto de identidad.
+                                // Al registrarse desde una sesión anónima, linkWithCredential conserva el UID y todos los datos locales.
+                                if (authenticationGateway.isAnonymous) {
+                                    authenticationGateway.linkEmail(email, password) { result ->
+                                        isAuthenticating = false
+                                        result.onSuccess { userId ->
+                                            authenticationGateway.sendEmailVerification { }
+                                            signedUpUserId = userId
+                                            authenticatedUserId = userId
+                                            verificationKey++
+                                        }.onFailure { error ->
+                                            authenticationMessage =
+                                                if (error is FirebaseAuthUserCollisionException) emailInUseMessage
+                                                else {
+                                                    crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                                    signUpFailedMessage
+                                                }
+                                        }
+                                    }
+                                } else {
+                                    authenticationGateway.signUp(email, password) { result ->
+                                        isAuthenticating = false
+                                        result.onSuccess { userId ->
+                                            authenticationGateway.sendEmailVerification { }
+                                            signedUpUserId = userId
+                                            authenticatedUserId = userId
+                                            verificationKey++
+                                        }.onFailure { error ->
+                                            authenticationMessage =
+                                                if (error is FirebaseAuthUserCollisionException) emailInUseMessage
+                                                else {
+                                                    crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                                    signUpFailedMessage
+                                                }
+                                        }
+                                    }
+                                }
+                            },
+                            onModeChange = { authenticationMessage = null },
+                            onResetPassword = { email ->
+                                // The result is deliberately ignored. The screen says the same thing
+                                // either way, so a stranger cannot use this to discover who has an
+                                // account here.
+                                authenticationGateway.sendPasswordReset(email) { }
+                            },
+                            onGoogleSignIn = {
+                                isAuthenticating = true
+                                authenticationMessage = null
+                                // Signed out: Google creates or signs into the session. Signed in / anonymous: linking
+                                // adds Google to the existing account, preserving its UID instead of minting a second one.
+                                if (authenticationGateway.currentUserId == null) {
+                                    authenticationGateway.signInWithGoogle(this@MainActivity, handleGoogleResult)
+                                } else {
+                                    authenticationGateway.linkGoogle(this@MainActivity, handleGoogleResult)
+                                }
+                            },
+                        )
+                    }
                 } else if (emailAccess == EmailVerificationAccess.MUST_VERIFY) {
                     val stillPendingMessage = stringResource(R.string.verify_still_pending)
                     val resentMessage = stringResource(R.string.verify_resent)
@@ -1826,6 +1975,7 @@ class MainActivity : ComponentActivity() {
                     // A sign-out must never leave the previous owner's reminder job behind.
                     CollectionReminderScheduler.cancel(this@MainActivity)
                     authenticatedUserId = null
+                    showManualAuthentication = true
                 }, onDeleteAccount = {
                     val businessToErase = (state as? DashboardUiState.Content)?.businessId
                     lifecycleScope.launch {

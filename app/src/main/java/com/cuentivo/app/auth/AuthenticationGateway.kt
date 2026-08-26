@@ -11,6 +11,7 @@ import androidx.credentials.exceptions.NoCredentialException
 import com.cuentivo.app.R
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.GoogleAuthProvider
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 interface AuthenticationGateway {
     val currentUserId: String?
     val currentUserEmail: String?
+    val isAnonymous: Boolean
 
     /** Whether the signed-in address has been proven to exist. Stale until [reloadUser] runs. */
     val isEmailVerified: Boolean
@@ -32,6 +34,16 @@ interface AuthenticationGateway {
     fun signIn(email: String, password: String, onComplete: (Result<String>) -> Unit)
 
     fun signUp(email: String, password: String, onComplete: (Result<String>) -> Unit)
+
+    /**
+     * Starts an anonymous guest session on first launch, without credentials or email.
+     */
+    fun signInAnonymously(onComplete: (Result<String>) -> Unit)
+
+    /**
+     * Links an email and password to an existing anonymous guest session, preserving its UID.
+     */
+    fun linkEmail(email: String, password: String, onComplete: (Result<String>) -> Unit)
 
     fun sendEmailVerification(onComplete: (Result<Unit>) -> Unit)
 
@@ -87,6 +99,9 @@ class FirebaseAuthenticationGateway(
     override val currentUserEmail: String?
         get() = auth.currentUser?.email?.trim()?.takeIf { it.isNotEmpty() }
 
+    override val isAnonymous: Boolean
+        get() = auth.currentUser?.isAnonymous == true
+
     override val isEmailVerified: Boolean
         get() = auth.currentUser?.isEmailVerified == true
 
@@ -107,6 +122,32 @@ class FirebaseAuthenticationGateway(
         auth.createUserWithEmailAndPassword(email.trim(), password).addOnCompleteListener { task ->
             if (task.isSuccessful) {
                 val userId = task.result.user?.uid
+                if (userId != null) onComplete(Result.success(userId))
+                else onComplete(Result.failure(IllegalStateException()))
+            } else onComplete(Result.failure(task.exception ?: IllegalStateException()))
+        }
+    }
+
+    override fun signInAnonymously(onComplete: (Result<String>) -> Unit) {
+        auth.signInAnonymously().addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val userId = task.result?.user?.uid
+                if (userId != null) onComplete(Result.success(userId))
+                else onComplete(Result.failure(IllegalStateException()))
+            } else onComplete(Result.failure(task.exception ?: IllegalStateException()))
+        }
+    }
+
+    override fun linkEmail(email: String, password: String, onComplete: (Result<String>) -> Unit) {
+        val user = auth.currentUser
+        if (user == null) {
+            onComplete(Result.failure(IllegalStateException()))
+            return
+        }
+        val credential = EmailAuthProvider.getCredential(email.trim(), password)
+        user.linkWithCredential(credential).addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val userId = task.result?.user?.uid
                 if (userId != null) onComplete(Result.success(userId))
                 else onComplete(Result.failure(IllegalStateException()))
             } else onComplete(Result.failure(task.exception ?: IllegalStateException()))

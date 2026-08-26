@@ -388,6 +388,10 @@
     <string name="auth_google_or">o</string>
     <string name="auth_google_manual_password_needed">Ese correo ya tiene una cuenta con contraseña. Inicia sesión con tu contraseña y después podrás vincular tu cuenta de Google.</string>
     <string name="auth_google_failed">No fue posible iniciar sesión con Google. Inténtalo de nuevo.</string>
+    <string name="auth_first_launch_offline_title">Preparamos tu libreta</string>
+    <string name="auth_first_launch_offline_message">Sólo esta primera vez necesitamos conexión para preparar tu libreta. Después Cuentivo funciona sin internet.</string>
+    <string name="auth_first_launch_offline_retry">Reintentar</string>
+    <string name="auth_first_launch_offline_switch_to_sign_in">Ya tengo una cuenta</string>
     <string name="verify_title">Verifica tu correo</string>
     <string name="verify_detail">Te enviamos un correo a %1$s. Ábrelo, toca el enlace y regresa aquí.</string>
     <string name="verify_detail_no_email">Te enviamos un correo de verificación. Ábrelo, toca el enlace y regresa aquí.</string>
