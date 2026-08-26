@@ -32,8 +32,18 @@ export interface PlaySubscriptionApi {
 }
 
 export type PlayVerificationResult =
-  | { status: "VERIFIED"; enabled: true; expiresAtEpochMillis: number }
-  | { status: "INACTIVE"; enabled: false; expiresAtEpochMillis?: number }
+  | {
+      status: "VERIFIED";
+      enabled: true;
+      expiresAtEpochMillis: number;
+      obfuscatedExternalAccountId?: string;
+    }
+  | {
+      status: "INACTIVE";
+      enabled: false;
+      expiresAtEpochMillis?: number;
+      obfuscatedExternalAccountId?: string;
+    }
   | { status: "INVALID" }
   | { status: "UNAVAILABLE" };
 
@@ -43,6 +53,13 @@ export type PlayVerificationResult =
  */
 export function hashPurchaseToken(purchaseToken: string): string {
   return crypto.createHash("sha256").update(purchaseToken.trim()).digest("hex");
+}
+
+/**
+ * Hashes the Firebase UID using SHA-256 (UTF-8, trimmed, lowercase hex) to match BillingAccountHasher.kt.
+ */
+export function hashObfuscatedAccountId(uid: string): string {
+  return crypto.createHash("sha256").update(uid.trim(), "utf8").digest("hex").toLowerCase();
 }
 
 /**
@@ -81,11 +98,14 @@ export function translatePlaySubscription(
     return { status: "INVALID" };
   }
 
+  const obfuscatedExternalAccountId = response.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim();
+
   if (state === "SUBSCRIPTION_STATE_ACTIVE" || state === "SUBSCRIPTION_STATE_IN_GRACE_PERIOD") {
     return {
       status: "VERIFIED",
       enabled: true,
       expiresAtEpochMillis,
+      obfuscatedExternalAccountId,
     };
   }
 
@@ -93,6 +113,7 @@ export function translatePlaySubscription(
     status: "INACTIVE",
     enabled: false,
     expiresAtEpochMillis,
+    obfuscatedExternalAccountId,
   };
 }
 

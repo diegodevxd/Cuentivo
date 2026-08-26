@@ -3,6 +3,7 @@ import {
   createVerifyAiSubscriptionHandler,
   SUPPORTED_AI_PRODUCT_ID,
 } from "../src/verifyAiSubscription.js";
+import { hashObfuscatedAccountId } from "../src/ai/playSubscriptionVerifier.js";
 import type { PlaySubscriptionApi, PlaySubscriptionV2Response } from "../src/ai/playSubscriptionVerifier.js";
 import type {
   SubscriptionEntitlementRepository,
@@ -16,6 +17,8 @@ describe("verifyAiSubscription handler", () => {
   const FUTURE_ISO = "2026-09-25T12:00:00.000Z";
   const EXPIRES = Date.parse(FUTURE_ISO);
   const TOKEN = "valid_play_token_abc_123";
+  const VALID_UID = "user_valid";
+  const VALID_OBFUSCATED_ID = hashObfuscatedAccountId(VALID_UID);
 
   function createMockPlayApi(response: PlaySubscriptionV2Response | null, shouldThrow = false): PlaySubscriptionApi {
     return {
@@ -103,7 +106,7 @@ describe("verifyAiSubscription handler", () => {
     });
 
     const resultMissingToken = await handler({
-      auth: { uid: "user_valid", token: { firebase: { sign_in_provider: "google.com" } } },
+      auth: { uid: VALID_UID, token: { firebase: { sign_in_provider: "google.com" } } },
       data: { purchaseToken: "", productId: SUPPORTED_AI_PRODUCT_ID },
     });
     expect(resultMissingToken).toEqual({
@@ -112,7 +115,7 @@ describe("verifyAiSubscription handler", () => {
     });
 
     const resultWrongProduct = await handler({
-      auth: { uid: "user_valid", token: { firebase: { sign_in_provider: "google.com" } } },
+      auth: { uid: VALID_UID, token: { firebase: { sign_in_provider: "google.com" } } },
       data: { purchaseToken: TOKEN, productId: "unknown_plan" },
     });
     expect(resultWrongProduct).toEqual({
@@ -130,7 +133,7 @@ describe("verifyAiSubscription handler", () => {
     });
 
     const result = await handler({
-      auth: { uid: "user_valid", token: { firebase: { sign_in_provider: "google.com" } } },
+      auth: { uid: VALID_UID, token: { firebase: { sign_in_provider: "google.com" } } },
       data: { purchaseToken: TOKEN, productId: SUPPORTED_AI_PRODUCT_ID },
     });
 
@@ -149,7 +152,7 @@ describe("verifyAiSubscription handler", () => {
     });
 
     const result = await handler({
-      auth: { uid: "user_valid", token: { firebase: { sign_in_provider: "google.com" } } },
+      auth: { uid: VALID_UID, token: { firebase: { sign_in_provider: "google.com" } } },
       data: { purchaseToken: TOKEN, productId: SUPPORTED_AI_PRODUCT_ID },
     });
 
@@ -159,7 +162,7 @@ describe("verifyAiSubscription handler", () => {
     });
   });
 
-  test("successfully verifies active Play subscription and records entitlement", async () => {
+  test("successfully verifies active Play subscription with matching obfuscatedExternalAccountId and records entitlement", async () => {
     const playResponse: PlaySubscriptionV2Response = {
       subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
       lineItems: [
@@ -168,17 +171,23 @@ describe("verifyAiSubscription handler", () => {
           expiryTime: FUTURE_ISO,
         },
       ],
+      externalAccountIdentifiers: {
+        obfuscatedExternalAccountId: VALID_OBFUSCATED_ID,
+      },
     };
+
+    const repository = createMockRepository("RECORDED");
+    const recordSpy = vi.spyOn(repository, "recordSubscription");
 
     const handler = createVerifyAiSubscriptionHandler({
       playApi: createMockPlayApi(playResponse),
-      repository: createMockRepository("RECORDED"),
+      repository,
       packageName: PACKAGE_NAME,
       now: () => NOW,
     });
 
     const result = await handler({
-      auth: { uid: "user_valid", token: { firebase: { sign_in_provider: "google.com" } } },
+      auth: { uid: VALID_UID, token: { firebase: { sign_in_provider: "google.com" } } },
       data: { purchaseToken: TOKEN, productId: SUPPORTED_AI_PRODUCT_ID },
     });
 
@@ -186,6 +195,136 @@ describe("verifyAiSubscription handler", () => {
       status: "VERIFIED",
       enabled: true,
       expiresAtEpochMillis: EXPIRES,
+    });
+    expect(recordSpy).toHaveBeenCalledWith({
+      uid: VALID_UID,
+      purchaseToken: TOKEN,
+      productId: SUPPORTED_AI_PRODUCT_ID,
+      enabled: true,
+      expiresAtEpochMillis: EXPIRES,
+      nowEpochMillis: NOW,
+    });
+  });
+
+  test("rejects active Play subscription when obfuscatedExternalAccountId is missing with permission-denied and does NOT invoke repository", async () => {
+    const playResponse: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      lineItems: [
+        {
+          productId: SUPPORTED_AI_PRODUCT_ID,
+          expiryTime: FUTURE_ISO,
+        },
+      ],
+      // externalAccountIdentifiers is absent
+    };
+
+    const repository = createMockRepository("RECORDED");
+    const recordSpy = vi.spyOn(repository, "recordSubscription");
+    const onRejected = vi.fn();
+
+    const handler = createVerifyAiSubscriptionHandler({
+      playApi: createMockPlayApi(playResponse),
+      repository,
+      packageName: PACKAGE_NAME,
+      now: () => NOW,
+      onRejected,
+    });
+
+    const result = await handler({
+      auth: { uid: VALID_UID, token: { firebase: { sign_in_provider: "google.com" } } },
+      data: { purchaseToken: TOKEN, productId: SUPPORTED_AI_PRODUCT_ID },
+    });
+
+    expect(result).toEqual({
+      code: "permission-denied",
+      reason: "ACCOUNT_IDENTIFIER_MISMATCH",
+    });
+    expect(recordSpy).not.toHaveBeenCalled();
+    expect(onRejected).toHaveBeenCalledWith("ACCOUNT_IDENTIFIER_MISMATCH");
+  });
+
+  test("rejects active Play subscription when obfuscatedExternalAccountId is mismatched with permission-denied and does NOT invoke repository", async () => {
+    const playResponse: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      lineItems: [
+        {
+          productId: SUPPORTED_AI_PRODUCT_ID,
+          expiryTime: FUTURE_ISO,
+        },
+      ],
+      externalAccountIdentifiers: {
+        obfuscatedExternalAccountId: hashObfuscatedAccountId("different_user_uid"),
+      },
+    };
+
+    const repository = createMockRepository("RECORDED");
+    const recordSpy = vi.spyOn(repository, "recordSubscription");
+    const onRejected = vi.fn();
+
+    const handler = createVerifyAiSubscriptionHandler({
+      playApi: createMockPlayApi(playResponse),
+      repository,
+      packageName: PACKAGE_NAME,
+      now: () => NOW,
+      onRejected,
+    });
+
+    const result = await handler({
+      auth: { uid: VALID_UID, token: { firebase: { sign_in_provider: "google.com" } } },
+      data: { purchaseToken: TOKEN, productId: SUPPORTED_AI_PRODUCT_ID },
+    });
+
+    expect(result).toEqual({
+      code: "permission-denied",
+      reason: "ACCOUNT_IDENTIFIER_MISMATCH",
+    });
+    expect(recordSpy).not.toHaveBeenCalled();
+    expect(onRejected).toHaveBeenCalledWith("ACCOUNT_IDENTIFIER_MISMATCH");
+  });
+
+  test("records enabled: false with absolute expiry timestamp when subscription is inactive or expired", async () => {
+    const PAST_ISO = "2026-08-01T12:00:00.000Z";
+    const PAST_MILLIS = Date.parse(PAST_ISO);
+    const playResponse: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_EXPIRED",
+      lineItems: [
+        {
+          productId: SUPPORTED_AI_PRODUCT_ID,
+          expiryTime: PAST_ISO,
+        },
+      ],
+      externalAccountIdentifiers: {
+        obfuscatedExternalAccountId: VALID_OBFUSCATED_ID,
+      },
+    };
+
+    const repository = createMockRepository("RECORDED");
+    const recordSpy = vi.spyOn(repository, "recordSubscription");
+
+    const handler = createVerifyAiSubscriptionHandler({
+      playApi: createMockPlayApi(playResponse),
+      repository,
+      packageName: PACKAGE_NAME,
+      now: () => NOW,
+    });
+
+    const result = await handler({
+      auth: { uid: VALID_UID, token: { firebase: { sign_in_provider: "google.com" } } },
+      data: { purchaseToken: TOKEN, productId: SUPPORTED_AI_PRODUCT_ID },
+    });
+
+    expect(result).toEqual({
+      status: "VERIFIED",
+      enabled: false,
+      expiresAtEpochMillis: PAST_MILLIS,
+    });
+    expect(recordSpy).toHaveBeenCalledWith({
+      uid: VALID_UID,
+      purchaseToken: TOKEN,
+      productId: SUPPORTED_AI_PRODUCT_ID,
+      enabled: false,
+      expiresAtEpochMillis: PAST_MILLIS,
+      nowEpochMillis: NOW,
     });
   });
 
@@ -198,6 +337,9 @@ describe("verifyAiSubscription handler", () => {
           expiryTime: FUTURE_ISO,
         },
       ],
+      externalAccountIdentifiers: {
+        obfuscatedExternalAccountId: hashObfuscatedAccountId("user_intruder"),
+      },
     };
 
     const onRejected = vi.fn();

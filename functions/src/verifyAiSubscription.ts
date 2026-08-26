@@ -1,6 +1,6 @@
 import { isAnonymousUser, type CallableAuth } from "./contract";
 import type { PlaySubscriptionApi } from "./ai/playSubscriptionVerifier";
-import { translatePlaySubscription } from "./ai/playSubscriptionVerifier";
+import { hashObfuscatedAccountId, translatePlaySubscription } from "./ai/playSubscriptionVerifier";
 import type { SubscriptionEntitlementRepository } from "./ai/subscriptionEntitlementRepository";
 
 export type VerifyAiSubscriptionRequest = Readonly<{
@@ -65,6 +65,19 @@ export function createVerifyAiSubscriptionHandler(deps: {
     if (verification.status === "UNAVAILABLE") {
       deps.onRejected?.("PLAY_API_UNAVAILABLE");
       return { code: "unavailable", reason: "PLAY_API_UNAVAILABLE" };
+    }
+
+    // Fail-closed verification of obfuscatedExternalAccountId for active/grace subscriptions.
+    // Must strictly match SHA-256 hex digest of the authenticated UID.
+    if (verification.enabled) {
+      const expectedObfuscatedId = hashObfuscatedAccountId(uid);
+      if (
+        !verification.obfuscatedExternalAccountId ||
+        verification.obfuscatedExternalAccountId !== expectedObfuscatedId
+      ) {
+        deps.onRejected?.("ACCOUNT_IDENTIFIER_MISMATCH");
+        return { code: "permission-denied", reason: "ACCOUNT_IDENTIFIER_MISMATCH" };
+      }
     }
 
     const recordResult = await deps.repository.recordSubscription({
