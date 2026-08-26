@@ -24,8 +24,9 @@ describe("regional callable gateway", () => {
     }
   });
 
-  test("declares the gemini secret param with the exact literal", () => {
+  test("declares the gemini and play service account secret params with exact literals", () => {
     expect(SOURCE).toContain('defineSecret("CUENTIVOAI_GEMINI_API_KEY")');
+    expect(SOURCE).toContain('defineSecret("CUENTIVOAI_PLAY_SERVICE_ACCOUNT_KEY")');
   });
 
   test("uses a Gemini-compatible provider deadline below the callable deadline", () => {
@@ -33,7 +34,7 @@ describe("regional callable gateway", () => {
     expect(SOURCE).not.toContain("timeoutMillis: 8000");
   });
 
-  test("binds the secret only to interpretAiRequest", () => {
+  test("binds secrets strictly to their dedicated callables", () => {
     const interpretIndex = SOURCE.indexOf("export const interpretAiRequest");
     const authorizeIndex = SOURCE.indexOf("export const authorizeAiAction");
     const verifyIndex = SOURCE.indexOf("export const verifyAiSubscription");
@@ -43,18 +44,25 @@ describe("regional callable gateway", () => {
 
     const interpretBlock = SOURCE.slice(interpretIndex, authorizeIndex);
     expect(interpretBlock).toContain("secrets: [geminiApiKey]");
+    expect(interpretBlock).not.toContain("playServiceAccountKey");
 
     const authorizeBlock = SOURCE.slice(authorizeIndex, verifyIndex);
     expect(authorizeBlock).not.toContain("secrets:");
 
     const verifyBlock = SOURCE.slice(verifyIndex);
-    expect(verifyBlock).not.toContain("secrets:");
+    expect(verifyBlock).toContain("secrets: [playServiceAccountKey]");
+    expect(verifyBlock).not.toContain("geminiApiKey");
   });
 
-  test("reads the secret value only inside the interpret handler", () => {
+  test("reads the secret value only inside the respective handlers", () => {
     const interpretIndex = SOURCE.indexOf("export const interpretAiRequest");
-    const valueIndex = SOURCE.indexOf(".value()");
-    expect(valueIndex).toBeGreaterThan(interpretIndex);
+    const verifyIndex = SOURCE.indexOf("export const verifyAiSubscription");
+    const geminiValueIndex = SOURCE.indexOf("geminiApiKey.value()");
+    const playValueIndex = SOURCE.indexOf("playServiceAccountKey.value()");
+
+    expect(geminiValueIndex).toBeGreaterThan(interpretIndex);
+    expect(geminiValueIndex).toBeLessThan(verifyIndex);
+    expect(playValueIndex).toBeGreaterThan(verifyIndex);
   });
 
   test("composition root has no deepseek or direct provider urls", () => {

@@ -26,6 +26,10 @@ const PACKAGE_NAME = "com.cuentivo.app";
 // Android, other callables, logs or the repository.
 const geminiApiKey = defineSecret("CUENTIVOAI_GEMINI_API_KEY");
 
+// Server-only Google Play service account credential. Bound exclusively to verifyAiSubscription;
+// never available to Android, other callables, logs or the repository.
+const playServiceAccountKey = defineSecret("CUENTIVOAI_PLAY_SERVICE_ACCOUNT_KEY");
+
 /**
  * Process-level warm-instance edge guard: a bounded cost mitigation, NOT a durable security
  * boundary (cold starts reset it). Caps are fixed in code so the guard never needs a Firestore
@@ -104,21 +108,25 @@ export const authorizeAiAction = onCall({ ...AI_BOUNDARY, concurrency: 1 }, asyn
   return result;
 });
 
-export const verifyAiSubscription = onCall({ ...AI_BOUNDARY, concurrency: 1 }, async (request) => {
-  const result = await createVerifyAiSubscriptionHandler({
-    playApi: createDefaultPlaySubscriptionApi(),
-    repository: subscriptionEntitlementRepository(),
-    packageName: PACKAGE_NAME,
-    now: () => Date.now(),
-    onRejected: (reason) => {
-      logger.warn("AI_REJECTED", { reason });
-    },
-  })({
-    auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
-    data: request.data,
-  });
-  if ("code" in result) {
-    throw new HttpsError(result.code, "Subscription verification failed");
-  }
-  return result;
-});
+export const verifyAiSubscription = onCall(
+  { ...AI_BOUNDARY, concurrency: 1, secrets: [playServiceAccountKey] },
+  async (request) => {
+    const serviceAccountJson = playServiceAccountKey.value();
+    const result = await createVerifyAiSubscriptionHandler({
+      playApi: createDefaultPlaySubscriptionApi({ serviceAccountJson }),
+      repository: subscriptionEntitlementRepository(),
+      packageName: PACKAGE_NAME,
+      now: () => Date.now(),
+      onRejected: (reason) => {
+        logger.warn("AI_REJECTED", { reason });
+      },
+    })({
+      auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
+      data: request.data,
+    });
+    if ("code" in result) {
+      throw new HttpsError(result.code, "Subscription verification failed");
+    }
+    return result;
+  },
+);

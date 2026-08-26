@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { GoogleAuth } from "google-auth-library";
 
 export type PlaySubscriptionStatus =
   | "SUBSCRIPTION_STATE_ACTIVE"
@@ -95,23 +96,78 @@ export function translatePlaySubscription(
   };
 }
 
+export type PlaySubscriptionApiOptions = {
+  serviceAccountJson?: string | null;
+  customFetcher?: (url: string, headers: Record<string, string>) => Promise<unknown>;
+};
+
 /**
- * Factory for Play Subscription API. When external service credentials are not configured,
- * it fails closed safely.
+ * Factory for Google Play Subscription API client.
+ *
+ * In production, it authenticates with the provided service account JSON credentials
+ * using the `https://www.googleapis.com/auth/androidpublisher` OAuth2 scope.
+ *
+ * When serviceAccountJson is empty, invalid, or customFetcher is provided (in tests),
+ * it behaves accordingly without leaking credentials or tokens.
  */
 export function createDefaultPlaySubscriptionApi(
-  customFetcher?: (url: string, headers: Record<string, string>) => Promise<unknown>,
+  options?: PlaySubscriptionApiOptions | ((url: string, headers: Record<string, string>) => Promise<unknown>),
 ): PlaySubscriptionApi {
+  const customFetcher = typeof options === "function" ? options : options?.customFetcher;
+  const serviceAccountJson = typeof options === "object" && options !== null ? options.serviceAccountJson : undefined;
+
   return {
     async getSubscription(packageName: string, token: string): Promise<PlaySubscriptionV2Response | null> {
       if (customFetcher) {
         const response = await customFetcher(
-          `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/${token}`,
+          `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/${encodeURIComponent(token)}`,
           {},
         );
         return response as PlaySubscriptionV2Response;
       }
-      throw new Error("Play Developer API service account not configured in this environment");
+
+      const trimmedJson = serviceAccountJson?.trim();
+      if (!trimmedJson) {
+        throw new Error("Play Developer API service account not configured in this environment");
+      }
+
+      let credentials: Record<string, unknown>;
+      try {
+        credentials = JSON.parse(trimmedJson);
+      } catch {
+        throw new Error("Play Developer API service account credentials are not valid JSON");
+      }
+
+      const auth = new GoogleAuth({
+        credentials,
+        scopes: ["https://www.googleapis.com/auth/androidpublisher"],
+      });
+
+      const client = await auth.getClient();
+      const accessTokenResponse = await client.getAccessToken();
+      const accessToken = accessTokenResponse.token;
+      if (!accessToken) {
+        throw new Error("Failed to obtain OAuth2 access token for Play Developer API");
+      }
+
+      const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(token)}`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+      });
+
+      if (response.status === 404) {
+        return null;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Play Developer API request failed with HTTP ${response.status}`);
+      }
+
+      return (await response.json()) as PlaySubscriptionV2Response;
     },
   };
 }

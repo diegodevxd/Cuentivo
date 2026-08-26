@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   hashPurchaseToken,
   translatePlaySubscription,
+  createDefaultPlaySubscriptionApi,
   type PlaySubscriptionV2Response,
 } from "../src/ai/playSubscriptionVerifier.js";
 
@@ -124,5 +125,30 @@ describe("playSubscriptionVerifier", () => {
       ],
     };
     expect(translatePlaySubscription(response, PRODUCT_ID)).toEqual({ status: "INVALID" });
+  });
+
+  test("createDefaultPlaySubscriptionApi with customFetcher dispatches without credentials", async () => {
+    const expectedResponse: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      lineItems: [{ productId: PRODUCT_ID, expiryTime: FUTURE_ISO }],
+    };
+    const api = createDefaultPlaySubscriptionApi(async (url) => {
+      expect(url).toContain("tokens/test_token_123");
+      return expectedResponse;
+    });
+    const result = await api.getSubscription("com.cuentivo.app", "test_token_123");
+    expect(result).toEqual(expectedResponse);
+  });
+
+  test("createDefaultPlaySubscriptionApi fails closed when service account is missing or invalid JSON", async () => {
+    const apiMissing = createDefaultPlaySubscriptionApi();
+    await expect(apiMissing.getSubscription("com.cuentivo.app", "token_123")).rejects.toThrow(
+      "service account not configured",
+    );
+
+    const apiInvalidJson = createDefaultPlaySubscriptionApi({ serviceAccountJson: "invalid_json_string" });
+    await expect(apiInvalidJson.getSubscription("com.cuentivo.app", "token_123")).rejects.toThrow(
+      "not valid JSON",
+    );
   });
 });
