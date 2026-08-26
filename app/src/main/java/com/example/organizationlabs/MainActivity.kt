@@ -128,8 +128,10 @@ import com.cuentivo.app.backup.DatabaseBackup
 import com.cuentivo.app.billing.BillingGateway
 import com.cuentivo.app.billing.EntitlementStore
 import androidx.activity.compose.BackHandler
+import androidx.compose.material3.AlertDialog
 import com.cuentivo.app.auth.AnonymousStartupFailureCause
 import com.cuentivo.app.auth.AuthenticationFlowPolicy
+import com.cuentivo.app.auth.GuestAccountSwitchPolicy
 import com.cuentivo.app.domain.OpeningBalanceRow
 import com.cuentivo.app.ui.onboarding.FirstDebtPolicy
 import com.cuentivo.app.ui.onboarding.FirstDebtPreferenceStore
@@ -1157,11 +1159,28 @@ class MainActivity : ComponentActivity() {
 
                 if (showAccountLinking) {
                     BackHandler { showAccountLinking = false }
+                    var pendingAccountSwitchAction by remember { mutableStateOf<(() -> Unit)?>(null) }
                     val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
                     val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
                     val emailInUseMessage = stringResource(R.string.auth_email_in_use)
                     val googleFailedMessage = stringResource(R.string.auth_google_failed)
                     val googleManualPasswordMessage = stringResource(R.string.auth_google_manual_password_needed)
+
+                    val performSignIn: (String, String) -> Unit = { email, password ->
+                        isAuthenticating = true
+                        authenticationMessage = null
+                        authenticationGateway.signIn(email, password) { result ->
+                            isAuthenticating = false
+                            result.onSuccess {
+                                authenticatedUserId = it
+                                showAccountLinking = false
+                            }.onFailure {
+                                authenticationMessage = signInFailedMessage
+                                crashReporter.report(CrashEvent.AUTH_FAILURE)
+                            }
+                        }
+                    }
+
                     val handleGoogleResult: (GoogleAuthenticationResult) -> Unit = { result ->
                         isAuthenticating = false
                         when (result) {
@@ -1181,22 +1200,54 @@ class MainActivity : ComponentActivity() {
                             GoogleAuthenticationResult.Cancelled -> Unit
                         }
                     }
+
+                    if (pendingAccountSwitchAction != null) {
+                        val count = customers.size
+                        val messageText = if (count > 0) {
+                            stringResource(R.string.auth_guest_switch_confirm_message, count)
+                        } else {
+                            stringResource(R.string.auth_guest_switch_confirm_message_generic)
+                        }
+                        AlertDialog(
+                            onDismissRequest = { pendingAccountSwitchAction = null },
+                            title = { Text(stringResource(R.string.auth_guest_switch_confirm_title)) },
+                            text = { Text(messageText) },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        val action = pendingAccountSwitchAction
+                                        pendingAccountSwitchAction = null
+                                        action?.invoke()
+                                    },
+                                ) {
+                                    Text(
+                                        stringResource(R.string.auth_guest_switch_confirm_proceed),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { pendingAccountSwitchAction = null }) {
+                                    Text(stringResource(R.string.auth_guest_switch_confirm_cancel))
+                                }
+                            },
+                        )
+                    }
+
                     AuthenticationScreen(
                         isWorking = isAuthenticating,
                         message = authenticationMessage,
                         customerCount = customers.size,
                         onSignIn = { email, password ->
-                            isAuthenticating = true
-                            authenticationMessage = null
-                            authenticationGateway.signIn(email, password) { result ->
-                                isAuthenticating = false
-                                result.onSuccess {
-                                    authenticatedUserId = it
-                                    showAccountLinking = false
-                                }.onFailure {
-                                    authenticationMessage = signInFailedMessage
-                                    crashReporter.report(CrashEvent.AUTH_FAILURE)
-                                }
+                            if (GuestAccountSwitchPolicy.shouldConfirmAccountSwitch(
+                                    isAnonymous = authenticationGateway.isAnonymous,
+                                    customerCount = customers.size,
+                                    hasFinancialActivity = hasFinancialActivity,
+                                )
+                            ) {
+                                pendingAccountSwitchAction = { performSignIn(email, password) }
+                            } else {
+                                performSignIn(email, password)
                             }
                         },
                         onSignUp = { email, password ->
