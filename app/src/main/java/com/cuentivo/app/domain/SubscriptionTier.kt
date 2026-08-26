@@ -1,8 +1,16 @@
 package com.cuentivo.app.domain
 
 /**
- * What the business is paying for. Two plans only: a free tier meant for trying the app with real
- * customers, and Pro.
+ * What the business is paying for. Three plans: a free tier meant for trying the app with real
+ * customers, Pro, and CuentivoAI.
+ *
+ * **The plans nest, they do not stack.** [AI] is not an add-on bought on top of [PRO]; it is a
+ * higher plan that includes everything Pro has plus the assistant. Nobody pays for two at once.
+ * That is why code asks [isPaid] rather than comparing against [PRO]: an `== PRO` check would take
+ * cloud backup or photos away from the customer paying the most, and it would do it silently.
+ *
+ * Declared cheapest first so [ordinal] is the plan ranking, which is what resolves someone who
+ * briefly holds two subscriptions while upgrading.
  *
  * Every limit lives here and nowhere else. Tightening the free plan must be a one-line change in
  * this file, never a hunt through Composables.
@@ -10,11 +18,18 @@ package com.cuentivo.app.domain
 enum class SubscriptionTier {
     FREE,
     PRO,
+    AI,
     ;
 
+    /** Whether this plan carries the Pro benefits. Every paid plan does; only [FREE] does not. */
+    val isPaid: Boolean get() = this != FREE
+
     companion object {
-        /** Play Console product id for the single paid subscription. */
+        /** Play Console product id for the Pro subscription. */
         const val PRO_PRODUCT_ID = "cuentivo_pro_mensual"
+
+        /** Play Console product id for the CuentivoAI subscription. */
+        const val AI_PRODUCT_ID = "cuentivo_ai_mensual"
 
         /** Falls back to FREE on anything unrecognized: an unknown plan must never unlock features. */
         fun fromStoredValue(raw: String?): SubscriptionTier =
@@ -52,7 +67,7 @@ object FeatureAccessManager {
     private const val UPGRADE = "Actualiza a Cuentivo Pro para quitar los límites."
 
     fun canAddCustomer(tier: SubscriptionTier, activeCustomers: Int): AccessDecision =
-        if (tier == SubscriptionTier.PRO || activeCustomers < FREE_CUSTOMER_LIMIT) {
+        if (tier.isPaid || activeCustomers < FREE_CUSTOMER_LIMIT) {
             AccessDecision.Allowed
         } else {
             AccessDecision.Blocked(
@@ -62,7 +77,7 @@ object FeatureAccessManager {
         }
 
     fun canRegisterSale(tier: SubscriptionTier, salesRecorded: Int): AccessDecision =
-        if (tier == SubscriptionTier.PRO || salesRecorded < FREE_SALE_LIMIT) {
+        if (tier.isPaid || salesRecorded < FREE_SALE_LIMIT) {
             AccessDecision.Allowed
         } else {
             AccessDecision.Blocked(
@@ -72,7 +87,7 @@ object FeatureAccessManager {
         }
 
     fun canUse(tier: SubscriptionTier, feature: PaidFeature): AccessDecision =
-        if (tier == SubscriptionTier.PRO) {
+        if (tier.isPaid) {
             AccessDecision.Allowed
         } else {
             AccessDecision.Blocked(

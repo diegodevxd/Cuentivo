@@ -36,7 +36,7 @@ object CloudRestorePolicy {
         // Checked first so a Pro user with data intact is never told anything about restoring, and
         // so the common case costs no network call at all.
         hasLocalBusiness -> CloudRestoreDecision.AlreadyHasBusiness
-        tier != SubscriptionTier.PRO -> CloudRestoreDecision.NotEntitled
+        !tier.isPaid -> CloudRestoreDecision.NotEntitled
         alreadyAttempted -> CloudRestoreDecision.AlreadyAttempted
         else -> CloudRestoreDecision.Attempt
     }

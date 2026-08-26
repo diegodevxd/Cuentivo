@@ -30,7 +30,7 @@ object SyncEntitlement {
     }
 
     /** Whether a plan, on its own, includes the cloud. Used by the UI, which has no staleness. */
-    fun allowsCloudSync(tier: SubscriptionTier): Boolean = tier == SubscriptionTier.PRO
+    fun allowsCloudSync(tier: SubscriptionTier): Boolean = tier.isPaid
 
     /**
      * How long a confirmation from Play is trusted before the app insists on hearing it again.

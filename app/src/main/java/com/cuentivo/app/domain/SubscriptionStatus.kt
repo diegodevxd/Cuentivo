@@ -23,8 +23,18 @@ data class PlayPurchase(
  */
 object SubscriptionStatus {
 
+    /**
+     * The highest plan any completed purchase grants.
+     *
+     * Highest, not first: upgrading from Pro to CuentivoAI leaves both subscriptions reported for a
+     * while, and answering PRO there would take the assistant away from someone already paying for
+     * it. [SubscriptionTier] is declared cheapest first, so `maxOrNull` is the ranking.
+     */
     fun tierFrom(purchases: List<PlayPurchase>): SubscriptionTier =
-        if (purchases.any { it.isPurchased && it.grantsPro() }) SubscriptionTier.PRO else SubscriptionTier.FREE
+        purchases.filter { it.isPurchased }
+            .mapNotNull { it.grantedTier() }
+            .maxOrNull()
+            ?: SubscriptionTier.FREE
 
     /**
      * Purchases the app still has to confirm to Google.
@@ -34,7 +44,7 @@ object SubscriptionStatus {
      * money back while the app goes on treating them as subscribers.
      */
     fun needsAcknowledgement(purchases: List<PlayPurchase>): List<PlayPurchase> =
-        purchases.filter { it.isPurchased && it.grantsPro() && !it.isAcknowledged }
+        purchases.filter { it.isPurchased && it.grantedTier() != null && !it.isAcknowledged }
 
     /**
      * Access is granted before acknowledgement, never after.
@@ -42,6 +52,10 @@ object SubscriptionStatus {
      * Google's own order is: deliver the entitlement, then acknowledge. Waiting for the
      * acknowledgement round trip would leave someone who just paid staring at the free plan.
      */
-    private fun PlayPurchase.grantsPro(): Boolean =
-        productIds.contains(SubscriptionTier.PRO_PRODUCT_ID)
+    private fun PlayPurchase.grantedTier(): SubscriptionTier? = when {
+        productIds.contains(SubscriptionTier.AI_PRODUCT_ID) -> SubscriptionTier.AI
+        productIds.contains(SubscriptionTier.PRO_PRODUCT_ID) -> SubscriptionTier.PRO
+        // Anything else Play reports is unrelated to a plan and grants nothing.
+        else -> null
+    }
 }
