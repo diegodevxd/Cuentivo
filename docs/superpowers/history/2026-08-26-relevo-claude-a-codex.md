@@ -158,3 +158,69 @@ Están en `CLAUDE.md`, pero éstas son las que más se rozan en este tramo:
 - Los `object` de `domain/` son **Kotlin puro sin Android**. Única excepción documentada:
   `LegacyMigrationRepository.kt`.
 - **No declarar nada completo sin build y pruebas realmente ejecutadas.** No inventar resultados.
+
+---
+
+## 7. Actualización del relevo — final del 2026-08-26
+
+Sol leyó la versión anterior y confirmó que puede asumir la orquestación. **Desde este punto Sol es
+la segunda mente y el relevo.** Lo que sigue es lo que cambió después de escribir las secciones 1-6.
+
+### Los prerrequisitos manuales de Diego: dos cerrados
+
+- **T0 cerrado.** El producto `cuentivo_ai_mensual` está **ACTIVO** en Play Console: plan base
+  `mensual`, renovación automática, **$299 MXN** confirmado, período de gracia y disponibilidad
+  configurados. Quedó en 174 regiones en vez de sólo México — recortable después, sólo afecta
+  compras nuevas.
+- **Cuenta de servicio invitada.** Play Developer API habilitada, cuenta de servicio creada, clave
+  JSON descargada y guardada **fuera del repositorio**, e invitada en Play Console → Usuarios y
+  permisos con acceso a información financiera y a administrar pedidos y suscripciones. Nota
+  práctica: la página "Acceso a API" vive a nivel de cuenta, no de app, y **vincular el proyecto de
+  Cloud ya no es obligatorio** — invitar el correo de la cuenta de servicio directamente basta.
+
+**Sigue pendiente de Diego:** el tópico de Pub/Sub para las Real-time Developer Notifications. No
+bloquea T3; bloquea el camino que **revoca**. Detalle que se olvida: hay que dar permiso de
+**Publicador de Pub/Sub** sobre el tema a `google-play-developer-notifications@system.gserviceaccount.com`,
+o el tema se queda mudo.
+
+### T3 entregada por AGY: `001466e`
+
+Verificado ejecutando: **252 pruebas de Functions en 13 archivos, todas verdes.** El ledger token→uid
+está bien: `subscriptionEntitlementRepository.ts:54-55` compara el uid ya ligado al token y **rechaza
+en vez de reasignar**, que es la invariante que impide compartir una suscripción entre cuentas.
+
+**Lo que falta y está en curso con AGY:** el enlace con la credencial.
+`playSubscriptionVerifier.ts:114` **falla cerrado con un error explícito** —
+`"Play Developer API service account not configured in this environment"` — en vez de simular una
+verificación. Correcto, pero significa que no hay `defineSecret` para la cuenta de servicio ni
+minado de token OAuth. Se le pidió a AGY: declarar el secreto siguiendo el patrón de
+`CUENTIVOAI_GEMINI_API_KEY` (`functions/src/index.ts:27`), ligarlo con `secrets: [...]` **sólo** a la
+callable de verificación, implementar el OAuth con scope `androidpublisher`, y mantener el fallo
+cerrado. **AGY debe reportar el nombre exacto del secreto**, porque Diego lo necesita para
+`firebase functions:secrets:set`.
+
+### Las tres precisiones que pidió Sol, y que quedan como autoridad
+
+1. **T3 puede quedar "implementada y validada localmente", nunca "verificada end-to-end"** hasta que
+   el secreto esté cargado y exista una compra real contra Play.
+2. **Sin RTDN el camino de revocación sigue abierto.** T3 **no cierra por sí sola** el entitlement
+   completo ni autoriza producción.
+3. **El handle de terminal de AGY es efímero.** Si Orca reinicia, se recupera con
+   `orca terminal list --worktree active --json`. Nunca enviar al viejo y al nuevo a la vez.
+
+### Estado que Sol toma como autoridad
+
+- v32 / 1.17.0 en producción gradual al 20%, sin CuentivoAI.
+- N5: **T1 y T2 cerradas**; T3 implementada y pendiente de credencial y de auditoría estricta.
+- Evidencia base: **899 pruebas JVM en 101 clases** y **252 de Functions**.
+- Orden posterior: T4 → T5 → T6 → T7 → T8 → T9.
+- `docs/superpowers/handoffs/` intocable.
+- **CuentivoAI público: sigue NO-GO.**
+
+### Lo primero que debe hacer el relevo
+
+Cuando AGY entregue el enlace de la credencial: **auditar T3 completa**, sin piedad, contra las
+cuatro invariantes del diseño — un `purchaseToken` para un solo uid, idempotencia por estado
+absoluto, falla cerrado si Play no responde, y vigencia contra el reloj del servidor. Toca dinero,
+backend y secretos: la auditoría no es opcional. Y verificar **ejecutando**, no leyendo el reporte:
+las 888 pruebas de T2 pasaban con un bug de cobro doble dentro.
