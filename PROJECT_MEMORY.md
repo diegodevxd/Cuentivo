@@ -11,15 +11,17 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-25, tras publicar la actualización de retención (`d9350c3`, versionCode 32).
+**Última actualización:** 2026-08-26, tras subir el AAB de la v32 a Play y retomar el foco en cerrar
+el núcleo de CuentivoAI (N5) rumbo al **segundo AAB**.
 
 ---
 
 ## Dónde estamos
 
-**Cuentivo base.** `versionCode 31` / `versionName 1.16.6`, congelado y en prueba cerrada de Play.
-`32 / 1.17.0` es candidato futuro, **no autorizado**. Room, sync, Billing, Auth y roles operan en
-datos reales.
+**Cuentivo base.** `versionCode 32` / `versionName 1.17.0` **subido a Play y en producción con
+lanzamiento gradual al 20%** desde el 2026-08-26. La baseline anterior era `31 / 1.16.6`. Room, sync,
+Billing, Auth y roles operan en datos reales. El siguiente AAB es el que **cierra el núcleo de
+CuentivoAI**, y esa es la pista de trabajo activa mientras la v32 acumula cohorte.
 
 **CuentivoAI.** Rama aislada `diegodevxd/feature-cuentivo-ai`. El gateway server-side existe: la
 key de Gemini vive en Secret Manager, la facturación Blaze está configurada y únicamente
@@ -67,12 +69,15 @@ devolvía **todos** los clientes (`COALESCE(phone,'') LIKE '%%'`), se mostraban 
 (`UNKNOWN_INPUT`, `MISSING_PRODUCT`) al usuario, y **dos bugs de dinero**: montos interpretados como
 centavos, y ventas a crédito registradas como pagadas. Los dos desplegados y verificados físicamente.
 
-**Núcleo: 4 de 5.** Falta sólo la salida del laboratorio a beta con feature flags.
+**Núcleo: 4 de 5.** Falta sólo la salida del laboratorio a beta con feature flags (N5) — **es el
+trabajo activo**, y su cierre es lo que habilita el segundo AAB.
 
-**Actualización de retención publicada — `versionCode 32` / `versionName 1.17.0`.** Primera versión
-desde la baseline congelada 31 / 1.16.6, y **no lleva CuentivoAI**: son pistas separadas a propósito.
-Plan: `docs/superpowers/plans/2026-08-25-cuentivo-retencion-puerta-abierta.md`; decisiones de producto
-en `specs/2026-08-25-cuentivo-invitado-decisiones.md`.
+**Actualización de retención — `versionCode 32` / `versionName 1.17.0`, subida a Play el 2026-08-26.**
+Primera versión desde la baseline congelada 31 / 1.16.6, y **no lleva CuentivoAI**: son pistas
+separadas a propósito. Plan: `docs/superpowers/plans/2026-08-25-cuentivo-retencion-puerta-abierta.md`;
+decisiones de producto en `specs/2026-08-25-cuentivo-invitado-decisiones.md`. El AAB firmado quedó en
+`dist/Cuentivo-v32-1.17.0.aab`, con SHA1 idéntico al de la llave de subida existente (verificado con
+`keytool -printcert -jarfile` antes de subirlo).
 
 **Por qué:** Firebase mostró que la retención a la semana 1 se desplomó de 20-29% a **0.7%** el 5 de
 agosto, el día que entró la verificación de correo obligatoria, y que **219 de 385 instalaciones
@@ -90,8 +95,11 @@ La verificación de correo **no se eliminó, se movió** al momento en que hay r
 encontró que la prueba conectada **simulaba** el enlace —el mismo error que Claude había bloqueado esa
 mañana en otro trabajo— y de ahí salió la guarda en tiempo de ejecución.
 
-**Estado de release.** Cuentivo base está **publicada en Play**. **CuentivoAI sigue NO-GO**: sólo
-vive en el laboratorio debug, y su AAB, beta pública y activación general continúan cerradas.
+**Estado de release.** Cuentivo base está **publicada en Play**, con la v32 al 20% y **esperando
+cohorte**: la retención a la semana 1 no se lee en días sueltos, así que hasta principios de
+septiembre no hay señal que interpretar. Nada de tocar el rollout con métricas de dos días.
+**CuentivoAI sigue NO-GO**: sólo vive en el laboratorio debug, y su AAB, beta pública y activación
+general continúan cerradas.
 
 ## Invariantes que ningún incremento rompe
 
@@ -136,19 +144,29 @@ Gate live de Fase 2 (previo): Functions 225/225, Firestore Emulator 2/2, JVM 767
 
 ## Qué sigue
 
-1. **Medir la cohorte de la v32.** Es la única métrica que importa ahora: si la retención a la semana
-   vuelve a 20-29%, el muro era el problema. Si sigue en el suelo, era otra cosa y se sabrá con datos
-   limpios. Publicada al 20% para atrapar fallas del build minificado; **subir a 100% pronto**, porque
-   en lanzamiento parcial la cohorte se mezcla y la medición se ensucia.
-2. **Decir por qué se rechazó.** `interpretAiRequest` colapsa seis caminos en un mismo `AI_UNAVAILABLE`
+1. **Cerrar el núcleo: salida del laboratorio a beta (N5)** con feature flags y observabilidad. Es la
+   pista activa y lo único que queda del 4-de-5. Exige su propio plan antes de tocar código: qué
+   bandera enciende la IA, quién la puede encender, qué se observa y cómo se apaga sin publicar.
+   **El AAB que salga de N5 va primero a prueba cerrada de Play, y sólo después a producción**
+   (decisión de Diego, 2026-08-26). No se repite el camino directo a producción de la v32.
+   **CuentivoAI sale ya como plan de pago:** el usuario en Gratis o Pro que lo toque ve el muro de
+   suscripción. Eso mete la UI del plan y el entitlement de Play **dentro** de este release, no
+   después — ver el punto 2.
+2. **Producto de suscripción en Play + UI del plan de $299.** Antes estaba al final; la decisión de
+   sacar CuentivoAI como plan de pago lo vuelve **prerrequisito de la prueba cerrada**. Diseño escrito
+   en `docs/superpowers/specs/2026-08-25-cuentivoai-play-entitlement-design.md`. Implica fijar el
+   precio antes de medir la beta, que es exactamente lo que la fuente de verdad pedía evitar: la
+   decisión de producto gana, pero queda escrito que el número entró sin medición previa.
+3. **Decir por qué se rechazó.** `interpretAiRequest` colapsa seis caminos en un mismo `AI_UNAVAILABLE`
    y ahí se pierden cuota agotada, rate limit, IA apagada y falta de entitlement. Propuesta escrita en
-   `.superpowers/sdd/propuesta-motivo-ai-unavailable.md`.
-3. **Salida del laboratorio a beta (N5)** con feature flags y observabilidad.
-4. Encender enforcement de App Check tras revisar tráfico válido del día, generándolo desde una
+   `.superpowers/sdd/propuesta-motivo-ai-unavailable.md`. Va **antes** de la prueba cerrada: ahora que
+   alguien va a **pagar** $299, leer "aún no disponible" al agotar cuota es un reembolso, no un bug.
+4. **Esperar la cohorte de la v32** — trabajo de calendario, no de teclado. Si la retención a la semana
+   vuelve a 20-29%, el muro era el problema; si sigue en el suelo, era otra cosa. Publicada al 20% para
+   atrapar fallas del build minificado; **subir a 100% en cuanto no aparezcan crashes**, porque en
+   lanzamiento parcial la cohorte se mezcla y la medición se ensucia.
+5. Encender enforcement de App Check tras revisar tráfico válido del día, generándolo desde una
    instalación de Play Store.
-5. **Parte comercial de Fase 2:** que Play conceda y revoque el tier AI. Diseño escrito y sin
-   implementar en `docs/superpowers/specs/2026-08-25-cuentivoai-play-entitlement-design.md`; bloqueado
-   porque no existe el producto de suscripción en Play y el precio no debe fijarse antes de la beta.
 6. Después del núcleo: cobranza/PDF/WhatsApp/barcode y catálogo, cada uno con plan propio.
 
 Cada punto exige su propio diseño, autorización y gates. Ninguno se adelanta dentro del commit
@@ -161,6 +179,11 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
   revoca el tier AI server-side, por lo que beta y AAB CuentivoAI continúan bloqueados.
 - **El entitlement AI actual fue creado manualmente para el usuario de prueba.** Billing/Play aún
   no concede ni revoca el tier CuentivoAI de forma server-side.
+- **No existe la UI del plan de $299**, y ahora es bloqueante. Decisión de Diego del 2026-08-26:
+  **CuentivoAI sale ya como plan de pago**, y quien esté en Gratis o Pro y toque CuentivoAI debe
+  ver el muro de suscripción. Eso saca la UI del plan de "después" y la vuelve requisito del mismo
+  release. El backend que lo hace vendible —cuota, tope, rate limit y kill switch— ya está desplegado
+  y probado; falta la pantalla y el producto de suscripción en Play.
 - **El enforcement de App Check sigue apagado.** Falta leer el panel con tráfico posterior al
   vínculo de Play Integrity, mirando la barra del día y no el acumulado. Lo ya descartado con
   evidencia está en el histórico; no volver a perseguirlo.
