@@ -179,6 +179,14 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
   revoca el tier AI server-side, por lo que beta y AAB CuentivoAI continúan bloqueados.
 - **El entitlement AI actual fue creado manualmente para el usuario de prueba.** Billing/Play aún
   no concede ni revoca el tier CuentivoAI de forma server-side.
+- **N5 en marcha: T1 y T2 cerradas con evidencia** (2026-08-26). T1 = tercer plan en el dominio con
+  `rank` e `includesProBenefits` declarados. T2 = billing de dos productos, cambio de plan como
+  reemplazo con token previo y prorrateo decidido, `obfuscatedAccountId` SHA-256 y captura del
+  `purchaseToken` lista para T3. **Dos auditorias de Sol fueron necesarias**: la segunda encontro que
+  `launchPurchase` construia el flujo desde una cache que podia estar vacia, lo que abria una compra
+  limpia de AI encima de un Pro activo. Resuelto con `PurchaseLaunchPolicy`, decision pura que exige
+  consulta fresca de Play atada al uid y bloquea por ocho motivos explicitos. **899 pruebas JVM en
+  101 clases, 0 fallos.** Sigue T3.
 - **Competencia investigada el 2026-08-26** (precios fechados en
   `docs/superpowers/specs/2026-08-24-cuentivo-fiado-catalogo-product-design.md` §2.1): **Kashi** es el
   competidor mas cercano y el unico con IA, pero la suya solo **responde** preguntas; CuentivoAI
