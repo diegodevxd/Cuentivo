@@ -1,6 +1,10 @@
 # Relevo de orquestación — Claude → Codex (Sol)
 
-**Fecha:** 2026-08-26 · **Rama:** `diegodevxd/feature-cuentivo-ai` · **HEAD al escribir:** `0e41cfa`
+**Fecha:** 2026-08-26 · **Rama:** `diegodevxd/feature-cuentivo-ai`
+
+**Sobre el HEAD:** la primera versión de este archivo se redactó sobre `0e41cfa` y quedó commiteada
+en `77de324`, que es su propio commit. La sección 7 la actualiza a estado posterior. Si dudas, manda
+`git log`, no este encabezado.
 
 Este documento existe para que Sol pueda **tomar la orquestación** de Cuentivo cuando a Claude se le
 acaben los tokens, sin volver a derivar nada. Es el estado de ayer y hoy en un solo lugar.
