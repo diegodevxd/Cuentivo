@@ -12,6 +12,9 @@ import com.google.firebase.crashlytics.FirebaseCrashlytics
  */
 enum class CrashEvent {
     AUTH_FAILURE,
+    AUTH_ANON_OFFLINE,
+    AUTH_ANON_PROVIDER_DISABLED,
+    AUTH_ANON_SERVICE_ERROR,
     CLOUD_RESTORE_FAILURE,
     BILLING_FAILURE,
 }

@@ -392,6 +392,11 @@
     <string name="auth_first_launch_offline_message">Sólo esta primera vez necesitamos conexión para preparar tu libreta. Después Cuentivo funciona sin internet.</string>
     <string name="auth_first_launch_offline_retry">Reintentar</string>
     <string name="auth_first_launch_offline_switch_to_sign_in">Ya tengo una cuenta</string>
+    <string name="auth_first_launch_provider_disabled_title">Acceso de invitado no disponible</string>
+    <string name="auth_first_launch_provider_disabled_message">El acceso anónimo no está habilitado en este momento. Ingresa con tu cuenta de correo o Google para usar Cuentivo.</string>
+    <string name="auth_first_launch_provider_disabled_action">Entrar con mi cuenta</string>
+    <string name="auth_first_launch_service_error_title">No pudimos iniciar tu libreta</string>
+    <string name="auth_first_launch_service_error_message">Ocurrió un problema al configurar el inicio de la app. Puedes intentar de nuevo o ingresar con tu cuenta.</string>
     <string name="verify_title">Verifica tu correo</string>
     <string name="verify_detail">Te enviamos un correo a %1$s. Ábrelo, toca el enlace y regresa aquí.</string>
     <string name="verify_detail_no_email">Te enviamos un correo de verificación. Ábrelo, toca el enlace y regresa aquí.</string>

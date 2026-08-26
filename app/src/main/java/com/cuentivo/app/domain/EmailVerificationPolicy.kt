@@ -79,7 +79,11 @@ object EmailVerificationPolicy {
         else -> EmailVerificationAccess.MUST_VERIFY
     }
 
-    /** Whether this device may talk to the cloud at all. An unverified address never may. */
+    /** Whether this device may talk to the cloud at all. An unverified address or anonymous guest session never may. */
+    fun allowsCloudSync(access: EmailVerificationAccess, isAnonymous: Boolean): Boolean =
+        !isAnonymous && access == EmailVerificationAccess.ALLOWED
+
+    /** Overload for callers that only pass access. */
     fun allowsCloudSync(access: EmailVerificationAccess): Boolean =
-        access == EmailVerificationAccess.ALLOWED
+        allowsCloudSync(access, isAnonymous = false)
 }

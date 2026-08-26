@@ -128,6 +128,8 @@ import com.cuentivo.app.backup.DatabaseBackup
 import com.cuentivo.app.billing.BillingGateway
 import com.cuentivo.app.billing.EntitlementStore
 import androidx.activity.compose.BackHandler
+import com.cuentivo.app.auth.AnonymousStartupFailureCause
+import com.cuentivo.app.auth.AuthenticationFlowPolicy
 import com.cuentivo.app.domain.OpeningBalanceRow
 import com.cuentivo.app.ui.onboarding.FirstDebtPolicy
 import com.cuentivo.app.ui.onboarding.FirstDebtPreferenceStore
@@ -431,21 +433,43 @@ class MainActivity : ComponentActivity() {
 
                 // Guest anonymous session startup
                 var isStartingAnonymousSession by remember { mutableStateOf(authenticationGateway.currentUserId == null) }
-                var anonymousStartupFailed by remember { mutableStateOf(false) }
+                var anonymousStartupCause by remember { mutableStateOf<AnonymousStartupFailureCause?>(null) }
                 var showManualAuthentication by remember { mutableStateOf(false) }
                 var showAccountLinking by remember { mutableStateOf(false) }
 
-                LaunchedEffect(Unit) {
-                    if (authenticationGateway.currentUserId == null && !showManualAuthentication) {
-                        authenticationGateway.signInAnonymously { result ->
-                            isStartingAnonymousSession = false
-                            result.onSuccess { userId ->
-                                authenticatedUserId = userId
-                                anonymousStartupFailed = false
-                            }.onFailure {
-                                anonymousStartupFailed = true
+                val startAnonymousSession: () -> Unit = {
+                    isStartingAnonymousSession = true
+                    anonymousStartupCause = null
+                    authenticationGateway.signInAnonymously { result ->
+                        isStartingAnonymousSession = false
+                        result.onSuccess { userId ->
+                            authenticatedUserId = userId
+                            anonymousStartupCause = null
+                        }.onFailure { error ->
+                            val errorCode = (error as? FirebaseAuthException)?.errorCode ?: error.message
+                            val cause = AuthenticationFlowPolicy.classifyAnonymousErrorCode(errorCode)
+                            anonymousStartupCause = cause
+                            when (cause) {
+                                AnonymousStartupFailureCause.NETWORK_UNAVAILABLE -> {
+                                    crashReporter.report(CrashEvent.AUTH_ANON_OFFLINE)
+                                    Log.w(TAG, "Fallo al iniciar sesión anónima: sin conexión de red.")
+                                }
+                                AnonymousStartupFailureCause.PROVIDER_DISABLED -> {
+                                    crashReporter.report(CrashEvent.AUTH_ANON_PROVIDER_DISABLED)
+                                    Log.e(TAG, "Fallo al iniciar sesión anónima: proveedor anónimo deshabilitado en Firebase Console ($errorCode).")
+                                }
+                                AnonymousStartupFailureCause.SERVICE_ERROR -> {
+                                    crashReporter.report(CrashEvent.AUTH_ANON_SERVICE_ERROR)
+                                    Log.e(TAG, "Fallo al iniciar sesión anónima: error de servicio ($errorCode).")
+                                }
                             }
                         }
+                    }
+                }
+
+                LaunchedEffect(Unit) {
+                    if (authenticationGateway.currentUserId == null && !showManualAuthentication) {
+                        startAnonymousSession()
                     }
                 }
 
@@ -488,7 +512,20 @@ class MainActivity : ComponentActivity() {
                         ) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         }
-                    } else if (anonymousStartupFailed && !showManualAuthentication) {
+                    } else if (anonymousStartupCause != null && !showManualAuthentication) {
+                        val cause = anonymousStartupCause
+                        val title = when (cause) {
+                            AnonymousStartupFailureCause.PROVIDER_DISABLED -> stringResource(R.string.auth_first_launch_provider_disabled_title)
+                            AnonymousStartupFailureCause.SERVICE_ERROR -> stringResource(R.string.auth_first_launch_service_error_title)
+                            else -> stringResource(R.string.auth_first_launch_offline_title)
+                        }
+                        val message = when (cause) {
+                            AnonymousStartupFailureCause.PROVIDER_DISABLED -> stringResource(R.string.auth_first_launch_provider_disabled_message)
+                            AnonymousStartupFailureCause.SERVICE_ERROR -> stringResource(R.string.auth_first_launch_service_error_message)
+                            else -> stringResource(R.string.auth_first_launch_offline_message)
+                        }
+                        val showRetryButton = cause != AnonymousStartupFailureCause.PROVIDER_DISABLED
+
                         BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
                             val layout = NeoFintechLayoutPolicy.forWidth(maxWidth.value.toInt())
                             val horizontalGutter = maxOf(16, layout.horizontalPaddingDp)
@@ -519,38 +556,34 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
                                         Text(
-                                            text = stringResource(R.string.auth_first_launch_offline_title),
+                                            text = title,
                                             style = MaterialTheme.typography.titleLarge,
                                         )
                                         Text(
-                                            text = stringResource(R.string.auth_first_launch_offline_message),
+                                            text = message,
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                         Spacer(Modifier.height(8.dp))
-                                        NeoAction(
-                                            label = stringResource(R.string.auth_first_launch_offline_retry),
-                                            enabled = !isStartingAnonymousSession,
-                                            onClick = {
-                                                isStartingAnonymousSession = true
-                                                anonymousStartupFailed = false
-                                                authenticationGateway.signInAnonymously { result ->
-                                                    isStartingAnonymousSession = false
-                                                    result.onSuccess { userId ->
-                                                        authenticatedUserId = userId
-                                                        anonymousStartupFailed = false
-                                                    }.onFailure {
-                                                        anonymousStartupFailed = true
-                                                    }
-                                                }
-                                            },
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                        TextButton(
-                                            onClick = { showManualAuthentication = true },
-                                            modifier = Modifier.fillMaxWidth(),
-                                        ) {
-                                            Text(stringResource(R.string.auth_first_launch_offline_switch_to_sign_in))
+                                        if (showRetryButton) {
+                                            NeoAction(
+                                                label = stringResource(R.string.auth_first_launch_offline_retry),
+                                                enabled = !isStartingAnonymousSession,
+                                                onClick = { startAnonymousSession() },
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                            TextButton(
+                                                onClick = { showManualAuthentication = true },
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Text(stringResource(R.string.auth_first_launch_offline_switch_to_sign_in))
+                                            }
+                                        } else {
+                                            NeoAction(
+                                                label = stringResource(R.string.auth_first_launch_provider_disabled_action),
+                                                onClick = { showManualAuthentication = true },
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
                                         }
                                     }
                                 }
@@ -809,7 +842,10 @@ class MainActivity : ComponentActivity() {
                 // pointless: the refusal arrives as a failed lookup, which means Blocked, which is a
                 // dead end with a retry button that cannot work. Grandfathered accounts are exactly
                 // that case — let in without verifying on purpose — so they skip the question.
-                val canQueryCloud = EmailVerificationPolicy.allowsCloudSync(emailAccess)
+                val canQueryCloud = EmailVerificationPolicy.allowsCloudSync(
+                    emailAccess,
+                    authenticationGateway.isAnonymous,
+                )
                 LaunchedEffect(currentUserId, sessionReady, refreshKey, claimAttempt, canQueryCloud) {
                     if (!sessionReady) return@LaunchedEffect
                     if (database.businessDao().firstOwnedBy(currentUserId) != null) {

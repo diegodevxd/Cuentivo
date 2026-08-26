@@ -7,12 +7,31 @@ package com.cuentivo.app.auth
  * In case of doubt, preserve local data and ask the user.
  * NEVER delete to resolve an identity conflict.
  */
+/**
+ * Fixed vocabulary for why anonymous session startup on cold start failed.
+ */
+enum class AnonymousStartupFailureCause {
+    /** Device is offline or request timed out. Retrying when online will succeed. */
+    NETWORK_UNAVAILABLE,
+
+    /** Anonymous sign-in provider is disabled in Firebase Console (OPERATION_NOT_ALLOWED). Retrying will not help. */
+    PROVIDER_DISABLED,
+
+    /** Internal service or configuration error. */
+    SERVICE_ERROR,
+}
+
 sealed interface AuthenticationFlowState {
     /** Starting an anonymous guest session in the background on cold start. */
     data object AnonymousStarting : AuthenticationFlowState
 
-    /** First launch failed to create anonymous guest session (typically offline). */
+    /** First launch failed to create anonymous guest session due to network. */
     data object FirstLaunchOffline : AuthenticationFlowState
+
+    /** First launch failed with a specific diagnosed cause. */
+    data class FirstLaunchFailure(
+        val cause: AnonymousStartupFailureCause,
+    ) : AuthenticationFlowState
 
     /** Showing manual email / password / Google authentication screen. */
     data class ManualAuthentication(
@@ -28,6 +47,47 @@ sealed interface AuthenticationFlowState {
 }
 
 object AuthenticationFlowPolicy {
+    /**
+     * Maps an error code or exception from anonymous sign-in into a fixed failure cause.
+     *
+     * Pure mapper without Android dependencies, safe for unit testing.
+     */
+    fun classifyAnonymousErrorCode(errorCode: String?): AnonymousStartupFailureCause {
+        if (errorCode == null) return AnonymousStartupFailureCause.SERVICE_ERROR
+        val normalized = errorCode.trim().uppercase()
+        return when {
+            normalized == "ERROR_OPERATION_NOT_ALLOWED" ||
+            normalized == "OPERATION_NOT_ALLOWED" ||
+            normalized.contains("OPERATION_NOT_ALLOWED") ->
+                AnonymousStartupFailureCause.PROVIDER_DISABLED
+
+            normalized == "ERROR_NETWORK_REQUEST_FAILED" ||
+            normalized == "NETWORK_ERROR" ||
+            normalized.contains("NETWORK") ||
+            normalized.contains("TIMEOUT") ||
+            normalized.contains("UNREACHABLE") ->
+                AnonymousStartupFailureCause.NETWORK_UNAVAILABLE
+
+            else -> AnonymousStartupFailureCause.SERVICE_ERROR
+        }
+    }
+
+    /**
+     * Maps a Throwable into an AnonymousStartupFailureCause.
+     */
+    fun classifyAnonymousFailure(error: Throwable?): AnonymousStartupFailureCause {
+        if (error == null) return AnonymousStartupFailureCause.NETWORK_UNAVAILABLE
+        val className = error.javaClass.simpleName
+        if (className.contains("Network", ignoreCase = true) ||
+            className.contains("Timeout", ignoreCase = true) ||
+            className.contains("UnknownHost", ignoreCase = true)
+        ) {
+            return AnonymousStartupFailureCause.NETWORK_UNAVAILABLE
+        }
+        val message = error.message ?: ""
+        return classifyAnonymousErrorCode(message)
+    }
+
     /**
      * Determines initial state given whether an existing session is present.
      */
@@ -47,10 +107,20 @@ object AuthenticationFlowPolicy {
     }
 
     /**
-     * Transition when anonymous session creation fails (e.g. offline on first launch).
+     * Transition when anonymous session creation fails with a specific cause.
+     */
+    fun onAnonymousFailure(cause: AnonymousStartupFailureCause): AuthenticationFlowState {
+        return when (cause) {
+            AnonymousStartupFailureCause.NETWORK_UNAVAILABLE -> AuthenticationFlowState.FirstLaunchOffline
+            else -> AuthenticationFlowState.FirstLaunchFailure(cause)
+        }
+    }
+
+    /**
+     * Transition when anonymous session creation fails (defaults to offline).
      */
     fun onAnonymousFailure(): AuthenticationFlowState {
-        return AuthenticationFlowState.FirstLaunchOffline
+        return onAnonymousFailure(AnonymousStartupFailureCause.NETWORK_UNAVAILABLE)
     }
 
     /**

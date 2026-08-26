@@ -9,6 +9,9 @@ class CrashReporterContractTest {
         assertEquals(
             setOf(
                 CrashEvent.AUTH_FAILURE,
+                CrashEvent.AUTH_ANON_OFFLINE,
+                CrashEvent.AUTH_ANON_PROVIDER_DISABLED,
+                CrashEvent.AUTH_ANON_SERVICE_ERROR,
                 CrashEvent.CLOUD_RESTORE_FAILURE,
                 CrashEvent.BILLING_FAILURE,
             ),

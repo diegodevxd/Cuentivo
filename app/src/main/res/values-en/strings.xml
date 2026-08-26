@@ -392,6 +392,11 @@
     <string name="auth_first_launch_offline_message">Only this first time we need a connection to set up your ledger. Afterward Cuentivo works without internet.</string>
     <string name="auth_first_launch_offline_retry">Retry</string>
     <string name="auth_first_launch_offline_switch_to_sign_in">I already have an account</string>
+    <string name="auth_first_launch_provider_disabled_title">Guest access unavailable</string>
+    <string name="auth_first_launch_provider_disabled_message">Anonymous access is not enabled right now. Sign in with your email or Google account to use Cuentivo.</string>
+    <string name="auth_first_launch_provider_disabled_action">Sign in with account</string>
+    <string name="auth_first_launch_service_error_title">Could not start your ledger</string>
+    <string name="auth_first_launch_service_error_message">A problem occurred while setting up the app startup. You can try again or sign in with your account.</string>
     <string name="verify_title">Verify your email</string>
     <string name="verify_detail">We sent an email to %1$s. Open it, tap the link, and come back here.</string>
     <string name="verify_detail_no_email">We sent you a verification email. Open it, tap the link, and come back here.</string>

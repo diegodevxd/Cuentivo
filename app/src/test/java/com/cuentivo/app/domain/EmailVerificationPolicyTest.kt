@@ -52,6 +52,27 @@ class EmailVerificationPolicyTest {
         assertFalse(EmailVerificationPolicy.allowsCloudSync(EmailVerificationAccess.SIGNED_OUT))
     }
 
+    @Test fun anonymous_guest_session_is_never_allowed_to_sync_to_cloud() {
+        val access = EmailVerificationPolicy.access(
+            isSignedIn = true,
+            isEmailVerified = false,
+            accountCreatedAtEpochMillis = null,
+            isAnonymous = true,
+            cutoffEpochMillis = cutoff,
+        )
+        assertEquals(EmailVerificationAccess.ALLOWED, access)
+        assertFalse(EmailVerificationPolicy.allowsCloudSync(access, isAnonymous = true))
+        // Verified email account allows cloud sync
+        val verifiedAccess = EmailVerificationPolicy.access(
+            isSignedIn = true,
+            isEmailVerified = true,
+            accountCreatedAtEpochMillis = 5_000L,
+            isAnonymous = false,
+            cutoffEpochMillis = cutoff,
+        )
+        assertTrue(EmailVerificationPolicy.allowsCloudSync(verifiedAccess, isAnonymous = false))
+    }
+
     @Test fun anonymous_guest_session_without_email_is_always_allowed_without_verification() {
         assertEquals(
             EmailVerificationAccess.ALLOWED,
