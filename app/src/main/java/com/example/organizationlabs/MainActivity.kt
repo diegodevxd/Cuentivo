@@ -127,6 +127,11 @@ import com.cuentivo.app.backup.BackupSection
 import com.cuentivo.app.backup.DatabaseBackup
 import com.cuentivo.app.billing.BillingGateway
 import com.cuentivo.app.billing.EntitlementStore
+import androidx.activity.compose.BackHandler
+import com.cuentivo.app.domain.OpeningBalanceRow
+import com.cuentivo.app.ui.onboarding.FirstDebtPolicy
+import com.cuentivo.app.ui.onboarding.FirstDebtPreferenceStore
+import com.cuentivo.app.ui.onboarding.FirstDebtScreen
 import com.cuentivo.app.sync.SyncScheduler
 import com.cuentivo.app.ui.auth.AuthenticationScreen
 import com.cuentivo.app.ui.auth.EmailVerificationScreen
@@ -428,6 +433,7 @@ class MainActivity : ComponentActivity() {
                 var isStartingAnonymousSession by remember { mutableStateOf(authenticationGateway.currentUserId == null) }
                 var anonymousStartupFailed by remember { mutableStateOf(false) }
                 var showManualAuthentication by remember { mutableStateOf(false) }
+                var showAccountLinking by remember { mutableStateOf(false) }
 
                 LaunchedEffect(Unit) {
                     if (authenticationGateway.currentUserId == null && !showManualAuthentication) {
@@ -578,6 +584,7 @@ class MainActivity : ComponentActivity() {
                         AuthenticationScreen(
                             isWorking = isAuthenticating,
                             message = authenticationMessage,
+                            customerCount = 0,
                             onSignIn = { email, password ->
                                 isAuthenticating = true
                                 authenticationMessage = null
@@ -1096,14 +1103,216 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                CuentivoApp(
-                    state,
-                    customers,
-                    products,
-                    tier,
-                    customerScores = customerScores,
-                    proPrice = proPriceState.value,
-                    accountLabel = authenticationGateway.currentUserEmail,
+                val firstDebtPreferenceStore = remember { FirstDebtPreferenceStore(this@MainActivity) }
+                var hasSkippedFirstDebt by remember(currentUserId) {
+                    mutableStateOf(firstDebtPreferenceStore.isDismissed(currentUserId))
+                }
+                var isSavingFirstDebt by remember { mutableStateOf(false) }
+
+                val hasFinancialActivity = (state as? DashboardUiState.Content)?.let {
+                    it.receivableCents > 0L || it.soldCents > 0L || it.collectedCents > 0L || it.recentActivity.isNotEmpty()
+                } ?: false
+
+                val shouldShowFirstDebt = FirstDebtPolicy.shouldShow(
+                    customerCount = customers.size,
+                    isDismissed = hasSkippedFirstDebt,
+                    hasFinancialActivity = hasFinancialActivity,
+                )
+
+                if (showAccountLinking) {
+                    BackHandler { showAccountLinking = false }
+                    val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
+                    val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
+                    val emailInUseMessage = stringResource(R.string.auth_email_in_use)
+                    val googleFailedMessage = stringResource(R.string.auth_google_failed)
+                    val googleManualPasswordMessage = stringResource(R.string.auth_google_manual_password_needed)
+                    val handleGoogleResult: (GoogleAuthenticationResult) -> Unit = { result ->
+                        isAuthenticating = false
+                        when (result) {
+                            is GoogleAuthenticationResult.SignedIn -> {
+                                authenticatedUserId = result.userId
+                                showAccountLinking = false
+                                verificationKey++
+                            }
+                            GoogleAuthenticationResult.ManualAccountNeedsPassword ->
+                                authenticationMessage = googleManualPasswordMessage
+                            GoogleAuthenticationResult.AccountAlreadyExists ->
+                                authenticationMessage = emailInUseMessage
+                            GoogleAuthenticationResult.Failed -> {
+                                authenticationMessage = googleFailedMessage
+                                crashReporter.report(CrashEvent.AUTH_FAILURE)
+                            }
+                            GoogleAuthenticationResult.Cancelled -> Unit
+                        }
+                    }
+                    AuthenticationScreen(
+                        isWorking = isAuthenticating,
+                        message = authenticationMessage,
+                        customerCount = customers.size,
+                        onSignIn = { email, password ->
+                            isAuthenticating = true
+                            authenticationMessage = null
+                            authenticationGateway.signIn(email, password) { result ->
+                                isAuthenticating = false
+                                result.onSuccess {
+                                    authenticatedUserId = it
+                                    showAccountLinking = false
+                                }.onFailure {
+                                    authenticationMessage = signInFailedMessage
+                                    crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                }
+                            }
+                        },
+                        onSignUp = { email, password ->
+                            isAuthenticating = true
+                            authenticationMessage = null
+                            if (authenticationGateway.isAnonymous) {
+                                authenticationGateway.linkEmail(email, password) { result ->
+                                    isAuthenticating = false
+                                    result.onSuccess { userId ->
+                                        authenticationGateway.sendEmailVerification { }
+                                        signedUpUserId = userId
+                                        authenticatedUserId = userId
+                                        showAccountLinking = false
+                                        verificationKey++
+                                    }.onFailure { error ->
+                                        authenticationMessage =
+                                            if (error is FirebaseAuthUserCollisionException) emailInUseMessage
+                                            else {
+                                                crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                                signUpFailedMessage
+                                            }
+                                    }
+                                }
+                            } else {
+                                authenticationGateway.signUp(email, password) { result ->
+                                    isAuthenticating = false
+                                    result.onSuccess { userId ->
+                                        authenticationGateway.sendEmailVerification { }
+                                        signedUpUserId = userId
+                                        authenticatedUserId = userId
+                                        showAccountLinking = false
+                                        verificationKey++
+                                    }.onFailure { error ->
+                                        authenticationMessage =
+                                            if (error is FirebaseAuthUserCollisionException) emailInUseMessage
+                                            else {
+                                                crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                                signUpFailedMessage
+                                            }
+                                    }
+                                }
+                            }
+                        },
+                        onModeChange = { authenticationMessage = null },
+                        onResetPassword = { email ->
+                            authenticationGateway.sendPasswordReset(email) { }
+                        },
+                        onGoogleSignIn = {
+                            isAuthenticating = true
+                            authenticationMessage = null
+                            if (authenticationGateway.currentUserId == null) {
+                                authenticationGateway.signInWithGoogle(this@MainActivity, handleGoogleResult)
+                            } else {
+                                authenticationGateway.linkGoogle(this@MainActivity, handleGoogleResult)
+                            }
+                        },
+                    )
+                } else if (shouldShowFirstDebt) {
+                    FirstDebtScreen(
+                        isSaving = isSavingFirstDebt,
+                        onSave = { name, amountText ->
+                            lifecycleScope.launch {
+                                isSavingFirstDebt = true
+                                try {
+                                    val now = System.currentTimeMillis()
+                                    var activeBusinessId = (state as? DashboardUiState.Content)?.businessId
+                                    if (activeBusinessId == null) {
+                                        val newBusiness = BusinessEntity(
+                                            UUID.randomUUID().toString(),
+                                            "Mi negocio",
+                                            currentUserId,
+                                            "MXN",
+                                            "America/Mexico_City",
+                                            now,
+                                            now,
+                                        )
+                                        database.businessDao().insert(newBusiness)
+                                        syncQueue.enqueue(newBusiness.id, "BUSINESS", newBusiness.id, now, SyncPayloads.business(newBusiness))
+                                        membershipBootstrap.ensure(newBusiness)
+                                        activeBusinessId = newBusiness.id
+                                    }
+                                    val plan = OpeningBalancePlanner.plan(
+                                        businessId = activeBusinessId,
+                                        ownerUserId = currentUserId,
+                                        rows = listOf(OpeningBalanceRow(name, amountText)),
+                                        existingCustomers = emptyList(),
+                                        todayEpochDay = LocalDate.now().toEpochDay(),
+                                        nowEpochMillis = now,
+                                        newId = { UUID.randomUUID().toString() },
+                                    )
+                                    if (plan.rejected.isEmpty() && plan.entries.isNotEmpty()) {
+                                        database.withTransaction {
+                                            plan.customers.forEach { database.customerDao().insert(it) }
+                                            plan.entries.forEach { entry ->
+                                                database.financialDao().createSaleIdempotently(
+                                                    OperationEntity("sale-${entry.sale.id}", "SALE", entry.sale.id, now),
+                                                    entry.sale,
+                                                    listOf(entry.item),
+                                                    entry.charge,
+                                                )
+                                            }
+                                        }
+                                        plan.customers.forEach { syncQueue.enqueue(it.businessId, "CUSTOMER", it.id, now, SyncPayloads.customer(it)) }
+                                        plan.entries.forEach { entry ->
+                                            syncQueue.enqueue(entry.sale.businessId, "SALE", entry.sale.id, now, SyncPayloads.sale(entry.sale))
+                                            syncQueue.enqueue(entry.sale.businessId, "SALE_ITEM", entry.item.id, now, SyncPayloads.saleItem(entry.item))
+                                            syncQueue.enqueue(entry.charge.businessId, "MOVEMENT", entry.charge.id, now, SyncPayloads.movement(entry.charge))
+                                        }
+                                        firstDebtPreferenceStore.markDismissed(currentUserId)
+                                        hasSkippedFirstDebt = true
+                                        refreshKey++
+                                        uiMessage = getString(R.string.first_debt_created_message)
+                                    }
+                                } finally {
+                                    isSavingFirstDebt = false
+                                }
+                            }
+                        },
+                        onSkip = {
+                            firstDebtPreferenceStore.markDismissed(currentUserId)
+                            hasSkippedFirstDebt = true
+                            if (state is DashboardUiState.NoBusiness) {
+                                lifecycleScope.launch {
+                                    val now = System.currentTimeMillis()
+                                    val newBusiness = BusinessEntity(
+                                        UUID.randomUUID().toString(),
+                                        "Mi negocio",
+                                        currentUserId,
+                                        "MXN",
+                                        "America/Mexico_City",
+                                        now,
+                                        now,
+                                    )
+                                    database.businessDao().insert(newBusiness)
+                                    syncQueue.enqueue(newBusiness.id, "BUSINESS", newBusiness.id, now, SyncPayloads.business(newBusiness))
+                                    membershipBootstrap.ensure(newBusiness)
+                                    refreshKey++
+                                }
+                            }
+                        },
+                    )
+                } else {
+                    CuentivoApp(
+                        state,
+                        customers,
+                        products,
+                        tier,
+                        customerScores = customerScores,
+                        proPrice = proPriceState.value,
+                        accountLabel = authenticationGateway.currentUserEmail,
+                        isAnonymous = authenticationGateway.isAnonymous,
+                        onSignUp = { showAccountLinking = true },
                     isSavingCustomer = isSavingCustomer,
                     customerSavedToken = customerSavedToken,
                     pendingSaleCustomerId = pendingSaleCustomerId,
@@ -1823,6 +2032,8 @@ class MainActivity : ComponentActivity() {
                         // The same tier the plan card below is drawn from, so the two cannot
                         // disagree on screen the way they did.
                         hasCloudBackup = SyncEntitlement.allowsCloudSync(tier),
+                        isAnonymous = authenticationGateway.isAnonymous,
+                        customerCount = customers.size,
                         onExport = { uri, password ->
                             lifecycleScope.launch {
                                 isBackupWorking = true
@@ -2048,6 +2259,7 @@ class MainActivity : ComponentActivity() {
                     uiMessage = null
                     accountMessageState.value = null
                 })
+                }
                 }
                 }
             }

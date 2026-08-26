@@ -32,6 +32,12 @@ import com.cuentivo.app.R
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.NeoSpacing
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import com.cuentivo.app.ui.NeoAction
+import com.cuentivo.app.ui.NeoShapes
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountSheet(
@@ -45,6 +51,12 @@ fun AccountSheet(
     onDismiss: () -> Unit,
     /** Backup and restore, supplied by the host because it needs the database and the file picker. */
     backupSection: @androidx.compose.runtime.Composable () -> Unit = {},
+    /** Whether the current session is an anonymous guest session. */
+    isAnonymous: Boolean = false,
+    /** Customer count used to contextualise retention value moments. */
+    customerCount: Int = 0,
+    /** Callback to open sign up / link account when guest wishes to preserve their ledger. */
+    onSignUp: () -> Unit = {},
     /** Whether the daily overdue reminder is on; owned by the host's preferences. */
     reminderEnabled: Boolean = false,
     /** The chosen local hour (0..23); owned by the host's preferences. */
@@ -71,6 +83,43 @@ fun AccountSheet(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            if (isAnonymous) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().testTag("account-guest-banner"),
+                    shape = NeoShapes.card,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(NeoSpacing.md),
+                        verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.account_guest_card_title),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = if (customerCount > 0) {
+                                stringResource(R.string.account_guest_card_detail_with_count, customerCount)
+                            } else {
+                                stringResource(R.string.account_guest_card_detail_generic)
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        NeoAction(
+                            label = stringResource(R.string.account_guest_card_action),
+                            onClick = {
+                                onDismiss()
+                                onSignUp()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+
             // Above the plan and the sign-out: losing the phone is a likelier disaster than any
             // billing question, and this is the only thing that undoes it.
             backupSection()
@@ -80,7 +129,13 @@ fun AccountSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            SubscriptionContent(tier = tier, onUpgrade = onUpgrade, proPrice = proPrice)
+            SubscriptionContent(
+                tier = tier,
+                onUpgrade = onUpgrade,
+                proPrice = proPrice,
+                isAnonymous = isAnonymous,
+                customerCount = customerCount,
+            )
 
             // Reminders sit above the account's exit points: turning them on or off is a decision
             // about the phone, and the sign-out and delete buttons are the doors this sheet exists

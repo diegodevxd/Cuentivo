@@ -77,6 +77,8 @@ fun AuthenticationScreen(
      * while [isWorking], so the credential selector never appears twice.
      */
     onGoogleSignIn: () -> Unit = {},
+    /** The number of active local customers in the ledger, used to make the sign-up value proposition concrete. */
+    customerCount: Int = 0,
 ) {
     var isSignUp by remember { mutableStateOf(false) }
     var resetRequested by remember { mutableStateOf(false) }
@@ -107,7 +109,7 @@ fun AuthenticationScreen(
                 .padding(vertical = NeoSpacing.xl),
             verticalArrangement = Arrangement.Center,
         ) {
-            BrandHeader(isSignUp = isSignUp)
+            BrandHeader(isSignUp = isSignUp, customerCount = customerCount)
 
             NeoPanel(modifier = Modifier.fillMaxWidth().testTag("authentication-panel")) {
                 Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.md)) {
@@ -250,7 +252,7 @@ fun AuthenticationScreen(
 }
 
 @Composable
-private fun BrandHeader(isSignUp: Boolean) {
+private fun BrandHeader(isSignUp: Boolean, customerCount: Int = 0) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         Surface(
             shape = NeoShapes.card,
@@ -274,8 +276,17 @@ private fun BrandHeader(isSignUp: Boolean) {
             style = MaterialTheme.typography.titleLarge,
         )
         Spacer(Modifier.height(NeoSpacing.xs))
+        val tagline = if (isSignUp) {
+            if (customerCount > 0) {
+                stringResource(R.string.auth_sign_up_tagline_with_count, customerCount)
+            } else {
+                stringResource(R.string.auth_sign_up_tagline_generic)
+            }
+        } else {
+            stringResource(R.string.auth_tagline)
+        }
         Text(
-            text = stringResource(R.string.auth_tagline),
+            text = tagline,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

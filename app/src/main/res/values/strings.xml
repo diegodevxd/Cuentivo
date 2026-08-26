@@ -541,4 +541,27 @@
     <string name="ai_slot_amount">Monto / Precio</string>
     <string name="ai_slot_quantity">Cantidad</string>
     <string name="ai_slot_period">Período / Fecha</string>
+
+    <!-- First value moment: Who owes you? (FirstDebtScreen) -->
+    <string name="first_debt_title">¿Quién te debe?</string>
+    <string name="first_debt_detail">Anota a tu primer cliente y cuánto te debe para preparar tu libreta.</string>
+    <string name="first_debt_name_label">Nombre del cliente</string>
+    <string name="first_debt_name_placeholder">Ej. María López</string>
+    <string name="first_debt_amount_label">¿Cuánto te debe?</string>
+    <string name="first_debt_amount_hint">Monto en pesos (ej. 500)</string>
+    <string name="first_debt_confirm">Crear libreta</string>
+    <string name="first_debt_skip">Empezar sin anotar deudas</string>
+    <string name="first_debt_created_message">Libreta creada con tu primer cliente</string>
+
+    <!-- Account creation in value moments (AuthenticationScreen, AccountSheet, BackupSection, SubscriptionSheet) -->
+    <string name="auth_sign_up_tagline_with_count">Crea tu cuenta para no perder tus %1$d clientes.</string>
+    <string name="auth_sign_up_tagline_generic">Crea tu cuenta para no perder tus clientes.</string>
+    <string name="account_guest_card_title">Guarda tu libreta</string>
+    <string name="account_guest_card_detail_with_count">Estás usando Cuentivo como invitado. Crea tu cuenta para no perder tus %1$d clientes si cambias de teléfono.</string>
+    <string name="account_guest_card_detail_generic">Estás usando Cuentivo como invitado. Crea tu cuenta para no perder tus clientes si cambias de teléfono.</string>
+    <string name="account_guest_card_action">Crear cuenta</string>
+    <string name="backup_guest_detail_with_count">Crea tu cuenta para respaldar y no perder tus %1$d clientes si cambias de teléfono.</string>
+    <string name="backup_guest_detail_generic">Crea tu cuenta para respaldar y no perder tus clientes si cambias de teléfono.</string>
+    <string name="subscription_guest_pro_note_with_count">Crea tu cuenta para respaldar en la nube a tus %1$d clientes con Pro.</string>
+    <string name="subscription_guest_pro_note_generic">Crea tu cuenta para respaldar en la nube a tus clientes con Pro.</string>
 </resources>

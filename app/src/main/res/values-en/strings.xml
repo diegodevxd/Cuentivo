@@ -541,4 +541,27 @@
     <string name="ai_slot_amount">Amount / Price</string>
     <string name="ai_slot_quantity">Quantity</string>
     <string name="ai_slot_period">Period / Date</string>
+
+    <!-- First value moment: Who owes you? (FirstDebtScreen) -->
+    <string name="first_debt_title">Who owes you?</string>
+    <string name="first_debt_detail">Write down your first customer and how much they owe to prepare your ledger.</string>
+    <string name="first_debt_name_label">Customer name</string>
+    <string name="first_debt_name_placeholder">E.g. Maria Lopez</string>
+    <string name="first_debt_amount_label">How much do they owe?</string>
+    <string name="first_debt_amount_hint">Amount in pesos (e.g. 500)</string>
+    <string name="first_debt_confirm">Create ledger</string>
+    <string name="first_debt_skip">Start without debts</string>
+    <string name="first_debt_created_message">Ledger created with your first customer</string>
+
+    <!-- Account creation in value moments (AuthenticationScreen, AccountSheet, BackupSection, SubscriptionSheet) -->
+    <string name="auth_sign_up_tagline_with_count">Create your account so you do not lose your %1$d customers.</string>
+    <string name="auth_sign_up_tagline_generic">Create your account so you do not lose your customers.</string>
+    <string name="account_guest_card_title">Save your ledger</string>
+    <string name="account_guest_card_detail_with_count">You are using Cuentivo as a guest. Create your account so you do not lose your %1$d customers if you switch phones.</string>
+    <string name="account_guest_card_detail_generic">You are using Cuentivo as a guest. Create your account so you do not lose your customers if you switch phones.</string>
+    <string name="account_guest_card_action">Create account</string>
+    <string name="backup_guest_detail_with_count">Create your account to back up and not lose your %1$d customers if you switch phones.</string>
+    <string name="backup_guest_detail_generic">Create your account to back up and not lose your customers if you switch phones.</string>
+    <string name="subscription_guest_pro_note_with_count">Create your account to back up your %1$d customers in the cloud with Pro.</string>
+    <string name="subscription_guest_pro_note_generic">Create your account to back up your customers in the cloud with Pro.</string>
 </resources>

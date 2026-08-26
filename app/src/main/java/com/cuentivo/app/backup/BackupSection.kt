@@ -48,6 +48,10 @@ fun BackupSection(
      * false so the cautious sentence is what shows whenever the plan is not known yet.
      */
     hasCloudBackup: Boolean = false,
+    /** Whether the current session is an anonymous guest session. */
+    isAnonymous: Boolean = false,
+    /** Customer count used to make the backup retention message concrete. */
+    customerCount: Int = 0,
 ) {
     var exportPassword by remember { mutableStateOf<String?>(null) }
     var askExportPassword by remember { mutableStateOf(false) }
@@ -66,12 +70,22 @@ fun BackupSection(
         if (uri != null) restoreUri = uri
     }
 
+    val detailText = if (isAnonymous) {
+        if (customerCount > 0) {
+            stringResource(R.string.backup_guest_detail_with_count, customerCount)
+        } else {
+            stringResource(R.string.backup_guest_detail_generic)
+        }
+    } else if (hasCloudBackup) {
+        stringResource(R.string.backup_detail_cloud)
+    } else {
+        stringResource(R.string.backup_detail)
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm), modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleMedium)
         Text(
-            stringResource(
-                if (hasCloudBackup) R.string.backup_detail_cloud else R.string.backup_detail
-            ),
+            text = detailText,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

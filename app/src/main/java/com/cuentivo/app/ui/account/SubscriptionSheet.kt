@@ -58,6 +58,10 @@ internal fun SubscriptionContent(
      * figure: see the parameter of the same name on `BillingGateway`.
      */
     proPrice: String? = null,
+    /** Whether the current session is an anonymous guest session. */
+    isAnonymous: Boolean = false,
+    /** Customer count used to contextualise the Pro cloud-backup value proposition. */
+    customerCount: Int = 0,
 ) {
     val free = tier == SubscriptionTier.FREE
     Column(
@@ -98,10 +102,19 @@ internal fun SubscriptionContent(
         if (free) {
             NeoAction(stringResource(R.string.subscription_upgrade_action), onUpgrade, Modifier.fillMaxWidth())
         }
+        val billingNote = if (isAnonymous) {
+            if (customerCount > 0) {
+                stringResource(R.string.subscription_guest_pro_note_with_count, customerCount)
+            } else {
+                stringResource(R.string.subscription_guest_pro_note_generic)
+            }
+        } else if (free) {
+            stringResource(R.string.subscription_billing_note)
+        } else {
+            stringResource(R.string.subscription_play_note)
+        }
         Text(
-            text = stringResource(
-                if (free) R.string.subscription_billing_note else R.string.subscription_play_note
-            ),
+            text = billingNote,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

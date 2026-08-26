@@ -248,6 +248,10 @@ fun CuentivoApp(
     proPrice: String? = null,
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
+    /** Whether the current session is an anonymous guest session. */
+    isAnonymous: Boolean = false,
+    /** Callback to prompt sign up / account linking from within the app. */
+    onSignUp: () -> Unit = {},
     /** Whether the owner wants the daily overdue reminder, from the host's preferences. */
     reminderEnabled: Boolean = false,
     /** The chosen local hour (0..23), from the host's preferences. */
@@ -531,11 +535,14 @@ fun CuentivoApp(
             tier = tier,
             accountLabel = accountLabel,
             onUpgrade = { showAccount = false; onUpgrade() },
-                        proPrice = proPrice,
+            proPrice = proPrice,
             onSignOut = onSignOut,
             onDeleteAccount = onDeleteAccount,
             onDismiss = { showAccount = false },
             backupSection = backupSection,
+            isAnonymous = isAnonymous,
+            customerCount = customers.size,
+            onSignUp = { showAccount = false; onSignUp() },
             reminderEnabled = reminderEnabled,
             reminderHour = reminderHour,
             onReminderEnabledChange = onReminderEnabledChange,
