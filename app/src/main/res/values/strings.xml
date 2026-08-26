@@ -398,10 +398,12 @@
     <string name="auth_first_launch_service_error_title">No pudimos iniciar tu libreta</string>
     <string name="auth_first_launch_service_error_message">Ocurrió un problema al configurar el inicio de la app. Puedes intentar de nuevo o ingresar con tu cuenta.</string>
     <string name="auth_guest_switch_confirm_title">¿Entrar con otra cuenta?</string>
-    <string name="auth_guest_switch_confirm_message">Los datos anotados en este teléfono (%1$d clientes) no se combinarán con esa cuenta y se perderán. ¿Deseas continuar?</string>
+    <string name="auth_guest_switch_confirm_message_single">Los datos anotados en este teléfono (1 cliente) no se combinarán con esa cuenta y se perderán. ¿Deseas continuar?</string>
+    <string name="auth_guest_switch_confirm_message_plural">Los datos anotados en este teléfono (%1$d clientes) no se combinarán con esa cuenta y se perderán. ¿Deseas continuar?</string>
     <string name="auth_guest_switch_confirm_message_generic">Los datos anotados en este teléfono no se combinarán con esa cuenta y se perderán. ¿Deseas continuar?</string>
     <string name="auth_guest_switch_confirm_proceed">Entrar y borrar datos locales</string>
     <string name="auth_guest_switch_confirm_cancel">Cancelar y conservar mis datos</string>
+    <string name="auth_collision_sign_in_action">Iniciar sesión con esta cuenta</string>
     <string name="verify_title">Verifica tu correo</string>
     <string name="verify_detail">Te enviamos un correo a %1$s. Ábrelo, toca el enlace y regresa aquí.</string>
     <string name="verify_detail_no_email">Te enviamos un correo de verificación. Ábrelo, toca el enlace y regresa aquí.</string>

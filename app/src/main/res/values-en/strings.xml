@@ -398,10 +398,12 @@
     <string name="auth_first_launch_service_error_title">Could not start your ledger</string>
     <string name="auth_first_launch_service_error_message">A problem occurred while setting up the app startup. You can try again or sign in with your account.</string>
     <string name="auth_guest_switch_confirm_title">Sign in with another account?</string>
-    <string name="auth_guest_switch_confirm_message">The data recorded on this phone (%1$d customers) will not be combined with that account and will be lost. Do you want to continue?</string>
+    <string name="auth_guest_switch_confirm_message_single">The data recorded on this phone (1 customer) will not be combined with that account and will be lost. Do you want to continue?</string>
+    <string name="auth_guest_switch_confirm_message_plural">The data recorded on this phone (%1$d customers) will not be combined with that account and will be lost. Do you want to continue?</string>
     <string name="auth_guest_switch_confirm_message_generic">The data recorded on this phone will not be combined with that account and will be lost. Do you want to continue?</string>
     <string name="auth_guest_switch_confirm_proceed">Sign in and delete local data</string>
     <string name="auth_guest_switch_confirm_cancel">Cancel and keep my data</string>
+    <string name="auth_collision_sign_in_action">Sign in with this account</string>
     <string name="verify_title">Verify your email</string>
     <string name="verify_detail">We sent an email to %1$s. Open it, tap the link, and come back here.</string>
     <string name="verify_detail_no_email">We sent you a verification email. Open it, tap the link, and come back here.</string>

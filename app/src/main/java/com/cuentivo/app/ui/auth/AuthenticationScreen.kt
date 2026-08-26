@@ -79,6 +79,8 @@ fun AuthenticationScreen(
     onGoogleSignIn: () -> Unit = {},
     /** The number of active local customers in the ledger, used to make the sign-up value proposition concrete. */
     customerCount: Int = 0,
+    /** Optional action offered on account collision to sign in directly with the existing account. */
+    onCollisionSignIn: (() -> Unit)? = null,
 ) {
     var isSignUp by remember { mutableStateOf(false) }
     var resetRequested by remember { mutableStateOf(false) }
@@ -160,6 +162,16 @@ fun AuthenticationScreen(
 
             // Whatever Firebase said, in the one place the person is already looking.
             message?.let { FieldError(it) }
+
+            if (onCollisionSignIn != null) {
+                OutlinedButton(
+                    onClick = onCollisionSignIn,
+                    enabled = !isWorking,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.auth_collision_sign_in_action))
+                }
+            }
 
             NeoAction(
                 label = stringResource(R.string.auth_continue),

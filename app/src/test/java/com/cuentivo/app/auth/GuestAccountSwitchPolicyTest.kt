@@ -62,4 +62,34 @@ class GuestAccountSwitchPolicyTest {
         )
         assertFalse(requiresConfirmation)
     }
+
+    @Test
+    fun collision_with_local_guest_data_resolves_to_confirm_before_sign_in() {
+        val resolution = GuestAccountSwitchPolicy.resolveCollisionAction(
+            isAnonymous = true,
+            customerCount = 3,
+            hasFinancialActivity = false,
+        )
+        org.junit.Assert.assertEquals(AccountCollisionResolution.CONFIRM_BEFORE_SIGN_IN, resolution)
+    }
+
+    @Test
+    fun collision_without_local_guest_data_resolves_to_direct_sign_in() {
+        val resolution = GuestAccountSwitchPolicy.resolveCollisionAction(
+            isAnonymous = true,
+            customerCount = 0,
+            hasFinancialActivity = false,
+        )
+        org.junit.Assert.assertEquals(AccountCollisionResolution.DIRECT_SIGN_IN, resolution)
+    }
+
+    @Test
+    fun collision_on_normal_account_resolves_to_direct_sign_in() {
+        val resolution = GuestAccountSwitchPolicy.resolveCollisionAction(
+            isAnonymous = false,
+            customerCount = 10,
+            hasFinancialActivity = true,
+        )
+        org.junit.Assert.assertEquals(AccountCollisionResolution.DIRECT_SIGN_IN, resolution)
+    }
 }

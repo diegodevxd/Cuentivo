@@ -1160,6 +1160,7 @@ class MainActivity : ComponentActivity() {
                 if (showAccountLinking) {
                     BackHandler { showAccountLinking = false }
                     var pendingAccountSwitchAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+                    var collisionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
                     val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
                     val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
                     val emailInUseMessage = stringResource(R.string.auth_email_in_use)
@@ -1169,6 +1170,7 @@ class MainActivity : ComponentActivity() {
                     val performSignIn: (String, String) -> Unit = { email, password ->
                         isAuthenticating = true
                         authenticationMessage = null
+                        collisionAction = null
                         authenticationGateway.signIn(email, password) { result ->
                             isAuthenticating = false
                             result.onSuccess {
@@ -1177,6 +1179,31 @@ class MainActivity : ComponentActivity() {
                             }.onFailure {
                                 authenticationMessage = signInFailedMessage
                                 crashReporter.report(CrashEvent.AUTH_FAILURE)
+                            }
+                        }
+                    }
+
+                    val performGoogleSignIn: () -> Unit = {
+                        isAuthenticating = true
+                        authenticationMessage = null
+                        collisionAction = null
+                        authenticationGateway.signInWithGoogle(this@MainActivity) { result ->
+                            isAuthenticating = false
+                            when (result) {
+                                is GoogleAuthenticationResult.SignedIn -> {
+                                    authenticatedUserId = result.userId
+                                    showAccountLinking = false
+                                    verificationKey++
+                                }
+                                GoogleAuthenticationResult.ManualAccountNeedsPassword ->
+                                    authenticationMessage = googleManualPasswordMessage
+                                GoogleAuthenticationResult.AccountAlreadyExists ->
+                                    authenticationMessage = emailInUseMessage
+                                GoogleAuthenticationResult.Failed -> {
+                                    authenticationMessage = googleFailedMessage
+                                    crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                }
+                                GoogleAuthenticationResult.Cancelled -> Unit
                             }
                         }
                     }
@@ -1191,8 +1218,21 @@ class MainActivity : ComponentActivity() {
                             }
                             GoogleAuthenticationResult.ManualAccountNeedsPassword ->
                                 authenticationMessage = googleManualPasswordMessage
-                            GoogleAuthenticationResult.AccountAlreadyExists ->
+                            GoogleAuthenticationResult.AccountAlreadyExists -> {
                                 authenticationMessage = emailInUseMessage
+                                collisionAction = {
+                                    if (GuestAccountSwitchPolicy.shouldConfirmAccountSwitch(
+                                            isAnonymous = authenticationGateway.isAnonymous,
+                                            customerCount = customers.size,
+                                            hasFinancialActivity = hasFinancialActivity,
+                                        )
+                                    ) {
+                                        pendingAccountSwitchAction = performGoogleSignIn
+                                    } else {
+                                        performGoogleSignIn()
+                                    }
+                                }
+                            }
                             GoogleAuthenticationResult.Failed -> {
                                 authenticationMessage = googleFailedMessage
                                 crashReporter.report(CrashEvent.AUTH_FAILURE)
@@ -1203,10 +1243,10 @@ class MainActivity : ComponentActivity() {
 
                     if (pendingAccountSwitchAction != null) {
                         val count = customers.size
-                        val messageText = if (count > 0) {
-                            stringResource(R.string.auth_guest_switch_confirm_message, count)
-                        } else {
-                            stringResource(R.string.auth_guest_switch_confirm_message_generic)
+                        val messageText = when (count) {
+                            0 -> stringResource(R.string.auth_guest_switch_confirm_message_generic)
+                            1 -> stringResource(R.string.auth_guest_switch_confirm_message_single)
+                            else -> stringResource(R.string.auth_guest_switch_confirm_message_plural, count)
                         }
                         AlertDialog(
                             onDismissRequest = { pendingAccountSwitchAction = null },
@@ -1238,6 +1278,7 @@ class MainActivity : ComponentActivity() {
                         isWorking = isAuthenticating,
                         message = authenticationMessage,
                         customerCount = customers.size,
+                        onCollisionSignIn = collisionAction,
                         onSignIn = { email, password ->
                             if (GuestAccountSwitchPolicy.shouldConfirmAccountSwitch(
                                     isAnonymous = authenticationGateway.isAnonymous,
@@ -1253,6 +1294,7 @@ class MainActivity : ComponentActivity() {
                         onSignUp = { email, password ->
                             isAuthenticating = true
                             authenticationMessage = null
+                            collisionAction = null
                             if (authenticationGateway.isAnonymous) {
                                 authenticationGateway.linkEmail(email, password) { result ->
                                     isAuthenticating = false
@@ -1263,12 +1305,24 @@ class MainActivity : ComponentActivity() {
                                         showAccountLinking = false
                                         verificationKey++
                                     }.onFailure { error ->
-                                        authenticationMessage =
-                                            if (error is FirebaseAuthUserCollisionException) emailInUseMessage
-                                            else {
-                                                crashReporter.report(CrashEvent.AUTH_FAILURE)
-                                                signUpFailedMessage
+                                        if (error is FirebaseAuthUserCollisionException) {
+                                            authenticationMessage = emailInUseMessage
+                                            collisionAction = {
+                                                if (GuestAccountSwitchPolicy.shouldConfirmAccountSwitch(
+                                                        isAnonymous = authenticationGateway.isAnonymous,
+                                                        customerCount = customers.size,
+                                                        hasFinancialActivity = hasFinancialActivity,
+                                                    )
+                                                ) {
+                                                    pendingAccountSwitchAction = { performSignIn(email, password) }
+                                                } else {
+                                                    performSignIn(email, password)
+                                                }
                                             }
+                                        } else {
+                                            crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                            authenticationMessage = signUpFailedMessage
+                                        }
                                     }
                                 }
                             } else {
@@ -1281,23 +1335,39 @@ class MainActivity : ComponentActivity() {
                                         showAccountLinking = false
                                         verificationKey++
                                     }.onFailure { error ->
-                                        authenticationMessage =
-                                            if (error is FirebaseAuthUserCollisionException) emailInUseMessage
-                                            else {
-                                                crashReporter.report(CrashEvent.AUTH_FAILURE)
-                                                signUpFailedMessage
+                                        if (error is FirebaseAuthUserCollisionException) {
+                                            authenticationMessage = emailInUseMessage
+                                            collisionAction = {
+                                                if (GuestAccountSwitchPolicy.shouldConfirmAccountSwitch(
+                                                        isAnonymous = authenticationGateway.isAnonymous,
+                                                        customerCount = customers.size,
+                                                        hasFinancialActivity = hasFinancialActivity,
+                                                    )
+                                                ) {
+                                                    pendingAccountSwitchAction = { performSignIn(email, password) }
+                                                } else {
+                                                    performSignIn(email, password)
+                                                }
                                             }
+                                        } else {
+                                            crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                            authenticationMessage = signUpFailedMessage
+                                        }
                                     }
                                 }
                             }
                         },
-                        onModeChange = { authenticationMessage = null },
+                        onModeChange = {
+                            authenticationMessage = null
+                            collisionAction = null
+                        },
                         onResetPassword = { email ->
                             authenticationGateway.sendPasswordReset(email) { }
                         },
                         onGoogleSignIn = {
                             isAuthenticating = true
                             authenticationMessage = null
+                            collisionAction = null
                             if (authenticationGateway.currentUserId == null) {
                                 authenticationGateway.signInWithGoogle(this@MainActivity, handleGoogleResult)
                             } else {
