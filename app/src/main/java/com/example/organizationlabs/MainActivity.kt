@@ -129,6 +129,7 @@ import com.cuentivo.app.billing.BillingGateway
 import com.cuentivo.app.billing.EntitlementStore
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.AlertDialog
+import com.cuentivo.app.auth.AccountSwitchDecision
 import com.cuentivo.app.auth.AnonymousStartupFailureCause
 import com.cuentivo.app.auth.AuthenticationFlowPolicy
 import com.cuentivo.app.auth.GuestAccountSwitchPolicy
@@ -606,7 +607,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 GoogleAuthenticationResult.ManualAccountNeedsPassword ->
                                     authenticationMessage = googleManualPasswordMessage
-                                GoogleAuthenticationResult.AccountAlreadyExists ->
+                                is GoogleAuthenticationResult.AccountAlreadyExists ->
                                     authenticationMessage = emailInUseMessage
                                 GoogleAuthenticationResult.Failed -> {
                                     authenticationMessage = googleFailedMessage
@@ -1159,8 +1160,7 @@ class MainActivity : ComponentActivity() {
 
                 if (showAccountLinking) {
                     BackHandler { showAccountLinking = false }
-                    var pendingAccountSwitchAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-                    var collisionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+                    var pendingAccountSwitchAction by remember { mutableStateOf<Pair<String?, () -> Unit>?>(null) }
                     val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
                     val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
                     val emailInUseMessage = stringResource(R.string.auth_email_in_use)
@@ -1170,7 +1170,6 @@ class MainActivity : ComponentActivity() {
                     val performSignIn: (String, String) -> Unit = { email, password ->
                         isAuthenticating = true
                         authenticationMessage = null
-                        collisionAction = null
                         authenticationGateway.signIn(email, password) { result ->
                             isAuthenticating = false
                             result.onSuccess {
@@ -1186,7 +1185,6 @@ class MainActivity : ComponentActivity() {
                     val performGoogleSignIn: () -> Unit = {
                         isAuthenticating = true
                         authenticationMessage = null
-                        collisionAction = null
                         authenticationGateway.signInWithGoogle(this@MainActivity) { result ->
                             isAuthenticating = false
                             when (result) {
@@ -1197,7 +1195,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 GoogleAuthenticationResult.ManualAccountNeedsPassword ->
                                     authenticationMessage = googleManualPasswordMessage
-                                GoogleAuthenticationResult.AccountAlreadyExists ->
+                                is GoogleAuthenticationResult.AccountAlreadyExists ->
                                     authenticationMessage = emailInUseMessage
                                 GoogleAuthenticationResult.Failed -> {
                                     authenticationMessage = googleFailedMessage
@@ -1218,19 +1216,19 @@ class MainActivity : ComponentActivity() {
                             }
                             GoogleAuthenticationResult.ManualAccountNeedsPassword ->
                                 authenticationMessage = googleManualPasswordMessage
-                            GoogleAuthenticationResult.AccountAlreadyExists -> {
-                                authenticationMessage = emailInUseMessage
-                                collisionAction = {
-                                    if (GuestAccountSwitchPolicy.shouldConfirmAccountSwitch(
-                                            isAnonymous = authenticationGateway.isAnonymous,
-                                            customerCount = customers.size,
-                                            hasFinancialActivity = hasFinancialActivity,
-                                        )
-                                    ) {
-                                        pendingAccountSwitchAction = performGoogleSignIn
-                                    } else {
-                                        performGoogleSignIn()
+                            is GoogleAuthenticationResult.AccountAlreadyExists -> {
+                                val targetEmail = result.email
+                                val decision = GuestAccountSwitchPolicy.decideAccountSwitch(
+                                    isAnonymous = authenticationGateway.isAnonymous,
+                                    customerCount = customers.size,
+                                    hasFinancialActivity = hasFinancialActivity,
+                                    targetEmail = targetEmail,
+                                )
+                                when (decision) {
+                                    is AccountSwitchDecision.Confirm -> {
+                                        pendingAccountSwitchAction = Pair(targetEmail, performGoogleSignIn)
                                     }
+                                    AccountSwitchDecision.Direct -> performGoogleSignIn()
                                 }
                             }
                             GoogleAuthenticationResult.Failed -> {
@@ -1242,11 +1240,21 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (pendingAccountSwitchAction != null) {
+                        val targetEmail = pendingAccountSwitchAction?.first
+                        val action = pendingAccountSwitchAction?.second
                         val count = customers.size
-                        val messageText = when (count) {
-                            0 -> stringResource(R.string.auth_guest_switch_confirm_message_generic)
-                            1 -> stringResource(R.string.auth_guest_switch_confirm_message_single)
-                            else -> stringResource(R.string.auth_guest_switch_confirm_message_plural, count)
+                        val messageText = if (!targetEmail.isNullOrBlank()) {
+                            when (count) {
+                                0 -> stringResource(R.string.auth_guest_switch_confirm_message_generic, targetEmail)
+                                1 -> stringResource(R.string.auth_guest_switch_confirm_message_single, targetEmail)
+                                else -> stringResource(R.string.auth_guest_switch_confirm_message_plural, targetEmail, count)
+                            }
+                        } else {
+                            when (count) {
+                                0 -> stringResource(R.string.auth_guest_switch_confirm_message_no_email_generic)
+                                1 -> stringResource(R.string.auth_guest_switch_confirm_message_no_email_single)
+                                else -> stringResource(R.string.auth_guest_switch_confirm_message_no_email_plural, count)
+                            }
                         }
                         AlertDialog(
                             onDismissRequest = { pendingAccountSwitchAction = null },
@@ -1255,7 +1263,6 @@ class MainActivity : ComponentActivity() {
                             confirmButton = {
                                 TextButton(
                                     onClick = {
-                                        val action = pendingAccountSwitchAction
                                         pendingAccountSwitchAction = null
                                         action?.invoke()
                                     },
@@ -1278,23 +1285,23 @@ class MainActivity : ComponentActivity() {
                         isWorking = isAuthenticating,
                         message = authenticationMessage,
                         customerCount = customers.size,
-                        onCollisionSignIn = collisionAction,
                         onSignIn = { email, password ->
-                            if (GuestAccountSwitchPolicy.shouldConfirmAccountSwitch(
-                                    isAnonymous = authenticationGateway.isAnonymous,
-                                    customerCount = customers.size,
-                                    hasFinancialActivity = hasFinancialActivity,
-                                )
-                            ) {
-                                pendingAccountSwitchAction = { performSignIn(email, password) }
-                            } else {
-                                performSignIn(email, password)
+                            val decision = GuestAccountSwitchPolicy.decideAccountSwitch(
+                                isAnonymous = authenticationGateway.isAnonymous,
+                                customerCount = customers.size,
+                                hasFinancialActivity = hasFinancialActivity,
+                                targetEmail = email,
+                            )
+                            when (decision) {
+                                is AccountSwitchDecision.Confirm -> {
+                                    pendingAccountSwitchAction = Pair(email) { performSignIn(email, password) }
+                                }
+                                AccountSwitchDecision.Direct -> performSignIn(email, password)
                             }
                         },
                         onSignUp = { email, password ->
                             isAuthenticating = true
                             authenticationMessage = null
-                            collisionAction = null
                             if (authenticationGateway.isAnonymous) {
                                 authenticationGateway.linkEmail(email, password) { result ->
                                     isAuthenticating = false
@@ -1306,18 +1313,17 @@ class MainActivity : ComponentActivity() {
                                         verificationKey++
                                     }.onFailure { error ->
                                         if (error is FirebaseAuthUserCollisionException) {
-                                            authenticationMessage = emailInUseMessage
-                                            collisionAction = {
-                                                if (GuestAccountSwitchPolicy.shouldConfirmAccountSwitch(
-                                                        isAnonymous = authenticationGateway.isAnonymous,
-                                                        customerCount = customers.size,
-                                                        hasFinancialActivity = hasFinancialActivity,
-                                                    )
-                                                ) {
-                                                    pendingAccountSwitchAction = { performSignIn(email, password) }
-                                                } else {
-                                                    performSignIn(email, password)
+                                            val decision = GuestAccountSwitchPolicy.decideAccountSwitch(
+                                                isAnonymous = authenticationGateway.isAnonymous,
+                                                customerCount = customers.size,
+                                                hasFinancialActivity = hasFinancialActivity,
+                                                targetEmail = email,
+                                            )
+                                            when (decision) {
+                                                is AccountSwitchDecision.Confirm -> {
+                                                    pendingAccountSwitchAction = Pair(email) { performSignIn(email, password) }
                                                 }
+                                                AccountSwitchDecision.Direct -> performSignIn(email, password)
                                             }
                                         } else {
                                             crashReporter.report(CrashEvent.AUTH_FAILURE)
@@ -1337,18 +1343,6 @@ class MainActivity : ComponentActivity() {
                                     }.onFailure { error ->
                                         if (error is FirebaseAuthUserCollisionException) {
                                             authenticationMessage = emailInUseMessage
-                                            collisionAction = {
-                                                if (GuestAccountSwitchPolicy.shouldConfirmAccountSwitch(
-                                                        isAnonymous = authenticationGateway.isAnonymous,
-                                                        customerCount = customers.size,
-                                                        hasFinancialActivity = hasFinancialActivity,
-                                                    )
-                                                ) {
-                                                    pendingAccountSwitchAction = { performSignIn(email, password) }
-                                                } else {
-                                                    performSignIn(email, password)
-                                                }
-                                            }
                                         } else {
                                             crashReporter.report(CrashEvent.AUTH_FAILURE)
                                             authenticationMessage = signUpFailedMessage
@@ -1357,17 +1351,13 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         },
-                        onModeChange = {
-                            authenticationMessage = null
-                            collisionAction = null
-                        },
+                        onModeChange = { authenticationMessage = null },
                         onResetPassword = { email ->
                             authenticationGateway.sendPasswordReset(email) { }
                         },
                         onGoogleSignIn = {
                             isAuthenticating = true
                             authenticationMessage = null
-                            collisionAction = null
                             if (authenticationGateway.currentUserId == null) {
                                 authenticationGateway.signInWithGoogle(this@MainActivity, handleGoogleResult)
                             } else {

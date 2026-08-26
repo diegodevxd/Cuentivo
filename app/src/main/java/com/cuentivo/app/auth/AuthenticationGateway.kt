@@ -241,7 +241,7 @@ class FirebaseAuthenticationGateway(
     private var lastGoogleContext: Context? = null
 
     override fun signInWithGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit) {
-        googleIdToken(activity, onComplete = onComplete) { idToken ->
+        googleIdToken(activity, onComplete = onComplete) { idToken, googleEmail ->
             auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null))
                 .addOnCompleteListener { task ->
                     onComplete(
@@ -251,7 +251,8 @@ class FirebaseAuthenticationGateway(
                             else GoogleAuthenticationResult.Failed
                         } else {
                             GoogleAuthenticationResult.fromFirebaseErrorCode(
-                                (task.exception as? FirebaseAuthException)?.errorCode
+                                (task.exception as? FirebaseAuthException)?.errorCode,
+                                email = googleEmail,
                             )
                         }
                     )
@@ -260,7 +261,7 @@ class FirebaseAuthenticationGateway(
     }
 
     override fun linkGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit) {
-        googleIdToken(activity, onComplete = onComplete) { idToken ->
+        googleIdToken(activity, onComplete = onComplete) { idToken, googleEmail ->
             val user = auth.currentUser
             if (user == null) {
                 onComplete(GoogleAuthenticationResult.Failed)
@@ -275,7 +276,8 @@ class FirebaseAuthenticationGateway(
                             AuthenticationFlowPolicy.resolveGoogleLinkResult(expectedUid, userId)
                         } else {
                             GoogleAuthenticationResult.fromFirebaseErrorCode(
-                                (task.exception as? FirebaseAuthException)?.errorCode
+                                (task.exception as? FirebaseAuthException)?.errorCode,
+                                email = googleEmail,
                             )
                         }
                     )
@@ -308,7 +310,7 @@ class FirebaseAuthenticationGateway(
     private fun googleIdToken(
         activity: Activity,
         onComplete: (GoogleAuthenticationResult) -> Unit,
-        onIdToken: (String) -> Unit,
+        onIdToken: (idToken: String, email: String?) -> Unit,
     ) {
         lastGoogleContext = activity.applicationContext
         val request = GetCredentialRequest.Builder()
@@ -324,13 +326,14 @@ class FirebaseAuthenticationGateway(
                 val response = CredentialManager.create(activity).getCredential(activity, request)
                 // Parsed rather than cast: GoogleIdTokenCredential.createFrom validates the JSON the
                 // selector returned, so a credential of any other type cannot masquerade as a token.
-                val idToken = try {
-                    GoogleIdTokenCredential.createFrom(response.credential.data).idToken
+                val parsed = try {
+                    GoogleIdTokenCredential.createFrom(response.credential.data)
                 } catch (_: Exception) {
                     null
                 }
+                val idToken = parsed?.idToken
                 if (idToken == null) onComplete(GoogleAuthenticationResult.Failed)
-                else onIdToken(idToken)
+                else onIdToken(idToken, parsed?.id)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: GetCredentialCancellationException) {

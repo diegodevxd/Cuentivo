@@ -67,6 +67,33 @@ object GuestAccountSwitchPolicy {
         val hasLocalData = customerCount > 0 || hasFinancialActivity
         return resolveCollisionAction(isAnonymous = isAnonymous, hasLocalData = hasLocalData)
     }
+    /**
+     * Decides whether switching to [targetEmail] should prompt for confirmation showing the email
+     * or proceed directly.
+     *
+     * @param isAnonymous whether the current session is an anonymous guest session.
+     * @param customerCount the number of customers recorded in the local ledger.
+     * @param hasFinancialActivity whether there are sales or payments in the local ledger.
+     * @param targetEmail the email of the account being switched to.
+     * @return [AccountSwitchDecision.Confirm] if local guest data is at risk, or [AccountSwitchDecision.Direct] otherwise.
+     */
+    fun decideAccountSwitch(
+        isAnonymous: Boolean,
+        customerCount: Int,
+        hasFinancialActivity: Boolean = false,
+        targetEmail: String? = null,
+    ): AccountSwitchDecision {
+        return if (shouldConfirmAccountSwitch(
+                isAnonymous = isAnonymous,
+                customerCount = customerCount,
+                hasFinancialActivity = hasFinancialActivity,
+            )
+        ) {
+            AccountSwitchDecision.Confirm(targetEmail = targetEmail)
+        } else {
+            AccountSwitchDecision.Direct
+        }
+    }
 }
 
 /**
@@ -78,4 +105,21 @@ enum class AccountCollisionResolution {
 
     /** Switch directly to sign in because there is no local guest data to lose. */
     DIRECT_SIGN_IN,
+}
+
+/**
+ * Decision determining whether an account switch requires an explicit confirmation modal
+ * showing the target email and customer count, or can proceed directly.
+ */
+sealed interface AccountSwitchDecision {
+    /**
+     * An explicit confirmation modal must be shown to the user before signing in and wiping local data.
+     * @param targetEmail the email of the existing account the user is switching to.
+     */
+    data class Confirm(val targetEmail: String?) : AccountSwitchDecision
+
+    /**
+     * Can proceed directly to sign in because no local guest data is at risk.
+     */
+    data object Direct : AccountSwitchDecision
 }

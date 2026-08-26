@@ -26,7 +26,7 @@ sealed interface GoogleAuthenticationResult {
     data object ManualAccountNeedsPassword : GoogleAuthenticationResult
 
     /** The account already exists; linking is refused while preserving local guest data. */
-    data object AccountAlreadyExists : GoogleAuthenticationResult
+    data class AccountAlreadyExists(val email: String? = null) : GoogleAuthenticationResult
 
     /** Anything else — shown as one localized generic message. */
     data object Failed : GoogleAuthenticationResult
@@ -43,10 +43,10 @@ sealed interface GoogleAuthenticationResult {
          * Maps a Firebase Auth error code. The only codes the host acts on are those explaining
          * password presence or existing account collisions, preserving the local session.
          */
-        fun fromFirebaseErrorCode(errorCode: String?): GoogleAuthenticationResult =
+        fun fromFirebaseErrorCode(errorCode: String?, email: String? = null): GoogleAuthenticationResult =
             when (errorCode) {
                 "ERROR_ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL" -> ManualAccountNeedsPassword
-                "ERROR_CREDENTIAL_ALREADY_IN_USE", "ERROR_EMAIL_ALREADY_IN_USE" -> AccountAlreadyExists
+                "ERROR_CREDENTIAL_ALREADY_IN_USE", "ERROR_EMAIL_ALREADY_IN_USE" -> AccountAlreadyExists(email)
                 else -> Failed
             }
     }

@@ -92,4 +92,40 @@ class GuestAccountSwitchPolicyTest {
         )
         org.junit.Assert.assertEquals(AccountCollisionResolution.DIRECT_SIGN_IN, resolution)
     }
+
+    @Test
+    fun decideAccountSwitch_with_local_data_returns_confirm_with_email() {
+        val decision = GuestAccountSwitchPolicy.decideAccountSwitch(
+            isAnonymous = true,
+            customerCount = 4,
+            hasFinancialActivity = false,
+            targetEmail = "diego@cuentivo.com",
+        )
+        org.junit.Assert.assertEquals(
+            AccountSwitchDecision.Confirm(targetEmail = "diego@cuentivo.com"),
+            decision,
+        )
+    }
+
+    @Test
+    fun decideAccountSwitch_without_local_data_returns_direct() {
+        val decision = GuestAccountSwitchPolicy.decideAccountSwitch(
+            isAnonymous = true,
+            customerCount = 0,
+            hasFinancialActivity = false,
+            targetEmail = "diego@cuentivo.com",
+        )
+        org.junit.Assert.assertEquals(AccountSwitchDecision.Direct, decision)
+    }
+
+    @Test
+    fun decideAccountSwitch_on_normal_account_returns_direct() {
+        val decision = GuestAccountSwitchPolicy.decideAccountSwitch(
+            isAnonymous = false,
+            customerCount = 10,
+            hasFinancialActivity = true,
+            targetEmail = "diego@cuentivo.com",
+        )
+        org.junit.Assert.assertEquals(AccountSwitchDecision.Direct, decision)
+    }
 }
