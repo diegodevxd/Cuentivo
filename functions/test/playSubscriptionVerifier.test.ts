@@ -1,0 +1,128 @@
+import { describe, expect, test } from "vitest";
+import {
+  hashPurchaseToken,
+  translatePlaySubscription,
+  type PlaySubscriptionV2Response,
+} from "../src/ai/playSubscriptionVerifier.js";
+
+describe("playSubscriptionVerifier", () => {
+  const PRODUCT_ID = "cuentivo_ai_mensual";
+  const FUTURE_ISO = "2026-09-25T12:00:00.000Z";
+  const FUTURE_MILLIS = Date.parse(FUTURE_ISO);
+
+  test("hashPurchaseToken produces stable 64-char sha256 hex string", () => {
+    const token = "sample_play_purchase_token_12345";
+    const hash1 = hashPurchaseToken(token);
+    const hash2 = hashPurchaseToken(token);
+    expect(hash1).toBe(hash2);
+    expect(hash1).toHaveLength(64);
+    expect(hash1).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashPurchaseToken("different_token")).not.toBe(hash1);
+  });
+
+  test("active subscription translates to VERIFIED with absolute epoch millis", () => {
+    const response: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      lineItems: [
+        {
+          productId: PRODUCT_ID,
+          expiryTime: FUTURE_ISO,
+        },
+      ],
+    };
+    const result = translatePlaySubscription(response, PRODUCT_ID);
+    expect(result).toEqual({
+      status: "VERIFIED",
+      enabled: true,
+      expiresAtEpochMillis: FUTURE_MILLIS,
+    });
+  });
+
+  test("in-grace-period subscription translates to VERIFIED with absolute epoch millis", () => {
+    const response: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_IN_GRACE_PERIOD",
+      lineItems: [
+        {
+          productId: PRODUCT_ID,
+          expiryTime: FUTURE_ISO,
+        },
+      ],
+    };
+    const result = translatePlaySubscription(response, PRODUCT_ID);
+    expect(result).toEqual({
+      status: "VERIFIED",
+      enabled: true,
+      expiresAtEpochMillis: FUTURE_MILLIS,
+    });
+  });
+
+  test("expired or canceled subscription translates to INACTIVE without granting entitlement", () => {
+    const expiredResponse: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_EXPIRED",
+      lineItems: [
+        {
+          productId: PRODUCT_ID,
+          expiryTime: "2026-08-01T12:00:00.000Z",
+        },
+      ],
+    };
+    const resultExpired = translatePlaySubscription(expiredResponse, PRODUCT_ID);
+    expect(resultExpired).toEqual({
+      status: "INACTIVE",
+      enabled: false,
+      expiresAtEpochMillis: Date.parse("2026-08-01T12:00:00.000Z"),
+    });
+
+    const canceledResponse: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_CANCELED",
+      lineItems: [
+        {
+          productId: PRODUCT_ID,
+          expiryTime: FUTURE_ISO,
+        },
+      ],
+    };
+    const resultCanceled = translatePlaySubscription(canceledResponse, PRODUCT_ID);
+    expect(resultCanceled).toEqual({
+      status: "INACTIVE",
+      enabled: false,
+      expiresAtEpochMillis: FUTURE_MILLIS,
+    });
+  });
+
+  test("null response or missing line items translates to INVALID", () => {
+    expect(translatePlaySubscription(null, PRODUCT_ID)).toEqual({ status: "INVALID" });
+    expect(translatePlaySubscription({ subscriptionState: "SUBSCRIPTION_STATE_ACTIVE" }, PRODUCT_ID)).toEqual({
+      status: "INVALID",
+    });
+    expect(
+      translatePlaySubscription({ subscriptionState: "SUBSCRIPTION_STATE_ACTIVE", lineItems: [] }, PRODUCT_ID),
+    ).toEqual({ status: "INVALID" });
+  });
+
+  test("mismatched product ID translates to INVALID", () => {
+    const response: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      lineItems: [
+        {
+          productId: "cuentivo_pro_mensual",
+          expiryTime: FUTURE_ISO,
+        },
+      ],
+    };
+    expect(translatePlaySubscription(response, PRODUCT_ID)).toEqual({ status: "INVALID" });
+  });
+
+  test("invalid or unparseable expiry time string translates to INVALID", () => {
+    const response: PlaySubscriptionV2Response = {
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      lineItems: [
+        {
+          productId: PRODUCT_ID,
+          expiryTime: "not_a_valid_timestamp",
+        },
+      ],
+    };
+    expect(translatePlaySubscription(response, PRODUCT_ID)).toEqual({ status: "INVALID" });
+  });
+});

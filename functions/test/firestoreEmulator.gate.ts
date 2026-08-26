@@ -3,6 +3,12 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createFirestoreControlPlaneRepository } from "../src/ai/firestoreControlPlane.js";
+import {
+  createFirestoreSubscriptionEntitlementRepository,
+  tokenBindingPath,
+  entitlementPath,
+} from "../src/ai/subscriptionEntitlementRepository.js";
+import { hashPurchaseToken } from "../src/ai/playSubscriptionVerifier.js";
 import type { AuthorizeAiResult } from "../src/ai/controlPlane.js";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -17,6 +23,9 @@ const PROJECT_ID = "demo-cuentivoai-phase2a";
 // dedicated demo project's aiControl/global configuration document). No wildcard, no listing,
 // no collection-wide deletes, so other runs or other tenants can never be touched.
 const RUN_UID = `gate-${randomUUID()}`;
+const INTRUDER_UID = `intruder-${randomUUID()}`;
+const TEST_TOKEN = `token-${randomUUID()}`;
+const TEST_TOKEN_HASH = hashPurchaseToken(TEST_TOKEN);
 
 const REQUEST_IDS = Array.from({ length: 10 }, (_, index) => `conc-${index}`);
 
@@ -50,8 +59,10 @@ function ownedPaths(): string[] {
   return [
     "aiControl/global",
     `aiEntitlements/${RUN_UID}`,
+    `aiEntitlements/${INTRUDER_UID}`,
     `aiUsage/${RUN_UID}_${monthKey(NOW)}`,
     `aiRateWindows/${RUN_UID}_${minuteKey(NOW)}`,
+    tokenBindingPath(TEST_TOKEN_HASH),
     ...REQUEST_IDS.map((requestId) => `aiRequestLedger/${RUN_UID}_${requestId}`),
   ];
 }
@@ -166,5 +177,70 @@ describe("firestore emulator concurrency gate", () => {
 
     expect(await counters()).toEqual({ usage: 1, rate: 1 });
     expect(await ledgerCountForRun()).toBe(1);
+  });
+
+  test("subscription entitlement: grant, idempotent reprocess, and stolen token rejection", async () => {
+    const subRepo = createFirestoreSubscriptionEntitlementRepository(firestore);
+    const product = "cuentivo_ai_mensual";
+    const initialExpiry = NOW + 30 * 86400 * 1000;
+
+    // 1. Conceder: First writer binds token and writes entitlement
+    const grantResult = await subRepo.recordSubscription({
+      uid: RUN_UID,
+      purchaseToken: TEST_TOKEN,
+      productId: product,
+      enabled: true,
+      expiresAtEpochMillis: initialExpiry,
+      nowEpochMillis: NOW,
+    });
+    expect(grantResult).toEqual({
+      status: "RECORDED",
+      enabled: true,
+      expiresAtEpochMillis: initialExpiry,
+    });
+
+    const entDoc = (await firestore.doc(entitlementPath(RUN_UID)).get()).data();
+    expect(entDoc).toEqual({
+      enabled: true,
+      expiresAtEpochMillis: initialExpiry,
+      lastVerifiedAtEpochMillis: NOW,
+      productId: product,
+    });
+
+    // 2. Reprocesar: Same user re-verifying with extended expiry
+    const newExpiry = initialExpiry + 5000;
+    const reprocessResult = await subRepo.recordSubscription({
+      uid: RUN_UID,
+      purchaseToken: TEST_TOKEN,
+      productId: product,
+      enabled: true,
+      expiresAtEpochMillis: newExpiry,
+      nowEpochMillis: NOW + 1000,
+    });
+    expect(reprocessResult).toEqual({
+      status: "RECORDED",
+      enabled: true,
+      expiresAtEpochMillis: newExpiry,
+    });
+
+    const reprocessedDoc = (await firestore.doc(entitlementPath(RUN_UID)).get()).data();
+    expect(reprocessedDoc?.["expiresAtEpochMillis"]).toBe(newExpiry);
+
+    // 3. Token robado: Different user attempting to use the same token
+    const stolenResult = await subRepo.recordSubscription({
+      uid: INTRUDER_UID,
+      purchaseToken: TEST_TOKEN,
+      productId: product,
+      enabled: true,
+      expiresAtEpochMillis: newExpiry,
+      nowEpochMillis: NOW + 2000,
+    });
+    expect(stolenResult).toEqual({
+      status: "TOKEN_BOUND_TO_DIFFERENT_UID",
+    });
+
+    // Intruder does not have an entitlement document
+    const intruderDoc = await firestore.doc(entitlementPath(INTRUDER_UID)).get();
+    expect(intruderDoc.exists).toBe(false);
   });
 });

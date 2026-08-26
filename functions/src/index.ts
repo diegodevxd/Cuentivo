@@ -5,9 +5,12 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createInterpretAiHandler } from "./interpretAiRequest";
 import { createAuthorizeAiHandler } from "./authorizeAiAction";
+import { createVerifyAiSubscriptionHandler } from "./verifyAiSubscription";
 import { createAiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import { createFirestoreControlPlaneRepository } from "./ai/firestoreControlPlane";
 import { createGeminiTextProvider } from "./ai/geminiTextProvider";
+import { createDefaultPlaySubscriptionApi } from "./ai/playSubscriptionVerifier";
+import { createFirestoreSubscriptionEntitlementRepository } from "./ai/subscriptionEntitlementRepository";
 
 const AI_BOUNDARY = {
   region: "us-south1",
@@ -16,6 +19,8 @@ const AI_BOUNDARY = {
   timeoutSeconds: 15,
   memory: "256MiB",
 } as const;
+
+const PACKAGE_NAME = "com.cuentivo.app";
 
 // Server-only Gemini credential. Bound exclusively to interpretAiRequest; never available to
 // Android, other callables, logs or the repository.
@@ -35,6 +40,10 @@ const adminApp = initializeApp();
 
 function controlPlaneRepository() {
   return createFirestoreControlPlaneRepository(getFirestore(adminApp));
+}
+
+function subscriptionEntitlementRepository() {
+  return createFirestoreSubscriptionEntitlementRepository(getFirestore(adminApp));
 }
 
 export const interpretAiRequest = onCall(
@@ -91,6 +100,25 @@ export const authorizeAiAction = onCall({ ...AI_BOUNDARY, concurrency: 1 }, asyn
   });
   if ("code" in result) {
     throw new HttpsError(result.code, "Request rejected");
+  }
+  return result;
+});
+
+export const verifyAiSubscription = onCall({ ...AI_BOUNDARY, concurrency: 1 }, async (request) => {
+  const result = await createVerifyAiSubscriptionHandler({
+    playApi: createDefaultPlaySubscriptionApi(),
+    repository: subscriptionEntitlementRepository(),
+    packageName: PACKAGE_NAME,
+    now: () => Date.now(),
+    onRejected: (reason) => {
+      logger.warn("AI_REJECTED", { reason });
+    },
+  })({
+    auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
+    data: request.data,
+  });
+  if ("code" in result) {
+    throw new HttpsError(result.code, "Subscription verification failed");
   }
   return result;
 });

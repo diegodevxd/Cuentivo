@@ -5,9 +5,11 @@ import { describe, expect, test } from "vitest";
 const SOURCE = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
 
 describe("regional callable gateway", () => {
-  test("exports interpretAiRequest", async () => {
+  test("exports interpretAiRequest, authorizeAiAction and verifyAiSubscription", async () => {
     const module = await import("../src/index.js");
     expect(module.interpretAiRequest).toBeDefined();
+    expect(module.authorizeAiAction).toBeDefined();
+    expect(module.verifyAiSubscription).toBeDefined();
   });
 
   test("declares exactly the five approved runtime options", () => {
@@ -34,14 +36,19 @@ describe("regional callable gateway", () => {
   test("binds the secret only to interpretAiRequest", () => {
     const interpretIndex = SOURCE.indexOf("export const interpretAiRequest");
     const authorizeIndex = SOURCE.indexOf("export const authorizeAiAction");
+    const verifyIndex = SOURCE.indexOf("export const verifyAiSubscription");
     expect(interpretIndex).toBeGreaterThanOrEqual(0);
     expect(authorizeIndex).toBeGreaterThan(interpretIndex);
+    expect(verifyIndex).toBeGreaterThan(authorizeIndex);
 
     const interpretBlock = SOURCE.slice(interpretIndex, authorizeIndex);
     expect(interpretBlock).toContain("secrets: [geminiApiKey]");
 
-    const authorizeBlock = SOURCE.slice(authorizeIndex);
+    const authorizeBlock = SOURCE.slice(authorizeIndex, verifyIndex);
     expect(authorizeBlock).not.toContain("secrets:");
+
+    const verifyBlock = SOURCE.slice(verifyIndex);
+    expect(verifyBlock).not.toContain("secrets:");
   });
 
   test("reads the secret value only inside the interpret handler", () => {

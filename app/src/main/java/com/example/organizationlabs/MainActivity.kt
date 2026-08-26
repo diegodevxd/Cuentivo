@@ -372,6 +372,7 @@ class MainActivity : ComponentActivity() {
         val sessionGuard = LocalSessionGuard(applicationContext, database)
         val authenticationGateway = FirebaseAuthenticationGateway()
         val creditLimitSuggestionStore = CreditLimitSuggestionStore(applicationContext)
+        val subscriptionVerifier = com.cuentivo.app.billing.subscriptionVerificationGateway()
         val billing = BillingGateway(
             context = applicationContext,
             onPriceLoaded = { productId, formatted ->
@@ -380,9 +381,16 @@ class MainActivity : ComponentActivity() {
                     SubscriptionTier.AI_PRODUCT_ID -> aiPriceState.value = formatted
                 }
             },
-            onPurchaseTokenReceived = { _, _, _ ->
+            onPurchaseTokenReceived = { token, productId, sessionUserId ->
                 // Captured for T3 backend entitlement validation against Play Developer API.
                 // Project Rule 4: NEVER log or expose purchase tokens in Logcat, Crashlytics, or Analytics.
+                val currentUid = authenticationGateway.currentUserId
+                if (productId == SubscriptionTier.AI_PRODUCT_ID && !sessionUserId.isNullOrBlank() && sessionUserId == currentUid) {
+                    subscriptionVerifier.verifySubscription(
+                        purchaseToken = token,
+                        productId = productId,
+                    )
+                }
             },
             onTierChanged = { tier, sessionUserId ->
                 // Play and Firebase Auth move independently, so an answer can arrive before anyone
