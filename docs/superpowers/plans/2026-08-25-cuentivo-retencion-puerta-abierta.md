@@ -107,3 +107,36 @@ julio (20–29%), era el muro. Si sigue en el suelo, era otra cosa y se sabrá c
 
 Por eso esta actualización va **sola**, sin CuentivoAI: un paquete grande confunde la medición, y
 CuentivoAI además sigue en NO-GO público hasta la Fase 2 comercial y el enforcement de App Check.
+
+---
+
+# Revisión de Sol y plan actualizado — 2026-08-25
+
+Sol revisó este plan y **encontró un hueco que Claude no vio**: `signInAnonymously()` necesita red, y
+el plan no definía qué pasa en una instalación sin conexión. Las dos decisiones de producto que
+faltaban quedaron escritas en
+`docs/superpowers/specs/2026-08-25-cuentivo-invitado-decisiones.md` — arranque sin red y colisión de
+cuenta — antes de tocar código, que es lo que Sol pedía.
+
+Sol también aportó, y se adopta: **el gateway de IA debe rechazar sesiones anónimas explícitamente**,
+antes del proveedor y antes de consumir cuota, sin confiar únicamente en el entitlement. Y verificó
+en las reglas que `isAuthenticated()` exige `email_verified == true`, así que **los anónimos ya no
+pueden tocar Firestore** — coherente con el plan, pero hay que **probarlo**, no asumirlo.
+
+Matiz de Claude aceptado por ambos: las cohortes de retención de Firebase se calculan sobre
+identificadores de instancia de app, **no sobre uid de Auth**, así que la métrica del experimento
+sigue siendo comparable. Lo que se infla es el conteo de usuarios en Firebase Auth; anotarlo para no
+malinterpretarlo.
+
+## Tasks actualizadas
+
+- **Task 1** — Política pura de acceso (abajo, sin cambios).
+- **Task 2** — Sesión anónima y enlace, ahora con el arranque sin red y la colisión **según la spec**,
+  y con las pruebas de identidad que pidió Sol: mismo uid antes y después del enlace, cero filas
+  borradas, ningún `businessId` ni `ownerUserId` cambiado.
+- **Task 3 (nueva)** — **Rechazo explícito de anónimos en el gateway de IA.** Decisión estable propia,
+  antes del proveedor y antes de tocar cuota. Probar que no llega a Gemini, no consume cuota, no crea
+  ledger y no puede aprovechar un entitlement asignado por error.
+- **Task 4** — Primer momento de valor.
+- **Task 5** — Compatibilidad y aceptación física, más la prueba de que un anónimo **no** puede leer ni
+  escribir Firestore, y que tras enlazar sigue sin sincronizar hasta verificar correo y tener Pro.
