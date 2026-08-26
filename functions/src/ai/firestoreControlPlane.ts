@@ -28,6 +28,7 @@ const CONFIG_PATH = "aiControl/global";
 
 const DECISIONS: readonly AiAuthorizationDecision[] = [
   "AI_DISABLED",
+  "AI_AUTHENTICATION_REQUIRED",
   "AI_ENTITLEMENT_REQUIRED",
   "AI_RATE_LIMITED",
   "AI_QUOTA_EXHAUSTED",
@@ -134,6 +135,9 @@ export async function authorizeInTransaction(
   tx: AiTransaction,
   input: AuthorizeAiInput,
 ): Promise<AuthorizeAiResult> {
+  if (input.isAnonymous === true) {
+    return DENIED("AI_AUTHENTICATION_REQUIRED");
+  }
   try {
     // 1. Control configuration first: nothing else is read unless AI can run.
     const config = await tx.get(CONFIG_PATH);

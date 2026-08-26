@@ -98,6 +98,64 @@ describe("createAuthorizeAiHandler", () => {
     });
   });
 
+  test("anonymous auth token returns AI_AUTHENTICATION_REQUIRED without calling repository", async () => {
+    let called = false;
+    const handler = createAuthorizeAiHandler(
+      repositoryWith(async () => {
+        called = true;
+        throw new Error("must not be called");
+      }),
+      () => FAKE_NOW,
+      openGuard(),
+    );
+
+    const result = await handler({
+      auth: {
+        uid: "guest-user-123",
+        token: { firebase: { sign_in_provider: "anonymous" } },
+      },
+      data: VALID_DATA,
+    });
+
+    expect(called).toBe(false);
+    expect(result).toEqual({
+      contractVersion: 1,
+      requestId: VALID_DATA.requestId,
+      decision: "AI_AUTHENTICATION_REQUIRED",
+      provider: null,
+      fallbackUsed: false,
+    });
+  });
+
+  test("anonymous auth token via provider_id returns AI_AUTHENTICATION_REQUIRED", async () => {
+    let called = false;
+    const handler = createAuthorizeAiHandler(
+      repositoryWith(async () => {
+        called = true;
+        throw new Error("must not be called");
+      }),
+      () => FAKE_NOW,
+      openGuard(),
+    );
+
+    const result = await handler({
+      auth: {
+        uid: "guest-user-123",
+        token: { provider_id: "anonymous" },
+      },
+      data: VALID_DATA,
+    });
+
+    expect(called).toBe(false);
+    expect(result).toEqual({
+      contractVersion: 1,
+      requestId: VALID_DATA.requestId,
+      decision: "AI_AUTHENTICATION_REQUIRED",
+      provider: null,
+      fallbackUsed: false,
+    });
+  });
+
   test("denied repository result mirrors exactly", async () => {
     const handler = createAuthorizeAiHandler(repositoryWith(async () => {
       return { decision: "AI_RATE_LIMITED", provider: null, fallbackUsed: false };

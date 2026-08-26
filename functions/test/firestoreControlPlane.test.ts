@@ -71,6 +71,25 @@ function authorizedStore(): Store {
 }
 
 describe("authorizeInTransaction", () => {
+  test("anonymous caller returns AI_AUTHENTICATION_REQUIRED with zero reads and zero writes", async () => {
+    const store = authorizedStore();
+    const tx = fakeTransaction(store);
+    const anonymousInput: AuthorizeAiInput = { ...input("r1"), isAnonymous: true };
+
+    const result = await authorizeInTransaction(tx, anonymousInput);
+
+    expect(result).toEqual({
+      decision: "AI_AUTHENTICATION_REQUIRED",
+      provider: null,
+      fallbackUsed: false,
+    });
+    expect(tx.reads).toHaveLength(0);
+    expect(tx.writes).toHaveLength(0);
+    expect(store.has(usagePath("user-1"))).toBe(false);
+    expect(store.has(ratePath("user-1"))).toBe(false);
+    expect(store.has(ledgerPath("user-1", "r1"))).toBe(false);
+  });
+
   test("authorizes once and increments usage and rate by exactly one", async () => {
     const store: Store = new Map();
     store.set("aiControl/global", config(2, 100));

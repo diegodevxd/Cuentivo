@@ -1,5 +1,7 @@
 import {
   validateAuthorizeAiActionRequest,
+  isAnonymousUser,
+  type CallableAuth,
   type AuthorizeAiActionResponse,
 } from "./contract";
 import type { AiControlPlaneRepository } from "./ai/firestoreControlPlane";
@@ -7,7 +9,7 @@ import type { AiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import type { AuthorizeAiResult } from "./ai/controlPlane";
 
 export type AuthorizeCallableRequest = Readonly<{
-  auth?: Readonly<{ uid: string }>;
+  auth?: CallableAuth;
   data: unknown;
 }>;
 
@@ -35,6 +37,18 @@ export function createAuthorizeAiHandler(
       return { code: "invalid-argument" };
     }
     const { requestId } = validation.value;
+
+    // Anonymous sessions are rejected before any edge guard, repository read, or quota/ledger access.
+    if (isAnonymousUser(request.auth)) {
+      return {
+        contractVersion: 1,
+        requestId,
+        decision: "AI_AUTHENTICATION_REQUIRED",
+        provider: null,
+        fallbackUsed: false,
+      };
+    }
+
     const nowEpochMillis = now();
 
     const guardDecision = guard.beforeRepository(uid, requestId, nowEpochMillis);

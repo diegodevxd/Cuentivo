@@ -129,6 +129,10 @@ describe("createInterpretAiHandler", () => {
     ],
     ["AI_QUOTA_EXHAUSTED", { decision: "AI_QUOTA_EXHAUSTED", provider: null, fallbackUsed: false }],
     ["AI_RATE_LIMITED", { decision: "AI_RATE_LIMITED", provider: null, fallbackUsed: false }],
+    [
+      "AI_AUTHENTICATION_REQUIRED",
+      { decision: "AI_AUTHENTICATION_REQUIRED", provider: null, fallbackUsed: false },
+    ],
   ] as const)("control plane denial %s returns unavailable without claim or provider", async (_name, denial) => {
     const { handler, claimInputs, providerInputs } = makeHandler({ authorizeResult: denial });
 
@@ -140,6 +144,50 @@ describe("createInterpretAiHandler", () => {
       status: "AI_UNAVAILABLE",
       proposal: null,
     });
+    expect(claimInputs).toHaveLength(0);
+    expect(providerInputs).toHaveLength(0);
+  });
+
+  test("anonymous auth token returns unavailable and does not reach authorize, claim, or Gemini provider", async () => {
+    const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler();
+
+    const result = await handler({
+      auth: {
+        uid: "guest-user-123",
+        token: { firebase: { sign_in_provider: "anonymous" } },
+      },
+      data: VALID_DATA,
+    });
+
+    expect(result).toEqual({
+      contractVersion: 2,
+      requestId: VALID_DATA.requestId,
+      status: "AI_UNAVAILABLE",
+      proposal: null,
+    });
+    expect(authorizeInputs).toHaveLength(0);
+    expect(claimInputs).toHaveLength(0);
+    expect(providerInputs).toHaveLength(0);
+  });
+
+  test("anonymous auth token via provider_id returns unavailable and touches nothing", async () => {
+    const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler();
+
+    const result = await handler({
+      auth: {
+        uid: "guest-user-123",
+        token: { provider_id: "anonymous" },
+      },
+      data: VALID_DATA,
+    });
+
+    expect(result).toEqual({
+      contractVersion: 2,
+      requestId: VALID_DATA.requestId,
+      status: "AI_UNAVAILABLE",
+      proposal: null,
+    });
+    expect(authorizeInputs).toHaveLength(0);
     expect(claimInputs).toHaveLength(0);
     expect(providerInputs).toHaveLength(0);
   });

@@ -1,5 +1,7 @@
 import {
   validateInterpretAiRequest,
+  isAnonymousUser,
+  type CallableAuth,
   type InterpretAiResponse,
   type SafeAiProposal,
 } from "./contract";
@@ -7,7 +9,7 @@ import { computeReferenceDate, type TextInterpretationProvider } from "./ai/gemi
 import type { AiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import type { AuthorizeAiInput, AuthorizeAiResult } from "./ai/controlPlane";
 
-export type CallableLikeRequest = Readonly<{ auth?: Readonly<{ uid: string }>; data: unknown }>;
+export type CallableLikeRequest = Readonly<{ auth?: CallableAuth; data: unknown }>;
 
 export type CallableFailure = Readonly<{ code: "unauthenticated" | "invalid-argument" }>;
 
@@ -59,6 +61,12 @@ export function createInterpretAiHandler(
       return { code: "invalid-argument" };
     }
     const { requestId, text } = validation.value;
+
+    // Anonymous sessions are rejected before any edge guard, control plane, quota or Gemini invocation.
+    if (isAnonymousUser(request.auth)) {
+      return UNAVAILABLE(requestId);
+    }
+
     const nowEpochMillis = deps.now();
     const referenceDate = computeReferenceDate(nowEpochMillis);
 

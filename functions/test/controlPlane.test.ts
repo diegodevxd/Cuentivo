@@ -41,6 +41,17 @@ const validEntitlement: AiEntitlement = {
 const noUsage = { usedActions: 0 };
 
 describe("decideAuthorization", () => {
+  test("anonymous caller is denied with AI_AUTHENTICATION_REQUIRED even with valid config and entitlement", () => {
+    const anonymousInput = { ...input, isAnonymous: true };
+    expect(
+      decideAuthorization(anonymousInput, geminiConfig, validEntitlement, noUsage, noUsage),
+    ).toEqual({
+      decision: "AI_AUTHENTICATION_REQUIRED",
+      provider: null,
+      fallbackUsed: false,
+    });
+  });
+
   test("absent configuration is disabled", () => {
     expect(decideAuthorization(input, null, validEntitlement, noUsage, noUsage)).toEqual({
       decision: "AI_DISABLED",

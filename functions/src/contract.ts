@@ -5,6 +5,31 @@ export type InterpretAiRequest = Readonly<{
   text: string;
 }>;
 
+export type AuthTokenClaims = Readonly<{
+  firebase?: Readonly<{ sign_in_provider?: string; [key: string]: unknown }>;
+  provider_id?: string;
+  [key: string]: unknown;
+}>;
+
+export type CallableAuth = Readonly<{
+  uid: string;
+  token?: AuthTokenClaims;
+}>;
+
+/**
+ * Checks whether an authenticated caller is using an anonymous Firebase Auth session.
+ *
+ * In Firebase ID tokens, anonymous authentication is indicated by
+ * `token.firebase.sign_in_provider === "anonymous"` (or `token.provider_id === "anonymous"`).
+ */
+export function isAnonymousUser(auth: CallableAuth | undefined): boolean {
+  if (!auth || !auth.token) {
+    return false;
+  }
+  const provider = auth.token.firebase?.sign_in_provider ?? auth.token.provider_id;
+  return provider === "anonymous";
+}
+
 export type ClarificationReason =
   | "AMBIGUOUS_CUSTOMER"
   | "AMBIGUOUS_PRODUCT"

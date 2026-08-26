@@ -63,7 +63,7 @@ export const interpretAiRequest = onCall(
       guard: aiEdgeGuard,
       now: () => Date.now(),
     })({
-      auth: request.auth ? { uid: request.auth.uid } : undefined,
+      auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
       data: request.data,
     });
     if ("code" in result) {
@@ -80,7 +80,7 @@ export const authorizeAiAction = onCall({ ...AI_BOUNDARY, concurrency: 1 }, asyn
     () => Date.now(),
     aiEdgeGuard,
   )({
-    auth: request.auth ? { uid: request.auth.uid } : undefined,
+    auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
     data: request.data,
   });
   if ("code" in result) {

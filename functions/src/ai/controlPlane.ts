@@ -4,6 +4,7 @@ export type AiCapability = "TEXT";
 
 export type AiAuthorizationDecision =
   | "AI_DISABLED"
+  | "AI_AUTHENTICATION_REQUIRED"
   | "AI_ENTITLEMENT_REQUIRED"
   | "AI_RATE_LIMITED"
   | "AI_QUOTA_EXHAUSTED"
@@ -27,6 +28,7 @@ export type AuthorizeAiInput = Readonly<{
   requestId: string;
   capability: AiCapability;
   nowEpochMillis: number;
+  isAnonymous?: boolean;
 }>;
 
 export type AuthorizeAiResult = Readonly<{
@@ -104,6 +106,9 @@ export function decideAuthorization(
   usage: AiUsage | null,
   rate: AiRateWindow | null,
 ): AuthorizeAiResult {
+  if (input.isAnonymous === true) {
+    return DENIED("AI_AUTHENTICATION_REQUIRED");
+  }
   if (!isValidConfig(config)) {
     return DENIED("AI_DISABLED");
   }
