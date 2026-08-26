@@ -11,7 +11,7 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-25, después de cerrar voz a texto (`cc0df03`).
+**Última actualización:** 2026-08-25, después de cerrar el endurecimiento (`d451b08`).
 
 ---
 
@@ -59,8 +59,15 @@ paquete de es-MX y fallaba con `ERROR_LANGUAGE_UNAVAILABLE` antes de escuchar; s
 disponibilidad del **motor** como si fuera la del **idioma**. Corregido con reintento único al
 reconocedor del sistema.
 
-**Núcleo: 3 de 5.** Cerrados creación compuesta y consultas naturales, más voz. Faltan endurecimiento
-con aceptación física y la salida del laboratorio a beta con feature flags.
+**Incremento cerrado — endurecimiento (N4).** Plan:
+`docs/superpowers/plans/2026-08-25-cuentivoai-endurecimiento.md`. Ningún estado del laboratorio termina
+en pared: los "no" dicen qué hacer y con qué cifras. **Ninguna guarda se debilitó**: cambió lo que se
+dice, no lo que se permite. Encontró tres cosas que la suite no veía — buscar un nombre inexistente
+devolvía **todos** los clientes (`COALESCE(phone,'') LIKE '%%'`), se mostraban enums crudos
+(`UNKNOWN_INPUT`, `MISSING_PRODUCT`) al usuario, y **dos bugs de dinero**: montos interpretados como
+centavos, y ventas a crédito registradas como pagadas. Los dos desplegados y verificados físicamente.
+
+**Núcleo: 4 de 5.** Falta sólo la salida del laboratorio a beta con feature flags.
 
 **Estado de release.** Cuentivo base está **publicada en Play**. **CuentivoAI sigue NO-GO**: sólo
 vive en el laboratorio debug, y su AAB, beta pública y activación general continúan cerradas.
