@@ -179,6 +179,13 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
   revoca el tier AI server-side, por lo que beta y AAB CuentivoAI continúan bloqueados.
 - **El entitlement AI actual fue creado manualmente para el usuario de prueba.** Billing/Play aún
   no concede ni revoca el tier CuentivoAI de forma server-side.
+- **Competencia investigada el 2026-08-26** (precios fechados en
+  `docs/superpowers/specs/2026-08-24-cuentivo-fiado-catalogo-product-design.md` §2.1): **Kashi** es el
+  competidor mas cercano y el unico con IA, pero la suya solo **responde** preguntas; CuentivoAI
+  **ejecuta** operaciones. Kashi Gratis 1 usuario/30 productos, Starter $166/mes, Pro $333/mes, con su
+  IA incluida en el plan. Treinta: USD $9.99 y $19.99/mes, sin IA visible. **$299 queda dentro de
+  mercado**, entre Kashi Starter y Kashi Pro. El muro del plan (T7) debe vender "ejecutar" frente a
+  "responder", no la palabra IA.
 - **No existe la UI del plan de $299**, y ahora es bloqueante. Decisión de Diego del 2026-08-26:
   **CuentivoAI sale ya como plan de pago**, y quien esté en Gratis o Pro y toque CuentivoAI debe
   ver el muro de suscripción. Eso saca la UI del plan de "después" y la vuelve requisito del mismo

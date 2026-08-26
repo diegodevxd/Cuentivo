@@ -28,6 +28,42 @@ La investigación se basó en funciones oficiales, precios y reseñas visibles d
 
 Existe espacio entre el POS generalista y la app de una sola marca de catálogo. Cuentivo puede unir el ledger financiero local-first con captura natural, pedidos, entrega y cobranza explicable.
 
+### 2.1 Actualización con precios fechados — 2026-08-26
+
+La versión original nombraba competidores sin registrar un solo número, así que no se podía
+reverificar ni envejecer. Consultado en la web el **2026-08-26**:
+
+| Competidor | Precio publicado | ¿IA? |
+|---|---|---|
+| **Kashi** (mexicano, Rioverde S.L.P.) | Gratis: 1 usuario / 30 productos · Starter **$166/mes** ($1,990/año) · Pro **$333/mes** ($3,990/año) | **Sí — "Kashi AI"** |
+| **Treinta** (20+ países) | Esencial USD $9.99/mes · Pro USD $19.99/mes · −25% anual | No visible |
+| Libretas de deudas offline (categoría) | Gratis o compra única | No |
+
+**Kashi es el competidor más cercano y el único con IA, pero su IA sólo consulta.** Su propio sitio
+la describe como *"Responde tus preguntas sobre ventas, inventario o fiado"*, con ejemplos
+*"¿Cuánto vendí hoy?"* y *"¿Quién todavía me debe?"*. CuentivoAI **ejecuta**: una frase crea el
+cliente, crea los productos faltantes y registra la venta en una transacción, con preview,
+confirmación e idempotencia. Ése es el diferenciador que debe vender el muro del plan — no la
+palabra "inteligencia artificial".
+
+**Encuadre de precio:** $299 queda entre Kashi Starter ($166) y Kashi Pro ($333), y por debajo de
+Treinta Pro (~$360–400 MXN según tipo de cambio). La franja es defendible. El riesgo no es el
+número sino la lectura: Kashi **incluye** su IA en el plan en vez de cobrarla aparte.
+
+**Contexto de tamaño:** Kashi aparece en la App Store mexicana con **5.0 de 4 calificaciones**,
+v1.0.3 de julio, publicada en marzo de 2026. Valida la categoría; no es un incumbente.
+
+**El offline ya está disputado:** existe una categoría entera de "libreta de deudas" offline-first
+con PDF y compartir por WhatsApp. Eso vuelve el tramo C una expectativa mínima más que una ventaja.
+Ni Kashi ni Treinta declaran operar sin internet, así que ahí Cuentivo sigue arriba de los de pago.
+
+**No resuelto:** si el Gratis de Kashi incluye su IA; si Kashi funciona offline; no existe todavía
+corpus de reseñas mexicanas de Kashi. Treinta puede anunciar un asistente en cualquier momento.
+
+> Corrección al §6: el precio de CuentivoAI dejó de ser sólo "configurable". Decisión del
+> 2026-08-26: **$299 MXN/mes es el precio inicial para la prueba cerrada, sujeto a revisión antes
+> de producción general.**
+
 ## 3. Personas y trabajos principales
 
 ### Vendedora por catálogo
