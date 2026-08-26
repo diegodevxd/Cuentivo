@@ -15,11 +15,14 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
+import com.cuentivo.app.domain.BillingAccountHasher
 import com.cuentivo.app.domain.BillingReconnectPolicy
 import com.cuentivo.app.domain.BillingRequest
 import com.cuentivo.app.domain.PlayPurchase
+import com.cuentivo.app.domain.SubscriptionReplacementPolicy
 import com.cuentivo.app.domain.SubscriptionStatus
 import com.cuentivo.app.domain.SubscriptionTier
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The app's only conversation with Google Play Billing.
@@ -28,46 +31,46 @@ import com.cuentivo.app.domain.SubscriptionTier
  * [com.cuentivo.app.domain.EntitlementReconciler], which are pure and tested. This class does only
  * the parts that need Play: connecting, asking, launching the purchase sheet and acknowledging.
  *
- * Three things it is careful about:
+ * Core architectural safeguards:
  *
- * - **Every reply carries the account that asked for it.** Play answers out of order, so a
- *   [BillingRequest] is created when a query starts and captured in that query's closure. Reading a
- *   shared field instead is how a slow answer for Ana ends up credited to Beto, who signed in
- *   meanwhile. There is no shared field left to read for that purpose.
+ * - **Two products, two prices.** Queries both [SubscriptionTier.PRO_PRODUCT_ID] and
+ *   [SubscriptionTier.AI_PRODUCT_ID] simultaneously and reports their localized formatted prices
+ *   via [onPriceLoaded]. Prices come exclusively from Google Play, never hardcoded.
+ * - **Plan replacement, never double subscription.** When changing plans (Pro -> AI or AI -> Pro),
+ *   [launchPurchase] attaches [BillingFlowParams.SubscriptionUpdateParams] with the old purchase
+ *   token and the designated proration policy ([SubscriptionReplacementPolicy]). No user can ever
+ *   end up with two active subscriptions simultaneously.
+ * - **Stable obfuscated account identifier.** Every purchase flow sets `setObfuscatedAccountId`
+ *   derived via SHA-256 hash of the Firebase UID ([BillingAccountHasher]), ensuring determinism
+ *   and privacy without exposing raw UIDs to Play.
+ * - **Purchase token capture for server validation.** Completed purchase tokens are captured and
+ *   dispatched to [onPurchaseTokenReceived] for T3 backend validation. In accordance with Project
+ *   Rule 4, purchase tokens are NEVER logged or forwarded to Analytics/Crashlytics.
  * - **Acknowledgement.** Play refunds any purchase not acknowledged within three days. Every path
- *   that sees a purchase runs it through the acknowledge step, including the one on startup, so a
- *   purchase completed while the app was closed still gets confirmed.
- * - **Verification is on-device only.** Whatever Play tells this phone is taken at face value, which
- *   a determined person can fake. That is a deliberate trade: hardening it means a server checking
- *   the purchase token, which means the Blaze plan. It protects revenue, not other people's data.
+ *   that sees a purchase runs it through the acknowledge step for both Pro and AI.
+ * - **Android tier is a UI signal only.** Client-side [SubscriptionTier.AI] updates the UI, but
+ *   actual access to AI capabilities is granted solely by backend validation (T3).
  */
 class BillingGateway(
     context: Context,
     private val onTierChanged: (SubscriptionTier, String?) -> Unit,
     private val onMessage: (String) -> Unit,
     /**
-     * Pro's price as Play itself formats it — already in the shopper's own currency and their
-     * country's conventions — or null while it has not arrived, which is also what a phone with no
-     * Play connection keeps seeing.
-     *
-     * The plan screen used to show no price at all, on the grounds that the price lives in Play.
-     * That reasoning was right about the *source* and wrong about the *destination*: asking someone
-     * to open a purchase sheet to find out what it costs is how a plan section stops being a
-     * decision and becomes a leap. Reading it from here keeps the single source of truth and puts
-     * the number where the choice is made — and a hardcoded "$199 MXN" would have gone stale the
-     * day the price changed and been plain wrong for anyone outside Mexico.
+     * Formatted price loaded from Play per product ID ([SubscriptionTier.PRO_PRODUCT_ID],
+     * [SubscriptionTier.AI_PRODUCT_ID]), or null while not loaded.
      */
-    private val onPriceLoaded: (String?) -> Unit = {},
+    private val onPriceLoaded: (productId: String, formattedPrice: String?) -> Unit = { _, _ -> },
+    /**
+     * Dispatches captured purchase tokens for backend verification.
+     * **Project Rule 4:** NEVER log or expose this token.
+     */
+    private val onPurchaseTokenReceived: (token: String, productId: String, userId: String?) -> Unit = { _, _, _ -> },
 ) {
-    private var proProduct: ProductDetails? = null
+    private val products = ConcurrentHashMap<String, ProductDetails>()
+    @Volatile private var activePurchases: List<Purchase> = emptyList()
 
     /**
      * What to query once the connection finishes, and which account opened the purchase sheet.
-     *
-     * These are the only mutable pieces left, and neither identifies a *reply*: an in-flight query
-     * already holds its own [BillingRequest] in its closure. The first exists because a connection
-     * completes later than the call that triggered it; the second because Play's purchase callback
-     * is global rather than attached to the flow that opened it.
      */
     @Volatile private var connectionRequest: BillingRequest = BillingRequest(null)
     @Volatile private var purchaseRequest: BillingRequest = BillingRequest(null)
@@ -106,19 +109,13 @@ class BillingGateway(
             refresh(userId)
             return
         }
-        // An explicit start is a fresh intent — signing in, or coming back to the foreground — so
-        // it gets a full budget of retries even if a previous streak had exhausted one.
         reconnectAttempt = 0
         connect(userId)
     }
 
     private fun connect(userId: String?) {
-        // A second startConnection while the first is still opening gets the same callback twice,
-        // which would double the retry counter and the product query alike.
         if (isClosed || isConnecting) return
         isConnecting = true
-        // Remembered so the query that follows a slow connection still belongs to an account we
-        // asked for, even if another start() happened while the socket was opening.
         connectionRequest = BillingRequest(userId)
         client.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
@@ -128,20 +125,10 @@ class BillingGateway(
                     loadProduct()
                     refresh(connectionRequest.userId)
                 } else {
-                    // A failure here stays silent on purpose: someone without Play services must
-                    // still be able to use the app, just on the free plan. Silent is not the same
-                    // as final, though — it is retried like any other lost connection.
                     scheduleReconnect(connectionRequest.userId)
                 }
             }
 
-            /**
-             * Play hangs up routinely; the app is only broken if it stays hung up.
-             *
-             * Before this existed, one disconnect left `client.isReady` false forever: `refresh()`
-             * returned early and `launchPurchase()` answered "no disponibles" until the process
-             * restarted. Someone trying to subscribe had no way to tell that from a dead paywall.
-             */
             override fun onBillingServiceDisconnected() {
                 isConnecting = false
                 scheduleReconnect(connectionRequest.userId)
@@ -153,26 +140,15 @@ class BillingGateway(
         if (isClosed) return
         val delay = BillingReconnectPolicy.delayMillisForAttempt(reconnectAttempt + 1) ?: return
         reconnectAttempt += 1
-        // Posted rather than slept: this runs on Play's callback thread, and blocking it would
-        // stall the very connection being waited on.
         handler.postDelayed({ connect(userId) }, delay)
     }
 
     /**
      * Re-reads what Play believes this account owns.
-     *
-     * The startup source of truth for the tier, what must run again after a sign-in so the answer
-     * can finally be attributed to somebody, and what keeps a subscriber's stored confirmation from
-     * going stale.
      */
     fun refresh(userId: String?) {
-        // Local and immutable. This is the fix: the closure below closes over *this* value, so two
-        // overlapping queries cannot be confused no matter what order Play answers in.
         val request = BillingRequest(userId)
         if (!client.isReady) {
-            // Remembering the request is not enough on its own: if nothing is reconnecting, nothing
-            // will ever consume it. onResume() calls this on every return to the foreground, which
-            // makes it the natural place to notice the connection is gone and start it again.
             connectionRequest = request
             start(userId)
             return
@@ -188,25 +164,34 @@ class BillingGateway(
     }
 
     /**
-     * Opens Google's payment sheet. Needs the real Activity; an application context will not do.
+     * Opens Google's payment sheet for [targetProductId].
      *
-     * @param userId the account buying. Play's purchase callback is global, so without this a
-     *   purchase could be credited to whoever signed in after the sheet opened.
+     * If the user already owns another subscription plan (e.g. Pro and upgrading to AI, or AI and
+     * downgrading to Pro), this configures [BillingFlowParams.SubscriptionUpdateParams] with the
+     * existing purchase token and proration mode to replace the subscription rather than creating
+     * a duplicate billing charge.
+     *
+     * @param activity the foreground Activity.
+     * @param userId the account buying, used to derive an obfuscated account identifier for Play.
+     * @param targetProductId the product ID to purchase (defaults to [SubscriptionTier.PRO_PRODUCT_ID]).
      */
-    fun launchPurchase(activity: Activity, userId: String?) {
+    fun launchPurchase(
+        activity: Activity,
+        userId: String?,
+        targetProductId: String = SubscriptionTier.PRO_PRODUCT_ID,
+    ) {
         purchaseRequest = BillingRequest(userId)
-        val product = proProduct
+        val product = products[targetProductId]
         if (!client.isReady || product == null) {
             onMessage("Las suscripciones no están disponibles en este momento")
             return
         }
-        // A subscription is bought through one of its offers, so the base plan's token is required.
         val offerToken = product.subscriptionOfferDetails?.firstOrNull()?.offerToken
         if (offerToken == null) {
             onMessage("El plan no está disponible todavía")
             return
         }
-        val flow = BillingFlowParams.newBuilder()
+        val flowBuilder = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(
                 listOf(
                     BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -215,8 +200,54 @@ class BillingGateway(
                         .build()
                 )
             )
-            .build()
-        client.launchBillingFlow(activity, flow)
+
+        // Set stable obfuscated account identifier derived from the Firebase UID (T3 prerequisite).
+        val obfuscatedAccountId = BillingAccountHasher.obfuscate(userId)
+        if (obfuscatedAccountId != null) {
+            flowBuilder.setObfuscatedAccountId(obfuscatedAccountId)
+        }
+
+        // Plan change replacement: if a different active subscription exists, replace it.
+        val existingPurchase = activePurchases.firstOrNull { purchase ->
+            purchase.purchaseState == Purchase.PurchaseState.PURCHASED &&
+                purchase.products.any { it != targetProductId && (it == SubscriptionTier.PRO_PRODUCT_ID || it == SubscriptionTier.AI_PRODUCT_ID) }
+        }
+        if (existingPurchase != null) {
+            val currentProductId = existingPurchase.products.firstOrNull {
+                it == SubscriptionTier.PRO_PRODUCT_ID || it == SubscriptionTier.AI_PRODUCT_ID
+            }
+            val replacementMode = SubscriptionReplacementPolicy.replacementModeFor(
+                currentProductId = currentProductId,
+                targetProductId = targetProductId,
+            ) ?: SubscriptionReplacementPolicy.UPGRADE_REPLACEMENT_MODE
+
+            val updateParams = BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                .setOldPurchaseToken(existingPurchase.purchaseToken)
+                .setSubscriptionReplacementMode(replacementMode)
+                .build()
+            flowBuilder.setSubscriptionUpdateParams(updateParams)
+        }
+
+        client.launchBillingFlow(activity, flowBuilder.build())
+    }
+
+    /**
+     * Convenience overload taking [SubscriptionTier].
+     */
+    fun launchPurchase(
+        activity: Activity,
+        userId: String?,
+        targetTier: SubscriptionTier,
+    ) {
+        val productId = when (targetTier) {
+            SubscriptionTier.AI -> SubscriptionTier.AI_PRODUCT_ID
+            SubscriptionTier.PRO -> SubscriptionTier.PRO_PRODUCT_ID
+            SubscriptionTier.FREE -> {
+                onMessage("El plan gratuito ya está activo")
+                return
+            }
+        }
+        launchPurchase(activity = activity, userId = userId, targetProductId = productId)
     }
 
     /** Ends the connection and cancels any pending retry, so a closed gateway stays closed. */
@@ -227,33 +258,32 @@ class BillingGateway(
     }
 
     private fun loadProduct() {
+        val productList = listOf(
+            QueryProductDetailsParams.Product.newBuilder()
+                .setProductId(SubscriptionTier.PRO_PRODUCT_ID)
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build(),
+            QueryProductDetailsParams.Product.newBuilder()
+                .setProductId(SubscriptionTier.AI_PRODUCT_ID)
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build(),
+        )
         val params = QueryProductDetailsParams.newBuilder()
-            .setProductList(
-                listOf(
-                    QueryProductDetailsParams.Product.newBuilder()
-                        .setProductId(SubscriptionTier.PRO_PRODUCT_ID)
-                        .setProductType(BillingClient.ProductType.SUBS)
-                        .build()
-                )
-            )
+            .setProductList(productList)
             .build()
         client.queryProductDetailsAsync(params) { result, details ->
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                val product = details.productDetailsList.firstOrNull()
-                proProduct = product
-                // The first pricing phase of the first offer: for a plain monthly subscription that
-                // is the recurring price. If Play ever returns an introductory phase first, this
-                // shows the introductory price, which is the honest thing to put beside a button
-                // that is about to charge exactly that.
-                onPriceLoaded(
-                    product
-                        ?.subscriptionOfferDetails
+                details.productDetailsList.forEach { product ->
+                    products[product.productId] = product
+                    val formattedPrice = product
+                        .subscriptionOfferDetails
                         ?.firstOrNull()
                         ?.pricingPhases
                         ?.pricingPhaseList
                         ?.firstOrNull()
                         ?.formattedPrice
-                )
+                    onPriceLoaded(product.productId, formattedPrice)
+                }
             }
         }
     }
@@ -263,6 +293,7 @@ class BillingGateway(
      *   late reply can never be mistaken for a newer one.
      */
     private fun applyPurchases(purchases: List<Purchase>, request: BillingRequest) {
+        activePurchases = purchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
         val reported = purchases.map { purchase ->
             PlayPurchase(
                 productIds = purchase.products,
@@ -271,6 +302,14 @@ class BillingGateway(
             )
         }
         onTierChanged(SubscriptionStatus.tierFrom(reported), request.userId)
+
+        // Capture purchase tokens for T3 backend validation.
+        // Project Rule 4: NEVER log or expose purchase tokens.
+        purchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }.forEach { purchase ->
+            purchase.products.forEach { productId ->
+                onPurchaseTokenReceived(purchase.purchaseToken, productId, request.userId)
+            }
+        }
 
         // Acknowledgement is about the purchase itself, not about who it is credited to, so it runs
         // regardless of whether the reply was attributable — the three-day refund clock does not

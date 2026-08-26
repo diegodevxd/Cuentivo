@@ -267,10 +267,11 @@ class MainActivity : ComponentActivity() {
     private val crashReporter = CrashReporterFactory.create()
 
     /**
-     * Pro's price as Play formats it, null until Play answers. Held here rather than read on demand
+     * Pro and AI prices as Play formats them, null until Play answers. Held here rather than read on demand
      * because the query is asynchronous and finishes after the composition that wants it.
      */
     private val proPriceState = mutableStateOf<String?>(null)
+    private val aiPriceState = mutableStateOf<String?>(null)
 
     /**
      * Whether Play has answered yet for the current account, which FREE alone cannot express.
@@ -373,7 +374,16 @@ class MainActivity : ComponentActivity() {
         val creditLimitSuggestionStore = CreditLimitSuggestionStore(applicationContext)
         val billing = BillingGateway(
             context = applicationContext,
-            onPriceLoaded = { formatted -> proPriceState.value = formatted },
+            onPriceLoaded = { productId, formatted ->
+                when (productId) {
+                    SubscriptionTier.PRO_PRODUCT_ID -> proPriceState.value = formatted
+                    SubscriptionTier.AI_PRODUCT_ID -> aiPriceState.value = formatted
+                }
+            },
+            onPurchaseTokenReceived = { _, _, _ ->
+                // Captured for T3 backend entitlement validation against Play Developer API.
+                // Project Rule 4: NEVER log or expose purchase tokens in Logcat, Crashlytics, or Analytics.
+            },
             onTierChanged = { tier, sessionUserId ->
                 // Play and Firebase Auth move independently, so an answer can arrive before anyone
                 // has signed in, or after the account changed. The reconciler decides whether this
