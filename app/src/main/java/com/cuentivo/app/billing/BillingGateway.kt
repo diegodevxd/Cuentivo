@@ -15,11 +15,14 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
-import com.cuentivo.app.domain.BillingAccountHasher
 import com.cuentivo.app.domain.BillingReconnectPolicy
 import com.cuentivo.app.domain.BillingRequest
 import com.cuentivo.app.domain.PlayPurchase
-import com.cuentivo.app.domain.SubscriptionReplacementPolicy
+import com.cuentivo.app.domain.PurchaseBlockReason
+import com.cuentivo.app.domain.PurchaseLaunchDecision
+import com.cuentivo.app.domain.PurchaseLaunchPolicy
+import com.cuentivo.app.domain.PurchasesQueryState
+import com.cuentivo.app.domain.ReplacementMode
 import com.cuentivo.app.domain.SubscriptionStatus
 import com.cuentivo.app.domain.SubscriptionTier
 import java.util.concurrent.ConcurrentHashMap
@@ -36,13 +39,15 @@ import java.util.concurrent.ConcurrentHashMap
  * - **Two products, two prices.** Queries both [SubscriptionTier.PRO_PRODUCT_ID] and
  *   [SubscriptionTier.AI_PRODUCT_ID] simultaneously and reports their localized formatted prices
  *   via [onPriceLoaded]. Prices come exclusively from Google Play, never hardcoded.
- * - **Plan replacement, never double subscription.** When changing plans (Pro -> AI or AI -> Pro),
- *   [launchPurchase] attaches [BillingFlowParams.SubscriptionUpdateParams] with the old purchase
- *   token and the designated proration policy ([SubscriptionReplacementPolicy]). No user can ever
- *   end up with two active subscriptions simultaneously.
+ * - **Zero race condition plan replacement.** [launchPurchase] queries purchases fresh on the spot
+ *   before constructing the billing flow, never relying on stale or pending cache.
+ * - **Deterministic proration and replacement.** Evaluated via pure [PurchaseLaunchPolicy].
+ *   Upgrades use [ReplacementMode.CHARGE_PRORATED] and downgrades use [ReplacementMode.DEFERRED].
+ * - **Fail-closed security.** Blocked states (user mismatch, pending query, already active plan,
+ *   inconsistent state with both plans active, or missing user ID) immediately fail closed without
+ *   opening a duplicate billing flow.
  * - **Stable obfuscated account identifier.** Every purchase flow sets `setObfuscatedAccountId`
- *   derived via SHA-256 hash of the Firebase UID ([BillingAccountHasher]), ensuring determinism
- *   and privacy without exposing raw UIDs to Play.
+ *   derived via SHA-256 hash of the Firebase UID.
  * - **Purchase token capture for server validation.** Completed purchase tokens are captured and
  *   dispatched to [onPurchaseTokenReceived] for T3 backend validation. In accordance with Project
  *   Rule 4, purchase tokens are NEVER logged or forwarded to Analytics/Crashlytics.
@@ -67,7 +72,7 @@ class BillingGateway(
     private val onPurchaseTokenReceived: (token: String, productId: String, userId: String?) -> Unit = { _, _, _ -> },
 ) {
     private val products = ConcurrentHashMap<String, ProductDetails>()
-    @Volatile private var activePurchases: List<Purchase> = emptyList()
+    @Volatile private var purchasesQueryState: PurchasesQueryState = PurchasesQueryState.Pending
 
     /**
      * What to query once the connection finishes, and which account opened the purchase sheet.
@@ -116,6 +121,7 @@ class BillingGateway(
     private fun connect(userId: String?) {
         if (isClosed || isConnecting) return
         isConnecting = true
+        purchasesQueryState = PurchasesQueryState.Pending
         connectionRequest = BillingRequest(userId)
         client.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
@@ -125,12 +131,14 @@ class BillingGateway(
                     loadProduct()
                     refresh(connectionRequest.userId)
                 } else {
+                    purchasesQueryState = PurchasesQueryState.Failed
                     scheduleReconnect(connectionRequest.userId)
                 }
             }
 
             override fun onBillingServiceDisconnected() {
                 isConnecting = false
+                purchasesQueryState = PurchasesQueryState.Pending
                 scheduleReconnect(connectionRequest.userId)
             }
         })
@@ -149,6 +157,7 @@ class BillingGateway(
     fun refresh(userId: String?) {
         val request = BillingRequest(userId)
         if (!client.isReady) {
+            purchasesQueryState = PurchasesQueryState.Pending
             connectionRequest = request
             start(userId)
             return
@@ -158,7 +167,20 @@ class BillingGateway(
             .build()
         client.queryPurchasesAsync(params) { result, purchases ->
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
+                val reported = purchases.map { purchase ->
+                    PlayPurchase(
+                        productIds = purchase.products,
+                        isPurchased = purchase.purchaseState == Purchase.PurchaseState.PURCHASED,
+                        isAcknowledged = purchase.isAcknowledged,
+                    )
+                }
+                purchasesQueryState = PurchasesQueryState.Resolved(
+                    purchases = reported,
+                    queriedUserId = request.userId,
+                )
                 applyPurchases(purchases, request)
+            } else {
+                purchasesQueryState = PurchasesQueryState.Failed
             }
         }
     }
@@ -166,10 +188,9 @@ class BillingGateway(
     /**
      * Opens Google's payment sheet for [targetProductId].
      *
-     * If the user already owns another subscription plan (e.g. Pro and upgrading to AI, or AI and
-     * downgrading to Pro), this configures [BillingFlowParams.SubscriptionUpdateParams] with the
-     * existing purchase token and proration mode to replace the subscription rather than creating
-     * a duplicate billing charge.
+     * Queries active purchases in real-time to avoid stale race conditions, evaluates
+     * [PurchaseLaunchPolicy], and attaches [BillingFlowParams.SubscriptionUpdateParams]
+     * if upgrading or downgrading.
      *
      * @param activity the foreground Activity.
      * @param userId the account buying, used to derive an obfuscated account identifier for Play.
@@ -180,9 +201,13 @@ class BillingGateway(
         userId: String?,
         targetProductId: String = SubscriptionTier.PRO_PRODUCT_ID,
     ) {
-        purchaseRequest = BillingRequest(userId)
+        if (!client.isReady) {
+            onMessage("Las suscripciones no están disponibles en este momento")
+            return
+        }
+
         val product = products[targetProductId]
-        if (!client.isReady || product == null) {
+        if (product == null) {
             onMessage("Las suscripciones no están disponibles en este momento")
             return
         }
@@ -191,60 +216,106 @@ class BillingGateway(
             onMessage("El plan no está disponible todavía")
             return
         }
-        val flowBuilder = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(
-                listOf(
-                    BillingFlowParams.ProductDetailsParams.newBuilder()
-                        .setProductDetails(product)
-                        .setOfferToken(offerToken)
-                        .build()
+
+        // Query purchases on the spot to guarantee atomic state without relying on stale cache.
+        val params = QueryPurchasesParams.newBuilder()
+            .setProductType(BillingClient.ProductType.SUBS)
+            .build()
+
+        client.queryPurchasesAsync(params) { result, purchases ->
+            if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+                purchasesQueryState = PurchasesQueryState.Failed
+                onMessage("No se pudo verificar el estado de tu suscripción. Inténtalo de nuevo.")
+                return@queryPurchasesAsync
+            }
+
+            val reported = purchases.map { purchase ->
+                PlayPurchase(
+                    productIds = purchase.products,
+                    isPurchased = purchase.purchaseState == Purchase.PurchaseState.PURCHASED,
+                    isAcknowledged = purchase.isAcknowledged,
                 )
-            )
-
-        // Set stable obfuscated account identifier derived from the Firebase UID (T3 prerequisite).
-        val obfuscatedAccountId = BillingAccountHasher.obfuscate(userId)
-        if (obfuscatedAccountId != null) {
-            flowBuilder.setObfuscatedAccountId(obfuscatedAccountId)
-        }
-
-        // Plan change replacement: map active purchases to PlayPurchase and consult domain policy.
-        val reportedPurchases = activePurchases.map { purchase ->
-            PlayPurchase(
-                productIds = purchase.products,
-                isPurchased = purchase.purchaseState == Purchase.PurchaseState.PURCHASED,
-                isAcknowledged = purchase.isAcknowledged,
-            )
-        }
-        val productToReplace = SubscriptionReplacementPolicy.findProductToReplace(
-            activePurchases = reportedPurchases,
-            targetProductId = targetProductId,
-        )
-        if (productToReplace != null) {
-            val existingPurchase = activePurchases.firstOrNull {
-                it.purchaseState == Purchase.PurchaseState.PURCHASED && it.products.contains(productToReplace)
             }
-            if (existingPurchase != null) {
-                val policyMode = SubscriptionReplacementPolicy.replacementModeFor(
-                    currentProductId = productToReplace,
-                    targetProductId = targetProductId,
-                ) ?: com.cuentivo.app.domain.ReplacementMode.CHARGE_PRORATED
+            val queryState = PurchasesQueryState.Resolved(
+                purchases = reported,
+                queriedUserId = userId,
+            )
+            purchasesQueryState = queryState
+            applyPurchases(purchases, BillingRequest(userId))
 
-                val playReplacementMode = when (policyMode) {
-                    com.cuentivo.app.domain.ReplacementMode.CHARGE_PRORATED ->
-                        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_PRORATED_PRICE
-                    com.cuentivo.app.domain.ReplacementMode.DEFERRED ->
-                        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.DEFERRED
+            val decision = PurchaseLaunchPolicy.evaluate(
+                queryState = queryState,
+                currentUserId = userId,
+                targetProductId = targetProductId,
+            )
+
+            when (decision) {
+                is PurchaseLaunchDecision.Proceed -> {
+                    val flowBuilder = BillingFlowParams.newBuilder()
+                        .setProductDetailsParamsList(
+                            listOf(
+                                BillingFlowParams.ProductDetailsParams.newBuilder()
+                                    .setProductDetails(product)
+                                    .setOfferToken(offerToken)
+                                    .build()
+                            )
+                        )
+                        .setObfuscatedAccountId(decision.obfuscatedAccountId)
+
+                    if (decision.productToReplace != null && decision.replacementMode != null) {
+                        val existingPurchase = purchases.firstOrNull { purchase ->
+                            purchase.purchaseState == Purchase.PurchaseState.PURCHASED &&
+                                purchase.products.contains(decision.productToReplace)
+                        }
+                        if (existingPurchase == null) {
+                            onMessage("No se pudo identificar la suscripción a reemplazar")
+                            return@queryPurchasesAsync
+                        }
+
+                        val playReplacementMode = when (decision.replacementMode) {
+                            ReplacementMode.CHARGE_PRORATED ->
+                                BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_PRORATED_PRICE
+                            ReplacementMode.DEFERRED ->
+                                BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.DEFERRED
+                        }
+
+                        val updateParams = BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                            .setOldPurchaseToken(existingPurchase.purchaseToken)
+                            .setSubscriptionReplacementMode(playReplacementMode)
+                            .build()
+                        flowBuilder.setSubscriptionUpdateParams(updateParams)
+                    }
+
+                    purchaseRequest = BillingRequest(userId)
+                    client.launchBillingFlow(activity, flowBuilder.build())
                 }
-
-                val updateParams = BillingFlowParams.SubscriptionUpdateParams.newBuilder()
-                    .setOldPurchaseToken(existingPurchase.purchaseToken)
-                    .setSubscriptionReplacementMode(playReplacementMode)
-                    .build()
-                flowBuilder.setSubscriptionUpdateParams(updateParams)
+                is PurchaseLaunchDecision.Blocked -> {
+                    when (decision.reason) {
+                        PurchaseBlockReason.ALREADY_ACTIVE -> {
+                            onMessage("Este plan ya se encuentra activo")
+                            refresh(userId)
+                        }
+                        PurchaseBlockReason.INCONSISTENT_STATE -> {
+                            onMessage("Hay un cambio de plan en proceso. Inténtalo más tarde.")
+                            refresh(userId)
+                        }
+                        PurchaseBlockReason.MISSING_USER_ID -> {
+                            onMessage("Inicia sesión para suscribirte a CuentivoAI")
+                        }
+                        PurchaseBlockReason.USER_MISMATCH -> {
+                            onMessage("La sesión cambió. Inténtalo de nuevo.")
+                            refresh(userId)
+                        }
+                        PurchaseBlockReason.QUERY_PENDING, PurchaseBlockReason.QUERY_FAILED -> {
+                            onMessage("No se pudo verificar el estado de tu suscripción. Inténtalo de nuevo.")
+                        }
+                        PurchaseBlockReason.UNKNOWN_PRODUCT, PurchaseBlockReason.INVALID_REPLACEMENT -> {
+                            onMessage("No se pudo iniciar la compra. Inténtalo de nuevo.")
+                        }
+                    }
+                }
             }
         }
-
-        client.launchBillingFlow(activity, flowBuilder.build())
     }
 
     /**
@@ -309,7 +380,6 @@ class BillingGateway(
      *   late reply can never be mistaken for a newer one.
      */
     private fun applyPurchases(purchases: List<Purchase>, request: BillingRequest) {
-        activePurchases = purchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
         val reported = purchases.map { purchase ->
             PlayPurchase(
                 productIds = purchase.products,
