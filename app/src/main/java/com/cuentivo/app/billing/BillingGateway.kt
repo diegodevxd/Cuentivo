@@ -207,25 +207,41 @@ class BillingGateway(
             flowBuilder.setObfuscatedAccountId(obfuscatedAccountId)
         }
 
-        // Plan change replacement: if a different active subscription exists, replace it.
-        val existingPurchase = activePurchases.firstOrNull { purchase ->
-            purchase.purchaseState == Purchase.PurchaseState.PURCHASED &&
-                purchase.products.any { it != targetProductId && (it == SubscriptionTier.PRO_PRODUCT_ID || it == SubscriptionTier.AI_PRODUCT_ID) }
+        // Plan change replacement: map active purchases to PlayPurchase and consult domain policy.
+        val reportedPurchases = activePurchases.map { purchase ->
+            PlayPurchase(
+                productIds = purchase.products,
+                isPurchased = purchase.purchaseState == Purchase.PurchaseState.PURCHASED,
+                isAcknowledged = purchase.isAcknowledged,
+            )
         }
-        if (existingPurchase != null) {
-            val currentProductId = existingPurchase.products.firstOrNull {
-                it == SubscriptionTier.PRO_PRODUCT_ID || it == SubscriptionTier.AI_PRODUCT_ID
+        val productToReplace = SubscriptionReplacementPolicy.findProductToReplace(
+            activePurchases = reportedPurchases,
+            targetProductId = targetProductId,
+        )
+        if (productToReplace != null) {
+            val existingPurchase = activePurchases.firstOrNull {
+                it.purchaseState == Purchase.PurchaseState.PURCHASED && it.products.contains(productToReplace)
             }
-            val replacementMode = SubscriptionReplacementPolicy.replacementModeFor(
-                currentProductId = currentProductId,
-                targetProductId = targetProductId,
-            ) ?: SubscriptionReplacementPolicy.UPGRADE_REPLACEMENT_MODE
+            if (existingPurchase != null) {
+                val policyMode = SubscriptionReplacementPolicy.replacementModeFor(
+                    currentProductId = productToReplace,
+                    targetProductId = targetProductId,
+                ) ?: com.cuentivo.app.domain.ReplacementMode.CHARGE_PRORATED
 
-            val updateParams = BillingFlowParams.SubscriptionUpdateParams.newBuilder()
-                .setOldPurchaseToken(existingPurchase.purchaseToken)
-                .setSubscriptionReplacementMode(replacementMode)
-                .build()
-            flowBuilder.setSubscriptionUpdateParams(updateParams)
+                val playReplacementMode = when (policyMode) {
+                    com.cuentivo.app.domain.ReplacementMode.CHARGE_PRORATED ->
+                        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_PRORATED_PRICE
+                    com.cuentivo.app.domain.ReplacementMode.DEFERRED ->
+                        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.DEFERRED
+                }
+
+                val updateParams = BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                    .setOldPurchaseToken(existingPurchase.purchaseToken)
+                    .setSubscriptionReplacementMode(playReplacementMode)
+                    .build()
+                flowBuilder.setSubscriptionUpdateParams(updateParams)
+            }
         }
 
         client.launchBillingFlow(activity, flowBuilder.build())

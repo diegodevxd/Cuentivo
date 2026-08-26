@@ -1,6 +1,5 @@
 package com.cuentivo.app.domain
 
-import com.android.billingclient.api.BillingFlowParams
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -22,7 +21,7 @@ class SubscriptionReplacementPolicyTest {
             targetProductId = SubscriptionTier.AI_PRODUCT_ID,
         )
         assertEquals(
-            BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_PRORATED_PRICE,
+            ReplacementMode.CHARGE_PRORATED,
             mode,
         )
     }
@@ -34,7 +33,7 @@ class SubscriptionReplacementPolicyTest {
             targetProductId = SubscriptionTier.PRO_PRODUCT_ID,
         )
         assertEquals(
-            BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.DEFERRED,
+            ReplacementMode.DEFERRED,
             mode,
         )
     }

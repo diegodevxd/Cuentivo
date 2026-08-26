@@ -1,53 +1,37 @@
 package com.cuentivo.app.domain
 
-import com.android.billingclient.api.BillingFlowParams
-
 /**
- * Pure policy governing subscription plan changes (upgrades, downgrades, and new purchases)
- * in Google Play Billing.
+ * Pure policy governing subscription plan changes (upgrades, downgrades, and new purchases).
  *
  * **Core rule:** No flow in the app may ever leave a customer with two active subscriptions
  * charging simultaneously (e.g. Pro $199 + AI $299). Any change of subscription plan MUST
- * replace the previous subscription using [BillingFlowParams.SubscriptionUpdateParams].
+ * replace the previous subscription.
  *
  * **Proration / Replacement Policy:**
- * - **Upgrades (Pro -> AI):** [BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_PRORATED_PRICE]
+ * - **Upgrades (Pro -> AI):** [ReplacementMode.CHARGE_PRORATED]
  *   *Rationale:* Charging the prorated price difference immediately grants instant access to AI
  *   capabilities without waiting for the next billing cycle or paying double for overlapping days.
- * - **Downgrades (AI -> Pro):** [BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.DEFERRED]
+ * - **Downgrades (AI -> Pro):** [ReplacementMode.DEFERRED]
  *   *Rationale:* The customer has already paid for the current AI cycle. Deferring the downgrade
  *   allows them to use AI until the current period expires, switching to Pro at the next renewal.
  */
 object SubscriptionReplacementPolicy {
 
     /**
-     * Replacement mode for upgrading from Pro to AI: charge prorated difference immediately.
-     */
-    val UPGRADE_REPLACEMENT_MODE =
-        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_PRORATED_PRICE
-
-    /**
-     * Replacement mode for downgrading from AI to Pro: defer replacement to the end of the current billing cycle.
-     */
-    val DOWNGRADE_REPLACEMENT_MODE =
-        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.DEFERRED
-
-    /**
      * Resolves the replacement mode when transitioning from [currentProductId] to [targetProductId].
      *
      * @param currentProductId the product ID of the currently active subscription (or null if none).
      * @param targetProductId the product ID of the subscription being purchased.
-     * @return the [BillingFlowParams.SubscriptionUpdateParams.ReplacementMode] integer code,
-     *         or null if this is a fresh purchase rather than a replacement.
+     * @return the [ReplacementMode], or null if this is a fresh purchase rather than a replacement.
      */
-    fun replacementModeFor(currentProductId: String?, targetProductId: String): Int? {
+    fun replacementModeFor(currentProductId: String?, targetProductId: String): ReplacementMode? {
         if (currentProductId == null || currentProductId == targetProductId) return null
         return when {
             currentProductId == SubscriptionTier.PRO_PRODUCT_ID &&
-                targetProductId == SubscriptionTier.AI_PRODUCT_ID -> UPGRADE_REPLACEMENT_MODE
+                targetProductId == SubscriptionTier.AI_PRODUCT_ID -> ReplacementMode.CHARGE_PRORATED
             currentProductId == SubscriptionTier.AI_PRODUCT_ID &&
-                targetProductId == SubscriptionTier.PRO_PRODUCT_ID -> DOWNGRADE_REPLACEMENT_MODE
-            else -> UPGRADE_REPLACEMENT_MODE
+                targetProductId == SubscriptionTier.PRO_PRODUCT_ID -> ReplacementMode.DEFERRED
+            else -> ReplacementMode.CHARGE_PRORATED
         }
     }
 
@@ -76,4 +60,15 @@ object SubscriptionReplacementPolicy {
             else -> null
         }
     }
+}
+
+/**
+ * Proration / replacement mode for transitioning between subscription tiers.
+ */
+enum class ReplacementMode {
+    /** Charge prorated price difference immediately for instant upgrade. */
+    CHARGE_PRORATED,
+
+    /** Defer replacement until the next billing renewal for downgrade. */
+    DEFERRED,
 }
