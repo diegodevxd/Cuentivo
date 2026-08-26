@@ -16,19 +16,27 @@ enum class EmailVerificationAccess {
 }
 
 /**
- * Decides whether an account is allowed past the sign-in screen.
+ * Decides whether an unverified email address is allowed past the sign-in screen.
  *
- * Regla de acceso y verificación:
- * La verificación de correo se exige ÚNICAMENTE cuando la cuenta tiene correo registrado
- * Y hay respaldo en la nube en juego (o recuperación de cuenta). No en la puerta de entrada.
- * Una sesión anónima (invitado) no tiene correo, por lo que resuelve siempre [EmailVerificationAccess.ALLOWED],
- * permitiendo trabajar localmente de inmediato sin bloquear al usuario en el primer uso.
+ * Anonymous guest access rule:
+ * Email verification is required ONLY when an account has a registered email address AND cloud
+ * backup (or account recovery) is at stake. It is not enforced at the front door. An anonymous
+ * guest session has no email address, so it resolves [EmailVerificationAccess.ALLOWED], allowing
+ * users to start working locally immediately without being blocked on first launch.
  *
- * For accounts with email:
- * Accounts created before [LEGACY_ACCOUNT_CUTOFF_EPOCH_MILLIS] (grandfathered) get
- * [EmailVerificationAccess.ALLOWED_WITH_WARNING] (they can use local ledger but cloud sync is blocked).
- * New accounts with unverified email get [EmailVerificationAccess.MUST_VERIFY] when cloud backup
- * / verified account gate is evaluated.
+ * Verification was not eliminated — it was moved. Cloud backup is a Pro feature and Firestore
+ * security rules independently enforce `email_verified == true`, so it is the server rules that
+ * safeguard cloud storage, not the sign-in screen.
+ *
+ * Why verification exists:
+ * Until now an address was never checked, so an account had no provable owner: nobody could be
+ * mailed a password reset, and the ledger only exists on that one phone. New accounts with email
+ * therefore have to verify before they get in or reach the cloud.
+ *
+ * Accounts that already existed are deliberately treated differently. Closed testing was already
+ * running when this shipped, and locking those people out would strand their customers and sales
+ * behind an address some of them typed carelessly — with no backup and no cloud copy to restore
+ * from. They keep working and get told; what they lose is the cloud, which they did not have yet.
  *
  * The cutoff is compared against the account's creation timestamp **as Firebase reports it**, not
  * against anything the phone stores, so changing the device clock does not turn a new account into
