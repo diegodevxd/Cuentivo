@@ -226,7 +226,31 @@ describe("firestore emulator concurrency gate", () => {
     const reprocessedDoc = (await firestore.doc(entitlementPath(RUN_UID)).get()).data();
     expect(reprocessedDoc?.["expiresAtEpochMillis"]).toBe(newExpiry);
 
-    // 3. Token robado: Different user attempting to use the same token
+    // 3. Revocación: Inactive / expired status updates entitlement to enabled=false with absolute expiry without adding time
+    const revokedExpiry = NOW - 1000;
+    const revokeResult = await subRepo.recordSubscription({
+      uid: RUN_UID,
+      purchaseToken: TEST_TOKEN,
+      productId: product,
+      enabled: false,
+      expiresAtEpochMillis: revokedExpiry,
+      nowEpochMillis: NOW + 1500,
+    });
+    expect(revokeResult).toEqual({
+      status: "RECORDED",
+      enabled: false,
+      expiresAtEpochMillis: revokedExpiry,
+    });
+
+    const revokedDoc = (await firestore.doc(entitlementPath(RUN_UID)).get()).data();
+    expect(revokedDoc).toEqual({
+      enabled: false,
+      expiresAtEpochMillis: revokedExpiry,
+      lastVerifiedAtEpochMillis: NOW + 1500,
+      productId: product,
+    });
+
+    // 4. Token robado: Different user attempting to use the same token
     const stolenResult = await subRepo.recordSubscription({
       uid: INTRUDER_UID,
       purchaseToken: TEST_TOKEN,
