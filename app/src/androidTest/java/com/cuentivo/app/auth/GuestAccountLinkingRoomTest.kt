@@ -29,9 +29,9 @@ import org.junit.runner.RunWith
  * keeping the exact same UID, businessId and ownerUserId without deleting any rows,
  * while signing in with a truly different account wipes the database via [LocalSessionGuard].
  *
- * Regla de oro de identidad y datos locales:
- * Ante la duda se conservan los datos locales y se le pregunta al usuario.
- * NUNCA se borra para resolver un conflicto de identidad.
+ * Golden rule of identity and local data:
+ * In case of doubt, preserve local data and ask the user.
+ * NEVER delete to resolve an identity conflict.
  */
 @RunWith(AndroidJUnit4::class)
 class GuestAccountLinkingRoomTest {

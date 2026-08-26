@@ -8,9 +8,9 @@ import kotlinx.coroutines.withContext
 /**
  * Makes sure the local database belongs to whoever is signed in right now.
  *
- * Regla de oro de identidad y datos locales:
- * Ante la duda se conservan los datos locales y se le pregunta al usuario.
- * NUNCA se borra para resolver un conflicto de identidad.
+ * Golden rule of identity and local data:
+ * In case of doubt, preserve local data and ask the user.
+ * NEVER delete to resolve an identity conflict.
  *
  * Room is the source of truth and it lives on the device, not in the account. Signing out only
  * dropped the uid held in memory, so the next person to sign in on the same phone opened a database

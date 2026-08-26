@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** que una persona que instala Cuentivo pueda anotar su primer fiado **sin crear cuenta y sin salir de la app**. Es la actualización 1 de tres, e iría como `versionCode 32`.
+**Goal:** que una persona que instala Cuentivo pueda anotar su primer fiado **sin crear cuenta y sin salir de la app** (requiere conexión únicamente la primera vez para preparar la libreta, después Cuentivo funciona sin internet). Es la actualización 1 de tres, e iría como `versionCode 32`.
 
 ## Por qué, con datos
 

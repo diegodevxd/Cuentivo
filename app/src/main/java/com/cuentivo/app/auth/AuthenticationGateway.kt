@@ -144,12 +144,12 @@ class FirebaseAuthenticationGateway(
             onComplete(Result.failure(IllegalStateException()))
             return
         }
+        val expectedUid = user.uid
         val credential = EmailAuthProvider.getCredential(email.trim(), password)
         user.linkWithCredential(credential).addOnCompleteListener { task ->
             if (task.isSuccessful) {
                 val userId = task.result?.user?.uid
-                if (userId != null) onComplete(Result.success(userId))
-                else onComplete(Result.failure(IllegalStateException()))
+                onComplete(AuthenticationFlowPolicy.resolveLinkResult(expectedUid, userId))
             } else onComplete(Result.failure(task.exception ?: IllegalStateException()))
         }
     }
@@ -266,13 +266,13 @@ class FirebaseAuthenticationGateway(
                 onComplete(GoogleAuthenticationResult.Failed)
                 return@googleIdToken
             }
+            val expectedUid = user.uid
             user.linkWithCredential(GoogleAuthProvider.getCredential(idToken, null))
                 .addOnCompleteListener { task ->
                     onComplete(
                         if (task.isSuccessful) {
                             val userId = task.result?.user?.uid
-                            if (userId != null) GoogleAuthenticationResult.SignedIn(userId)
-                            else GoogleAuthenticationResult.Failed
+                            AuthenticationFlowPolicy.resolveGoogleLinkResult(expectedUid, userId)
                         } else {
                             GoogleAuthenticationResult.fromFirebaseErrorCode(
                                 (task.exception as? FirebaseAuthException)?.errorCode
