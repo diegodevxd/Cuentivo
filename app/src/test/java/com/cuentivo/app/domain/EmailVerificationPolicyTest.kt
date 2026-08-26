@@ -51,4 +51,62 @@ class EmailVerificationPolicyTest {
         assertFalse(EmailVerificationPolicy.allowsCloudSync(EmailVerificationAccess.MUST_VERIFY))
         assertFalse(EmailVerificationPolicy.allowsCloudSync(EmailVerificationAccess.SIGNED_OUT))
     }
+
+    @Test fun anonymous_guest_session_without_email_is_always_allowed_without_verification() {
+        assertEquals(
+            EmailVerificationAccess.ALLOWED,
+            EmailVerificationPolicy.access(
+                isSignedIn = true,
+                isEmailVerified = false,
+                accountCreatedAtEpochMillis = 5_000L,
+                isAnonymous = true,
+                cutoffEpochMillis = cutoff,
+            ),
+        )
+        assertEquals(
+            EmailVerificationAccess.ALLOWED,
+            EmailVerificationPolicy.access(
+                isSignedIn = true,
+                isEmailVerified = false,
+                accountCreatedAtEpochMillis = null,
+                isAnonymous = true,
+                cutoffEpochMillis = cutoff,
+            ),
+        )
+    }
+
+    @Test fun anonymous_session_signed_out_resolves_signed_out() {
+        assertEquals(
+            EmailVerificationAccess.SIGNED_OUT,
+            EmailVerificationPolicy.access(
+                isSignedIn = false,
+                isEmailVerified = false,
+                accountCreatedAtEpochMillis = null,
+                isAnonymous = true,
+                cutoffEpochMillis = cutoff,
+            ),
+        )
+    }
+
+    @Test fun unverified_account_with_email_created_after_cutoff_remains_blocked_from_cloud() {
+        val access = EmailVerificationPolicy.access(
+            isSignedIn = true,
+            isEmailVerified = false,
+            accountCreatedAtEpochMillis = EmailVerificationPolicy.LEGACY_ACCOUNT_CUTOFF_EPOCH_MILLIS + 1000L,
+            isAnonymous = false,
+        )
+        assertEquals(EmailVerificationAccess.MUST_VERIFY, access)
+        assertFalse(EmailVerificationPolicy.allowsCloudSync(access))
+    }
+
+    @Test fun legacy_account_with_email_created_before_cutoff_keeps_local_access_but_blocked_from_cloud() {
+        val access = EmailVerificationPolicy.access(
+            isSignedIn = true,
+            isEmailVerified = false,
+            accountCreatedAtEpochMillis = EmailVerificationPolicy.LEGACY_ACCOUNT_CUTOFF_EPOCH_MILLIS - 1000L,
+            isAnonymous = false,
+        )
+        assertEquals(EmailVerificationAccess.ALLOWED_WITH_WARNING, access)
+        assertFalse(EmailVerificationPolicy.allowsCloudSync(access))
+    }
 }
