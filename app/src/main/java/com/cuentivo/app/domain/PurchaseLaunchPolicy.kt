@@ -117,15 +117,16 @@ object PurchaseLaunchPolicy {
             ?: return PurchaseLaunchDecision.Blocked(PurchaseBlockReason.MISSING_USER_ID)
 
         val activePurchases = resolved.purchases.filter { it.isPurchased }
+
+        // If the target product is already active, block double purchase.
+        if (SubscriptionReplacementPolicy.isProductAlreadyActive(activePurchases, targetProductId)) {
+            return PurchaseLaunchDecision.Blocked(PurchaseBlockReason.ALREADY_ACTIVE)
+        }
+
         val activeProducts = activePurchases
             .flatMap { it.productIds }
             .filter { it == SubscriptionTier.PRO_PRODUCT_ID || it == SubscriptionTier.AI_PRODUCT_ID }
             .distinct()
-
-        // If the target product is already active, block double purchase.
-        if (activeProducts.contains(targetProductId)) {
-            return PurchaseLaunchDecision.Blocked(PurchaseBlockReason.ALREADY_ACTIVE)
-        }
 
         // If both Pro and AI are active simultaneously, treat as inconsistent / in-flight state.
         val hasPro = activeProducts.contains(SubscriptionTier.PRO_PRODUCT_ID)
