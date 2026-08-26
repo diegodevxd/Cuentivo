@@ -26,6 +26,7 @@ export function createAuthorizeAiHandler(
   repository: AiControlPlaneRepository,
   now: () => number,
   guard: AiEdgeRequestGuard,
+  onRejected?: (reason: "ANONYMOUS_SESSION") => void,
 ): (request: AuthorizeCallableRequest) => Promise<AuthorizeAiActionResponse | AuthorizeAiFailure> {
   return async (request) => {
     const uid = request.auth?.uid;
@@ -40,6 +41,7 @@ export function createAuthorizeAiHandler(
 
     // Anonymous sessions are rejected before any edge guard, repository read, or quota/ledger access.
     if (isAnonymousUser(request.auth)) {
+      onRejected?.("ANONYMOUS_SESSION");
       return {
         contractVersion: 1,
         requestId,

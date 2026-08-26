@@ -7,6 +7,11 @@ import type { SafeAiProposal } from "../src/contract.js";
 
 const NOW = 1_000_000;
 
+const AUTH_USER = {
+  uid: "test-user",
+  token: { firebase: { sign_in_provider: "password" } },
+} as const;
+
 const VALID_DATA = {
   contractVersion: 2,
   requestId: "123e4567-e89b-12d3-a456-426614174000",
@@ -42,10 +47,12 @@ function recordingDeps(overrides?: {
   providerResult?: SafeAiProposal | null;
   guard?: ReturnType<typeof createAiEdgeRequestGuard>;
   now?: () => number;
+  onRejected?: (reason: "ANONYMOUS_SESSION") => void;
 }) {
   const authorizeInputs: AuthorizeAiInput[] = [];
   const claimInputs: Array<{ uid: string; requestId: string; nowEpochMillis: number }> = [];
   const providerInputs: Array<{ text: string; referenceDate: ReferenceDate }> = [];
+  const rejections: string[] = [];
   const deps = {
     authorize: async (input: AuthorizeAiInput) => {
       authorizeInputs.push(input);
@@ -83,8 +90,12 @@ function recordingDeps(overrides?: {
         : overrides.provider,
     guard: overrides?.guard ?? openGuard(),
     now: overrides && "now" in overrides && typeof overrides.now === "function" ? overrides.now : () => NOW,
+    onRejected: (reason: "ANONYMOUS_SESSION") => {
+      rejections.push(reason);
+      overrides?.onRejected?.(reason);
+    },
   };
-  return { deps, authorizeInputs, claimInputs, providerInputs };
+  return { deps, authorizeInputs, claimInputs, providerInputs, rejections };
 }
 
 function makeHandler(overrides?: Parameters<typeof recordingDeps>[0]) {
@@ -111,7 +122,7 @@ describe("createInterpretAiHandler", () => {
     const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler();
 
     const result = await handler({
-      auth: { uid: "test-user" },
+      auth: AUTH_USER,
       data: { ...VALID_DATA, extra: true },
     });
 
@@ -136,7 +147,7 @@ describe("createInterpretAiHandler", () => {
   ] as const)("control plane denial %s returns unavailable without claim or provider", async (_name, denial) => {
     const { handler, claimInputs, providerInputs } = makeHandler({ authorizeResult: denial });
 
-    const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(result).toEqual({
       contractVersion: 2,
@@ -148,8 +159,8 @@ describe("createInterpretAiHandler", () => {
     expect(providerInputs).toHaveLength(0);
   });
 
-  test("anonymous auth token returns unavailable and does not reach authorize, claim, or Gemini provider", async () => {
-    const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler();
+  test("anonymous auth token returns unavailable, triggers onRejected callback and touches nothing", async () => {
+    const { handler, authorizeInputs, claimInputs, providerInputs, rejections } = makeHandler();
 
     const result = await handler({
       auth: {
@@ -165,13 +176,14 @@ describe("createInterpretAiHandler", () => {
       status: "AI_UNAVAILABLE",
       proposal: null,
     });
+    expect(rejections).toEqual(["ANONYMOUS_SESSION"]);
     expect(authorizeInputs).toHaveLength(0);
     expect(claimInputs).toHaveLength(0);
     expect(providerInputs).toHaveLength(0);
   });
 
-  test("anonymous auth token via provider_id returns unavailable and touches nothing", async () => {
-    const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler();
+  test("anonymous auth token via provider_id returns unavailable and triggers onRejected callback", async () => {
+    const { handler, authorizeInputs, claimInputs, providerInputs, rejections } = makeHandler();
 
     const result = await handler({
       auth: {
@@ -187,6 +199,27 @@ describe("createInterpretAiHandler", () => {
       status: "AI_UNAVAILABLE",
       proposal: null,
     });
+    expect(rejections).toEqual(["ANONYMOUS_SESSION"]);
+    expect(authorizeInputs).toHaveLength(0);
+    expect(claimInputs).toHaveLength(0);
+    expect(providerInputs).toHaveLength(0);
+  });
+
+  test("missing token claims fails closed as anonymous, triggers onRejected, and touches nothing", async () => {
+    const { handler, authorizeInputs, claimInputs, providerInputs, rejections } = makeHandler();
+
+    const result = await handler({
+      auth: { uid: "user-without-claims" },
+      data: VALID_DATA,
+    });
+
+    expect(result).toEqual({
+      contractVersion: 2,
+      requestId: VALID_DATA.requestId,
+      status: "AI_UNAVAILABLE",
+      proposal: null,
+    });
+    expect(rejections).toEqual(["ANONYMOUS_SESSION"]);
     expect(authorizeInputs).toHaveLength(0);
     expect(claimInputs).toHaveLength(0);
     expect(providerInputs).toHaveLength(0);
@@ -195,7 +228,7 @@ describe("createInterpretAiHandler", () => {
   test("control plane failure returns unavailable without claim or provider", async () => {
     const { handler, claimInputs, providerInputs } = makeHandler({ authorizeThrows: true });
 
-    const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(result.status).toBe("AI_UNAVAILABLE");
     expect(claimInputs).toHaveLength(0);
@@ -205,7 +238,7 @@ describe("createInterpretAiHandler", () => {
   test("null provider returns unavailable without claiming the invocation", async () => {
     const { handler, claimInputs, providerInputs } = makeHandler({ provider: null });
 
-    const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(result).toEqual({
       contractVersion: 2,
@@ -220,7 +253,7 @@ describe("createInterpretAiHandler", () => {
   test("authorized request claims durably then calls the provider exactly once with typed reference date", async () => {
     const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler();
 
-    const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(authorizeInputs).toEqual([
       { uid: "test-user", requestId: VALID_DATA.requestId, capability: "TEXT", nowEpochMillis: NOW },
@@ -252,7 +285,7 @@ describe("createInterpretAiHandler", () => {
       now: () => edgeTimestamp,
     } as any);
 
-    await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(providerInputs).toHaveLength(1);
     expect(providerInputs[0].referenceDate).toEqual({
@@ -267,7 +300,7 @@ describe("createInterpretAiHandler", () => {
   test("already claimed request id never invokes the provider", async () => {
     const { handler, providerInputs } = makeHandler({ claim: "ALREADY_CLAIMED" });
 
-    const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(result).toEqual({
       contractVersion: 2,
@@ -281,7 +314,7 @@ describe("createInterpretAiHandler", () => {
   test("claim failure fails closed without invoking the provider", async () => {
     const { handler, providerInputs } = makeHandler({ claimThrows: true });
 
-    const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(result.status).toBe("AI_UNAVAILABLE");
     expect(providerInputs).toHaveLength(0);
@@ -290,7 +323,7 @@ describe("createInterpretAiHandler", () => {
   test("provider null result returns unavailable", async () => {
     const { handler } = makeHandler({ providerResult: null });
 
-    const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(result).toEqual({
       contractVersion: 2,
@@ -303,7 +336,7 @@ describe("createInterpretAiHandler", () => {
   test("provider failure returns unavailable", async () => {
     const { handler } = makeHandler({ providerThrows: true });
 
-    const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(result).toEqual({
       contractVersion: 2,
@@ -317,11 +350,11 @@ describe("createInterpretAiHandler", () => {
     const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 1, maxTrackedUids: 10 });
     const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler({ guard });
 
-    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const first = await handler({ auth: AUTH_USER, data: VALID_DATA });
     expect(first.status).toBe("AI_PROPOSAL");
 
     const second = await handler({
-      auth: { uid: "test-user" },
+      auth: AUTH_USER,
       data: { ...VALID_DATA, requestId: OTHER_REQUEST_ID },
     });
     expect(second).toEqual({
@@ -354,7 +387,7 @@ describe("createInterpretAiHandler", () => {
       },
     });
 
-    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const first = await handler({ auth: AUTH_USER, data: VALID_DATA });
     expect(first).toEqual({
       contractVersion: 2,
       requestId: VALID_DATA.requestId,
@@ -362,7 +395,7 @@ describe("createInterpretAiHandler", () => {
       proposal: PROPOSAL,
     });
 
-    const second = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const second = await handler({ auth: AUTH_USER, data: VALID_DATA });
     expect(second).toEqual({
       contractVersion: 2,
       requestId: VALID_DATA.requestId,
@@ -381,12 +414,12 @@ describe("createInterpretAiHandler", () => {
 
     // First call: authorize AI_AUTHORIZED (remembered), but the durable claim says it was
     // already claimed, so the provider is never invoked.
-    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const first = await handler({ auth: AUTH_USER, data: VALID_DATA });
     expect(first.status).toBe("AI_UNAVAILABLE");
 
     // Second call: the guard replays the remembered authorization; ALREADY_CLAIMED still blocks
     // the provider.
-    const replay = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const replay = await handler({ auth: AUTH_USER, data: VALID_DATA });
     expect(replay.status).toBe("AI_UNAVAILABLE");
     expect(providerInputs).toHaveLength(0);
   });

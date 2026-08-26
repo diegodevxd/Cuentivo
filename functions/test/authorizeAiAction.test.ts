@@ -8,6 +8,11 @@ import type { AuthorizeAiInput, AuthorizeAiResult } from "../src/ai/controlPlane
 
 const FAKE_NOW = 1_000_000;
 
+const AUTH_USER = {
+  uid: "test-user",
+  token: { firebase: { sign_in_provider: "password" } },
+} as const;
+
 const VALID_DATA = {
   contractVersion: 1,
   requestId: "123e4567-e89b-12d3-a456-426614174000",
@@ -44,7 +49,7 @@ describe("createAuthorizeAiHandler", () => {
     }), () => FAKE_NOW, openGuard());
 
     expect(
-      await handler({ auth: { uid: "test-user" }, data: { ...VALID_DATA, text: "hola" } }),
+      await handler({ auth: AUTH_USER, data: { ...VALID_DATA, text: "hola" } }),
     ).toEqual({ code: "invalid-argument" });
   });
 
@@ -55,7 +60,7 @@ describe("createAuthorizeAiHandler", () => {
 
     expect(
       await handler({
-        auth: { uid: "test-user" },
+        auth: AUTH_USER,
         data: { contractVersion: 1, requestId: VALID_DATA.requestId, action: "interpret_text" },
       }),
     ).toEqual({ code: "invalid-argument" });
@@ -68,7 +73,7 @@ describe("createAuthorizeAiHandler", () => {
 
     expect(
       await handler({
-        auth: { uid: "test-user" },
+        auth: AUTH_USER,
         data: { contractVersion: 1, action: "authorize_text" },
       }),
     ).toEqual({ code: "invalid-argument" });
@@ -81,7 +86,7 @@ describe("createAuthorizeAiHandler", () => {
       return { decision: "AI_AUTHORIZED", provider: "GEMINI", fallbackUsed: false };
     }), () => FAKE_NOW, openGuard());
 
-    const result = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(received).toEqual({
       uid: "test-user",
@@ -156,12 +161,43 @@ describe("createAuthorizeAiHandler", () => {
     });
   });
 
+  test("missing token claims fails closed as anonymous and triggers onRejected callback", async () => {
+    let called = false;
+    let rejectedReason: string | null = null;
+    const handler = createAuthorizeAiHandler(
+      repositoryWith(async () => {
+        called = true;
+        throw new Error("must not be called");
+      }),
+      () => FAKE_NOW,
+      openGuard(),
+      (reason) => {
+        rejectedReason = reason;
+      },
+    );
+
+    const result = await handler({
+      auth: { uid: "test-user-without-token" },
+      data: VALID_DATA,
+    });
+
+    expect(called).toBe(false);
+    expect(rejectedReason).toBe("ANONYMOUS_SESSION");
+    expect(result).toEqual({
+      contractVersion: 1,
+      requestId: VALID_DATA.requestId,
+      decision: "AI_AUTHENTICATION_REQUIRED",
+      provider: null,
+      fallbackUsed: false,
+    });
+  });
+
   test("denied repository result mirrors exactly", async () => {
     const handler = createAuthorizeAiHandler(repositoryWith(async () => {
       return { decision: "AI_RATE_LIMITED", provider: null, fallbackUsed: false };
     }), () => FAKE_NOW, openGuard());
 
-    expect(await handler({ auth: { uid: "test-user" }, data: VALID_DATA })).toEqual({
+    expect(await handler({ auth: AUTH_USER, data: VALID_DATA })).toEqual({
       contractVersion: 1,
       requestId: VALID_DATA.requestId,
       decision: "AI_RATE_LIMITED",
@@ -175,7 +211,7 @@ describe("createAuthorizeAiHandler", () => {
       throw new Error("storage down");
     }), () => FAKE_NOW, openGuard());
 
-    expect(await handler({ auth: { uid: "test-user" }, data: VALID_DATA })).toEqual({
+    expect(await handler({ auth: AUTH_USER, data: VALID_DATA })).toEqual({
       contractVersion: 1,
       requestId: VALID_DATA.requestId,
       decision: "AI_DISABLED",
@@ -193,7 +229,7 @@ describe("createAuthorizeAiHandler", () => {
     const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 1, maxTrackedUids: 10 });
     const handler = createAuthorizeAiHandler(repository, () => FAKE_NOW, guard);
 
-    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const first = await handler({ auth: AUTH_USER, data: VALID_DATA });
     expect(first.decision).toBe("AI_AUTHORIZED");
     expect(calls).toBe(1);
 
@@ -202,7 +238,7 @@ describe("createAuthorizeAiHandler", () => {
       requestId: "223e4567-e89b-12d3-a456-426614174000",
       action: "authorize_text",
     } as const;
-    const second = await handler({ auth: { uid: "test-user" }, data: secondData });
+    const second = await handler({ auth: AUTH_USER, data: secondData });
     expect(second).toEqual({
       contractVersion: 1,
       requestId: secondData.requestId,
@@ -222,8 +258,8 @@ describe("createAuthorizeAiHandler", () => {
     const guard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 10, maxTrackedUids: 10 });
     const handler = createAuthorizeAiHandler(repository, () => FAKE_NOW, guard);
 
-    const first = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
-    const replay = await handler({ auth: { uid: "test-user" }, data: VALID_DATA });
+    const first = await handler({ auth: AUTH_USER, data: VALID_DATA });
+    const replay = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
     expect(replay).toEqual(first);
     expect(replay).toEqual({

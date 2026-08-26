@@ -19,12 +19,22 @@ export type CallableAuth = Readonly<{
 /**
  * Checks whether an authenticated caller is using an anonymous Firebase Auth session.
  *
+ * Fail-closed security design:
+ * In a real Firebase Callable runtime, authenticated callers always carry decoded token claims
+ * (`request.auth.token`). A caller object that carries `uid` but lacks token claims cannot prove
+ * a verified non-anonymous identity, so it fails closed as anonymous to prevent unverified
+ * callers from bypassing AI gateway controls, quota limits, and costs.
+ *
  * In Firebase ID tokens, anonymous authentication is indicated by
  * `token.firebase.sign_in_provider === "anonymous"` (or `token.provider_id === "anonymous"`).
  */
 export function isAnonymousUser(auth: CallableAuth | undefined): boolean {
-  if (!auth || !auth.token) {
+  if (!auth) {
     return false;
+  }
+  if (!auth.token) {
+    // Fail-closed: unverified token claims cannot bypass the anonymous gate.
+    return true;
   }
   const provider = auth.token.firebase?.sign_in_provider ?? auth.token.provider_id;
   return provider === "anonymous";

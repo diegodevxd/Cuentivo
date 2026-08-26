@@ -62,6 +62,9 @@ export const interpretAiRequest = onCall(
       provider,
       guard: aiEdgeGuard,
       now: () => Date.now(),
+      onRejected: (reason) => {
+        logger.warn("AI_REJECTED", { reason });
+      },
     })({
       auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
       data: request.data,
@@ -79,6 +82,9 @@ export const authorizeAiAction = onCall({ ...AI_BOUNDARY, concurrency: 1 }, asyn
     controlPlaneRepository(),
     () => Date.now(),
     aiEdgeGuard,
+    (reason) => {
+      logger.warn("AI_REJECTED", { reason });
+    },
   )({
     auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
     data: request.data,

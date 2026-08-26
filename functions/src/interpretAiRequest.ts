@@ -23,6 +23,7 @@ export type InterpretAiCallableDeps = Readonly<{
   provider: TextInterpretationProvider | null;
   guard: AiEdgeRequestGuard;
   now: () => number;
+  onRejected?: (reason: "ANONYMOUS_SESSION") => void;
 }>;
 
 const UNAVAILABLE = (requestId: string): InterpretAiResponse => ({
@@ -64,6 +65,7 @@ export function createInterpretAiHandler(
 
     // Anonymous sessions are rejected before any edge guard, control plane, quota or Gemini invocation.
     if (isAnonymousUser(request.auth)) {
+      deps.onRejected?.("ANONYMOUS_SESSION");
       return UNAVAILABLE(requestId);
     }
 
