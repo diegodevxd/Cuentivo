@@ -43,9 +43,11 @@ import com.cuentivo.app.ui.NeoShapes
 fun AccountSheet(
     tier: SubscriptionTier,
     accountLabel: String?,
-    onUpgrade: () -> Unit,
+    onUpgrade: (SubscriptionTier) -> Unit,
     /** Pro's price as Play formats it, or null while it has not loaded. */
     proPrice: String? = null,
+    /** AI's price as Play formats it, or null while it has not loaded. */
+    aiPrice: String? = null,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
     onDismiss: () -> Unit,
@@ -133,6 +135,7 @@ fun AccountSheet(
                 tier = tier,
                 onUpgrade = onUpgrade,
                 proPrice = proPrice,
+                aiPrice = aiPrice,
                 isAnonymous = isAnonymous,
                 customerCount = customerCount,
             )

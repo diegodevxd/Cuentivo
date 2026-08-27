@@ -94,6 +94,7 @@ import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.account.AccountSheet
+import com.cuentivo.app.ui.account.AiPaywallSheet
 import com.cuentivo.app.ui.account.LanguageSheet
 import com.cuentivo.app.ui.customer.CustomerDetailSheet
 import com.cuentivo.app.ui.customer.CustomerFilter
@@ -243,9 +244,11 @@ fun CuentivoApp(
     onOpenAlertCustomer: (String) -> Unit = {},
     blocked: AccessDecision.Blocked? = null,
     onDismissBlocked: () -> Unit = {},
-    onUpgrade: () -> Unit = {},
+    onUpgrade: (SubscriptionTier) -> Unit = {},
     /** Pro's price as Play formats it, or null while it has not loaded. */
     proPrice: String? = null,
+    /** AI's price as Play formats it, or null while it has not loaded. */
+    aiPrice: String? = null,
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
     /** Whether the current session is an anonymous guest session. */
@@ -291,6 +294,7 @@ fun CuentivoApp(
     // Debug-only, reversible AI lab: release builds resolve this to null and the entry disappears.
     val debugAiLabTransport = remember { debugAiTransport() }
     var showAiDebugLab by remember { mutableStateOf(false) }
+    var showAiPaywall by remember { mutableStateOf(false) }
     LaunchedEffect(message) {
         message?.let {
             snackbar.showSnackbar(it)
@@ -359,10 +363,14 @@ fun CuentivoApp(
         onOpenAccount = { showAccount = true },
         onOpenLanguage = { showLanguage = true },
         onOpenAlerts = { showAlerts = true },
-        onOpenAi = if (debugAiLabTransport != null && aiDailyChatRepository != null) {
-            { showAiDebugLab = true }
-        } else {
-            null
+        onOpenAi = {
+            if (tier == SubscriptionTier.AI) {
+                if (debugAiLabTransport != null && aiDailyChatRepository != null) {
+                    showAiDebugLab = true
+                }
+            } else {
+                showAiPaywall = true
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
         showBrandHeader = statementCustomer == null,
@@ -534,8 +542,12 @@ fun CuentivoApp(
         AccountSheet(
             tier = tier,
             accountLabel = accountLabel,
-            onUpgrade = { showAccount = false; onUpgrade() },
+            onUpgrade = { targetTier ->
+                showAccount = false
+                onUpgrade(targetTier)
+            },
             proPrice = proPrice,
+            aiPrice = aiPrice,
             onSignOut = onSignOut,
             onDeleteAccount = onDeleteAccount,
             onDismiss = { showAccount = false },
@@ -547,6 +559,17 @@ fun CuentivoApp(
             reminderHour = reminderHour,
             onReminderEnabledChange = onReminderEnabledChange,
             onReminderHourChange = onReminderHourChange,
+        )
+    }
+    if (showAiPaywall) {
+        AiPaywallSheet(
+            currentTier = tier,
+            onUpgrade = { targetTier ->
+                showAiPaywall = false
+                onUpgrade(targetTier)
+            },
+            onDismiss = { showAiPaywall = false },
+            aiPrice = aiPrice,
         )
     }
     if (showLanguage) {

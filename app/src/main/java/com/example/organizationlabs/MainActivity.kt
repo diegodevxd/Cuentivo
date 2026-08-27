@@ -1475,6 +1475,7 @@ class MainActivity : ComponentActivity() {
                         tier,
                         customerScores = customerScores,
                         proPrice = proPriceState.value,
+                        aiPrice = aiPriceState.value,
                         accountLabel = authenticationGateway.currentUserEmail,
                         isAnonymous = authenticationGateway.isAnonymous,
                         onSignUp = { showAccountLinking = true },
@@ -2339,12 +2340,12 @@ class MainActivity : ComponentActivity() {
                     if (businessId != null && row != null) {
                         lifecycleScope.launch { loadStatement(businessId, row) }
                     }
-                }, blocked = blocked, onDismissBlocked = { blocked = null }, onUpgrade = {
+                }, blocked = blocked, onDismissBlocked = { blocked = null }, onUpgrade = { targetTier ->
                     blocked = null
                     // The real Activity, not applicationContext: Play needs somewhere to put its
                     // sheet. The uid travels with it so the purchase is credited to whoever opened
                     // the flow, even if the session changes before Play calls back.
-                    billing.launchPurchase(this@MainActivity, currentUserId)
+                    billing.launchPurchase(this@MainActivity, currentUserId, targetTier)
                 }, onSignOut = {
                     authenticationGateway.signOut()
                     authenticationGateway.clearGoogleCredentialState { }

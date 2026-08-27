@@ -26,44 +26,45 @@ import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
 
 /**
- * The plan section: which plan this account is on, what it costs, and the one way to change it.
+ * The plan section: which plan this account is on, what each costs, and how to change it.
  *
  * There is no wrapper composable in this file on purpose. Cuenta is already a `ModalBottomSheet`
  * and this content is a section inside it — a second sheet would put a sheet on top of a sheet for
  * no gain. It lives in its own file so the copy has a single home, and so a capture can render it
- * directly: a `ModalBottomSheet` is its own window, and photographing the app's composition would
- * produce an image with no sheet in it at all.
+ * directly.
  *
- * It used to render a single card describing whichever plan you were already on, as a paragraph
- * followed by a bulleted list, with no price anywhere. Three problems in one: you could not see
- * what you were *not* on, the answer to "what does it cost" was behind a purchase sheet, and the
- * whole thing had to be read rather than glanced at. Now both plans are always on screen, the one
- * you have carries a badge, and the numbers that separate them are the headline instead of prose.
+ * Three plans are presented on screen: Gratis, Pro, and CuentivoAI. The one you have carries a badge,
+ * and the numbers and capabilities that separate them are the headline.
  *
- * Every limit is still read from [FeatureAccessManager] and every paid capability from
- * [PaidFeature], so a tightened free plan changes this section instead of going quietly out of
- * date.
+ * Every limit is read from [FeatureAccessManager] and every paid capability from [PaidFeature].
  *
  * This screen never claims a purchase happened: entitlement arrives from `BillingGateway` through
- * the usual path, and until it does the account is still on the plan shown here. There is
- * deliberately no restore control — no such callback exists.
+ * the usual path, and until it does the account is still on the plan shown here.
  */
 @Composable
 internal fun SubscriptionContent(
     tier: SubscriptionTier,
-    onUpgrade: () -> Unit,
+    onUpgrade: (SubscriptionTier) -> Unit,
     modifier: Modifier = Modifier,
     /**
      * Pro's price exactly as Play formats it, or null while it has not loaded. Never a hardcoded
      * figure: see the parameter of the same name on `BillingGateway`.
      */
     proPrice: String? = null,
+    /**
+     * AI's price exactly as Play formats it, or null while it has not loaded. Never a hardcoded
+     * figure: see the parameter of the same name on `BillingGateway`.
+     */
+    aiPrice: String? = null,
     /** Whether the current session is an anonymous guest session. */
     isAnonymous: Boolean = false,
     /** Customer count used to contextualise the Pro cloud-backup value proposition. */
     customerCount: Int = 0,
 ) {
     val free = tier == SubscriptionTier.FREE
+    val isPro = tier == SubscriptionTier.PRO
+    val isAi = tier == SubscriptionTier.AI
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
@@ -81,11 +82,9 @@ internal fun SubscriptionContent(
         PlanCard(
             name = stringResource(R.string.subscription_plan_pro),
             headline = stringResource(R.string.subscription_pro_limits),
-            // Null means Play has not answered yet, which is also the permanent state on a phone
-            // that cannot reach it. Pointing at Play beats printing a number nobody verified.
             price = proPrice?.let { stringResource(R.string.subscription_price_per_month, it) }
                 ?: stringResource(R.string.subscription_price_unknown),
-            isCurrent = !free,
+            isCurrent = isPro,
         ) {
             Text(
                 text = stringResource(
@@ -94,14 +93,51 @@ internal fun SubscriptionContent(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            // The feature list is the enum, not a paraphrase of it. A capability that stops being
-            // paid disappears from here by deleting one entry.
             PaidFeature.entries.forEach { feature -> FeatureLine(feature) }
+            if (free) {
+                Spacer(Modifier.width(NeoSpacing.xs))
+                NeoAction(
+                    label = stringResource(R.string.subscription_upgrade_action),
+                    onClick = { onUpgrade(SubscriptionTier.PRO) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
 
-        if (free) {
-            NeoAction(stringResource(R.string.subscription_upgrade_action), onUpgrade, Modifier.fillMaxWidth())
+        PlanCard(
+            name = stringResource(R.string.subscription_plan_ai),
+            headline = stringResource(R.string.subscription_ai_limits),
+            price = aiPrice?.let { stringResource(R.string.subscription_price_per_month, it) }
+                ?: stringResource(R.string.subscription_price_unknown),
+            isCurrent = isAi,
+        ) {
+            Text(
+                text = stringResource(
+                    if (isAi) R.string.subscription_ai_includes else R.string.subscription_ai_adds
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            BulletLine(stringResource(R.string.subscription_ai_feature_pro_all))
+            BulletLine(stringResource(R.string.subscription_ai_feature_execution))
+            BulletLine(stringResource(R.string.subscription_ai_feature_voice))
+            if (free) {
+                Spacer(Modifier.width(NeoSpacing.xs))
+                NeoAction(
+                    label = stringResource(R.string.subscription_upgrade_ai_action),
+                    onClick = { onUpgrade(SubscriptionTier.AI) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else if (isPro) {
+                Spacer(Modifier.width(NeoSpacing.xs))
+                NeoAction(
+                    label = stringResource(R.string.subscription_switch_to_ai_action),
+                    onClick = { onUpgrade(SubscriptionTier.AI) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
+
         val billingNote = if (isAnonymous) {
             if (customerCount > 0) {
                 stringResource(R.string.subscription_guest_pro_note_with_count, customerCount)
@@ -122,12 +158,8 @@ internal fun SubscriptionContent(
 }
 
 /**
- * One plan, readable at a glance: what it is called, the badge if it is yours, and the single fact
- * that distinguishes it from the other one.
- *
- * The plan you are on gets the accented border and the badge. The one you are not on stays quiet —
- * an outline that shouted on both cards would leave the eye with nothing to land on, which is the
- * state this screen was in before.
+ * One plan, readable at a glance: what it is called, the badge if it is yours, and the key facts
+ * that distinguish it.
  */
 @Composable
 private fun PlanCard(
@@ -168,9 +200,6 @@ private fun PlanCard(
                     CurrentPlanBadge()
                 }
             }
-            // The number is the headline, not a sentence containing the number. "5 clientes y 30
-            // ventas" beside "Clientes y ventas sin límite" is the entire comparison, and it is
-            // meant to be taken in without reading.
             Text(text = headline, style = MaterialTheme.typography.titleLarge)
             price?.let {
                 Text(
@@ -204,8 +233,12 @@ private fun CurrentPlanBadge() {
 
 @Composable
 private fun FeatureLine(feature: PaidFeature) {
+    BulletLine(feature.explanation)
+}
+
+@Composable
+private fun BulletLine(text: String) {
     Row(modifier = Modifier.fillMaxWidth()) {
-        // A bullet rather than a tick: nothing here is a claim about what has been unlocked.
         Text(
             text = "·",
             style = MaterialTheme.typography.labelMedium,
@@ -213,7 +246,7 @@ private fun FeatureLine(feature: PaidFeature) {
         )
         Spacer(Modifier.width(NeoSpacing.sm))
         Text(
-            text = feature.explanation,
+            text = text,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
