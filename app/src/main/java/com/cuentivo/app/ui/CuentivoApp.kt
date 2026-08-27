@@ -63,6 +63,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
+import com.cuentivo.app.ui.account.AiEntryPolicy
+import com.cuentivo.app.ui.account.AiEntryRoute
 import com.cuentivo.app.ai.AiPaymentConfirmationRequest
 import com.cuentivo.app.ai.AiPaymentExecutionResult
 import com.cuentivo.app.ai.AiPaymentPreviewResult
@@ -291,6 +293,8 @@ fun CuentivoApp(
     var saleCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     var paymentCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     val snackbar = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    val aiUnavailableInVersionMessage = stringResource(R.string.ai_feature_unavailable_in_version)
     // Debug-only, reversible AI lab: release builds resolve this to null and the entry disappears.
     val debugAiLabTransport = remember { debugAiTransport() }
     var showAiDebugLab by remember { mutableStateOf(false) }
@@ -364,12 +368,15 @@ fun CuentivoApp(
         onOpenLanguage = { showLanguage = true },
         onOpenAlerts = { showAlerts = true },
         onOpenAi = {
-            if (tier == SubscriptionTier.AI) {
-                if (debugAiLabTransport != null && aiDailyChatRepository != null) {
-                    showAiDebugLab = true
+            val hasTransport = debugAiLabTransport != null && aiDailyChatRepository != null
+            when (AiEntryPolicy.route(tier, hasTransport)) {
+                AiEntryRoute.Paywall -> showAiPaywall = true
+                AiEntryRoute.Assistant -> showAiDebugLab = true
+                AiEntryRoute.UnavailableInCurrentBuild -> {
+                    coroutineScope.launch {
+                        snackbar.showSnackbar(aiUnavailableInVersionMessage)
+                    }
                 }
-            } else {
-                showAiPaywall = true
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },

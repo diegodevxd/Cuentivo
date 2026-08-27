@@ -100,6 +100,7 @@ internal fun SubscriptionContent(
                     label = stringResource(R.string.subscription_upgrade_action),
                     onClick = { onUpgrade(SubscriptionTier.PRO) },
                     modifier = Modifier.fillMaxWidth(),
+                    enabled = proPrice != null,
                 )
             }
         }
@@ -127,6 +128,7 @@ internal fun SubscriptionContent(
                     label = stringResource(R.string.subscription_upgrade_ai_action),
                     onClick = { onUpgrade(SubscriptionTier.AI) },
                     modifier = Modifier.fillMaxWidth(),
+                    enabled = aiPrice != null,
                 )
             } else if (isPro) {
                 Spacer(Modifier.width(NeoSpacing.xs))
@@ -134,6 +136,7 @@ internal fun SubscriptionContent(
                     label = stringResource(R.string.subscription_switch_to_ai_action),
                     onClick = { onUpgrade(SubscriptionTier.AI) },
                     modifier = Modifier.fillMaxWidth(),
+                    enabled = aiPrice != null,
                 )
             }
         }

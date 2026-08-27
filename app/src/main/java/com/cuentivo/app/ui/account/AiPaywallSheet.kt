@@ -144,6 +144,7 @@ fun AiPaywallSheet(
                     onUpgrade(SubscriptionTier.AI)
                 },
                 modifier = Modifier.fillMaxWidth(),
+                enabled = aiPrice != null,
             )
 
             TextButton(

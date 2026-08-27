@@ -397,6 +397,7 @@
     <string name="ai_paywall_action_buy">Obtener CuentivoAI</string>
     <string name="ai_paywall_action_upgrade">Cambiar a CuentivoAI</string>
     <string name="ai_paywall_dismiss">Ahora no</string>
+    <string name="ai_feature_unavailable_in_version">CuentivoAI estará disponible para tu cuenta en una próxima actualización.</string>
     <string name="auth_sign_in_title">Iniciar sesión</string>
     <string name="auth_sign_up_title">Crear cuenta</string>
     <string name="auth_switch_to_sign_in">Ya tengo cuenta, iniciar sesión</string>

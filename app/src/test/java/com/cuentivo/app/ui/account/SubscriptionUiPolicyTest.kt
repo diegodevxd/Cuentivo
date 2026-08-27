@@ -4,6 +4,7 @@ import com.cuentivo.app.domain.AccessDecision
 import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.PaidFeature
 import com.cuentivo.app.domain.SubscriptionTier
+import com.cuentivo.app.ui.MainDestination
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -12,21 +13,36 @@ import org.junit.Test
 class SubscriptionUiPolicyTest {
 
     @Test
-    fun payment_registration_is_never_blocked_on_any_plan_or_limit() {
-        // Core invariant: recording payments/abonos must never be paywalled or blocked on any tier.
+    fun payment_registration_and_navigation_never_blocked_or_paywalled_on_any_plan() {
+        // Core invariant: recording payments/abonos must NEVER be paywalled, blocked, or intercepted under any tier.
         SubscriptionTier.entries.forEach { tier ->
-            assertEquals(AccessDecision.Allowed, FeatureAccessManager.canRegisterPayment())
+            // Access evaluation on the tier
+            val decision = PaymentNavigationPolicy.evaluatePaymentAccess(tier)
+            assertEquals(AccessDecision.Allowed, decision)
+
+            // Direct route destination
+            assertEquals(MainDestination.PAYMENTS, PaymentNavigationPolicy.resolveDestination())
+
+            // Never triggers or intercepts with paywall
+            assertFalse(PaymentNavigationPolicy.isPaymentPaywalled(tier))
         }
     }
 
     @Test
-    fun ai_entry_point_paywall_decision() {
-        // When user opens AI: FREE and PRO show the subscription paywall; AI tier enters directly.
-        fun shouldShowAiPaywall(tier: SubscriptionTier): Boolean = tier != SubscriptionTier.AI
+    fun ai_entry_policy_routes_correctly_for_all_tiers_and_transports() {
+        // FREE and PRO tiers must ALWAYS route to Paywall, regardless of whether a transport exists
+        assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.FREE, hasTransport = true))
+        assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.FREE, hasTransport = false))
 
-        assertTrue(shouldShowAiPaywall(SubscriptionTier.FREE))
-        assertTrue(shouldShowAiPaywall(SubscriptionTier.PRO))
-        assertFalse(shouldShowAiPaywall(SubscriptionTier.AI))
+        assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.PRO, hasTransport = true))
+        assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.PRO, hasTransport = false))
+
+        // AI tier routes to Assistant when transport is present (debug / T6)
+        assertEquals(AiEntryRoute.Assistant, AiEntryPolicy.route(SubscriptionTier.AI, hasTransport = true))
+
+        // AI tier routes to UnavailableInCurrentBuild when transport is null (release build prior to T6)
+        // ensuring no silent dead-click / wall for paying subscribers
+        assertEquals(AiEntryRoute.UnavailableInCurrentBuild, AiEntryPolicy.route(SubscriptionTier.AI, hasTransport = false))
     }
 
     @Test
