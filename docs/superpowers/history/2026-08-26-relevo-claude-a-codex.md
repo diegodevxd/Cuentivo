@@ -224,3 +224,69 @@ cuatro invariantes del diseño — un `purchaseToken` para un solo uid, idempote
 absoluto, falla cerrado si Play no responde, y vigencia contra el reloj del servidor. Toca dinero,
 backend y secretos: la auditoría no es opcional. Y verificar **ejecutando**, no leyendo el reporte:
 las 888 pruebas de T2 pasaban con un bug de cobro doble dentro.
+
+---
+
+## 8. Actualización — 2026-08-27
+
+**La sesión de Codex se perdió** (Diego cambió de cuenta). Esta sección existe para que la sesión
+nueva arranque sin reconstruir nada. La anterior era `gpt-5.6-sol`; la nueva es `gpt-5.6-terra` y no
+comparte memoria.
+
+**Aviso importante: los handles de terminal de Orca cambiaron con el reinicio.** Los de las
+secciones anteriores ya no sirven. Al día de hoy, **AGY es `term_a7febf7f-937a-4d7d-b5ab-4eae6a833eb1`**
+(titulada `powershell.exe`), identificado porque su preview reporta el commit `795ce24`. Si vuelven
+a cambiar: `orca terminal list --worktree active --json` y reconocer a AGY por lo que dice su
+preview, nunca por el título.
+
+### Lo que se cerró desde la sección 7
+
+- **T3 desplegada.** `verifyAiSubscription` está viva en `us-south1`, Node 22, 2ª gen, con el
+  secreto `CUENTIVOAI_PLAY_SERVICE_ACCOUNT_KEY` cargado en Secret Manager y con `secretAccessor`
+  concedido a la cuenta de cómputo. Deploy confirmado: *Successful update operation*.
+- **El deploy falló la primera vez** por una incoherencia real: `functions/package.json` declaraba
+  `google-auth-library@^9.15.1` y el lock resolvía `10.9.1`, así que `npm ci` de Cloud Build se
+  negaba. Arreglado en `795ce24` alineando a `^10.9.1`, que es la versión contra la que está escrito
+  el `GoogleAuth` de `playSubscriptionVerifier.ts`. **Lección: `npm test` no valida el lock; hay que
+  añadir `npm ci` limpio al gate de Functions**, o el fallo sólo aparece al desplegar.
+- **Prerrequisitos manuales de Diego, cerrados:** producto `cuentivo_ai_mensual` **ACTIVO** a
+  $299 MXN, plan base `mensual` de renovación automática; cuenta de servicio
+  `play-entitlement-verifier@organitazionlabs.iam.gserviceaccount.com` invitada en Play Console.
+
+### El hallazgo del 27 de agosto
+
+Diego creía que N5 estaba terminada y quiso probar comprando desde su teléfono. **No se podía, y no
+por el token de App Check.** Verificado en el código:
+
+- `MainActivity.kt:2347` es el **único** botón de compra y llama a `launchPurchase` **sin indicar
+  plan**, así que cae en `PRO_PRODUCT_ID` por omisión.
+- La carpeta `app/src/main/java/com/cuentivo/app/ui/` **no menciona `SubscriptionTier.AI` ni
+  `AI_PRODUCT_ID` en ninguna línea**.
+- `CuentivoApp.kt:362` esconde la entrada de CuentivoAI cuando el transporte es `null`.
+
+Es decir: **el producto se vende en Play y el backend sabe verificarlo, pero la app no tiene dónde
+venderlo.** Eso es T7.
+
+### Estado real de N5: 3 de 9
+
+Hechas **T1, T2, T3**. Pendientes **T4** (razones de rechazo), **T5** (flag remoto), **T6**
+(transporte de release), **T7** (UI del plan y muro, **en curso con AGY** desde hoy con el brief
+`docs/superpowers/briefs/2026-08-27-T7-ui-del-plan-y-muro.md`), **T8** y **T9**.
+
+**T3 sigue desplegada pero NO verificada de punta a punta.** Sin una compra real que la ejerza, la
+precisión que pidió la sesión anterior sigue vigente palabra por palabra.
+
+### El camino que desbloquea todo
+
+Build con T7 → subirlo a **prueba interna** de Play → instalarlo **desde Play Store** → comprar como
+license tester. Instalando desde Play, App Check atestigua por **Play Integrity** y desaparece el
+problema del token de depuración que se regenera en cada reinstalación. Esa misma compra verifica T3
+de punta a punta **y** genera el tráfico que hace falta para encender el enforcement de App Check
+(bloqueo B2). Tres cosas con una.
+
+### Sigue pendiente de Diego
+
+El **tópico de Pub/Sub** para las Real-time Developer Notifications. Sin él nada revoca cuando
+alguien cancela o pide reembolso. No bloquea la prueba de compra; sí la prueba cerrada. Recordar el
+permiso de **Publicador** sobre el tema para
+`google-play-developer-notifications@system.gserviceaccount.com`, o el tema se queda mudo.
