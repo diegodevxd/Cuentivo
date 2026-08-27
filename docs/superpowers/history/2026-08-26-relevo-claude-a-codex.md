@@ -290,3 +290,17 @@ El **tópico de Pub/Sub** para las Real-time Developer Notifications. Sin él na
 alguien cancela o pide reembolso. No bloquea la prueba de compra; sí la prueba cerrada. Recordar el
 permiso de **Publicador** sobre el tema para
 `google-play-developer-notifications@system.gserviceaccount.com`, o el tema se queda mudo.
+
+### Dos precisiones operativas sobre T7 (Codex, 2026-08-27)
+
+1. **"Precio desde Play" incluye el caso en que Play todavía no responde.** Mientras no lleguen los
+   precios, la UI muestra carga o error, o **deshabilita la compra**. Nunca un `"$299"` de respaldo
+   escrito en el código o en `strings.xml`. El brief decía "nunca hardcodeado" pero no decía qué
+   pintar mientras tanto, y ése es justo el hueco donde aparece un fallback.
+2. **T7 se adelanta a T6 a propósito.** Puede construir el muro y la compra, pero **CuentivoAI
+   seguirá sin transporte real en release hasta T6**. Esa separación debe seguir visible al auditar:
+   que la pantalla exista no significa que la función esté disponible en release.
+
+Criterios con los que Codex auditará T7, ejecutando: la regresión de abonos en FREE y en PRO, y que
+**cada precio mostrado provenga de `ProductDetails` / del callback de Billing**, no de recursos ni
+de constantes.
