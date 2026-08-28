@@ -73,6 +73,8 @@ import com.cuentivo.app.ai.AiSaleExecutionResult
 import com.cuentivo.app.ai.AiSalePreviewResult
 import com.cuentivo.app.ai.CreateSaleProposal
 import com.cuentivo.app.ai.RecordPaymentProposal
+import com.cuentivo.app.ai.AiAvailabilityGateway
+import com.cuentivo.app.ai.FirebaseAiAvailabilityGateway
 import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
@@ -270,6 +272,7 @@ fun CuentivoApp(
     openOverdueCustomers: Boolean = false,
     onOpenOverdueCustomersConsumed: () -> Unit = {},
     aiDailyChatRepository: AiDailyChatRepository? = null,
+    aiAvailabilityGateway: AiAvailabilityGateway = remember { FirebaseAiAvailabilityGateway() },
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal, choices: com.cuentivo.app.ai.AiSaleResolutionChoices) -> AiSalePreviewResult)? = null,
@@ -295,11 +298,28 @@ fun CuentivoApp(
     val snackbar = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val aiUnavailableInVersionMessage = stringResource(R.string.ai_feature_unavailable_in_version)
+    val aiDisabledMessage = stringResource(R.string.ai_debug_lab_disabled)
     // Transport for AI lab: release builds resolve to null until T6, where AiEntryPolicy routes
     // paying subscribers to an unavailable notice and non-subscribers to the paywall.
     val debugAiLabTransport = remember { debugAiTransport() }
     var showAiDebugLab by remember { mutableStateOf(false) }
     var showAiPaywall by remember { mutableStateOf(false) }
+    // In-memory per-session remote service availability flag. Never persisted to Room.
+    var isAiServiceAvailable by remember(tier) { mutableStateOf(true) }
+
+    LaunchedEffect(tier) {
+        // Query availability only when the user's subscription tier is AI.
+        // For FREE and PRO, entry unconditionally routes to the paywall, making remote checks wasteful.
+        if (tier == SubscriptionTier.AI) {
+            // Fail-open design (deliberate):
+            // If the network or callable fails, checkAvailability returns true so paid subscribers
+            // are not falsely locked out by transient connectivity blips.
+            // Server-side authorization remains authoritative and fails closed.
+            isAiServiceAvailable = aiAvailabilityGateway.checkAvailability()
+        } else {
+            isAiServiceAvailable = true
+        }
+    }
     LaunchedEffect(message) {
         message?.let {
             snackbar.showSnackbar(it)
@@ -370,12 +390,17 @@ fun CuentivoApp(
         onOpenAlerts = { showAlerts = true },
         onOpenAi = {
             val hasTransport = debugAiLabTransport != null && aiDailyChatRepository != null
-            when (AiEntryPolicy.route(tier, hasTransport)) {
+            when (AiEntryPolicy.route(tier, hasTransport, isAiServiceAvailable)) {
                 AiEntryRoute.Paywall -> showAiPaywall = true
                 AiEntryRoute.Assistant -> showAiDebugLab = true
                 AiEntryRoute.UnavailableInCurrentBuild -> {
                     coroutineScope.launch {
                         snackbar.showSnackbar(aiUnavailableInVersionMessage)
+                    }
+                }
+                AiEntryRoute.ServiceDisabled -> {
+                    coroutineScope.launch {
+                        snackbar.showSnackbar(aiDisabledMessage)
                     }
                 }
             }

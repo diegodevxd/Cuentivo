@@ -5,10 +5,11 @@ import { describe, expect, test } from "vitest";
 const SOURCE = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
 
 describe("regional callable gateway", () => {
-  test("exports interpretAiRequest, authorizeAiAction and verifyAiSubscription", async () => {
+  test("exports interpretAiRequest, authorizeAiAction, getAiAvailability and verifyAiSubscription", async () => {
     const module = await import("../src/index.js");
     expect(module.interpretAiRequest).toBeDefined();
     expect(module.authorizeAiAction).toBeDefined();
+    expect(module.getAiAvailability).toBeDefined();
     expect(module.verifyAiSubscription).toBeDefined();
   });
 

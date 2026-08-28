@@ -18,19 +18,23 @@ class SubscriptionUiPolicyTest {
 
     @Test
     fun ai_entry_policy_routes_correctly_for_all_tiers_and_transports() {
-        // FREE and PRO tiers must ALWAYS route to Paywall, regardless of whether a transport exists
-        assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.FREE, hasTransport = true))
-        assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.FREE, hasTransport = false))
+        // FREE and PRO tiers must ALWAYS route to Paywall, regardless of transport or service availability
+        for (transport in listOf(true, false)) {
+            for (available in listOf(true, false)) {
+                assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.FREE, transport, available))
+                assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.PRO, transport, available))
+            }
+        }
 
-        assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.PRO, hasTransport = true))
-        assertEquals(AiEntryRoute.Paywall, AiEntryPolicy.route(SubscriptionTier.PRO, hasTransport = false))
+        // AI tier without transport routes to UnavailableInCurrentBuild
+        assertEquals(AiEntryRoute.UnavailableInCurrentBuild, AiEntryPolicy.route(SubscriptionTier.AI, hasTransport = false, isServiceAvailable = true))
+        assertEquals(AiEntryRoute.UnavailableInCurrentBuild, AiEntryPolicy.route(SubscriptionTier.AI, hasTransport = false, isServiceAvailable = false))
 
-        // AI tier routes to Assistant when transport is present (debug / T6)
-        assertEquals(AiEntryRoute.Assistant, AiEntryPolicy.route(SubscriptionTier.AI, hasTransport = true))
+        // AI tier with transport and service enabled routes to Assistant
+        assertEquals(AiEntryRoute.Assistant, AiEntryPolicy.route(SubscriptionTier.AI, hasTransport = true, isServiceAvailable = true))
 
-        // AI tier routes to UnavailableInCurrentBuild when transport is null (release build prior to T6)
-        // ensuring no silent dead-click / wall for paying subscribers
-        assertEquals(AiEntryRoute.UnavailableInCurrentBuild, AiEntryPolicy.route(SubscriptionTier.AI, hasTransport = false))
+        // AI tier with transport but remote service disabled routes to ServiceDisabled (maintenance) - never Paywall
+        assertEquals(AiEntryRoute.ServiceDisabled, AiEntryPolicy.route(SubscriptionTier.AI, hasTransport = true, isServiceAvailable = false))
     }
 
     @Test

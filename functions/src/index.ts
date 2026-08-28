@@ -3,9 +3,10 @@ import * as logger from "firebase-functions/logger";
 import { defineSecret } from "firebase-functions/params";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { createInterpretAiHandler } from "./interpretAiRequest";
-import { createAuthorizeAiHandler } from "./authorizeAiAction";
-import { createVerifyAiSubscriptionHandler } from "./verifyAiSubscription";
+import { createInterpretAiHandler } from "./interpretAiRequest.js";
+import { createAuthorizeAiHandler } from "./authorizeAiAction.js";
+import { createVerifyAiSubscriptionHandler } from "./verifyAiSubscription.js";
+import { createGetAiAvailabilityHandler } from "./getAiAvailability.js";
 import { createAiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import { createFirestoreControlPlaneRepository } from "./ai/firestoreControlPlane";
 import { createGeminiTextProvider } from "./ai/geminiTextProvider";
@@ -104,6 +105,22 @@ export const authorizeAiAction = onCall({ ...AI_BOUNDARY, concurrency: 1 }, asyn
   });
   if ("code" in result) {
     throw new HttpsError(result.code, "Request rejected");
+  }
+  return result;
+});
+
+export const getAiAvailability = onCall({ ...AI_BOUNDARY, concurrency: 1 }, async (request) => {
+  const result = await createGetAiAvailabilityHandler({
+    getAvailability: () => controlPlaneRepository().getAvailability(),
+    onRejected: (reason) => {
+      logger.warn("AI_AVAILABILITY_REJECTED", { reason });
+    },
+  })({
+    auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
+    data: request.data,
+  });
+  if ("code" in result) {
+    throw new HttpsError(result.code, "Authentication required");
   }
   return result;
 });

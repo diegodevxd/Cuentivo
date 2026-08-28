@@ -4,6 +4,7 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createFirestoreControlPlaneRepository } from "../src/ai/firestoreControlPlane.js";
 import { createInterpretAiHandler } from "../src/interpretAiRequest.js";
+import { createGetAiAvailabilityHandler } from "../src/getAiAvailability.js";
 import { createAiEdgeRequestGuard } from "../src/ai/edgeRequestGuard.js";
 import {
   createFirestoreSubscriptionEntitlementRepository,
@@ -395,5 +396,59 @@ describe("firestore emulator concurrency gate", () => {
       status: "AI_UNAVAILABLE",
       proposal: null,
     });
+  });
+
+  test("getAiAvailability against firestore control plane is strictly read only and reflects configuration", async () => {
+    const repository = createFirestoreControlPlaneRepository(firestore);
+    const handler = createGetAiAvailabilityHandler({
+      getAvailability: () => repository.getAvailability(),
+    });
+
+    // 1. When aiControl/global is enabled
+    await firestore.doc("aiControl/global").set({
+      enabled: true,
+      geminiEnabled: true,
+      monthlyActionLimit: 10,
+      perMinuteLimit: 10,
+    });
+    const enabledResult = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "password" } } },
+    });
+    expect(enabledResult).toEqual({ available: true });
+
+    // 2. When aiControl/global is disabled
+    await firestore.doc("aiControl/global").set({
+      enabled: false,
+      geminiEnabled: true,
+      monthlyActionLimit: 10,
+      perMinuteLimit: 10,
+    });
+    const disabledResult = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "password" } } },
+    });
+    expect(disabledResult).toEqual({ available: false });
+
+    // 3. When aiControl/global is deleted/missing
+    await firestore.doc("aiControl/global").delete();
+    const missingResult = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "password" } } },
+    });
+    expect(missingResult).toEqual({ available: false });
+
+    // 4. Unauthenticated and anonymous callers are rejected
+    const unauthResult = await handler({ auth: undefined });
+    expect(unauthResult).toEqual({ code: "unauthenticated" });
+
+    const anonResult = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "anonymous" } } },
+    });
+    expect(anonResult).toEqual({ code: "unauthenticated" });
+
+    // 5. Verify zero quota consumption: no usage or rate window documents created
+    const usageDoc = await firestore.doc(`aiUsage/${RUN_UID}_${monthKey(NOW)}`).get();
+    expect(usageDoc.exists).toBe(false);
+
+    const rateDoc = await firestore.doc(`aiRateWindows/${RUN_UID}_${minuteKey(NOW)}`).get();
+    expect(rateDoc.exists).toBe(false);
   });
 });

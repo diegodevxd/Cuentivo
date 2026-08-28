@@ -4,10 +4,11 @@ import {
   isControlAllowed,
   isEntitlementValid,
   type AiAuthorizationDecision,
+  type AiControlConfig,
   type AiProviderId,
   type AuthorizeAiInput,
   type AuthorizeAiResult,
-} from "./controlPlane";
+} from "./controlPlane.js";
 
 export interface AiControlPlaneRepository {
   authorize(input: AuthorizeAiInput): Promise<AuthorizeAiResult>;
@@ -16,6 +17,7 @@ export interface AiControlPlaneRepository {
     requestId: string;
     nowEpochMillis: number;
   }>): Promise<"CLAIMED" | "ALREADY_CLAIMED">;
+  getAvailability(): Promise<{ available: boolean }>;
 }
 
 /** Minimal transaction surface so the transactional logic is testable without a Firestore emulator. */
@@ -311,6 +313,18 @@ export function createFirestoreControlPlaneRepository(
           return claimProviderInvocationInTransaction(bridge, input);
         })
         .catch(() => "ALREADY_CLAIMED");
+    },
+    async getAvailability(): Promise<{ available: boolean }> {
+      try {
+        const snap = await firestore.doc(CONFIG_PATH).get();
+        if (!snap.exists) {
+          return { available: false };
+        }
+        const data = snap.data() as AiControlConfig | undefined;
+        return { available: isControlAllowed(data ?? null) };
+      } catch {
+        return { available: false };
+      }
     },
   };
 }
