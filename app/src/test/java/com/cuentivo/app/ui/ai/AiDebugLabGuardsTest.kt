@@ -294,11 +294,18 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `release transport provides the shared API and isolates debug App Check and microphone permission`() {
-        val release = File("src/release/java/com/cuentivo/app/ui/ai/AiDebugTransportRelease.kt")
-        assertTrue("release transport must exist", release.exists())
-        val source = release.readText()
-        assertTrue("release transport must implement the shared API", source.contains("AiDebugTransport"))
+    fun `release app check provider positively installs PlayIntegrityAppCheckProviderFactory`() {
+        val releaseAppCheck = File("src/release/java/com/cuentivo/app/sync/AppCheckProvider.kt")
+        assertTrue("release AppCheckProvider.kt must exist", releaseAppCheck.exists())
+        val source = releaseAppCheck.readText()
+        assertTrue(
+            "release AppCheckProvider must positively install PlayIntegrityAppCheckProviderFactory",
+            source.contains("PlayIntegrityAppCheckProviderFactory.getInstance()"),
+        )
+        assertFalse(
+            "release AppCheckProvider must not use DebugAppCheckProviderFactory",
+            source.contains("DebugAppCheckProviderFactory"),
+        )
 
         // Debug App Check provider must never be referenced in release sources
         val releaseSources = File("src/release/java")
@@ -312,23 +319,73 @@ class AiDebugLabGuardsTest {
                 src.contains("DebugAppCheckProvider") || src.contains("debugAppCheck"),
             )
         }
+    }
 
-        // RECORD_AUDIO must only exist in debug manifest, never in main or release manifests
+    @Test
+    fun `microphone permission is strictly declared only in debug manifest`() {
+        val debugManifest = File("src/debug/AndroidManifest.xml")
+        assertTrue(
+            "debug manifest must exist and declare RECORD_AUDIO",
+            debugManifest.exists() && debugManifest.readText().contains("RECORD_AUDIO"),
+        )
+
         val mainManifest = File("src/main/AndroidManifest.xml")
         if (mainManifest.exists()) {
             assertFalse("main manifest must not declare RECORD_AUDIO", mainManifest.readText().contains("RECORD_AUDIO"))
         }
-        val debugManifest = File("src/debug/AndroidManifest.xml")
-        assertTrue("debug manifest must exist and declare RECORD_AUDIO", debugManifest.exists() && debugManifest.readText().contains("RECORD_AUDIO"))
+
+        val releaseManifest = File("src/release/AndroidManifest.xml")
+        if (releaseManifest.exists()) {
+            assertFalse("release manifest must not declare RECORD_AUDIO", releaseManifest.readText().contains("RECORD_AUDIO"))
+        }
     }
 
     @Test
-    fun `debug transport delegates to the callable gateway transport`() {
-        val debug = File("src/debug/java/com/cuentivo/app/ui/ai/AiDebugTransportDebug.kt")
-        assertTrue("debug transport must exist", debug.exists())
-        val source = debug.readText()
-        assertTrue("debug transport must use the shared transport implementation", source.contains("AiDebugFirebaseTransport"))
-        assertTrue("debug transport must implement the shared API", source.contains("AiDebugTransport"))
+    fun `ai transport factories in debug and release return AiDebugFirebaseTransport`() {
+        val debugFile = File("src/debug/java/com/cuentivo/app/ui/ai/AiDebugTransportDebug.kt")
+        assertTrue("debug AiDebugTransportDebug.kt must exist", debugFile.exists())
+        val debugSource = debugFile.readText()
+        assertTrue(
+            "debugAiTransport() in debug source set must return AiDebugFirebaseTransport",
+            debugSource.contains("debugAiTransport(): AiDebugTransport = AiDebugFirebaseTransport()"),
+        )
+
+        val releaseFile = File("src/release/java/com/cuentivo/app/ui/ai/AiDebugTransportRelease.kt")
+        assertTrue("release AiDebugTransportRelease.kt must exist", releaseFile.exists())
+        val releaseSource = releaseFile.readText()
+        assertTrue(
+            "debugAiTransport() in release source set must return AiDebugFirebaseTransport",
+            releaseSource.contains("debugAiTransport(): AiDebugTransport = AiDebugFirebaseTransport()"),
+        )
+        assertFalse(
+            "debugAiTransport() in release must not return unavailable stub or null",
+            releaseSource.contains("AiDebugUnavailableTransport") ||
+                releaseSource.contains("debugAiTransport(): AiDebugTransport? = null") ||
+                releaseSource.contains("debugAiTransport(): AiDebugTransport = null"),
+        )
+    }
+
+    @Test
+    fun `subscription verification factories in debug and release return FirebaseCallableSubscriptionVerificationGateway`() {
+        val debugFile = File("src/debug/java/com/cuentivo/app/billing/SubscriptionVerificationTransportDebug.kt")
+        assertTrue("debug SubscriptionVerificationTransportDebug.kt must exist", debugFile.exists())
+        val debugSource = debugFile.readText()
+        assertTrue(
+            "subscriptionVerificationGateway() in debug must return FirebaseCallableSubscriptionVerificationGateway",
+            debugSource.contains("FirebaseCallableSubscriptionVerificationGateway()"),
+        )
+
+        val releaseFile = File("src/release/java/com/cuentivo/app/billing/SubscriptionVerificationTransportRelease.kt")
+        assertTrue("release SubscriptionVerificationTransportRelease.kt must exist", releaseFile.exists())
+        val releaseSource = releaseFile.readText()
+        assertTrue(
+            "subscriptionVerificationGateway() in release must return FirebaseCallableSubscriptionVerificationGateway",
+            releaseSource.contains("FirebaseCallableSubscriptionVerificationGateway()"),
+        )
+        assertFalse(
+            "subscriptionVerificationGateway() in release must not return NoOp or stub gateway",
+            releaseSource.contains("NoOpSubscriptionVerificationGateway"),
+        )
     }
 
     @Test
