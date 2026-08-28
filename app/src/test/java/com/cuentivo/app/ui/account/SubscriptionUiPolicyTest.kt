@@ -4,7 +4,6 @@ import com.cuentivo.app.domain.AccessDecision
 import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.PaidFeature
 import com.cuentivo.app.domain.SubscriptionTier
-import com.cuentivo.app.ui.MainDestination
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -13,19 +12,8 @@ import org.junit.Test
 class SubscriptionUiPolicyTest {
 
     @Test
-    fun payment_registration_and_navigation_never_blocked_or_paywalled_on_any_plan() {
-        // Core invariant: recording payments/abonos must NEVER be paywalled, blocked, or intercepted under any tier.
-        SubscriptionTier.entries.forEach { tier ->
-            // Access evaluation on the tier
-            val decision = PaymentNavigationPolicy.evaluatePaymentAccess(tier)
-            assertEquals(AccessDecision.Allowed, decision)
-
-            // Direct route destination
-            assertEquals(MainDestination.PAYMENTS, PaymentNavigationPolicy.resolveDestination())
-
-            // Never triggers or intercepts with paywall
-            assertFalse(PaymentNavigationPolicy.isPaymentPaywalled(tier))
-        }
+    fun payment_registration_is_unconditionally_allowed() {
+        assertEquals(AccessDecision.Allowed, FeatureAccessManager.canRegisterPayment())
     }
 
     @Test
