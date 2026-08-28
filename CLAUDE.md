@@ -53,6 +53,19 @@ Los tests de `androidTest/` **requieren emulador o dispositivo conectado**: no h
 
 No hay CI. Nada valida el código salvo lo que ejecutes localmente.
 
+### Automatizaciones del repo (`.claude/`)
+
+Como no hay CI, algunas reglas de este archivo están además mecanizadas. **En Claude Code corren
+solas; en otros agentes son sólo documentación, así que ahí hay que aplicarlas a mano.**
+
+| Archivo | Qué hace |
+|---|---|
+| `.claude/skills/gate/SKILL.md` | El gate de evidencia completo, con la receta de entorno que no está en ningún otro lado: cómo levantar el emulador de Firestore sin `firebase` ni `java` en el PATH. Se invoca con `/gate`. |
+| `.claude/hooks/strings-parity.sh` | Al editar `strings.xml`, avisa qué claves quedaron sin contraparte ES/EN. Contar totales no basta: dos archivos empatan y tienen claves distintas. |
+| `.claude/hooks/guard-secrets.sh` | **Bloquea** volcar el contenido de `keystore.properties`, `*.jks`, `google-services.json` o claves de cuenta de servicio. Comprobar que existen (`ls`, `test -f`) sigue permitido. |
+| `.claude/hooks/guard-money-type.sh` | Avisa si aparece `Double`/`Float` en una línea con vocabulario de dinero. Regla 1: un decimal ahí compila limpio y se publica. |
+| `.claude/agents/test-honesty-reviewer.md` | Revisa si una prueba ejercita producción o sólo una copia de la regla. Las cinco formas que ya tomó ese defecto aquí están enumeradas dentro. |
+
 ### Emulador
 
 SDK en `C:\Users\pibed\AppData\Local\Android\Sdk`, `adb` en `$SDK/platform-tools/`. Hay un AVD, `Medium_Phone`, **API 37** — es la única imagen instalada, por eso nada por debajo de API 33 se ha probado nunca. Para `adb pull` desde Git Bash hace falta `MSYS_NO_PATHCONV=1` y rutas de Windows, o falla.
