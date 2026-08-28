@@ -73,8 +73,13 @@ import com.cuentivo.app.ai.AiSaleExecutionResult
 import com.cuentivo.app.ai.AiSalePreviewResult
 import com.cuentivo.app.ai.CreateSaleProposal
 import com.cuentivo.app.ai.RecordPaymentProposal
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.cuentivo.app.ai.AiAvailabilityGateway
-import com.cuentivo.app.ai.FirebaseAiAvailabilityGateway
+import com.cuentivo.app.ai.AiAvailabilityPolicy
 import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
@@ -272,7 +277,7 @@ fun CuentivoApp(
     openOverdueCustomers: Boolean = false,
     onOpenOverdueCustomersConsumed: () -> Unit = {},
     aiDailyChatRepository: AiDailyChatRepository? = null,
-    aiAvailabilityGateway: AiAvailabilityGateway = remember { FirebaseAiAvailabilityGateway() },
+    aiAvailabilityGateway: AiAvailabilityGateway? = null,
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal, choices: com.cuentivo.app.ai.AiSaleResolutionChoices) -> AiSalePreviewResult)? = null,
@@ -304,20 +309,42 @@ fun CuentivoApp(
     val debugAiLabTransport = remember { debugAiTransport() }
     var showAiDebugLab by remember { mutableStateOf(false) }
     var showAiPaywall by remember { mutableStateOf(false) }
-    // In-memory per-session remote service availability flag. Never persisted to Room.
+    // In-memory per-session remote service availability flag and TTL cache. Never persisted to Room.
     var isAiServiceAvailable by remember(tier) { mutableStateOf(true) }
+    var lastAvailabilityFetchEpochMillis by remember(tier) { mutableLongStateOf(0L) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val refreshAiAvailability: () -> Unit = {
+        val gateway = aiAvailabilityGateway
+        val isAiTier = tier == SubscriptionTier.AI
+        val now = System.currentTimeMillis()
+        if (gateway != null && AiAvailabilityPolicy.shouldRefresh(isAiTier, lastAvailabilityFetchEpochMillis, now)) {
+            coroutineScope.launch {
+                val result = gateway.checkAvailability()
+                isAiServiceAvailable = AiAvailabilityPolicy.resolve(isAiServiceAvailable, result)
+                lastAvailabilityFetchEpochMillis = System.currentTimeMillis()
+            }
+        }
+    }
 
     LaunchedEffect(tier) {
-        // Query availability only when the user's subscription tier is AI.
-        // For FREE and PRO, entry unconditionally routes to the paywall, making remote checks wasteful.
         if (tier == SubscriptionTier.AI) {
-            // Fail-open design (deliberate):
-            // If the network or callable fails, checkAvailability returns true so paid subscribers
-            // are not falsely locked out by transient connectivity blips.
-            // Server-side authorization remains authoritative and fails closed.
-            isAiServiceAvailable = aiAvailabilityGateway.checkAvailability()
+            refreshAiAvailability()
         } else {
             isAiServiceAvailable = true
+            lastAvailabilityFetchEpochMillis = 0L
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, tier) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshAiAvailability()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
     LaunchedEffect(message) {

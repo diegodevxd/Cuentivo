@@ -373,6 +373,7 @@ class MainActivity : ComponentActivity() {
         val authenticationGateway = FirebaseAuthenticationGateway()
         val creditLimitSuggestionStore = CreditLimitSuggestionStore(applicationContext)
         val subscriptionVerifier = com.cuentivo.app.billing.subscriptionVerificationGateway()
+        val aiAvailabilityGateway = com.cuentivo.app.ai.FirebaseAiAvailabilityGateway()
         val billing = BillingGateway(
             context = applicationContext,
             onPriceLoaded = { productId, formatted ->
@@ -1488,6 +1489,7 @@ class MainActivity : ComponentActivity() {
                     isSavingProduct = isSavingProduct,
                     productSavedToken = productSavedToken,
                     aiDailyChatRepository = aiDailyChatRepository,
+                    aiAvailabilityGateway = aiAvailabilityGateway,
                     paymentPreviewResolver = aiPaymentPreviewResolver::resolve,
                     confirmPayment = { request ->
                         val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
