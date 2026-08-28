@@ -79,6 +79,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.cuentivo.app.ai.AiAvailabilityGateway
+import com.cuentivo.app.ai.AiAvailabilityCoordinator
 import com.cuentivo.app.ai.AiAvailabilityPolicy
 import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.data.local.CustomerBalanceRow
@@ -309,22 +310,18 @@ fun CuentivoApp(
     val debugAiLabTransport = remember { debugAiTransport() }
     var showAiDebugLab by remember { mutableStateOf(false) }
     var showAiPaywall by remember { mutableStateOf(false) }
-    // In-memory per-session remote service availability flag and TTL cache. Never persisted to Room.
-    var isAiServiceAvailable by remember(tier) { mutableStateOf(true) }
-    var lastAvailabilityFetchEpochMillis by remember(tier) { mutableLongStateOf(0L) }
+    val coordinator = remember(aiAvailabilityGateway) {
+        aiAvailabilityGateway?.let { AiAvailabilityCoordinator(it) }
+    }
+    // In-memory per-session remote service availability flag. Never persisted to Room.
+    var isAiServiceAvailable by remember(tier) { mutableStateOf(coordinator?.isAvailable ?: true) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val refreshAiAvailability: () -> Unit = {
-        val gateway = aiAvailabilityGateway
-        val isAiTier = tier == SubscriptionTier.AI
-        val now = System.currentTimeMillis()
-        if (gateway != null && AiAvailabilityPolicy.shouldRefresh(isAiTier, lastAvailabilityFetchEpochMillis, now)) {
-            // Mark timestamp immediately before launching to deduplicate concurrent triggers
-            // (e.g. LaunchedEffect on entry and Lifecycle ON_RESUME event replay)
-            lastAvailabilityFetchEpochMillis = now
+        if (coordinator != null) {
+            val isAiTier = tier == SubscriptionTier.AI
             coroutineScope.launch {
-                val result = gateway.checkAvailability()
-                isAiServiceAvailable = AiAvailabilityPolicy.resolve(isAiServiceAvailable, result)
+                isAiServiceAvailable = coordinator.refresh(isAiTier)
             }
         }
     }
@@ -333,8 +330,8 @@ fun CuentivoApp(
         if (tier == SubscriptionTier.AI) {
             refreshAiAvailability()
         } else {
+            coordinator?.reset()
             isAiServiceAvailable = true
-            lastAvailabilityFetchEpochMillis = 0L
         }
     }
 

@@ -9,6 +9,18 @@ import org.junit.Test
 
 class FirebaseAiAvailabilityGatewayTest {
 
+    private class CountingAiAvailabilityGateway(
+        var response: Boolean? = true,
+    ) : AiAvailabilityGateway {
+        var callCount = 0
+            private set
+
+        override suspend fun checkAvailability(): Boolean? {
+            callCount++
+            return response
+        }
+    }
+
     @Test
     fun `available true in response parses to true`() {
         val response = mapOf("available" to true)
@@ -102,25 +114,84 @@ class FirebaseAiAvailabilityGatewayTest {
         assertFalse(AiAvailabilityPolicy.resolve(current = false, fetched = false))
     }
 
+    // ---- Coordinator orchestrator tests ----
+
     @Test
-    fun `two successive triggers before response arrives produce exactly one query`() {
-        var queryCount = 0
-        var lastFetchEpochMillis = 0L
-        val isAiTier = true
-        val now = 1_000_000L
+    fun `coordinator deduplicates successive triggers at startup and queries gateway exactly once`() = runBlocking {
+        val fakeGateway = CountingAiAvailabilityGateway(response = true)
+        val currentTime = 1_000_000L
+        val coordinator = AiAvailabilityCoordinator(
+            gateway = fakeGateway,
+            timeProvider = { currentTime },
+        )
 
-        // Trigger 1 (e.g. LaunchedEffect on composition)
-        if (AiAvailabilityPolicy.shouldRefresh(isAiTier, lastFetchEpochMillis, now)) {
-            lastFetchEpochMillis = now
-            queryCount++
-        }
+        // First trigger (LaunchedEffect on composition entry)
+        val firstResult = coordinator.refresh(isAiTier = true)
 
-        // Trigger 2 (e.g. Lifecycle ON_RESUME event replay at startup)
-        if (AiAvailabilityPolicy.shouldRefresh(isAiTier, lastFetchEpochMillis, now)) {
-            lastFetchEpochMillis = now
-            queryCount++
-        }
+        // Second trigger (Lifecycle ON_RESUME event replay at startup)
+        val secondResult = coordinator.refresh(isAiTier = true)
 
-        assertEquals("Two successive triggers without waiting for response must produce only one query", 1, queryCount)
+        assertEquals("First call must succeed", true, firstResult)
+        assertEquals("Second call must succeed without re-fetching", true, secondResult)
+        assertEquals("Gateway must be called exactly once across successive triggers", 1, fakeGateway.callCount)
+    }
+
+    @Test
+    fun `coordinator respects TTL and only refreshes when expired`() = runBlocking {
+        val fakeGateway = CountingAiAvailabilityGateway(response = true)
+        var currentTime = 1_000_000L
+        val coordinator = AiAvailabilityCoordinator(
+            gateway = fakeGateway,
+            timeProvider = { currentTime },
+        )
+
+        coordinator.refresh(isAiTier = true)
+        assertEquals(1, fakeGateway.callCount)
+
+        // 1 minute later (TTL not expired)
+        currentTime += 60_000L
+        coordinator.refresh(isAiTier = true)
+        assertEquals("Must not query gateway when TTL is active", 1, fakeGateway.callCount)
+
+        // 5 minutes later (TTL expired)
+        currentTime += AI_AVAILABILITY_CACHE_TTL_MILLIS
+        coordinator.refresh(isAiTier = true)
+        assertEquals("Must query gateway when TTL expires", 2, fakeGateway.callCount)
+    }
+
+    @Test
+    fun `coordinator ignores non-AI tiers`() = runBlocking {
+        val fakeGateway = CountingAiAvailabilityGateway(response = true)
+        val coordinator = AiAvailabilityCoordinator(gateway = fakeGateway)
+
+        coordinator.refresh(isAiTier = false)
+
+        assertEquals(0, fakeGateway.callCount)
+        assertTrue(coordinator.isAvailable)
+    }
+
+    @Test
+    fun `coordinator preserves true on network failure and does not close entrance`() = runBlocking {
+        val failingGateway = CountingAiAvailabilityGateway(response = null)
+        val coordinator = AiAvailabilityCoordinator(gateway = failingGateway)
+
+        val result = coordinator.refresh(isAiTier = true)
+
+        assertEquals("Gateway must have been invoked", 1, failingGateway.callCount)
+        assertTrue("Failed refresh must preserve open state (true)", result)
+        assertTrue("Coordinator property must remain true", coordinator.isAvailable)
+    }
+
+    @Test
+    fun `coordinator reset restores initial state`() = runBlocking {
+        val fakeGateway = CountingAiAvailabilityGateway(response = false)
+        val coordinator = AiAvailabilityCoordinator(gateway = fakeGateway)
+
+        coordinator.refresh(isAiTier = true)
+        assertFalse(coordinator.isAvailable)
+
+        coordinator.reset()
+        assertTrue(coordinator.isAvailable)
+        assertEquals(0L, coordinator.lastFetchEpochMillis)
     }
 }
