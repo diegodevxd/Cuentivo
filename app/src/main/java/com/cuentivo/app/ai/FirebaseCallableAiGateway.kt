@@ -6,10 +6,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Debug-only callable transport to the `us-south1` `interpretAiRequest` gateway (v2 typed
- * proposal contract). Not wired to any UI, ViewModel, Room or productive provider; it performs
- * no execution, no financial mutation and exposes no error messages, ids, balances or raw text.
- * The v1 non-text transport is intentionally gone: the remote deployed v1 endpoint is untouched.
+ * Regional callable transport to the `us-south1` `interpretAiRequest` gateway (v2 typed
+ * proposal contract). Not wired to any ViewModel, Room or productive financial mutator; it
+ * performs no execution and exposes no error messages, ids, balances or raw text.
  */
 
 private const val CALLABLE_NAME = "interpretAiRequest"
@@ -29,7 +28,7 @@ internal fun buildCallablePayload2(request: AiInterpretRequest): Map<String, Any
 )
 
 /**
- * Debug-only transport that calls the regional callable with the exact v2 payload and strictly
+ * Transport that calls the regional callable with the exact v2 payload and strictly
  * parses the v2 response. Suspension uses the existing approved Tasks bridge only; every failure
  * (call error, timeout, unexpected shape, malformed data) collapses to
  * [CallableAiProposalResult.Unavailable] without logs.

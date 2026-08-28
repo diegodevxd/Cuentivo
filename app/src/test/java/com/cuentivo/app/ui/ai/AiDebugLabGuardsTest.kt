@@ -294,20 +294,40 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `release transport provides the same API without Firebase`() {
+    fun `release transport provides the shared API and isolates debug App Check and microphone permission`() {
         val release = File("src/release/java/com/cuentivo/app/ui/ai/AiDebugTransportRelease.kt")
         assertTrue("release transport must exist", release.exists())
         val source = release.readText()
-        assertFalse("release transport must not reference Firebase", source.contains("Firebase"))
         assertTrue("release transport must implement the shared API", source.contains("AiDebugTransport"))
+
+        // Debug App Check provider must never be referenced in release sources
+        val releaseSources = File("src/release/java")
+            .walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .map { it.readText() }
+            .toList()
+        for (src in releaseSources) {
+            assertFalse(
+                "release source must not reference DebugAppCheckProvider",
+                src.contains("DebugAppCheckProvider") || src.contains("debugAppCheck"),
+            )
+        }
+
+        // RECORD_AUDIO must only exist in debug manifest, never in main or release manifests
+        val mainManifest = File("src/main/AndroidManifest.xml")
+        if (mainManifest.exists()) {
+            assertFalse("main manifest must not declare RECORD_AUDIO", mainManifest.readText().contains("RECORD_AUDIO"))
+        }
+        val debugManifest = File("src/debug/AndroidManifest.xml")
+        assertTrue("debug manifest must exist and declare RECORD_AUDIO", debugManifest.exists() && debugManifest.readText().contains("RECORD_AUDIO"))
     }
 
     @Test
-    fun `debug transport delegates to the debug only gateway`() {
+    fun `debug transport delegates to the callable gateway transport`() {
         val debug = File("src/debug/java/com/cuentivo/app/ui/ai/AiDebugTransportDebug.kt")
         assertTrue("debug transport must exist", debug.exists())
         val source = debug.readText()
-        assertTrue("debug transport must use the debug gateway", source.contains("FirebaseCallableAiGateway"))
+        assertTrue("debug transport must use the shared transport implementation", source.contains("AiDebugFirebaseTransport"))
         assertTrue("debug transport must implement the shared API", source.contains("AiDebugTransport"))
     }
 
