@@ -11,8 +11,9 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-26, tras subir el AAB de la v32 a Play y retomar el foco en cerrar
-el núcleo de CuentivoAI (N5) rumbo al **segundo AAB**.
+**Última actualización:** 2026-08-27, con **N5 en 8 de 9**: sólo falta T9 (gate final con
+`--rerun-tasks`, prueba física en el A059P y AAB firmado a **prueba cerrada**, nunca directo a
+producción).
 
 ---
 
@@ -179,14 +180,30 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
   revoca el tier AI server-side, por lo que beta y AAB CuentivoAI continúan bloqueados.
 - **El entitlement AI actual fue creado manualmente para el usuario de prueba.** Billing/Play aún
   no concede ni revoca el tier CuentivoAI de forma server-side.
-- **N5 en marcha: T1 y T2 cerradas con evidencia** (2026-08-26). T1 = tercer plan en el dominio con
-  `rank` e `includesProBenefits` declarados. T2 = billing de dos productos, cambio de plan como
-  reemplazo con token previo y prorrateo decidido, `obfuscatedAccountId` SHA-256 y captura del
-  `purchaseToken` lista para T3. **Dos auditorias de Sol fueron necesarias**: la segunda encontro que
-  `launchPurchase` construia el flujo desde una cache que podia estar vacia, lo que abria una compra
-  limpia de AI encima de un Pro activo. Resuelto con `PurchaseLaunchPolicy`, decision pura que exige
-  consulta fresca de Play atada al uid y bloquea por ocho motivos explicitos. **899 pruebas JVM en
-  101 clases, 0 fallos.** Sigue T3.
+- **N5 va en 8 de 9 (2026-08-27). Cerradas T1, T2, T3, T4, T5, T6, T7 y T8; falta sólo T9.** Todas
+  verificadas reejecutando, no por reporte del implementador. Estado del gate al cerrar T8: **930
+  pruebas JVM en 104 clases, 0 fallos**; **functions 266** con lint de TypeScript limpio; **gate del
+  emulador de Firestore 6/6**; `assembleDebug`, `assembleRelease` y `lintDebug` en verde; paridad de
+  claves **551 = 551** sin claves huérfanas.
+
+  Lo que cambió de fondo, y que no se lee del `git log`:
+
+  - **T6 era más grande de lo planeado.** Además del transporte de IA, `SubscriptionVerification`
+    de release era un `NoOp` que siempre fallaba, así que en el AAB alguien pagaba $299 y
+    `aiEntitlements/{uid}` nunca se escribía: T3 estaba desplegada pero **inalcanzable desde el
+    build publicado**. Causa raíz común: `firebase-functions` estaba como `debugImplementation`.
+  - **T4 no podía llevar el motivo en un campo nuevo.** El parser exige que las llaves de la raíz
+    sean exactamente cuatro, así que agregar `reason` habría roto **todo cliente ya instalado**. El
+    motivo viaja en el `status` existente, y es compatible hacia atrás por construcción porque el
+    parser ya mandaba lo desconocido a `Unavailable`.
+  - **T5 usa callable, no Remote Config**, para no tener dos interruptores que se puedan
+    desincronizar en una emergencia. El cliente **falla abierto** a propósito: el servidor es el
+    apagador autoritativo y ya falla cerrado.
+  - **El apagador remoto ya existía del lado del servidor** y quedó verificado: `authorizeInTransaction`
+    lee `aiControl/global` primero y corta antes de entitlement, cuota y proveedor. T5 sólo agrega
+    la cortesía en pantalla; T8 agregó la prueba de que apagar **no gasta dinero** (cero
+    invocaciones al proveedor) y el runbook en
+    `docs/superpowers/operations/2026-08-27-cuentivoai-killswitch-runbook.md`.
 - **Competencia investigada el 2026-08-26** (precios fechados en
   `docs/superpowers/specs/2026-08-24-cuentivo-fiado-catalogo-product-design.md` §2.1): **Kashi** es el
   competidor mas cercano y el unico con IA, pero la suya solo **responde** preguntas; CuentivoAI
@@ -194,19 +211,28 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
   IA incluida en el plan. Treinta: USD $9.99 y $19.99/mes, sin IA visible. **$299 queda dentro de
   mercado**, entre Kashi Starter y Kashi Pro. El muro del plan (T7) debe vender "ejecutar" frente a
   "responder", no la palabra IA.
-- **No existe la UI del plan de $299**, y ahora es bloqueante. Decisión de Diego del 2026-08-26:
-  **CuentivoAI sale ya como plan de pago**, y quien esté en Gratis o Pro y toque CuentivoAI debe
-  ver el muro de suscripción. Eso saca la UI del plan de "después" y la vuelve requisito del mismo
-  release. El backend que lo hace vendible —cuota, tope, rate limit y kill switch— ya está desplegado
-  y probado; falta la pantalla y el producto de suscripción en Play.
+- **La UI del plan de $299 ya existe** (T7, 2026-08-27): pantalla de tres planes con precios leídos
+  de Play —nunca escritos a mano, y con las compras deshabilitadas mientras Play no responda— y muro
+  de suscripción para quien esté en Gratis o Pro. El producto `cuentivo_ai_mensual` está **ACTIVO**
+  en Play a $299 MXN. La beta sale **sin voz**: `RECORD_AUDIO` sigue declarado sólo en el manifiesto
+  debug, verificado con `aapt2` sobre el APK de release empaquetado.
+- **Las notificaciones en tiempo real de Play ya tienen tubería, pero nadie las escucha.** El tópico
+  `projects/organitazionlabs/topics/play-rtdn-cuentivo` está creado, con `Publicador de Pub/Sub`
+  otorgado a `google-play-developer-notifications@system.gserviceaccount.com`, conectado en Play
+  Console y **verificado con notificación de prueba recibida en la suscripción** (2026-08-27). Falta
+  la función que la consuma: hasta que exista, **nada revoca el tier cuando alguien cancela o pide
+  reembolso**. La suscripción retiene los mensajes 7 días, así que esa función **debe existir antes
+  de que entre a pagar cualquier persona distinta de Diego**.
 - **El enforcement de App Check sigue apagado.** Falta leer el panel con tráfico posterior al
   vínculo de Play Integrity, mirando la barra del día y no el acumulado. Lo ya descartado con
   evidencia está en el histórico; no volver a perseguirlo.
 - **No hay CI** y `.superpowers/` está ignorado: la evidencia SDD local no sobrevive a otro clon.
 - Falta enlace al aviso de privacidad dentro de la app; la política externa sí está publicada.
-- **Todos los rechazos de IA se ven igual.** Seis caminos devuelven el mismo `AI_UNAVAILABLE`. El
-  2026-08-25 costó una hora de diagnóstico descubrir que la cuota mensual estaba agotada. Un usuario
-  que pague $299 y agote su cuota leería "aún no disponible", como si la app estuviera descompuesta.
+- ~~Todos los rechazos de IA se ven igual.~~ **Resuelto en T4 (2026-08-27).** Cuota agotada, rate
+  limit, IA apagada y falta de entitlement ahora viajan como `status` propio y tienen su texto; el
+  de entitlement lleva al muro de compra en vez de pintarse como error. Todo lo demás —entrada
+  inválida, fallo del proveedor, reclamo duplicado— sigue colapsando en `AI_UNAVAILABLE` a
+  propósito, porque filtra estado interno o es "reintenta".
 - **El contador `aiUsage` de agosto 2026 se sobrescribió a mano** durante ese diagnóstico: ya no sirve
   para medir acciones por usuario ni para validar el precio. La primera medición limpia empieza con un
   contador que corra sin intervención.
