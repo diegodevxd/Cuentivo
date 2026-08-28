@@ -93,7 +93,7 @@ class CustomerFlowTest {
         // row the assertion would have passed for the wrong reason — the text was simply gone from
         // the whole app, so it proved nothing about this screen.
         composeRule.onAllNodesWithText("Tu cuenta").assertCountEquals(0)
-        composeRule.onNodeWithText("Inicio").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Inicio").assertIsDisplayed()
     }
 
     @Test fun the_back_arrow_returns_to_the_directory() {
@@ -247,8 +247,8 @@ class CustomerFlowTest {
         composeRule.onNodeWithText("Registrar abono").performClick()
 
         // Leave and come back the manual way.
-        composeRule.onNodeWithText("Inicio").performClick()
-        composeRule.onNodeWithText("Abonos").performClick()
+        composeRule.onNodeWithContentDescription("Inicio").performClick()
+        composeRule.onNodeWithContentDescription("Abonos").performClick()
 
         composeRule.onAllNodesWithText("Juan Pérez").assertCountEquals(0)
     }

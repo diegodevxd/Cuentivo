@@ -98,7 +98,7 @@ class CustomerCreationFlowTest {
     }
 
     private fun openForm() {
-        composeRule.onNodeWithText("Clientes").performClick()
+        composeRule.onNodeWithContentDescription("Clientes").performClick()
         composeRule.onNodeWithContentDescription("Nuevo cliente").performClick()
     }
 

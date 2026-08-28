@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -59,7 +60,7 @@ class PaymentFlowTest {
 
     @Test fun the_preselection_from_the_detail_shows_that_customer() {
         composeRule.setContent { Harness() }
-        composeRule.onNodeWithText("Clientes").performClick()
+        composeRule.onNodeWithContentDescription("Clientes").performClick()
         composeRule.onNodeWithText("Juan Pérez").performClick()
 
         composeRule.onNodeWithText("Registrar abono").performClick()
@@ -160,7 +161,7 @@ class PaymentFlowTest {
         InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.payment_current_balance)
 
     private fun openPayments() {
-        composeRule.onNodeWithText("Abonos").performClick()
+        composeRule.onNodeWithContentDescription("Abonos").performClick()
     }
 
     private fun choose(name: String) {

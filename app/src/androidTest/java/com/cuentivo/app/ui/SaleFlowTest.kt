@@ -70,7 +70,7 @@ class SaleFlowTest {
         Espresso.pressBack()
         composeRule.onAllNodesWithContentDescription("Cerrar nueva venta").assertCountEquals(0)
         // Closing the task returns to the destination underneath, never to a blank screen.
-        composeRule.onNodeWithText("Inicio").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Inicio").assertIsDisplayed()
     }
 
     @Test fun opening_from_a_customer_preselects_that_customer() {
@@ -105,6 +105,19 @@ class SaleFlowTest {
         // 3 × $125.00. The line subtotal is not matched by text because the total prints the same
         // figure; the total is asked for by name instead.
         assertTotalIs(37_500)
+    }
+
+    @Test fun typing_a_large_quantity_directly_updates_the_cart_line() {
+        composeRule.setContent { Harness() }
+        openSale()
+        chooseProduct("Café molido 500 g")
+        setQuantity("50")
+        addToCart()
+
+        assertSaleTextDisplayed("50 × Café molido 500 g")
+        assertSaleTextDisplayed("${Money.format(12_500)} c/u")
+        // 50 × $125.00 = $6,250.00
+        assertTotalIs(625_000)
     }
 
     @Test fun adding_several_products_keeps_every_line_in_the_cart() {
@@ -199,7 +212,7 @@ class SaleFlowTest {
             assertEquals(25_000L, draft.subtotalCents)
             assertEquals(5_050L, draft.discountCents)
             assertEquals(19_950L, draft.totalCents)
-            assertNull(draft.dueDateEpochDay)
+            assertEquals(LocalDate.now().plusDays(15).toEpochDay(), draft.dueDateEpochDay)
         }
     }
 
@@ -249,8 +262,8 @@ class SaleFlowTest {
     /** The field already holds "1", and typing would append to it rather than replace it. */
     private fun setQuantity(value: String) {
         scrollSaleTo("Cantidad")
-        composeRule.onNodeWithText("Cantidad").performTextClearance()
-        composeRule.onNodeWithText("Cantidad").performTextInput(value)
+        composeRule.onNodeWithContentDescription("Cantidad").performTextClearance()
+        composeRule.onNodeWithContentDescription("Cantidad").performTextInput(value)
     }
 
     private fun addToCart() {

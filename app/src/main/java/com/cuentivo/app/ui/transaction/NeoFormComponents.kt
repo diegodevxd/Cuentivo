@@ -24,8 +24,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -474,12 +477,15 @@ internal fun <T> NeoSegmentedControl(
  */
 @Composable
 internal fun NeoQuantityStepper(
-    value: Int,
-    onValueChange: (Int) -> Unit,
+    value: String,
+    onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     decreaseDescription: String,
     increaseDescription: String,
 ) {
+    val quantityDescription = stringResource(R.string.new_sale_quantity_label)
+    val quantity = value.toIntOrNull() ?: 0
+
     Row(
         modifier = modifier
             .heightIn(min = 48.dp)
@@ -489,8 +495,8 @@ internal fun NeoQuantityStepper(
         // One is the floor, not zero: a line of zero is not a line, and the add action already
         // refuses it. Disabling the control says so before the tap instead of after.
         IconButton(
-            onClick = { if (value > 1) onValueChange(value - 1) },
-            enabled = value > 1,
+            onClick = { if (quantity > 1) onValueChange((quantity - 1).toString()) },
+            enabled = quantity > 1,
             // The label rides on the button, not on an icon: a minus is drawn as text here, since
             // the core Material icon set has no "remove" and pulling in the extended set for one
             // glyph would add a few thousand vectors to the APK.
@@ -499,28 +505,47 @@ internal fun NeoQuantityStepper(
             Text(
                 text = "−",
                 style = MaterialTheme.typography.titleLarge,
-                color = if (value > 1) {
+                color = if (quantity > 1) {
                     MaterialTheme.colorScheme.onSurface
                 } else {
                     MaterialTheme.colorScheme.onSurface.copy(alpha = NeoDisabled.LABEL)
                 },
             )
         }
-        Text(
-            text = value.coerceAtLeast(0).toString(),
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.defaultMinSize(minWidth = 56.dp),
+        BasicTextField(
+            value = value,
+            onValueChange = { newText ->
+                val digits = newText.filter { it.isDigit() }.take(4)
+                val parsed = digits.toIntOrNull()
+                if (parsed != null && parsed in 1..9999) {
+                    onValueChange(digits)
+                } else if (digits.isEmpty() || parsed == 0) {
+                    onValueChange(digits)
+                }
+            },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done,
+            ),
+            textStyle = MaterialTheme.typography.titleMedium.copy(
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier
+                .defaultMinSize(minWidth = 56.dp)
+                .semantics { contentDescription = quantityDescription },
         )
         IconButton(
-            onClick = { onValueChange(value + 1) },
-            enabled = value < 9999,
+            onClick = { if (quantity < 9999) onValueChange((quantity + 1).toString()) },
+            enabled = quantity < 9999,
             modifier = Modifier.size(48.dp),
         ) {
             Icon(
                 imageVector = Icons.Filled.Add,
                 contentDescription = increaseDescription,
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = if (quantity < 9999) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = NeoDisabled.LABEL),
             )
         }
     }

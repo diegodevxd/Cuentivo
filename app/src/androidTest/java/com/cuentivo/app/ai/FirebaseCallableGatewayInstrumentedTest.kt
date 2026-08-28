@@ -13,7 +13,7 @@ import java.util.UUID
 import javax.net.ssl.HttpsURLConnection
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assume.assumeNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,8 +60,8 @@ class FirebaseCallableGatewayInstrumentedTest {
     @Test
     fun deployedAuthorizeCallableReturnsExactContractAndReplayIsIdentical() {
         val currentUser = FirebaseAuth.getInstance().currentUser
-        assertNotNull(
-            "Requires a Firebase user already authenticated on the device",
+        assumeNotNull(
+            "Skipping live gateway test: requires an authenticated Firebase user on the device",
             currentUser,
         )
 
@@ -86,8 +86,8 @@ class FirebaseCallableGatewayInstrumentedTest {
     @Test
     fun callableWithoutAppCheckHeaderIsRejected() {
         val currentUser = FirebaseAuth.getInstance().currentUser
-        assertNotNull(
-            "Requires a Firebase user already authenticated on the device",
+        assumeNotNull(
+            "Skipping live gateway test: requires an authenticated Firebase user on the device",
             currentUser,
         )
 

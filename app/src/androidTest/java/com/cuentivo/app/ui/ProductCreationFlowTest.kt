@@ -76,7 +76,7 @@ class ProductCreationFlowTest {
     }
 
     private fun openForm() {
-        composeRule.onNodeWithText("Productos").performClick()
+        composeRule.onNodeWithContentDescription("Productos").performClick()
         composeRule.onNodeWithContentDescription("Agregar producto").performClick()
     }
 

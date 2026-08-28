@@ -256,7 +256,7 @@ class ProductFlowTest {
     }
 
     private fun openProducts() {
-        composeRule.onNodeWithText("Productos").performClick()
+        composeRule.onNodeWithContentDescription("Productos").performClick()
     }
 
     @Composable

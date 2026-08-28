@@ -349,7 +349,7 @@ class StitchCaptureTest {
     private fun openCustomers() = openDestination("Clientes")
 
     private fun openDestination(label: String) {
-        composeRule.onNodeWithText(label).invokeClick()
+        composeRule.onNodeWithContentDescription(label).invokeClick()
         composeRule.waitForIdle()
     }
 

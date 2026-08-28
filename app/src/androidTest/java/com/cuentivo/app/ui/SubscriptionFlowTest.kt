@@ -13,6 +13,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
+import androidx.test.platform.app.InstrumentationRegistry
+import com.cuentivo.app.R
 import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.PaidFeature
 import com.cuentivo.app.domain.SubscriptionTier
@@ -39,9 +41,13 @@ class SubscriptionFlowTest {
         openAccount()
 
         inSheet("Plan Gratis").assertIsDisplayed()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         inSheet(
-            "Hasta ${FeatureAccessManager.FREE_CUSTOMER_LIMIT} clientes y " +
-                "${FeatureAccessManager.FREE_SALE_LIMIT} ventas registradas."
+            context.getString(
+                R.string.subscription_free_limits,
+                FeatureAccessManager.FREE_CUSTOMER_LIMIT,
+                FeatureAccessManager.FREE_SALE_LIMIT,
+            )
         ).assertIsDisplayed()
     }
 
@@ -87,7 +93,6 @@ class SubscriptionFlowTest {
             "Restaurar",
             "Business",
             "Créditos",
-            "IA",
         ).forEach { absent ->
             composeRule.onAllNodesWithText(absent).assertCountEquals(0)
         }
@@ -114,6 +119,8 @@ class SubscriptionFlowTest {
         CuentivoApp(
             state = DashboardUiState.Content("business-1", "Mi negocio", 480_050, 0, 0, 0, 1),
             tier = tier,
+            proPrice = "$99.00",
+            aiPrice = "$299.00",
             onUpgrade = { upgrades++ },
         )
     }

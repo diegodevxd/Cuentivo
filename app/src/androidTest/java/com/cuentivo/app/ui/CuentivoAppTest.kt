@@ -31,7 +31,7 @@ class CuentivoAppTest {
         composeRule.setContent { CuentivoApp(DashboardUiState.NoBusiness) }
 
         composeRule.onNodeWithText("Crea tu primer negocio para comenzar").assertIsDisplayed()
-        composeRule.onNodeWithText("Inicio").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Inicio").assertIsDisplayed()
     }
 
     @Test fun populated_dashboard_shows_exactly_one_primary_sale_action() {
@@ -98,7 +98,7 @@ class CuentivoAppTest {
         }
 
         listOf("Inicio", "Clientes", "Productos", "Abonos").forEach { label ->
-            composeRule.onNodeWithText(label).assertIsDisplayed()
+            composeRule.onNodeWithContentDescription(label).assertIsDisplayed()
         }
         composeRule.onAllNodesWithContentDescription("Nueva venta").assertCountEquals(1)
         composeRule.onAllNodesWithText("Vender").assertCountEquals(0)

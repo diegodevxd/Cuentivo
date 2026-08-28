@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -33,7 +34,7 @@ class PaymentRegressionAndAiPaywallFlowTest {
         composeRule.setContent { Harness(SubscriptionTier.FREE) }
 
         // Tap bottom bar Abonos
-        composeRule.onNodeWithText("Abonos").performClick()
+        composeRule.onNodeWithContentDescription("Abonos").performClick()
         composeRule.waitForIdle()
 
         // Payments destination is reached directly
@@ -48,7 +49,7 @@ class PaymentRegressionAndAiPaywallFlowTest {
         composeRule.setContent { Harness(SubscriptionTier.FREE) }
 
         // Open customer detail
-        composeRule.onNodeWithText("Clientes").performClick()
+        composeRule.onNodeWithContentDescription("Clientes").performClick()
         composeRule.onNodeWithText("Juan Pérez").performClick()
         composeRule.waitForIdle()
 
@@ -68,7 +69,7 @@ class PaymentRegressionAndAiPaywallFlowTest {
     fun pro_plan_payment_navigation_from_bottom_bar_enters_payments_without_paywall() {
         composeRule.setContent { Harness(SubscriptionTier.PRO) }
 
-        composeRule.onNodeWithText("Abonos").performClick()
+        composeRule.onNodeWithContentDescription("Abonos").performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("selector-cliente").assertIsDisplayed()
@@ -79,7 +80,7 @@ class PaymentRegressionAndAiPaywallFlowTest {
     fun pro_plan_payment_navigation_from_customer_detail_enters_payments_without_paywall() {
         composeRule.setContent { Harness(SubscriptionTier.PRO) }
 
-        composeRule.onNodeWithText("Clientes").performClick()
+        composeRule.onNodeWithContentDescription("Clientes").performClick()
         composeRule.onNodeWithText("Juan Pérez").performClick()
         composeRule.waitForIdle()
 

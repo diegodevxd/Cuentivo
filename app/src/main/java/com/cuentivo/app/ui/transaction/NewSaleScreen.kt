@@ -263,8 +263,8 @@ fun NewSaleScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     NeoQuantityStepper(
-                        value = quantity,
-                        onValueChange = { quantityText = it.toString() },
+                        value = quantityText,
+                        onValueChange = { quantityText = it },
                         decreaseDescription = stringResource(R.string.new_sale_quantity_decrease),
                         increaseDescription = stringResource(R.string.new_sale_quantity_increase),
                     )

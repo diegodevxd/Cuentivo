@@ -174,7 +174,7 @@ class PlayStoreCaptureTest {
         performSemanticsAction(SemanticsActions.OnClick)
 
     private fun open(label: String) {
-        composeRule.onNodeWithText(label).invokeClick()
+        composeRule.onNodeWithContentDescription(label).invokeClick()
         composeRule.waitForIdle()
     }
 

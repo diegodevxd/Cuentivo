@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -52,7 +53,7 @@ class EmptyStateTest {
 
     @Test fun the_empty_customer_directory_offers_the_action_that_fills_it() {
         composeRule.setContent { Harness(customers = emptyList()) }
-        composeRule.onNodeWithText("Clientes").performClick()
+        composeRule.onNodeWithContentDescription("Clientes").performClick()
 
         composeRule.onNodeWithText("Aún no tienes clientes").assertIsDisplayed()
         composeRule.onNodeWithText("Agrega al primero para empezar a venderle fiado.").assertIsDisplayed()
@@ -65,7 +66,7 @@ class EmptyStateTest {
 
     @Test fun a_search_with_no_match_is_not_an_invitation_to_create() {
         composeRule.setContent { Harness() }
-        composeRule.onNodeWithText("Clientes").performClick()
+        composeRule.onNodeWithContentDescription("Clientes").performClick()
 
         composeRule.onNodeWithText("Buscar cliente...").performTextInput("zzzz")
         composeRule.waitForIdle()
@@ -77,7 +78,7 @@ class EmptyStateTest {
 
     @Test fun the_empty_catalog_keeps_its_wording_and_gains_one_action() {
         composeRule.setContent { Harness() }
-        composeRule.onNodeWithText("Productos").performClick()
+        composeRule.onNodeWithContentDescription("Productos").performClick()
 
         composeRule.onNodeWithText("Aún no tienes productos").assertIsDisplayed()
 
@@ -88,7 +89,7 @@ class EmptyStateTest {
 
     @Test fun a_customer_with_no_history_says_so_plainly() {
         composeRule.setContent { Harness() }
-        composeRule.onNodeWithText("Clientes").performClick()
+        composeRule.onNodeWithContentDescription("Clientes").performClick()
         composeRule.onNodeWithText("Ana López").performClick()
 
         composeRule.onNodeWithText("Sin movimientos").assertIsDisplayed()
