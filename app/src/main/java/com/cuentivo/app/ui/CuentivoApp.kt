@@ -319,10 +319,12 @@ fun CuentivoApp(
         val isAiTier = tier == SubscriptionTier.AI
         val now = System.currentTimeMillis()
         if (gateway != null && AiAvailabilityPolicy.shouldRefresh(isAiTier, lastAvailabilityFetchEpochMillis, now)) {
+            // Mark timestamp immediately before launching to deduplicate concurrent triggers
+            // (e.g. LaunchedEffect on entry and Lifecycle ON_RESUME event replay)
+            lastAvailabilityFetchEpochMillis = now
             coroutineScope.launch {
                 val result = gateway.checkAvailability()
                 isAiServiceAvailable = AiAvailabilityPolicy.resolve(isAiServiceAvailable, result)
-                lastAvailabilityFetchEpochMillis = System.currentTimeMillis()
             }
         }
     }

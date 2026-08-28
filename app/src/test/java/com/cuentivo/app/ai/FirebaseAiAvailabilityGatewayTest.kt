@@ -101,4 +101,26 @@ class FirebaseAiAvailabilityGatewayTest {
         assertFalse(AiAvailabilityPolicy.resolve(current = true, fetched = false))
         assertFalse(AiAvailabilityPolicy.resolve(current = false, fetched = false))
     }
+
+    @Test
+    fun `two successive triggers before response arrives produce exactly one query`() {
+        var queryCount = 0
+        var lastFetchEpochMillis = 0L
+        val isAiTier = true
+        val now = 1_000_000L
+
+        // Trigger 1 (e.g. LaunchedEffect on composition)
+        if (AiAvailabilityPolicy.shouldRefresh(isAiTier, lastFetchEpochMillis, now)) {
+            lastFetchEpochMillis = now
+            queryCount++
+        }
+
+        // Trigger 2 (e.g. Lifecycle ON_RESUME event replay at startup)
+        if (AiAvailabilityPolicy.shouldRefresh(isAiTier, lastFetchEpochMillis, now)) {
+            lastFetchEpochMillis = now
+            queryCount++
+        }
+
+        assertEquals("Two successive triggers without waiting for response must produce only one query", 1, queryCount)
+    }
 }
