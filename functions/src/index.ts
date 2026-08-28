@@ -79,6 +79,12 @@ export const interpretAiRequest = onCall(
       onRejected: (reason) => {
         logger.warn("AI_REJECTED", { reason });
       },
+      onProviderInvocation: () => {
+        logger.info("AI_PROVIDER_INVOCATION");
+      },
+      onProviderLatency: (durationMillis) => {
+        logger.info("AI_PROVIDER_LATENCY", { durationMillis });
+      },
     })({
       auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
       data: request.data,

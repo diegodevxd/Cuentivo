@@ -451,4 +451,88 @@ describe("firestore emulator concurrency gate", () => {
     const rateDoc = await firestore.doc(`aiRateWindows/${RUN_UID}_${minuteKey(NOW)}`).get();
     expect(rateDoc.exists).toBe(false);
   });
+
+  test("emergency killswitch on aiControl/global cuts before provider invocation with zero money spent", async () => {
+    const repository = createFirestoreControlPlaneRepository(firestore);
+    let providerInvocations = 0;
+    const countingProvider = {
+      async interpret() {
+        providerInvocations++;
+        return {
+          kind: "record_payment" as const,
+          customerName: "María",
+          declaredAmountCents: "20000",
+        };
+      },
+    };
+    const handler = createInterpretAiHandler({
+      authorize: (i) => repository.authorize(i),
+      claimProviderInvocation: (i) => repository.claimProviderInvocation(i),
+      provider: countingProvider,
+      guard: openGuard(),
+      now: () => NOW,
+    });
+
+    const payload1 = {
+      contractVersion: 2,
+      requestId: randomUUID(),
+      action: "interpret_text_proposal",
+      text: "registro de abono",
+    };
+
+    // 1. Killswitch is ON (service disabled)
+    await firestore.doc("aiControl/global").set({
+      enabled: false,
+      geminiEnabled: true,
+      monthlyActionLimit: 10,
+      perMinuteLimit: 10,
+    });
+
+    const disabledResponse = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "password" } } },
+      data: payload1,
+    });
+
+    expect(disabledResponse).toEqual({
+      contractVersion: 2,
+      requestId: payload1.requestId,
+      status: "AI_DISABLED",
+      proposal: null,
+    });
+    // Critical assertion: provider was NEVER called, zero money spent
+    expect(providerInvocations).toBe(0);
+
+    // 2. Killswitch is turned OFF (service enabled)
+    await firestore.doc("aiControl/global").set({
+      enabled: true,
+      geminiEnabled: true,
+      monthlyActionLimit: 10,
+      perMinuteLimit: 10,
+    });
+
+    const payload2 = {
+      contractVersion: 2,
+      requestId: randomUUID(),
+      action: "interpret_text_proposal",
+      text: "registro de abono",
+    };
+
+    const enabledResponse = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "password" } } },
+      data: payload2,
+    });
+
+    expect(enabledResponse).toEqual({
+      contractVersion: 2,
+      requestId: payload2.requestId,
+      status: "AI_PROPOSAL",
+      proposal: {
+        kind: "record_payment",
+        customerName: "María",
+        declaredAmountCents: "20000",
+      },
+    });
+    // Critical assertion: provider was invoked exactly once upon re-enabling
+    expect(providerInvocations).toBe(1);
+  });
 });

@@ -98,4 +98,11 @@ describe("regional callable gateway", () => {
     expect(SOURCE).toContain("status: result.status");
     expect(SOURCE).not.toMatch(/AI_INTERPRET_RESULT[^;]*(requestId|proposal|request\.data|auth\.uid)/s);
   });
+
+  test("logs provider invocation and latency strictly without PII", () => {
+    expect(SOURCE).toContain('logger.info("AI_PROVIDER_INVOCATION")');
+    expect(SOURCE).toContain('logger.info("AI_PROVIDER_LATENCY"');
+    expect(SOURCE).toContain("durationMillis");
+    expect(SOURCE).not.toMatch(/AI_PROVIDER_(INVOCATION|LATENCY)[^;]*(requestId|proposal|request\.data|auth\.uid|text|prompt)/s);
+  });
 });

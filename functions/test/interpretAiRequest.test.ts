@@ -94,8 +94,18 @@ function recordingDeps(overrides?: {
       rejections.push(reason);
       overrides?.onRejected?.(reason);
     },
+    onProviderInvocation: () => {
+      invocations.push(true);
+      overrides?.onProviderInvocation?.();
+    },
+    onProviderLatency: (duration: number) => {
+      latencies.push(duration);
+      overrides?.onProviderLatency?.(duration);
+    },
   };
-  return { deps, authorizeInputs, claimInputs, providerInputs, rejections };
+  const invocations: boolean[] = [];
+  const latencies: number[] = [];
+  return { deps, authorizeInputs, claimInputs, providerInputs, rejections, invocations, latencies };
 }
 
 function makeHandler(overrides?: Parameters<typeof recordingDeps>[0]) {
@@ -460,5 +470,49 @@ describe("createInterpretAiHandler", () => {
     const replay = await handler({ auth: AUTH_USER, data: VALID_DATA });
     expect(replay.status).toBe("AI_UNAVAILABLE");
     expect(providerInputs).toHaveLength(0);
+  });
+
+  test("invokes onProviderInvocation and onProviderLatency strictly upon claim and execution", async () => {
+    let clock = 1000;
+    const { handler, invocations, latencies } = makeHandler({
+      now: () => {
+        clock += 50;
+        return clock;
+      },
+    });
+
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
+    expect(result.status).toBe("AI_PROPOSAL");
+    expect(invocations).toHaveLength(1);
+    expect(latencies).toHaveLength(1);
+    expect(latencies[0]).toBeGreaterThan(0);
+  });
+
+  test("records provider telemetry even when provider fails", async () => {
+    let clock = 1000;
+    const { handler, invocations, latencies } = makeHandler({
+      providerThrows: true,
+      now: () => {
+        clock += 30;
+        return clock;
+      },
+    });
+
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
+    expect(result.status).toBe("AI_UNAVAILABLE");
+    expect(invocations).toHaveLength(1);
+    expect(latencies).toHaveLength(1);
+    expect(latencies[0]).toBeGreaterThan(0);
+  });
+
+  test("never invokes provider telemetry when rejected or blocked before claim", async () => {
+    const { handler, invocations, latencies } = makeHandler({
+      authorizeResult: { decision: "AI_DISABLED", provider: "GEMINI", fallbackUsed: false },
+    });
+
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
+    expect(result.status).toBe("AI_DISABLED");
+    expect(invocations).toHaveLength(0);
+    expect(latencies).toHaveLength(0);
   });
 });

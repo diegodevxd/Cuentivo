@@ -268,3 +268,13 @@ al mergear recursos. Lo más seguro es redactar el inglés sin apóstrofos ("do 
 - No ocultes errores ni inventes resultados de build. Reporta el comando que realmente ejecutaste.
 - Respeta la arquitectura existente; no reescribas por comodidad ni agregues dependencias innecesarias.
 - No inventes nombres de archivos, clases, tablas ni colecciones: trabaja con lo que existe.
+- **Una prueba no puede reimplementar la lógica que verifica.** Tiene que invocar el código que
+  producción ejecuta, y tiene que **fallar si ese código se rompe**. Una prueba que copia la regla
+  dentro de sí misma —o que afirma contra un objeto paralelo que nadie llama— pasa en verde mientras
+  el defecto se publica. Ya ocurrió cinco veces en este proyecto. Si el código que importa vive
+  dentro de un Composable o de una Activity, la salida correcta es **extraerlo** a un objeto que la
+  prueba pueda invocar, no reescribirlo en el test.
+- **Correr la suite no es correr todo.** En `functions/`, `npm test` **no** incluye el gate del
+  emulador: `vitest.config.ts` sólo toma `test/**/*.test.ts`, y `firestoreEmulator.gate.ts` va
+  aparte con `npm run test:firestore-emulator`. Reportar el total de `npm test` como si cubriera el
+  gate es reportar evidencia que no ocurrió.

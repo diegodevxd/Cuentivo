@@ -24,6 +24,8 @@ export type InterpretAiCallableDeps = Readonly<{
   guard: AiEdgeRequestGuard;
   now: () => number;
   onRejected?: (reason: "ANONYMOUS_SESSION") => void;
+  onProviderInvocation?: () => void;
+  onProviderLatency?: (durationMillis: number) => void;
 }>;
 
 const UNAVAILABLE = (requestId: string): InterpretAiResponse => ({
@@ -132,8 +134,12 @@ export function createInterpretAiHandler(
       return UNAVAILABLE(requestId);
     }
 
+    deps.onProviderInvocation?.();
+    const providerStartTime = deps.now();
     try {
       const proposal = await deps.provider.interpret({ text, referenceDate });
+      const durationMillis = Math.max(0, deps.now() - providerStartTime);
+      deps.onProviderLatency?.(durationMillis);
       if (proposal === null) {
         return UNAVAILABLE(requestId);
       }
@@ -144,6 +150,8 @@ export function createInterpretAiHandler(
         proposal,
       };
     } catch {
+      const durationMillis = Math.max(0, deps.now() - providerStartTime);
+      deps.onProviderLatency?.(durationMillis);
       return UNAVAILABLE(requestId);
     }
   };
