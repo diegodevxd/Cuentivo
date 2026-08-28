@@ -38,6 +38,77 @@ class FirebaseCallableAiGatewayTest {
     }
 
     @Test
+    fun `rejection reasons with null proposal parse to their respective typed results`() {
+        val cases = listOf(
+            "AI_QUOTA_EXHAUSTED" to CallableAiProposalResult.QuotaExhausted,
+            "AI_RATE_LIMITED" to CallableAiProposalResult.RateLimited,
+            "AI_DISABLED" to CallableAiProposalResult.Disabled,
+            "AI_ENTITLEMENT_REQUIRED" to CallableAiProposalResult.EntitlementRequired,
+        )
+        for ((status, expected) in cases) {
+            val response = mapOf(
+                "contractVersion" to 2,
+                "requestId" to requestId,
+                "status" to status,
+                "proposal" to null,
+            )
+            assertEquals(
+                "expected $expected for status $status",
+                expected,
+                parseCallableProposalResponse(response, requestId),
+            )
+        }
+    }
+
+    @Test
+    fun `rejection reasons with non null proposal fail closed to unavailable`() {
+        val rejectionStatuses = listOf(
+            "AI_UNAVAILABLE",
+            "AI_QUOTA_EXHAUSTED",
+            "AI_RATE_LIMITED",
+            "AI_DISABLED",
+            "AI_ENTITLEMENT_REQUIRED",
+        )
+        for (status in rejectionStatuses) {
+            val response = mapOf(
+                "contractVersion" to 2,
+                "requestId" to requestId,
+                "status" to status,
+                "proposal" to mapOf("kind" to "record_payment", "customerName" to "María", "declaredAmountCents" to "100"),
+            )
+            assertEquals(
+                "expected Unavailable for status $status with non-null proposal",
+                CallableAiProposalResult.Unavailable,
+                parseCallableProposalResponse(response, requestId),
+            )
+        }
+    }
+
+    @Test
+    fun `unknown or future status values fall back to unavailable for backwards compatibility`() {
+        val unknownStatuses = listOf(
+            "AI_FUTURE_UNKNOWN_STATUS",
+            "UNKNOWN",
+            "AI_AUTHORIZED",
+            "AI_AUTHENTICATION_REQUIRED",
+            "SOMETHING_ELSE",
+        )
+        for (status in unknownStatuses) {
+            val response = mapOf(
+                "contractVersion" to 2,
+                "requestId" to requestId,
+                "status" to status,
+                "proposal" to null,
+            )
+            assertEquals(
+                "expected Unavailable for unknown status $status",
+                CallableAiProposalResult.Unavailable,
+                parseCallableProposalResponse(response, requestId),
+            )
+        }
+    }
+
+    @Test
     fun `valid requires_clarification parses to proposal`() {
         val response = mapOf(
             "contractVersion" to 2,

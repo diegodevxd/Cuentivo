@@ -144,6 +144,7 @@ fun AiDebugLabScreen(
     activeBusinessId: String? = null,
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
+    onOpenPaywall: (() -> Unit)? = null,
     voiceRecognizer: VoiceRecognizer? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
@@ -509,6 +510,7 @@ fun AiDebugLabScreen(
                         onCancelSale = if ((isCurrentSalePreview || isCurrentSaleCustomerSelection || isCurrentSaleProductSelection) && isHydrated) {
                             { model = AiDebugLabMachine.onCancel(model) }
                         } else null,
+                        onOpenPaywall = onOpenPaywall,
                         isConfirming = isConfirming,
                     )
                 }
@@ -622,10 +624,33 @@ fun AiDebugLabScreen(
                                     }
                                     is AiDebugLabTurnResult.Remote -> {
                                         val result = turnResult.result
-                                        if (result is CallableAiProposalResult.Unavailable) {
-                                            withContext(Dispatchers.IO) {
-                                                runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_UNAVAILABLE) }
+                                        when (result) {
+                                            CallableAiProposalResult.Unavailable -> {
+                                                withContext(Dispatchers.IO) {
+                                                    runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_UNAVAILABLE) }
+                                                }
                                             }
+                                            CallableAiProposalResult.QuotaExhausted -> {
+                                                withContext(Dispatchers.IO) {
+                                                    runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_QUOTA_EXHAUSTED) }
+                                                }
+                                            }
+                                            CallableAiProposalResult.RateLimited -> {
+                                                withContext(Dispatchers.IO) {
+                                                    runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_RATE_LIMITED) }
+                                                }
+                                            }
+                                            CallableAiProposalResult.Disabled -> {
+                                                withContext(Dispatchers.IO) {
+                                                    runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_DISABLED) }
+                                                }
+                                            }
+                                            CallableAiProposalResult.EntitlementRequired -> {
+                                                withContext(Dispatchers.IO) {
+                                                    runCatching { repository.appendAssistant(AiDailyMessageKind.ASSISTANT_ENTITLEMENT_REQUIRED) }
+                                                }
+                                            }
+                                            is CallableAiProposalResult.Proposal -> {}
                                         }
                                         val nextModel = AiDebugLabMachine.onResult(model, result, token)
                                         model = nextModel
@@ -798,6 +823,7 @@ private fun ChatMessageRow(
     onSelectCustomerCandidate: ((com.cuentivo.app.ai.AiEntityChoice) -> Unit)? = null,
     onSelectProductCandidate: ((productName: String, choice: com.cuentivo.app.ai.AiEntityChoice) -> Unit)? = null,
     onSelectQueryCustomerCandidate: ((customerId: String) -> Unit)? = null,
+    onOpenPaywall: (() -> Unit)? = null,
     isConfirming: Boolean = false,
 ) {
     when (message) {
@@ -824,6 +850,23 @@ private fun ChatMessageRow(
             Text(stringResource(R.string.ai_debug_lab_thinking))
         }
         AiChatMessage.AssistantUnavailable -> Text(stringResource(R.string.ai_debug_lab_unavailable))
+        AiChatMessage.AssistantQuotaExhausted -> Text(stringResource(R.string.ai_debug_lab_quota_exhausted))
+        AiChatMessage.AssistantRateLimited -> Text(stringResource(R.string.ai_debug_lab_rate_limited))
+        AiChatMessage.AssistantDisabled -> Text(stringResource(R.string.ai_debug_lab_disabled))
+        AiChatMessage.AssistantEntitlementRequired -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(R.string.ai_debug_lab_entitlement_required),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (onOpenPaywall != null) {
+                Button(
+                    onClick = onOpenPaywall,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.subscription_upgrade_ai_action))
+                }
+            }
+        }
         is AiChatMessage.AssistantClarification -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val reasonText = when (message.reason) {
                 com.cuentivo.app.ai.ClarificationReason.AMBIGUOUS_CUSTOMER -> stringResource(R.string.ai_clarification_reason_ambiguous_customer)

@@ -499,6 +499,10 @@ fun CuentivoApp(
                     confirmPayment = confirmPayment,
                     confirmSale = confirmSale,
                     onClose = { showAiDebugLab = false },
+                    onOpenPaywall = {
+                        showAiDebugLab = false
+                        showAiPaywall = true
+                    },
                 )
             }
         }

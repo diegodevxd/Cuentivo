@@ -74,7 +74,12 @@ export function createInterpretAiHandler(
 
     const guardDecision = deps.guard.beforeRepository(uid, requestId, nowEpochMillis);
     if (guardDecision.kind === "RATE_LIMITED") {
-      return UNAVAILABLE(requestId);
+      return {
+        contractVersion: 2,
+        requestId,
+        status: "AI_RATE_LIMITED",
+        proposal: null,
+      };
     }
 
     let authorization: AuthorizeAiResult;
@@ -92,6 +97,19 @@ export function createInterpretAiHandler(
         return UNAVAILABLE(requestId);
       }
       if (authorization.decision !== "AI_AUTHORIZED") {
+        if (
+          authorization.decision === "AI_QUOTA_EXHAUSTED" ||
+          authorization.decision === "AI_RATE_LIMITED" ||
+          authorization.decision === "AI_DISABLED" ||
+          authorization.decision === "AI_ENTITLEMENT_REQUIRED"
+        ) {
+          return {
+            contractVersion: 2,
+            requestId,
+            status: authorization.decision,
+            proposal: null,
+          };
+        }
         return UNAVAILABLE(requestId);
       }
       // Remember only after a successful authorization, before the null-provider/claim path.

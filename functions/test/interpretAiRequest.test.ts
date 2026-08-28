@@ -133,19 +133,31 @@ describe("createInterpretAiHandler", () => {
   });
 
   test.each([
-    ["AI_DISABLED", { decision: "AI_DISABLED", provider: null, fallbackUsed: false }],
-    [
-      "AI_ENTITLEMENT_REQUIRED",
-      { decision: "AI_ENTITLEMENT_REQUIRED", provider: null, fallbackUsed: false },
-    ],
-    ["AI_QUOTA_EXHAUSTED", { decision: "AI_QUOTA_EXHAUSTED", provider: null, fallbackUsed: false }],
-    ["AI_RATE_LIMITED", { decision: "AI_RATE_LIMITED", provider: null, fallbackUsed: false }],
-    [
-      "AI_AUTHENTICATION_REQUIRED",
-      { decision: "AI_AUTHENTICATION_REQUIRED", provider: null, fallbackUsed: false },
-    ],
-  ] as const)("control plane denial %s returns unavailable without claim or provider", async (_name, denial) => {
-    const { handler, claimInputs, providerInputs } = makeHandler({ authorizeResult: denial });
+    ["AI_DISABLED", "AI_DISABLED"],
+    ["AI_ENTITLEMENT_REQUIRED", "AI_ENTITLEMENT_REQUIRED"],
+    ["AI_QUOTA_EXHAUSTED", "AI_QUOTA_EXHAUSTED"],
+    ["AI_RATE_LIMITED", "AI_RATE_LIMITED"],
+  ] as const)("control plane denial %s propagates specific rejection status %s without claim or provider", async (decision, expectedStatus) => {
+    const { handler, claimInputs, providerInputs } = makeHandler({
+      authorizeResult: { decision, provider: null, fallbackUsed: false },
+    });
+
+    const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
+
+    expect(result).toEqual({
+      contractVersion: 2,
+      requestId: VALID_DATA.requestId,
+      status: expectedStatus,
+      proposal: null,
+    });
+    expect(claimInputs).toHaveLength(0);
+    expect(providerInputs).toHaveLength(0);
+  });
+
+  test("control plane denial AI_AUTHENTICATION_REQUIRED collapses to AI_UNAVAILABLE", async () => {
+    const { handler, claimInputs, providerInputs } = makeHandler({
+      authorizeResult: { decision: "AI_AUTHENTICATION_REQUIRED", provider: null, fallbackUsed: false },
+    });
 
     const result = await handler({ auth: AUTH_USER, data: VALID_DATA });
 
@@ -155,6 +167,32 @@ describe("createInterpretAiHandler", () => {
       status: "AI_UNAVAILABLE",
       proposal: null,
     });
+    expect(claimInputs).toHaveLength(0);
+    expect(providerInputs).toHaveLength(0);
+  });
+
+  test("edge guard rate limit returns AI_RATE_LIMITED without calling control plane, claim, or provider", async () => {
+    const tightGuard = createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 1, maxTrackedUids: 10 });
+    // First request passes edge guard
+    tightGuard.beforeRepository("test-user", VALID_DATA.requestId, NOW);
+
+    const { handler, authorizeInputs, claimInputs, providerInputs } = makeHandler({
+      guard: tightGuard,
+    });
+
+    // Second distinct request within same minute is rate-limited at edge
+    const result = await handler({
+      auth: AUTH_USER,
+      data: { ...VALID_DATA, requestId: OTHER_REQUEST_ID },
+    });
+
+    expect(result).toEqual({
+      contractVersion: 2,
+      requestId: OTHER_REQUEST_ID,
+      status: "AI_RATE_LIMITED",
+      proposal: null,
+    });
+    expect(authorizeInputs).toHaveLength(0);
     expect(claimInputs).toHaveLength(0);
     expect(providerInputs).toHaveLength(0);
   });
@@ -360,7 +398,7 @@ describe("createInterpretAiHandler", () => {
     expect(second).toEqual({
       contractVersion: 2,
       requestId: OTHER_REQUEST_ID,
-      status: "AI_UNAVAILABLE",
+      status: "AI_RATE_LIMITED",
       proposal: null,
     });
 

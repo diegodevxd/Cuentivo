@@ -256,4 +256,46 @@ class AiDailyChatRepositoryTest {
             assertEquals(1, stored.size)
         }
     }
+
+    @Test
+    fun `all assistant rejection kinds can be appended and decoded with null textContent`() {
+        runBlocking {
+            val dao = FakeAiDailyMessageDao()
+            val repo = createRepository(dao, ownerUserId = "owner_123")
+
+            repo.openToday()
+            repo.appendAssistant(AiDailyMessageKind.ASSISTANT_QUOTA_EXHAUSTED)
+            repo.appendAssistant(AiDailyMessageKind.ASSISTANT_RATE_LIMITED)
+            repo.appendAssistant(AiDailyMessageKind.ASSISTANT_DISABLED)
+            repo.appendAssistant(AiDailyMessageKind.ASSISTANT_ENTITLEMENT_REQUIRED)
+
+            val conversation = repo.openToday()
+            assertEquals(
+                listOf(
+                    AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_GREETING, null),
+                    AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_QUOTA_EXHAUSTED, null),
+                    AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_RATE_LIMITED, null),
+                    AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_DISABLED, null),
+                    AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_ENTITLEMENT_REQUIRED, null),
+                ),
+                conversation.messages,
+            )
+        }
+    }
+
+    @Test
+    fun `unknown kind with null textContent falls back safely to ASSISTANT_UNAVAILABLE`() {
+        runBlocking {
+            val dao = FakeAiDailyMessageDao()
+            val repo = createRepository(dao, ownerUserId = "owner_123")
+
+            dao.insert(AiDailyMessageEntity(ownerUserId = "owner_123", dayIso = "2026-08-24", kind = "UNKNOWN_FUTURE_KIND", textContent = null, createdAtEpochMillis = 0L))
+
+            val conversation = repo.openToday()
+            assertEquals(
+                listOf(AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_UNAVAILABLE, null)),
+                conversation.messages,
+            )
+        }
+    }
 }

@@ -98,10 +98,18 @@ export type SafeAiProposal =
       period?: SafePeriodCandidate;
     }>;
 
+export type InterpretAiStatus =
+  | "AI_PROPOSAL"
+  | "AI_UNAVAILABLE"
+  | "AI_QUOTA_EXHAUSTED"
+  | "AI_RATE_LIMITED"
+  | "AI_DISABLED"
+  | "AI_ENTITLEMENT_REQUIRED";
+
 export type InterpretAiResponse = Readonly<{
   contractVersion: 2;
   requestId: string;
-  status: "AI_PROPOSAL" | "AI_UNAVAILABLE";
+  status: InterpretAiStatus;
   proposal: SafeAiProposal | null;
 }>;
 

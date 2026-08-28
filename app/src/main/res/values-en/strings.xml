@@ -475,6 +475,10 @@
     <string name="ai_debug_lab_new">New</string>
     <string name="ai_debug_lab_thinking">Thinking...</string>
     <string name="ai_debug_lab_unavailable">Not available yet</string>
+    <string name="ai_debug_lab_quota_exhausted">You have used all your CuentivoAI actions for this month. They will reset next month.</string>
+    <string name="ai_debug_lab_rate_limited">You are sending requests too quickly. Please wait a moment and try again.</string>
+    <string name="ai_debug_lab_disabled">CuentivoAI is temporarily undergoing maintenance. Please try again later.</string>
+    <string name="ai_debug_lab_entitlement_required">CuentivoAI requires an active CuentivoAI plan. Subscribe to continue.</string>
     <string name="ai_debug_lab_clarification">Clarification needed</string>
     <string name="ai_debug_lab_proposal_sale">Sale candidate</string>
     <string name="ai_debug_lab_proposal_payment">Payment candidate</string>

@@ -10,5 +10,6 @@ export default defineConfig({
     // The emulator gate runs ten concurrent real transactions (with a bounded retry-on-contention
     // helper), so it needs more headroom than the 5s default.
     testTimeout: 60_000,
+    hookTimeout: 60_000,
   },
 });

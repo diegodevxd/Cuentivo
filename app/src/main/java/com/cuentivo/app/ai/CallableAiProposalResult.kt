@@ -12,6 +12,14 @@ sealed interface CallableAiProposalResult {
     data class Proposal(val proposal: AiProposal) : CallableAiProposalResult
 
     data object Unavailable : CallableAiProposalResult
+
+    data object QuotaExhausted : CallableAiProposalResult
+
+    data object RateLimited : CallableAiProposalResult
+
+    data object Disabled : CallableAiProposalResult
+
+    data object EntitlementRequired : CallableAiProposalResult
 }
 
 /** Maximum raw UTF-16 display-name length, congruent with the server contract B1. */
@@ -26,11 +34,12 @@ private val CANONICAL_CENTS_REGEX = Regex("^(0|[1-9][0-9]{0,17})$")
  * Strict parser for the v2 callable response (B1 wire contract).
  *
  * Root shape must be exactly `contractVersion=2`, the matching `requestId`, a known `status` and
- * the `proposal` field. `AI_UNAVAILABLE` requires `proposal: null`; `AI_PROPOSAL` requires a
- * proposal whose wire shape matches exactly one allowed kind with exact keys, canonical centavo
- * STRINGS, positive integral quantities, raw-bounded display names, valid calendar dates and the
- * exact per-query-type selector shape. Duplicate slots fail closed (never canonicalized). Every
- * violation returns [CallableAiProposalResult.Unavailable].
+ * the `proposal` field. `AI_UNAVAILABLE` and all rejection reason statuses require `proposal: null`;
+ * `AI_PROPOSAL` requires a proposal whose wire shape matches exactly one allowed kind with exact keys,
+ * canonical centavo STRINGS, positive integral quantities, raw-bounded display names, valid calendar
+ * dates and the exact per-query-type selector shape. Duplicate slots fail closed (never canonicalized).
+ * Every unknown status, malformed response or non-null proposal on rejection returns
+ * [CallableAiProposalResult.Unavailable].
  */
 fun parseCallableProposalResponse(
     data: Any?,
@@ -52,6 +61,10 @@ fun parseCallableProposalResponse(
     val proposalValue = root["proposal"]
     return when (status) {
         "AI_UNAVAILABLE" -> CallableAiProposalResult.Unavailable
+        "AI_QUOTA_EXHAUSTED" -> if (proposalValue == null) CallableAiProposalResult.QuotaExhausted else CallableAiProposalResult.Unavailable
+        "AI_RATE_LIMITED" -> if (proposalValue == null) CallableAiProposalResult.RateLimited else CallableAiProposalResult.Unavailable
+        "AI_DISABLED" -> if (proposalValue == null) CallableAiProposalResult.Disabled else CallableAiProposalResult.Unavailable
+        "AI_ENTITLEMENT_REQUIRED" -> if (proposalValue == null) CallableAiProposalResult.EntitlementRequired else CallableAiProposalResult.Unavailable
         "AI_PROPOSAL" -> {
             val proposal = parseProposalWire(proposalValue)
             if (proposal === null) {

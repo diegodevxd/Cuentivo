@@ -38,8 +38,8 @@ class AiDailyChatRepository(
             val kind = try {
                 AiDailyMessageKind.valueOf(entity.kind)
             } catch (_: IllegalArgumentException) {
-                null
-            } ?: return@mapNotNull null
+                AiDailyMessageKind.ASSISTANT_UNAVAILABLE
+            }
 
             when (kind) {
                 AiDailyMessageKind.USER_TEXT -> {
@@ -52,7 +52,11 @@ class AiDailyChatRepository(
                 }
                 AiDailyMessageKind.ASSISTANT_GREETING,
                 AiDailyMessageKind.ASSISTANT_OUT_OF_SCOPE,
-                AiDailyMessageKind.ASSISTANT_UNAVAILABLE -> {
+                AiDailyMessageKind.ASSISTANT_UNAVAILABLE,
+                AiDailyMessageKind.ASSISTANT_QUOTA_EXHAUSTED,
+                AiDailyMessageKind.ASSISTANT_RATE_LIMITED,
+                AiDailyMessageKind.ASSISTANT_DISABLED,
+                AiDailyMessageKind.ASSISTANT_ENTITLEMENT_REQUIRED -> {
                     if (entity.textContent != null) {
                         null
                     } else {

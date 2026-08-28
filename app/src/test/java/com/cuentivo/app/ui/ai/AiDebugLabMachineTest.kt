@@ -74,6 +74,28 @@ class AiDebugLabMachineTest {
             submitted.generation,
         )
         assertEquals(AiDebugLabState.Unavailable, after.state)
+        assertEquals(listOf(AiChatMessage.UserText("venta"), AiChatMessage.AssistantUnavailable), after.messages)
+    }
+
+    @Test
+    fun `rejection results map to safe unavailable state with respective assistant message`() {
+        val cases = listOf(
+            CallableAiProposalResult.QuotaExhausted to AiChatMessage.AssistantQuotaExhausted,
+            CallableAiProposalResult.RateLimited to AiChatMessage.AssistantRateLimited,
+            CallableAiProposalResult.Disabled to AiChatMessage.AssistantDisabled,
+            CallableAiProposalResult.EntitlementRequired to AiChatMessage.AssistantEntitlementRequired,
+        )
+        for ((result, expectedMessage) in cases) {
+            val editing = AiDebugLabModel(text = "venta")
+            val submitted = AiDebugLabMachine.onSubmit(editing) as AiDebugLabSubmitOutcome.Submitted
+            val after = AiDebugLabMachine.onResult(
+                submitted.model,
+                result,
+                submitted.generation,
+            )
+            assertEquals("expected Unavailable state for $result", AiDebugLabState.Unavailable, after.state)
+            assertEquals("expected message $expectedMessage for $result", listOf(AiChatMessage.UserText("venta"), expectedMessage), after.messages)
+        }
     }
 
     @Test
@@ -380,6 +402,10 @@ class AiDebugLabMachineTest {
             AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_OUT_OF_SCOPE, null),
             AiDailyStoredMessage(AiDailyMessageKind.USER_TEXT, "cobro a Juan"),
             AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_UNAVAILABLE, null),
+            AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_QUOTA_EXHAUSTED, null),
+            AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_RATE_LIMITED, null),
+            AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_DISABLED, null),
+            AiDailyStoredMessage(AiDailyMessageKind.ASSISTANT_ENTITLEMENT_REQUIRED, null),
         )
         val initial = AiDebugLabModel(text = "draft", state = AiDebugLabState.Unavailable)
         val loaded = AiDebugLabMachine.onHistoryLoaded(initial, history)
@@ -391,6 +417,10 @@ class AiDebugLabMachineTest {
                 AiChatMessage.AssistantOutOfScope,
                 AiChatMessage.UserText("cobro a Juan"),
                 AiChatMessage.AssistantUnavailable,
+                AiChatMessage.AssistantQuotaExhausted,
+                AiChatMessage.AssistantRateLimited,
+                AiChatMessage.AssistantDisabled,
+                AiChatMessage.AssistantEntitlementRequired,
             ),
             loaded.messages,
         )

@@ -61,7 +61,7 @@ class AiDailyChatModelTest {
     }
 
     @Test
-    fun `kinds enum contains exactly the four allowed daily message kinds`() {
+    fun `kinds enum contains exactly the allowed daily message kinds`() {
         val names = AiDailyMessageKind.entries.map { it.name }
         assertEquals(
             listOf(
@@ -69,6 +69,10 @@ class AiDailyChatModelTest {
                 "ASSISTANT_GREETING",
                 "ASSISTANT_OUT_OF_SCOPE",
                 "ASSISTANT_UNAVAILABLE",
+                "ASSISTANT_QUOTA_EXHAUSTED",
+                "ASSISTANT_RATE_LIMITED",
+                "ASSISTANT_DISABLED",
+                "ASSISTANT_ENTITLEMENT_REQUIRED",
             ),
             names,
         )

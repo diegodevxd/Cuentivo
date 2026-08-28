@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createFirestoreControlPlaneRepository } from "../src/ai/firestoreControlPlane.js";
+import { createInterpretAiHandler } from "../src/interpretAiRequest.js";
+import { createAiEdgeRequestGuard } from "../src/ai/edgeRequestGuard.js";
 import {
   createFirestoreSubscriptionEntitlementRepository,
   tokenBindingPath,
@@ -48,6 +50,10 @@ function minuteKey(epochMillis: number): string {
       d.getUTCMinutes(),
     ).padStart(2, "0")}`
   );
+}
+
+function openGuard() {
+  return createAiEdgeRequestGuard({ maxNewRequestsPerMinute: 1_000, maxTrackedUids: 1_000 });
 }
 
 function input(requestId: string) {
@@ -266,5 +272,128 @@ describe("firestore emulator concurrency gate", () => {
     // Intruder does not have an entitlement document
     const intruderDoc = await firestore.doc(entitlementPath(INTRUDER_UID)).get();
     expect(intruderDoc.exists).toBe(false);
+  });
+
+  test("interpretAiRequest handler against firestore control plane emits distinct rejection reasons", async () => {
+    const repository = createFirestoreControlPlaneRepository(firestore);
+    const mockProvider = {
+      async interpret() {
+        return {
+          kind: "record_payment" as const,
+          customerName: "María",
+          declaredAmountCents: "20000",
+        };
+      },
+    };
+    const handler = createInterpretAiHandler({
+      authorize: (i) => repository.authorize(i),
+      claimProviderInvocation: async () => "CLAIMED",
+      provider: mockProvider,
+      guard: openGuard(),
+      now: () => NOW,
+    });
+
+    const validPayload = {
+      contractVersion: 2,
+      requestId: randomUUID(),
+      action: "interpret_text_proposal",
+      text: "registro de abono",
+    };
+
+    // 1. AI_DISABLED when aiControl/global is disabled
+    await firestore.doc("aiControl/global").set({
+      enabled: false,
+      geminiEnabled: true,
+      monthlyActionLimit: 10,
+      perMinuteLimit: 10,
+    });
+    const disabledResult = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "password" } } },
+      data: validPayload,
+    });
+    expect(disabledResult).toEqual({
+      contractVersion: 2,
+      requestId: validPayload.requestId,
+      status: "AI_DISABLED",
+      proposal: null,
+    });
+
+    // 2. AI_ENTITLEMENT_REQUIRED when entitlement is missing or expired
+    await firestore.doc("aiControl/global").set({
+      enabled: true,
+      geminiEnabled: true,
+      monthlyActionLimit: 10,
+      perMinuteLimit: 10,
+    });
+    await firestore.doc(`aiEntitlements/${RUN_UID}`).delete();
+    const noEntitlementResult = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "password" } } },
+      data: { ...validPayload, requestId: randomUUID() },
+    });
+    expect(noEntitlementResult).toEqual({
+      contractVersion: 2,
+      requestId: expect.any(String),
+      status: "AI_ENTITLEMENT_REQUIRED",
+      proposal: null,
+    });
+
+    // Restore valid entitlement
+    await firestore.doc(`aiEntitlements/${RUN_UID}`).set({
+      enabled: true,
+      expiresAtEpochMillis: ENTITLEMENT_EXPIRES,
+    });
+
+    // 3. AI_QUOTA_EXHAUSTED when monthly quota is exhausted
+    await firestore.doc(`aiUsage/${RUN_UID}_${monthKey(NOW)}`).set({
+      usedActions: 10,
+    });
+    const quotaResult = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "password" } } },
+      data: { ...validPayload, requestId: randomUUID() },
+    });
+    expect(quotaResult).toEqual({
+      contractVersion: 2,
+      requestId: expect.any(String),
+      status: "AI_QUOTA_EXHAUSTED",
+      proposal: null,
+    });
+
+    // Reset usage to 0, set perMinuteLimit to 1, consume 1
+    await firestore.doc(`aiUsage/${RUN_UID}_${monthKey(NOW)}`).set({
+      usedActions: 0,
+    });
+    await firestore.doc("aiControl/global").set({
+      enabled: true,
+      geminiEnabled: true,
+      monthlyActionLimit: 10,
+      perMinuteLimit: 1,
+    });
+    await firestore.doc(`aiRateWindows/${RUN_UID}_${minuteKey(NOW)}`).set({
+      usedActions: 1,
+    });
+
+    // 4. AI_RATE_LIMITED when minute rate window is exhausted
+    const rateResult = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "password" } } },
+      data: { ...validPayload, requestId: randomUUID() },
+    });
+    expect(rateResult).toEqual({
+      contractVersion: 2,
+      requestId: expect.any(String),
+      status: "AI_RATE_LIMITED",
+      proposal: null,
+    });
+
+    // 5. Anonymous session falls back to AI_UNAVAILABLE
+    const anonResult = await handler({
+      auth: { uid: RUN_UID, token: { firebase: { sign_in_provider: "anonymous" } } },
+      data: { ...validPayload, requestId: randomUUID() },
+    });
+    expect(anonResult).toEqual({
+      contractVersion: 2,
+      requestId: expect.any(String),
+      status: "AI_UNAVAILABLE",
+      proposal: null,
+    });
   });
 });

@@ -114,6 +114,10 @@ sealed interface AiChatMessage {
     data object AssistantOutOfScope : AiChatMessage
     data object AssistantPending : AiChatMessage
     data object AssistantUnavailable : AiChatMessage
+    data object AssistantQuotaExhausted : AiChatMessage
+    data object AssistantRateLimited : AiChatMessage
+    data object AssistantDisabled : AiChatMessage
+    data object AssistantEntitlementRequired : AiChatMessage
     data class AssistantClarification(
         val reason: ClarificationReason,
         val slots: Set<UnresolvedSlot>,
@@ -290,6 +294,10 @@ object AiDebugLabMachine {
         }
         val assistantMessage = when (result) {
             CallableAiProposalResult.Unavailable -> AiChatMessage.AssistantUnavailable
+            CallableAiProposalResult.QuotaExhausted -> AiChatMessage.AssistantQuotaExhausted
+            CallableAiProposalResult.RateLimited -> AiChatMessage.AssistantRateLimited
+            CallableAiProposalResult.Disabled -> AiChatMessage.AssistantDisabled
+            CallableAiProposalResult.EntitlementRequired -> AiChatMessage.AssistantEntitlementRequired
 
             is CallableAiProposalResult.Proposal ->
                 when (val validation = SafeAiProposalValidator.validate(result.proposal)) {
@@ -308,7 +316,11 @@ object AiDebugLabMachine {
                 }
         }
         val state = when (assistantMessage) {
-            AiChatMessage.AssistantUnavailable -> AiDebugLabState.Unavailable
+            AiChatMessage.AssistantUnavailable,
+            AiChatMessage.AssistantQuotaExhausted,
+            AiChatMessage.AssistantRateLimited,
+            AiChatMessage.AssistantDisabled,
+            AiChatMessage.AssistantEntitlementRequired -> AiDebugLabState.Unavailable
             is AiChatMessage.AssistantClarification ->
                 AiDebugLabState.Clarification(assistantMessage.reason, assistantMessage.slots)
             is AiChatMessage.AssistantProposal -> AiDebugLabState.ProposalPreview(assistantMessage.proposal)
@@ -366,6 +378,10 @@ object AiDebugLabMachine {
                 AiDailyMessageKind.ASSISTANT_GREETING -> AiChatMessage.AssistantGreeting
                 AiDailyMessageKind.ASSISTANT_OUT_OF_SCOPE -> AiChatMessage.AssistantOutOfScope
                 AiDailyMessageKind.ASSISTANT_UNAVAILABLE -> AiChatMessage.AssistantUnavailable
+                AiDailyMessageKind.ASSISTANT_QUOTA_EXHAUSTED -> AiChatMessage.AssistantQuotaExhausted
+                AiDailyMessageKind.ASSISTANT_RATE_LIMITED -> AiChatMessage.AssistantRateLimited
+                AiDailyMessageKind.ASSISTANT_DISABLED -> AiChatMessage.AssistantDisabled
+                AiDailyMessageKind.ASSISTANT_ENTITLEMENT_REQUIRED -> AiChatMessage.AssistantEntitlementRequired
             }
         }
         return model.copy(
