@@ -4,7 +4,21 @@ Este runbook está diseñado para ser ejecutado de forma inmediata ante incident
 
 ---
 
-## 1. Procedimiento de Apagado de Emergencia
+## 1. Control Positivo Previo (OBLIGATORIO ANTES DE APAGAR)
+
+> [!IMPORTANT]
+> **No toques el interruptor sin validar la visibilidad de logs:**
+> Una ausencia de eventos tras el corte es indistinguible de un filtro mal escrito, un proyecto incorrecto en la consola o una ventana de tiempo desfasada.
+>
+> **Antes de modificar Firestore, confirma que tu filtro devuelve filas con la IA encendida:**
+> 1. Abre el **Explorador de registros (Logs Explorer)** en Google Cloud Console.
+> 2. Aplica el filtro de la Sección 3 (con ventana de tiempo "Últimos 15 minutos" o "Última 1 hora").
+> 3. Confirma que ves filas activas (`AI_PROVIDER_INVOCATION`, `AI_INTERPRET_RESULT` o ejecuciones de la función).
+> 4. **Si NO ves filas con la IA encendida, NO continúes:** corrige el proyecto, la ventana de tiempo o usa el filtro alternativo por texto antes de apagar.
+
+---
+
+## 2. Procedimiento de Apagado de Emergencia
 
 ### Paso 1: Modificar el interruptor en Firestore
 1. Accede a la **Consola de Firebase** o **Google Cloud Firestore**.
@@ -15,7 +29,65 @@ Este runbook está diseñado para ser ejecutado de forma inmediata ante incident
 
 ---
 
-## 2. Comportamiento y Tiempos de Propagación
+## 3. Filtros de Cloud Logging y Verificación
+
+Las callables de CuentivoAI son **Cloud Functions v2** (basadas en Cloud Run), por lo que se registran bajo el recurso `cloud_run_revision` y la etiqueta `service_name`.
+
+### A. Filtros para `interpretAiRequest`
+
+**Filtro Estándar (Cloud Functions v2 / Cloud Run):**
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="interpretAiRequest"
+```
+
+**Filtro Alternativo Resiliente (Independiente del tipo de recurso / cambios de infraestructura):**
+```text
+("AI_INTERPRET_RESULT" OR "AI_PROVIDER_INVOCATION" OR "AI_PROVIDER_FAILURE" OR "AI_PROVIDER_LATENCY" OR "AI_REJECTED")
+```
+
+---
+
+### B. Filtros para `getAiAvailability`
+
+**Filtro Estándar (Cloud Functions v2 / Cloud Run):**
+```text
+resource.type="cloud_run_revision"
+resource.labels.service_name="getAiAvailability"
+```
+
+**Filtro Alternativo Resiliente:**
+```text
+("getAiAvailability" OR "AI_AVAILABILITY_REJECTED")
+```
+
+---
+
+### C. Indicadores de Éxito del Apagado
+
+1. **Evidencia Positiva de Corte (Obligatoria):**
+   Aparecen nuevos registros con el estado de rechazo autoritativo:
+   ```json
+   {
+     "message": "AI_INTERPRET_RESULT",
+     "status": "AI_DISABLED"
+   }
+   ```
+2. **Evidencia Negativa de Gasto:**
+   Habiendo confirmado en el Paso 1 que aparecían eventos de proveedor, cesa por completo la emisión de:
+   ```text
+   AI_PROVIDER_INVOCATION
+   ```
+   *(Ninguna llamada es despachada al SDK de Gemini).*
+3. **Consulta de Disponibilidad:**
+   Las llamadas a `getAiAvailability` responden:
+   ```json
+   { "available": false }
+   ```
+
+---
+
+## 4. Comportamiento y Tiempos de Propagación
 
 El apagador opera bajo dos ventanas temporales distintas que quien opere debe conocer:
 
@@ -33,37 +105,7 @@ El apagador opera bajo dos ventanas temporales distintas que quien opere debe co
 
 ---
 
-## 3. Verificación del Apagado en Cloud Logging
-
-Para comprobar que el servicio está efectivamente apagado, abre el **Explorador de registros (Logs Explorer)** en Google Cloud Console:
-
-### Filtro de Logs:
-```text
-resource.type="cloud_function"
-resource.labels.function_name="interpretAiRequest"
-```
-
-### Indicadores de éxito del apagado:
-1. **Presencia de corte:** Se observan logs informativos con el estado de apagado:
-   ```json
-   {
-     "message": "AI_INTERPRET_RESULT",
-     "status": "AI_DISABLED"
-   }
-   ```
-2. **Cese de gasto:** **Ausencia total** de entradas con el mensaje `AI_PROVIDER_INVOCATION`. Ninguna llamada llega al modelo de Gemini.
-
-### Verificación de la Callable de Disponibilidad:
-Filtro:
-```text
-resource.type="cloud_function"
-resource.labels.function_name="getAiAvailability"
-```
-- Las respuestas devuelven `{ "available": false }`.
-
----
-
-## 4. Procedimiento de Reactivación (Encendido)
+## 5. Procedimiento de Reactivación (Encendido)
 
 1. En la colección **`aiControl`**, abre el documento **`global`**.
 2. Cambia el campo **`enabled`** nuevamente a **`true`**.
@@ -73,7 +115,7 @@ resource.labels.function_name="getAiAvailability"
 
 ---
 
-## 5. Advertencia Crítica: Trampa de `usedActions` vs `monthlyActionLimit`
+## 6. Advertencia Crítica: Trampa de `usedActions` vs `monthlyActionLimit`
 
 > [!CAUTION]
 > **No confundir `monthlyActionLimit` con `usedActions` (Incidente 2026-08-25):**
@@ -86,13 +128,14 @@ resource.labels.function_name="getAiAvailability"
 
 ---
 
-## 6. Registro del Simulacro de Rollback (Para llenado en vivo por el Operador)
+## 7. Registro del Simulacro de Rollback (Para llenado en vivo por el Operador)
 
 *(Esta sección debe ser completada exclusivamente por el operador al ejecutar el simulacro en vivo)*
 
 - **Fecha y Hora del Simulacro:** ___________________________
 - **Operador Responsable:** ___________________________
 - **Entorno / Proyecto:** ___________________________
+- **Control positivo previo (filas visibles con IA encendida antes del corte):** [ ] SÍ  [ ] NO
 - **Hora de cambio `enabled = false`:** ___________________________
 - **Confirmación de corte inmediato en servidor (0s / `AI_DISABLED`):** [ ] SÍ  [ ] NO
 - **Confirmación de cese de `AI_PROVIDER_INVOCATION` en logs:** [ ] SÍ  [ ] NO
