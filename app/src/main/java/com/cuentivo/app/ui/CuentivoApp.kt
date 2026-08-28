@@ -295,7 +295,8 @@ fun CuentivoApp(
     val snackbar = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val aiUnavailableInVersionMessage = stringResource(R.string.ai_feature_unavailable_in_version)
-    // Debug-only, reversible AI lab: release builds resolve this to null and the entry disappears.
+    // Transport for AI lab: release builds resolve to null until T6, where AiEntryPolicy routes
+    // paying subscribers to an unavailable notice and non-subscribers to the paywall.
     val debugAiLabTransport = remember { debugAiTransport() }
     var showAiDebugLab by remember { mutableStateOf(false) }
     var showAiPaywall by remember { mutableStateOf(false) }

@@ -121,7 +121,7 @@ internal fun SubscriptionContent(
             )
             BulletLine(stringResource(R.string.subscription_ai_feature_pro_all))
             BulletLine(stringResource(R.string.subscription_ai_feature_execution))
-            BulletLine(stringResource(R.string.subscription_ai_feature_voice))
+            BulletLine(stringResource(R.string.subscription_ai_feature_text))
             if (free) {
                 Spacer(Modifier.width(NeoSpacing.xs))
                 NeoAction(
