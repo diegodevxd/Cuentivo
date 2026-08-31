@@ -10,8 +10,15 @@ const path = require("path");
 
 const functionsDir = path.resolve(__dirname, "..");
 const projectDir = path.resolve(functionsDir, "..");
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+const nodeBin = path.dirname(process.execPath);
+const npm = process.platform === "win32" ? process.execPath : "npm";
+const npx = process.platform === "win32" ? process.execPath : "npx";
+const npmPrefix = process.platform === "win32"
+  ? [path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")]
+  : [];
+const npxPrefix = process.platform === "win32"
+  ? [path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npx-cli.js")]
+  : [];
 const jbrBin = process.platform === "win32"
   ? "C:\\Program Files\\Android\\Android Studio\\jbr\\bin"
   : "/c/Program Files/Android/Android Studio/jbr/bin";
@@ -64,7 +71,7 @@ function cleanAndBuild() {
 
   try {
     fs.rmSync(path.join(functionsDir, "lib"), { recursive: true, force: true });
-    runCommand("compile", npm, ["run", "build"]);
+    runCommand("compile", npm, [...npmPrefix, "run", "build"]);
     // Keep the externally reported sequence at five steps; compilation is part of this step.
     steps.pop();
   } catch (error) {
@@ -80,18 +87,19 @@ function configureJava() {
     );
   }
   environment.JAVA_HOME = path.dirname(jbrBin);
-  environment.PATH = `${jbrBin}${path.delimiter}${environment.PATH ?? ""}`;
+  environment.PATH = `${jbrBin}${path.delimiter}${nodeBin}${path.delimiter}${environment.PATH ?? ""}`;
 }
 
 try {
   configureJava();
-  runCommand("npm ci", npm, ["ci"]);
-  runCommand("lint", npm, ["run", "lint"]);
-  runCommand("unit tests", npm, ["test"]);
+  runCommand("npm ci", npm, [...npmPrefix, "ci"]);
+  runCommand("lint", npm, [...npmPrefix, "run", "lint"]);
+  runCommand("unit tests", npm, [...npmPrefix, "test"]);
   runCommand(
     "Firestore emulator gate",
     npx,
     [
+      ...npxPrefix,
       "-y",
       "firebase-tools@latest",
       "emulators:exec",
