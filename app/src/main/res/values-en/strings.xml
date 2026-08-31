@@ -604,4 +604,5 @@
     <string name="subscription_guest_pro_note_with_count">Create your account to back up your %1$d customers in the cloud with Pro.</string>
     <string name="subscription_guest_pro_note_generic">Create your account to back up your customers in the cloud with Pro.</string>
     <string name="account_privacy_policy">Privacy policy</string>
+    <string name="purchase_blocked_anonymous">Sign in or create an account to link your subscription.</string>
 </resources>

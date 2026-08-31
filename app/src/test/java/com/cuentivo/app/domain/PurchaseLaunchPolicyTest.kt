@@ -290,4 +290,58 @@ class PurchaseLaunchPolicyTest {
             decision,
         )
     }
+
+    @Test
+    fun anonymous_session_with_valid_product_blocks_purchase_with_anonymous_session_reason() {
+        val anonymousUserId = "anon_uid_98765"
+        val decisionAi = PurchaseLaunchPolicy.evaluate(
+            queryState = PurchasesQueryState.Resolved(
+                purchases = emptyList(),
+                queriedUserId = anonymousUserId,
+            ),
+            currentUserId = anonymousUserId,
+            targetProductId = SubscriptionTier.AI_PRODUCT_ID,
+            isAnonymous = true,
+        )
+        assertEquals(
+            PurchaseLaunchDecision.Blocked(PurchaseBlockReason.ANONYMOUS_SESSION),
+            decisionAi,
+        )
+
+        val decisionPro = PurchaseLaunchPolicy.evaluate(
+            queryState = PurchasesQueryState.Resolved(
+                purchases = emptyList(),
+                queriedUserId = anonymousUserId,
+            ),
+            currentUserId = anonymousUserId,
+            targetProductId = SubscriptionTier.PRO_PRODUCT_ID,
+            isAnonymous = true,
+        )
+        assertEquals(
+            PurchaseLaunchDecision.Blocked(PurchaseBlockReason.ANONYMOUS_SESSION),
+            decisionPro,
+        )
+    }
+
+    @Test
+    fun authenticated_real_account_does_not_block_for_anonymous_session() {
+        val decision = PurchaseLaunchPolicy.evaluate(
+            queryState = PurchasesQueryState.Resolved(
+                purchases = emptyList(),
+                queriedUserId = testUserId,
+            ),
+            currentUserId = testUserId,
+            targetProductId = SubscriptionTier.AI_PRODUCT_ID,
+            isAnonymous = false,
+        )
+        assertEquals(
+            PurchaseLaunchDecision.Proceed(
+                targetProductId = SubscriptionTier.AI_PRODUCT_ID,
+                productToReplace = null,
+                replacementMode = null,
+                obfuscatedAccountId = expectedObfuscatedId,
+            ),
+            decision,
+        )
+    }
 }

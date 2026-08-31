@@ -284,6 +284,7 @@ class MainActivity : ComponentActivity() {
      */
     private val entitlementResolvedState = mutableStateOf(false)
     private val billingMessageState = mutableStateOf<String?>(null)
+    private val requireAccountState = mutableStateOf(false)
     private var billingGateway: BillingGateway? = null
 
     /**
@@ -436,6 +437,9 @@ class MainActivity : ComponentActivity() {
                 // so the fixed technical event rides along without any message content.
                 crashReporter.report(CrashEvent.BILLING_FAILURE)
             },
+            onRequireAccount = {
+                requireAccountState.value = true
+            },
         )
         billingGateway = billing
         // Started for whoever is signed in right now — usually nobody on a cold start, in which case
@@ -458,6 +462,10 @@ class MainActivity : ComponentActivity() {
                 var anonymousStartupCause by remember { mutableStateOf<AnonymousStartupFailureCause?>(null) }
                 var showManualAuthentication by remember { mutableStateOf(false) }
                 var showAccountLinking by remember { mutableStateOf(false) }
+                if (requireAccountState.value) {
+                    showAccountLinking = true
+                    requireAccountState.value = false
+                }
 
                 val startAnonymousSession: () -> Unit = {
                     isStartingAnonymousSession = true
@@ -2347,7 +2355,12 @@ class MainActivity : ComponentActivity() {
                     // The real Activity, not applicationContext: Play needs somewhere to put its
                     // sheet. The uid travels with it so the purchase is credited to whoever opened
                     // the flow, even if the session changes before Play calls back.
-                    billing.launchPurchase(this@MainActivity, currentUserId, targetTier)
+                    billing.launchPurchase(
+                        activity = this@MainActivity,
+                        userId = currentUserId,
+                        targetTier = targetTier,
+                        isAnonymous = authenticationGateway.isAnonymous,
+                    )
                 }, onSignOut = {
                     authenticationGateway.signOut()
                     authenticationGateway.clearGoogleCredentialState { }

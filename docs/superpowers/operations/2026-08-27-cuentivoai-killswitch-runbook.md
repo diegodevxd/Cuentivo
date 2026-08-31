@@ -132,6 +132,48 @@ El apagador opera bajo dos ventanas temporales distintas que quien opere debe co
 
 *(Esta sección debe ser completada exclusivamente por el operador al ejecutar el simulacro en vivo)*
 
+### SIMULACRO EJECUTADO — 2026-08-31
+
+**Ejecutado en producción sobre el proyecto `organitazionlabs`, con la app `versionCode 35 / 1.18.0`
+instalada desde Play Store. Diego operó el teléfono; Claude operó el interruptor y los logs.**
+
+| Momento | Hora | Evidencia |
+|---|---|---|
+| **Control positivo** | 19:24:36 y 19:24:45 | `AI_PROVIDER_INVOCATION` + `AI_PROVIDER_LATENCY` **1113 ms** y **810 ms** + `AI_INTERPRET_RESULT status=AI_PROPOSAL` |
+| **Apagado** (`enabled=false`) | **19:25:29** | Sólo se tocó `enabled`; `geminiEnabled`, `monthlyActionLimit` y `perMinuteLimit` quedaron intactos |
+| **Petición con la IA apagada** | 19:26:47 | Verificación `auth VALID` / `app VALID`, y `AI_INTERPRET_RESULT status=AI_DISABLED` **216 ms** después. **Cero `AI_PROVIDER_INVOCATION`** |
+| **Encendido** (`enabled=true`) | **19:30:39** | Los cuatro campos restaurados a su valor original |
+| **Recuperación** | 19:33:23 | `AI_PROVIDER_INVOCATION` + latencia **832 ms** + `AI_INTERPRET_RESULT status=AI_PROPOSAL` |
+
+**Duración total del corte: 5 minutos 10 segundos.**
+
+**Lo que quedó demostrado, y no estaba demostrado antes:**
+
+- **Apagar no cuesta dinero.** No basta con que el usuario vea un aviso: la petición entró, se
+  autenticó, pasó App Check y **se cortó antes de llegar a Gemini**. El contraste es exacto — con la
+  IA encendida hay invocación y 1113 ms de latencia del modelo; con la IA apagada no hay ni una sola
+  línea de invocación.
+- **El corte en servidor es inmediato**, no depende de que el cliente se entere.
+- **Los dos caminos del cliente funcionan y son distintos:** con la app ya abierta, el aviso lo da el
+  **servidor** al mandar el mensaje (`AI_DISABLED` traducido por T4); al **cerrar y reabrir**, la
+  propia entrada bloquea antes de dejar escribir (consulta de disponibilidad de T5). Esa segunda
+  ruta nunca se había ejercido hasta hoy.
+- **El texto que ve la persona** es *"CuentivoAI en mantenimiento temporalmente. Intenta más tarde."*
+
+**Observaciones:**
+
+- No hizo falta esperar los 5 minutos del TTL en ningún momento: el camino del servidor responde al
+  instante, y reabrir la app fuerza una consulta nueva. **El TTL es el techo, no el tiempo típico.**
+- El API de Cloud Logging devolvió errores internos intermitentes durante la verificación. No afectó
+  al simulacro —los registros estaban ahí al reintentar— pero conviene saberlo: **si los logs no
+  responden, eso no es evidencia de que el apagador falló.**
+
+**Firma del operador:** ___________________________
+
+---
+
+### Plantilla en blanco para el próximo simulacro
+
 - **Fecha y Hora del Simulacro:** ___________________________
 - **Operador Responsable:** ___________________________
 - **Entorno / Proyecto:** ___________________________

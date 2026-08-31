@@ -11,7 +11,54 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-30. **El núcleo de CuentivoAI está cerrado: 5 de 5.** N5 cerró sus
+**Última actualización:** 2026-08-31. **El núcleo está cerrado y el código pendiente, terminado.**
+HEAD `1ed3001`. Lo que queda para producción ya no es código: simulacro del apagador, enforcement de
+App Check y cohorte limpia de métricas.
+
+## Lo que pasó el 30 y 31 de agosto
+
+**Diego probó en Play de verdad, y esa prueba destapó cuatro defectos que ninguna suite veía.**
+
+1. **El plan se acreditaba al teléfono, no a la cuenta.** `PlayPurchase` no tenía campo de
+   titularidad y `applyPurchases` nunca leía `accountIdentifiers`, así que el tier salía de la
+   cuenta de **Google Play del dispositivo**. Una segunda cuenta entraba al asistente. El servidor
+   negó correctamente; el cliente mintió. Corregido y verificado por Diego en el `v34`.
+2. **El primer arreglo traía una regresión que habría quitado Pro a TODOS los clientes de
+   producción.** Play no devuelve `null` para una compra sin identificador: devuelve **cadena
+   vacía**, y la regla sólo toleraba `null`. Las 940 pruebas JVM pasaban con el defecto dentro
+   porque **la única que lo veía es instrumentada**. Normalizado en la frontera.
+3. **Cancelar revocaba al instante.** `translatePlaySubscription` concedía sólo con `ACTIVE` e
+   `IN_GRACE_PERIOD`, y `CANCELED` caía en el mismo cubo que `EXPIRED` — pero en Play una
+   suscripción cancelada **sigue vigente hasta que termina el periodo pagado**. Quien cancelaba el
+   día 3 perdía 27 días ya pagados. Corregido y **desplegado**.
+4. **`firebase deploy` no compilaba.** No había hook de `predeploy`, así que subía lo que hubiera en
+   `lib/`. Funcionó antes por casualidad. Un deploy dijo *"Successful update"* cuatro veces
+   subiendo código de tres días atrás, y por eso **T4, T5 y T8 estuvieron escritas sin llegar a
+   producción**. Hook agregado; `lib/` ahora se borra antes de compilar.
+
+**El consumidor de notificaciones de Play está vivo y confirmado en producción**: dos
+`PLAY_RTDN_IGNORED` con `TEST_NOTIFICATION` en los logs, desde el tópico. Diseño de Codex que hay que
+conservar: **la notificación es una señal, no un veredicto** — se consulta Play y se decide por el
+estado real, con reintentos activos y clasificación explícita de errores permanentes.
+
+**El Pro histórico se simplificó por un dato de Diego:** nunca nadie compró Pro. Cero suscriptores.
+Así que la tolerancia no protegía a nadie y la regla quedó **estricta y simétrica** con AI.
+**Condición que la hace segura, y deja de valer en cuanto alguien compre:** la app de producción es
+la `versionCode 32`, que **no lleva el sello**, así que cualquier compra de Pro desde la app
+publicada hoy nace sin identificador. Está escrito en el código.
+
+**Privacidad quedó completa**: la política ganó su sección de CuentivoAI y luego cuatro correcciones
+—Crashlytics como proveedor, ubicación aproximada inferida por IP, notas de ventas y abonos, y la
+fecha—; la declaración de **Seguridad de los datos se envió**; y el `v35` lleva el **enlace al aviso
+dentro de la app**. Los tres coherentes entre sí, que es lo que se revisa.
+
+**Mecanizado para que no se repita:** `npm --prefix functions run release:check` encadena `npm ci`
+limpio, lint, pruebas, gate del emulador y compilación limpia, y **falla si falta el JDK** en vez de
+saltarse el gate.
+
+---
+
+**(2026-08-30) El núcleo de CuentivoAI está cerrado: 5 de 5.** N5 cerró sus
 nueve tareas, el AAB `versionCode 33` salió a prueba cerrada y **la compra real desde Play verificó
 el entitlement de punta a punta** (T3 y T4 verificadas en vivo, no sólo desplegadas). El AAB `v34`
 corrige lo que esa prueba destapó.

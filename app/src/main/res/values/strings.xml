@@ -604,4 +604,5 @@
     <string name="subscription_guest_pro_note_with_count">Crea tu cuenta para respaldar en la nube a tus %1$d clientes con Pro.</string>
     <string name="subscription_guest_pro_note_generic">Crea tu cuenta para respaldar en la nube a tus clientes con Pro.</string>
     <string name="account_privacy_policy">Aviso de privacidad</string>
+    <string name="purchase_blocked_anonymous">Crea o inicia sesión con tu cuenta para ligar tu suscripción.</string>
 </resources>

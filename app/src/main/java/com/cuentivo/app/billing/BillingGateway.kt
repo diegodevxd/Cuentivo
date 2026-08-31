@@ -58,7 +58,7 @@ import java.util.concurrent.ConcurrentHashMap
  *   actual access to AI capabilities is granted solely by backend validation (T3).
  */
 class BillingGateway(
-    context: Context,
+    private val context: Context,
     private val onTierChanged: (SubscriptionTier, String?) -> Unit,
     private val onMessage: (String) -> Unit,
     /**
@@ -71,6 +71,10 @@ class BillingGateway(
      * **Project Rule 4:** NEVER log or expose this token.
      */
     private val onPurchaseTokenReceived: (token: String, productId: String, userId: String?) -> Unit = { _, _, _ -> },
+    /**
+     * Invoked when a purchase attempt is blocked because an authenticated persistent account is required.
+     */
+    private val onRequireAccount: () -> Unit = {},
 ) {
     private val products = ConcurrentHashMap<String, ProductDetails>()
     @Volatile private var purchasesQueryState: PurchasesQueryState = PurchasesQueryState.Pending
@@ -195,6 +199,7 @@ class BillingGateway(
         activity: Activity,
         userId: String?,
         targetProductId: String = SubscriptionTier.PRO_PRODUCT_ID,
+        isAnonymous: Boolean = false,
     ) {
         if (!client.isReady) {
             onMessage("Las suscripciones no están disponibles en este momento")
@@ -236,6 +241,7 @@ class BillingGateway(
                 queryState = queryState,
                 currentUserId = userId,
                 targetProductId = targetProductId,
+                isAnonymous = isAnonymous,
             )
 
             when (decision) {
@@ -280,6 +286,10 @@ class BillingGateway(
                 }
                 is PurchaseLaunchDecision.Blocked -> {
                     when (decision.reason) {
+                        PurchaseBlockReason.ANONYMOUS_SESSION -> {
+                            onMessage(context.getString(com.cuentivo.app.R.string.purchase_blocked_anonymous))
+                            onRequireAccount()
+                        }
                         PurchaseBlockReason.ALREADY_ACTIVE -> {
                             onMessage("Este plan ya se encuentra activo")
                             refresh(userId)
@@ -314,6 +324,7 @@ class BillingGateway(
         activity: Activity,
         userId: String?,
         targetTier: SubscriptionTier,
+        isAnonymous: Boolean = false,
     ) {
         val productId = when (targetTier) {
             SubscriptionTier.AI -> SubscriptionTier.AI_PRODUCT_ID
@@ -323,7 +334,7 @@ class BillingGateway(
                 return
             }
         }
-        launchPurchase(activity = activity, userId = userId, targetProductId = productId)
+        launchPurchase(activity = activity, userId = userId, targetProductId = productId, isAnonymous = isAnonymous)
     }
 
     /** Ends the connection and cancels any pending retry, so a closed gateway stays closed. */

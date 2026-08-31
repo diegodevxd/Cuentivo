@@ -49,6 +49,9 @@ enum class PurchaseBlockReason {
 
     /** Replacement requested but no valid proration / replacement mode exists. */
     INVALID_REPLACEMENT,
+
+    /** The current session is an anonymous guest; a persistent account is required before purchasing. */
+    ANONYMOUS_SESSION,
 }
 
 /**
@@ -89,12 +92,20 @@ object PurchaseLaunchPolicy {
     /**
      * Evaluates whether launching a purchase for [targetProductId] on behalf of [currentUserId]
      * is safe given the confirmed [queryState].
+     *
+     * @param isAnonymous whether the current session is an anonymous guest session. Anonymous
+     * sessions MUST NOT purchase subscriptions because backend entitlement cannot be granted.
      */
     fun evaluate(
         queryState: PurchasesQueryState,
         currentUserId: String?,
         targetProductId: String,
+        isAnonymous: Boolean = false,
     ): PurchaseLaunchDecision {
+        if (isAnonymous) {
+            return PurchaseLaunchDecision.Blocked(PurchaseBlockReason.ANONYMOUS_SESSION)
+        }
+
         if (currentUserId.isNullOrBlank()) {
             return PurchaseLaunchDecision.Blocked(PurchaseBlockReason.MISSING_USER_ID)
         }
