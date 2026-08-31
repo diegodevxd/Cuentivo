@@ -603,4 +603,5 @@
     <string name="backup_guest_detail_generic">Create your account to back up and not lose your customers if you switch phones.</string>
     <string name="subscription_guest_pro_note_with_count">Create your account to back up your %1$d customers in the cloud with Pro.</string>
     <string name="subscription_guest_pro_note_generic">Create your account to back up your customers in the cloud with Pro.</string>
+    <string name="account_privacy_policy">Privacy policy</string>
 </resources>

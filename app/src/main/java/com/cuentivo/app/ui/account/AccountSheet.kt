@@ -1,5 +1,8 @@
 package com.cuentivo.app.ui.account
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -23,20 +28,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
 import com.cuentivo.app.domain.SubscriptionTier
-import com.cuentivo.app.ui.NeoSpacing
-
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoShapes
+import com.cuentivo.app.ui.NeoSpacing
+
+const val PRIVACY_POLICY_URL = "https://cuentivo-politicasdeprivacidad.vercel.app/"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -208,6 +212,19 @@ fun AccountSheet(
                         .testTag("reminder-enabled-switch")
                         .semantics { contentDescription = reminderSwitchDescription },
                 )
+            }
+
+            val context = LocalContext.current
+            TextButton(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))
+                    context.startActivity(intent)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("privacy-policy-button"),
+            ) {
+                Text(stringResource(R.string.account_privacy_policy))
             }
 
             OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) {
