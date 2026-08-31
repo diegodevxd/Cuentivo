@@ -163,6 +163,7 @@ export const handlePlayRtdnNotification = onMessagePublished(
     maxInstances: 1,
     timeoutSeconds: 30,
     memory: "256MiB",
+    retry: true,
     secrets: [playServiceAccountKey],
   },
   async (event) => {

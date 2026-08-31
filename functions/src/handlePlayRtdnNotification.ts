@@ -1,5 +1,9 @@
-import type { PlaySubscriptionApi, PlaySubscriptionV2Response } from "./ai/playSubscriptionVerifier";
-import { translatePlaySubscription } from "./ai/playSubscriptionVerifier";
+import {
+  type PlaySubscriptionApi,
+  type PlaySubscriptionV2Response,
+  PlayApiConfigurationError,
+  translatePlaySubscription,
+} from "./ai/playSubscriptionVerifier";
 import type { SubscriptionEntitlementRepository } from "./ai/subscriptionEntitlementRepository";
 
 export type PlayRtdnPayload = Readonly<{
@@ -35,6 +39,27 @@ export type PlayRtdnHandlerResult =
     };
 
 export const SUPPORTED_AI_PRODUCT_ID = "cuentivo_ai_mensual";
+
+export function isPermanentConfigError(error: unknown): boolean {
+  if (error instanceof PlayApiConfigurationError) {
+    return true;
+  }
+  if (typeof error === "object" && error !== null && (error as { isPermanentConfigError?: boolean }).isPermanentConfigError === true) {
+    return true;
+  }
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    if (
+      msg.includes("service account not configured") ||
+      msg.includes("not valid json") ||
+      msg.includes("invalid_grant") ||
+      msg.includes("unauthorized_client")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Extracts and decodes the Play RTDN payload from various message shapes (base64 string,
@@ -115,12 +140,17 @@ export function createPlayRtdnHandler(deps: {
       return { status: "TOKEN_NOT_BOUND" };
     }
 
-    // Fail-closed towards NOT TOUCHING: if Play Developer API throws (timeout, network, 5xx),
-    // we rethrow so Pub/Sub retries without modifying the user's entitlement document.
+    // Fail-closed towards NOT TOUCHING: if Play Developer API throws a transient error
+    // (timeout, network, 429, 5xx, or ambiguous API error), we rethrow so Pub/Sub retries.
+    // Permanent configuration errors (missing secret, invalid JSON) terminate cleanly without retry.
     let playResponse: PlaySubscriptionV2Response | null;
     try {
       playResponse = await deps.playApi.getSubscription(deps.packageName, purchaseToken);
     } catch (error) {
+      if (isPermanentConfigError(error)) {
+        deps.onIgnored?.("PERMANENT_CONFIG_ERROR");
+        return { status: "IGNORED", reason: "PERMANENT_CONFIG_ERROR" };
+      }
       throw error;
     }
 

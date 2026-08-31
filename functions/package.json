@@ -7,7 +7,7 @@
     "node": "22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/cleanLib.js && tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:firestore-emulator": "node scripts/runFirestoreEmulatorTests.js",

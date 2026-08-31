@@ -5,7 +5,11 @@ import {
   SUPPORTED_AI_PRODUCT_ID,
   type PlayRtdnPayload,
 } from "../src/handlePlayRtdnNotification.js";
-import type { PlaySubscriptionApi, PlaySubscriptionV2Response } from "../src/ai/playSubscriptionVerifier.js";
+import {
+  type PlaySubscriptionApi,
+  type PlaySubscriptionV2Response,
+  PlayApiConfigurationError,
+} from "../src/ai/playSubscriptionVerifier.js";
 import type {
   SubscriptionEntitlementRepository,
   TokenBinding,
@@ -273,6 +277,50 @@ describe("handlePlayRtdnNotification", () => {
 
     await expect(handler(payload)).rejects.toThrow("Google Play API timeout (504)");
     expect(deps.recordedUpdates).toHaveLength(0);
+  });
+
+  test("invalid or malformed payload terminates cleanly and DOES NOT throw (discards without retry)", async () => {
+    const deps = createTestDeps();
+    const handler = createPlayRtdnHandler(deps);
+
+    // 1. Completely empty or unparseable raw message
+    const emptyResult = await handler(null);
+    expect(emptyResult).toEqual({ status: "IGNORED", reason: "INVALID_PAYLOAD" });
+    expect(deps.recordedUpdates).toHaveLength(0);
+    expect(deps.playApi.getSubscription).not.toHaveBeenCalled();
+
+    // 2. Corrupt string that cannot be parsed as JSON nor base64 JSON
+    const corruptResult = await handler("malformed_json_content_{{[[");
+    expect(corruptResult).toEqual({ status: "IGNORED", reason: "INVALID_PAYLOAD" });
+    expect(deps.recordedUpdates).toHaveLength(0);
+
+    // 3. Payload with missing purchaseToken
+    const missingTokenResult = await handler({
+      packageName: PACKAGE_NAME,
+      subscriptionNotification: {},
+    });
+    expect(missingTokenResult).toEqual({ status: "IGNORED", reason: "NO_PURCHASE_TOKEN" });
+    expect(deps.recordedUpdates).toHaveLength(0);
+  });
+
+  test("permanent credentials or configuration error terminates cleanly without throwing (discards without retry)", async () => {
+    const configError = new PlayApiConfigurationError("Play Developer API service account not configured in this environment");
+    const deps = createTestDeps({ playApiError: configError });
+    const handler = createPlayRtdnHandler(deps);
+
+    const payload: PlayRtdnPayload = {
+      version: "1.0",
+      packageName: PACKAGE_NAME,
+      subscriptionNotification: {
+        purchaseToken: TEST_TOKEN,
+        subscriptionId: SUPPORTED_AI_PRODUCT_ID,
+      },
+    };
+
+    const result = await handler(payload);
+    expect(result).toEqual({ status: "IGNORED", reason: "PERMANENT_CONFIG_ERROR" });
+    expect(deps.recordedUpdates).toHaveLength(0);
+    expect(deps.onIgnored).toHaveBeenCalledWith("PERMANENT_CONFIG_ERROR");
   });
 
   test("parsePlayRtdnPayload parses base64, JSON string, buffer and direct object", () => {

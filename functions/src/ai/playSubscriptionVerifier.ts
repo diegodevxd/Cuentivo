@@ -126,6 +126,14 @@ export type PlaySubscriptionApiOptions = {
   customFetcher?: (url: string, headers: Record<string, string>) => Promise<unknown>;
 };
 
+export class PlayApiConfigurationError extends Error {
+  readonly isPermanentConfigError = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "PlayApiConfigurationError";
+  }
+}
+
 /**
  * Factory for Google Play Subscription API client.
  *
@@ -153,26 +161,38 @@ export function createDefaultPlaySubscriptionApi(
 
       const trimmedJson = serviceAccountJson?.trim();
       if (!trimmedJson) {
-        throw new Error("Play Developer API service account not configured in this environment");
+        throw new PlayApiConfigurationError("Play Developer API service account not configured in this environment");
       }
 
       let credentials: Record<string, unknown>;
       try {
         credentials = JSON.parse(trimmedJson);
       } catch {
-        throw new Error("Play Developer API service account credentials are not valid JSON");
+        throw new PlayApiConfigurationError("Play Developer API service account credentials are not valid JSON");
       }
 
-      const auth = new GoogleAuth({
-        credentials,
-        scopes: ["https://www.googleapis.com/auth/androidpublisher"],
-      });
+      let client;
+      let accessToken;
+      try {
+        const auth = new GoogleAuth({
+          credentials,
+          scopes: ["https://www.googleapis.com/auth/androidpublisher"],
+        });
+        client = await auth.getClient();
+        const accessTokenResponse = await client.getAccessToken();
+        accessToken = accessTokenResponse.token;
+      } catch (authError) {
+        const msg = authError instanceof Error ? authError.message.toLowerCase() : "";
+        if (msg.includes("invalid_grant") || msg.includes("unauthorized_client")) {
+          throw new PlayApiConfigurationError(
+            `Play Developer API authentication failed: ${authError instanceof Error ? authError.message : String(authError)}`,
+          );
+        }
+        throw authError;
+      }
 
-      const client = await auth.getClient();
-      const accessTokenResponse = await client.getAccessToken();
-      const accessToken = accessTokenResponse.token;
       if (!accessToken) {
-        throw new Error("Failed to obtain OAuth2 access token for Play Developer API");
+        throw new PlayApiConfigurationError("Failed to obtain OAuth2 access token for Play Developer API");
       }
 
       const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(token)}`;

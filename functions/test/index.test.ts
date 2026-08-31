@@ -60,6 +60,8 @@ describe("regional callable gateway", () => {
     const rtdnBlock = SOURCE.slice(rtdnIndex);
     expect(rtdnBlock).toContain("secrets: [playServiceAccountKey]");
     expect(rtdnBlock).not.toContain("geminiApiKey");
+    expect(rtdnBlock).toContain('topic: "play-rtdn-cuentivo"');
+    expect(rtdnBlock).toContain("retry: true");
   });
 
   test("reads the secret value only inside the respective handlers", () => {
