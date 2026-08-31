@@ -1,4 +1,5 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { onMessagePublished } from "firebase-functions/v2/pubsub";
 import * as logger from "firebase-functions/logger";
 import { defineSecret } from "firebase-functions/params";
 import { initializeApp } from "firebase-admin/app";
@@ -7,6 +8,7 @@ import { createInterpretAiHandler } from "./interpretAiRequest.js";
 import { createAuthorizeAiHandler } from "./authorizeAiAction.js";
 import { createVerifyAiSubscriptionHandler } from "./verifyAiSubscription.js";
 import { createGetAiAvailabilityHandler } from "./getAiAvailability.js";
+import { createPlayRtdnHandler } from "./handlePlayRtdnNotification.js";
 import { createAiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import { createFirestoreControlPlaneRepository } from "./ai/firestoreControlPlane";
 import { createGeminiTextProvider } from "./ai/geminiTextProvider";
@@ -151,5 +153,35 @@ export const verifyAiSubscription = onCall(
       throw new HttpsError(result.code, "Subscription verification failed");
     }
     return result;
+  },
+);
+
+export const handlePlayRtdnNotification = onMessagePublished(
+  {
+    topic: "play-rtdn-cuentivo",
+    region: "us-south1",
+    maxInstances: 1,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    secrets: [playServiceAccountKey],
+  },
+  async (event) => {
+    const serviceAccountJson = playServiceAccountKey.value();
+    const handler = createPlayRtdnHandler({
+      playApi: createDefaultPlaySubscriptionApi({ serviceAccountJson }),
+      repository: subscriptionEntitlementRepository(),
+      packageName: PACKAGE_NAME,
+      now: () => Date.now(),
+      onIgnored: (reason) => {
+        logger.info("PLAY_RTDN_IGNORED", { reason });
+      },
+      onProcessed: (details) => {
+        logger.info("PLAY_RTDN_PROCESSED", {
+          enabled: details.enabled,
+          expiresAtEpochMillis: details.expiresAtEpochMillis,
+        });
+      },
+    });
+    await handler(event.data.message);
   },
 );

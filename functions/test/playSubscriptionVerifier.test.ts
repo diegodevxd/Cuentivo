@@ -57,23 +57,7 @@ describe("playSubscriptionVerifier", () => {
     });
   });
 
-  test("expired or canceled subscription translates to INACTIVE without granting entitlement", () => {
-    const expiredResponse: PlaySubscriptionV2Response = {
-      subscriptionState: "SUBSCRIPTION_STATE_EXPIRED",
-      lineItems: [
-        {
-          productId: PRODUCT_ID,
-          expiryTime: "2026-08-01T12:00:00.000Z",
-        },
-      ],
-    };
-    const resultExpired = translatePlaySubscription(expiredResponse, PRODUCT_ID);
-    expect(resultExpired).toEqual({
-      status: "INACTIVE",
-      enabled: false,
-      expiresAtEpochMillis: Date.parse("2026-08-01T12:00:00.000Z"),
-    });
-
+  test("canceled subscription with future expiry translates to VERIFIED with absolute epoch millis", () => {
     const canceledResponse: PlaySubscriptionV2Response = {
       subscriptionState: "SUBSCRIPTION_STATE_CANCELED",
       lineItems: [
@@ -85,10 +69,38 @@ describe("playSubscriptionVerifier", () => {
     };
     const resultCanceled = translatePlaySubscription(canceledResponse, PRODUCT_ID);
     expect(resultCanceled).toEqual({
-      status: "INACTIVE",
-      enabled: false,
+      status: "VERIFIED",
+      enabled: true,
       expiresAtEpochMillis: FUTURE_MILLIS,
     });
+  });
+
+  test("expired, on-hold, paused, or pending subscriptions translate to INACTIVE without granting entitlement", () => {
+    const states: PlaySubscriptionV2Response["subscriptionState"][] = [
+      "SUBSCRIPTION_STATE_EXPIRED",
+      "SUBSCRIPTION_STATE_ON_HOLD",
+      "SUBSCRIPTION_STATE_PAUSED",
+      "SUBSCRIPTION_STATE_PENDING",
+      "SUBSCRIPTION_STATE_UNSPECIFIED",
+    ];
+
+    for (const state of states) {
+      const response: PlaySubscriptionV2Response = {
+        subscriptionState: state,
+        lineItems: [
+          {
+            productId: PRODUCT_ID,
+            expiryTime: FUTURE_ISO,
+          },
+        ],
+      };
+      const result = translatePlaySubscription(response, PRODUCT_ID);
+      expect(result).toEqual({
+        status: "INACTIVE",
+        enabled: false,
+        expiresAtEpochMillis: FUTURE_MILLIS,
+      });
+    }
   });
 
   test("null response or missing line items translates to INVALID", () => {

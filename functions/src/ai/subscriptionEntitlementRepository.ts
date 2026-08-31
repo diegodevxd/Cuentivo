@@ -15,8 +15,24 @@ export type RecordSubscriptionResult =
   | { status: "TOKEN_BOUND_TO_DIFFERENT_UID" }
   | { status: "STORAGE_ERROR" };
 
+export type TokenBinding = Readonly<{
+  uid: string;
+  productId?: string;
+  boundAtEpochMillis?: number;
+}>;
+
+export type UpdateEntitlementInput = Readonly<{
+  uid: string;
+  productId: string;
+  enabled: boolean;
+  expiresAtEpochMillis: number;
+  nowEpochMillis: number;
+}>;
+
 export interface SubscriptionEntitlementRepository {
   recordSubscription(input: RecordSubscriptionInput): Promise<RecordSubscriptionResult>;
+  findTokenBinding(purchaseToken: string): Promise<TokenBinding | null>;
+  updateEntitlement(input: UpdateEntitlementInput): Promise<void>;
 }
 
 export type SubscriptionTransactionBridge = Readonly<{
@@ -104,6 +120,36 @@ export function createFirestoreSubscriptionEntitlementRepository(
           return recordSubscriptionInTransaction(bridge, input);
         })
         .catch(() => ({ status: "STORAGE_ERROR" }));
+    },
+
+    async findTokenBinding(purchaseToken: string): Promise<TokenBinding | null> {
+      const tokenHash = hashPurchaseToken(purchaseToken);
+      const snapshot = await firestore.doc(tokenBindingPath(tokenHash)).get();
+      if (!snapshot.exists) {
+        return null;
+      }
+      const data = snapshot.data();
+      const uid = typeof data?.uid === "string" ? data.uid : null;
+      if (!uid) {
+        return null;
+      }
+      return {
+        uid,
+        productId: typeof data?.productId === "string" ? data.productId : undefined,
+        boundAtEpochMillis: typeof data?.boundAtEpochMillis === "number" ? data.boundAtEpochMillis : undefined,
+      };
+    },
+
+    async updateEntitlement(input: UpdateEntitlementInput): Promise<void> {
+      await firestore.doc(entitlementPath(input.uid)).set(
+        {
+          enabled: input.enabled,
+          expiresAtEpochMillis: input.expiresAtEpochMillis,
+          lastVerifiedAtEpochMillis: input.nowEpochMillis,
+          productId: input.productId,
+        },
+        { merge: true },
+      );
     },
   };
 }

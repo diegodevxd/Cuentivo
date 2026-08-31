@@ -11,9 +11,14 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-27, con **N5 en 8 de 9**: sólo falta T9 (gate final con
-`--rerun-tasks`, prueba física en el A059P y AAB firmado a **prueba cerrada**, nunca directo a
-producción).
+**Última actualización:** 2026-08-30. **El núcleo de CuentivoAI está cerrado: 5 de 5.** N5 cerró sus
+nueve tareas, el AAB `versionCode 33` salió a prueba cerrada y **la compra real desde Play verificó
+el entitlement de punta a punta** (T3 y T4 verificadas en vivo, no sólo desplegadas). El AAB `v34`
+corrige lo que esa prueba destapó.
+
+**Precisión que hay que conservar, de Codex:** núcleo terminado significa **código y beta técnica**.
+**No** significa readiness comercial ni operación segura. **Producción pública sigue en NO-GO** y sus
+condiciones están abajo.
 
 ---
 
@@ -70,8 +75,26 @@ devolvía **todos** los clientes (`COALESCE(phone,'') LIKE '%%'`), se mostraban 
 (`UNKNOWN_INPUT`, `MISSING_PRODUCT`) al usuario, y **dos bugs de dinero**: montos interpretados como
 centavos, y ventas a crédito registradas como pagadas. Los dos desplegados y verificados físicamente.
 
-**Núcleo: 4 de 5.** Falta sólo la salida del laboratorio a beta con feature flags (N5) — **es el
-trabajo activo**, y su cierre es lo que habilita el segundo AAB.
+**Núcleo: 5 de 5, cerrado el 2026-08-30.** La salida del laboratorio a beta (N5) terminó sus nueve
+tareas y el segundo AAB ya está en prueba cerrada.
+
+**Condiciones para el GO público, ninguna cumplida todavía** (criterios de Codex, 2026-08-30):
+
+1. **Consumidor de las notificaciones de Play operativo.** Es lo único que queda de código nuevo.
+   **Ojo con el diseño:** no debe revocar al recibir cualquier evento. La notificación es la señal;
+   el consumidor **consulta Play y decide el estado real** — renovación extiende la vigencia,
+   **cancelación conserva el acceso hasta el fin del periodo pagado**, y sólo reembolso, revocación,
+   *on hold* o expiración retiran el entitlement. Idempotente ante reintentos, duplicados y mensajes
+   fuera de orden, con alerta o DLQ para lo no procesado. **Revocar por una simple cancelación sería
+   también un bug comercial.**
+2. **App Check con enforcement encendido y probado.** No basta con que ya haya tráfico: hay que
+   revisar tráfico válido **por cada callable usada en release**, encender, y después ejecutar una
+   petición real desde una instalación de Play Store, con monitoreo y rollback listos. Es condición
+   de GO, no validación retrospectiva.
+3. **Simulacro del apagador ejecutado y firmado.** T8 cerró código, pruebas y runbook; el ensayo real
+   sigue pendiente y **no es una tarea administrativa**.
+4. **Validación del `v34`** desde Play Store con la segunda cuenta.
+5. **Cohorte limpia de métricas** y **privacidad/Data Safety cerradas** — ver los blockers.
 
 **Actualización de retención — `versionCode 32` / `versionName 1.17.0`, subida a Play el 2026-08-26.**
 Primera versión desde la baseline congelada 31 / 1.16.6, y **no lleva CuentivoAI**: son pistas
@@ -180,7 +203,7 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
   revoca el tier AI server-side, por lo que beta y AAB CuentivoAI continúan bloqueados.
 - **El entitlement AI actual fue creado manualmente para el usuario de prueba.** Billing/Play aún
   no concede ni revoca el tier CuentivoAI de forma server-side.
-- **N5 va en 8 de 9 (2026-08-27). Cerradas T1, T2, T3, T4, T5, T6, T7 y T8; falta sólo T9.** Todas
+- **N5 cerrada, 9 de 9 (2026-08-30). El núcleo queda en 5 de 5.** T0 a T9, todas
   verificadas reejecutando, no por reporte del implementador. Estado del gate al cerrar T8: **930
   pruebas JVM en 104 clases, 0 fallos**; **functions 266** con lint de TypeScript limpio; **gate del
   emulador de Firestore 6/6**; `assembleDebug`, `assembleRelease` y `lintDebug` en verde; paridad de
@@ -237,7 +260,13 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
   vínculo de Play Integrity, mirando la barra del día y no el acumulado. Lo ya descartado con
   evidencia está en el histórico; no volver a perseguirlo.
 - **No hay CI** y `.superpowers/` está ignorado: la evidencia SDD local no sobrevive a otro clon.
-- Falta enlace al aviso de privacidad dentro de la app; la política externa sí está publicada.
+- **Privacidad y Play Data Safety, sin cerrar — levantado por Codex el 2026-08-30 y no estaba en
+  ninguna lista.** Que exista una política externa publicada **no demuestra** lo que la fuente de
+  verdad exige: confirmar que la política, la declaración de **Data Safety**, los términos y el
+  consentimiento cubren que **el texto del negocio viaja al gateway y al proveedor** — con sus
+  categorías, su retención y cómo se desactiva la IA. Sigue faltando además el **enlace al aviso de
+  privacidad dentro de la app**. Esto **no bloquea el desarrollo**, pero sí bloquea datos reales de
+  terceros y el lanzamiento público.
 - ~~Todos los rechazos de IA se ven igual.~~ **Resuelto en T4 (2026-08-27).** Cuota agotada, rate
   limit, IA apagada y falta de entitlement ahora viajan como `status` propio y tienen su texto; el
   de entitlement lleva al muro de compra en vez de pintarse como error. Todo lo demás —entrada

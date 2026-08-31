@@ -1,6 +1,32 @@
 # CuentivoAI — arquitectura, seguridad y plan de ejecución
 
-> **Estado:** el lanzamiento público y cualquier AAB/activación para usuarios permanecen en **NO-GO**. En la rama aislada `diegodevxd/feature-cuentivo-ai`, Fase 0A, Fase 1B y Fase 2A local están cerradas. Para la cohorte debug personal también están desplegadas `interpretAiRequest` y `authorizeAiAction` en `us-south1`; cuota, rate limit, idempotencia y kill switch fueron probados físicamente y restaurados. Esto no completa entitlement Play, enforcement App Check de producción, beta, AAB ni activación para usuarios.
+> ---
+>
+> ## ACTUALIZACIÓN DE ESTADO — 2026-08-30
+>
+> **El bloque de estado original de abajo quedó rebasado por los hechos y se conserva sólo como
+> registro histórico. Lo vigente es esto.**
+>
+> - **Prueba cerrada: aprobada y ya ejercida.** Decisión del propietario del 2026-08-26 — CuentivoAI
+>   sale como plan de pago, y el AAB va **primero a prueba cerrada**, nunca directo a producción. El
+>   `versionCode 33` está subido; el `v34` corrige lo que la prueba real destapó.
+> - **Núcleo N5: cerrado, 5 de 5** (2026-08-30). T0 a T9.
+> - **Entitlement de Play: verificado de punta a punta.** Una compra real desde Play Store concedió
+>   el tier y el gateway respondió. Las cuatro callables están desplegadas en `us-south1`.
+> - **Producción pública: sigue en NO-GO.** Esto no cambió.
+>
+> **Condiciones del GO público, ninguna cumplida** (criterio de Codex, 2026-08-30): consumidor de
+> RTDN operativo; App Check con enforcement encendido **y probado** desde una instalación de Play
+> Store; simulacro del apagador ejecutado y firmado; validación del `v34`; cohorte de métricas
+> limpia; y revisión cerrada de **privacidad y Play Data Safety**.
+>
+> **Actualizar este documento no autoriza producción.** Se actualiza porque tenía a la app en un
+> estado que dejó de ser cierto, y dos documentos dictando realidades incompatibles es como se toman
+> decisiones equivocadas más adelante.
+>
+> ---
+>
+> **Estado (histórico, 2026-08-14):** el lanzamiento público y cualquier AAB/activación para usuarios permanecen en **NO-GO**. En la rama aislada `diegodevxd/feature-cuentivo-ai`, Fase 0A, Fase 1B y Fase 2A local están cerradas. Para la cohorte debug personal también están desplegadas `interpretAiRequest` y `authorizeAiAction` en `us-south1`; cuota, rate limit, idempotencia y kill switch fueron probados físicamente y restaurados. Esto no completa entitlement Play, enforcement App Check de producción, beta, AAB ni activación para usuarios.
 >
 > **Source of truth:** este documento prevalece para CuentivoAI hasta que el propietario apruebe una fase explícitamente. Las decisiones y supuestos deben actualizarse aquí antes de cambiar producción.
 >

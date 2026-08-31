@@ -11,7 +11,8 @@ import {
   tokenBindingPath,
   entitlementPath,
 } from "../src/ai/subscriptionEntitlementRepository.js";
-import { hashPurchaseToken } from "../src/ai/playSubscriptionVerifier.js";
+import { hashPurchaseToken, type PlaySubscriptionApi } from "../src/ai/playSubscriptionVerifier.js";
+import { createPlayRtdnHandler } from "../src/handlePlayRtdnNotification.js";
 import type { AuthorizeAiResult } from "../src/ai/controlPlane.js";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -534,5 +535,87 @@ describe("firestore emulator concurrency gate", () => {
     });
     // Critical assertion: provider was invoked exactly once upon re-enabling
     expect(providerInvocations).toBe(1);
+  });
+
+  test("RTDN consumer against firestore: grant via purchase, revoke on refund notification, and reprocess", async () => {
+    const subRepo = createFirestoreSubscriptionEntitlementRepository(firestore);
+    const product = "cuentivo_ai_mensual";
+    const initialExpiry = NOW + 30 * 86400 * 1000;
+
+    // 1. Initial purchase grant
+    await subRepo.recordSubscription({
+      uid: RUN_UID,
+      purchaseToken: TEST_TOKEN,
+      productId: product,
+      enabled: true,
+      expiresAtEpochMillis: initialExpiry,
+      nowEpochMillis: NOW,
+    });
+
+    const initialDoc = (await firestore.doc(entitlementPath(RUN_UID)).get()).data();
+    expect(initialDoc).toEqual({
+      enabled: true,
+      expiresAtEpochMillis: initialExpiry,
+      lastVerifiedAtEpochMillis: NOW,
+      productId: product,
+    });
+
+    // 2. RTDN Refund / Voided Purchase Notification arrives
+    let playState: "ACTIVE" | "REFUNDED" = "REFUNDED";
+    const mockPlayApi: PlaySubscriptionApi = {
+      async getSubscription() {
+        if (playState === "REFUNDED") {
+          return null; // Play returns null/404 or inactive on voided/refunded purchase
+        }
+        return {
+          subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+          lineItems: [{ productId: product, expiryTime: new Date(initialExpiry).toISOString() }],
+        };
+      },
+    };
+
+    const rtdnHandler = createPlayRtdnHandler({
+      playApi: mockPlayApi,
+      repository: subRepo,
+      packageName: "com.cuentivo.app",
+      now: () => NOW + 5000,
+    });
+
+    const voidedPayload = {
+      version: "1.0",
+      packageName: "com.cuentivo.app",
+      voidedPurchaseNotification: {
+        purchaseToken: TEST_TOKEN,
+        orderId: "GPA.1234-5678-9012-34567",
+      },
+    };
+
+    const revokeResult = await rtdnHandler(voidedPayload);
+    expect(revokeResult).toEqual({
+      status: "PROCESSED",
+      uid: RUN_UID,
+      enabled: false,
+      expiresAtEpochMillis: 0,
+    });
+
+    const revokedDoc = (await firestore.doc(entitlementPath(RUN_UID)).get()).data();
+    expect(revokedDoc).toEqual({
+      enabled: false,
+      expiresAtEpochMillis: 0,
+      lastVerifiedAtEpochMillis: NOW + 5000,
+      productId: product,
+    });
+
+    // 3. Reprocessing the exact same refund notification leaves the exact same revoked state
+    const reprocessResult = await rtdnHandler(voidedPayload);
+    expect(reprocessResult).toEqual(revokeResult);
+
+    const reprocessedDoc = (await firestore.doc(entitlementPath(RUN_UID)).get()).data();
+    expect(reprocessedDoc).toEqual({
+      enabled: false,
+      expiresAtEpochMillis: 0,
+      lastVerifiedAtEpochMillis: NOW + 5000,
+      productId: product,
+    });
   });
 });

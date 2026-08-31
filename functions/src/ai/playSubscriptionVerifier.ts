@@ -100,7 +100,11 @@ export function translatePlaySubscription(
 
   const obfuscatedExternalAccountId = response.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim();
 
-  if (state === "SUBSCRIPTION_STATE_ACTIVE" || state === "SUBSCRIPTION_STATE_IN_GRACE_PERIOD") {
+  if (
+    state === "SUBSCRIPTION_STATE_ACTIVE" ||
+    state === "SUBSCRIPTION_STATE_IN_GRACE_PERIOD" ||
+    state === "SUBSCRIPTION_STATE_CANCELED"
+  ) {
     return {
       status: "VERIFIED",
       enabled: true,
