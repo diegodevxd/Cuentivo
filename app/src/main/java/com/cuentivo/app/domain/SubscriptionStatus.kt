@@ -67,14 +67,14 @@ object SubscriptionStatus {
      */
     fun PlayPurchase.grantedTier(currentUserAccountHash: String? = null): SubscriptionTier? = when {
         productIds.contains(SubscriptionTier.AI_PRODUCT_ID) -> {
-            if (currentUserAccountHash != null && obfuscatedAccountId == currentUserAccountHash) {
+            if (!currentUserAccountHash.isNullOrBlank() && obfuscatedAccountId == currentUserAccountHash) {
                 SubscriptionTier.AI
             } else {
                 null
             }
         }
         productIds.contains(SubscriptionTier.PRO_PRODUCT_ID) -> {
-            if (obfuscatedAccountId == null || (currentUserAccountHash != null && obfuscatedAccountId == currentUserAccountHash)) {
+            if (obfuscatedAccountId.isNullOrBlank() || (!currentUserAccountHash.isNullOrBlank() && obfuscatedAccountId == currentUserAccountHash)) {
                 SubscriptionTier.PRO
             } else {
                 null

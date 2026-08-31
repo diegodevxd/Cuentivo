@@ -61,4 +61,30 @@ class BillingGatewayMappingTest {
         assertEquals(true, playPurchase.isAcknowledged)
         assertNull(playPurchase.obfuscatedAccountId)
     }
+
+    @Test
+    fun toPlayPurchase_normalizes_empty_string_obfuscatedAccountId_to_null() {
+        // Play returns obfuscatedAccountId = "" when no account identifier was set
+        val json = """
+            {
+                "orderId": "GPA.1234-5678-9012-34567",
+                "packageName": "com.cuentivo.app",
+                "productId": "cuentivo_pro_mensual",
+                "productIds": ["cuentivo_pro_mensual"],
+                "purchaseTime": 1724800000000,
+                "purchaseState": 1,
+                "purchaseToken": "token_legacy_pro_empty",
+                "acknowledged": true,
+                "obfuscatedAccountId": ""
+            }
+        """.trimIndent()
+
+        val purchase = Purchase(json, "dummy_signature")
+        val playPurchase = purchase.toPlayPurchase()
+
+        assertEquals(listOf(SubscriptionTier.PRO_PRODUCT_ID), playPurchase.productIds)
+        assertEquals(true, playPurchase.isPurchased)
+        assertEquals(true, playPurchase.isAcknowledged)
+        assertNull(playPurchase.obfuscatedAccountId)
+    }
 }

@@ -35,6 +35,12 @@ class SubscriptionStatusTest {
         assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyPro), userAHash))
         assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyPro), userBHash))
         assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyPro), currentUserAccountHash = null))
+
+        // Play returns an empty string "" instead of null when no account was attached.
+        val legacyProEmptyString = purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = "")
+        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyProEmptyString), userAHash))
+        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyProEmptyString), userBHash))
+        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyProEmptyString), currentUserAccountHash = null))
     }
 
     @Test
@@ -68,6 +74,10 @@ class SubscriptionStatusTest {
         // Since cuentivo_ai_mensual was introduced in T2, every AI purchase must have an account identifier.
         val aiWithoutId = purchase(productId = SubscriptionTier.AI_PRODUCT_ID, obfuscatedAccountId = null)
         assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(aiWithoutId), userAHash))
+
+        // Empty string must also strictly yield FREE for AI
+        val aiWithEmptyString = purchase(productId = SubscriptionTier.AI_PRODUCT_ID, obfuscatedAccountId = "")
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(aiWithEmptyString), userAHash))
     }
 
     @Test

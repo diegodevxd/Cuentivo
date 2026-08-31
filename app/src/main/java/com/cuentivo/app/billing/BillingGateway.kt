@@ -406,10 +406,15 @@ class BillingGateway(
 /**
  * Maps a Google Play Billing [Purchase] object to our domain model [PlayPurchase], faithfully
  * propagating the [Purchase.getAccountIdentifiers] obfuscated account ID.
+ *
+ * Normalizes blank/empty strings to null at the system boundary: Google Play Billing returns an
+ * empty string `""` (instead of null) for legacy purchases or purchases where no obfuscated account
+ * was set. Normalizing here guarantees that domain rules evaluating legacy Pro purchases remain clean
+ * and reliable.
  */
 internal fun Purchase.toPlayPurchase(): PlayPurchase = PlayPurchase(
     productIds = products,
     isPurchased = purchaseState == Purchase.PurchaseState.PURCHASED,
     isAcknowledged = isAcknowledged,
-    obfuscatedAccountId = accountIdentifiers?.obfuscatedAccountId,
+    obfuscatedAccountId = accountIdentifiers?.obfuscatedAccountId?.takeIf { it.isNotBlank() },
 )
