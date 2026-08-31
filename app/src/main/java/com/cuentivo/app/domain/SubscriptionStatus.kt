@@ -12,30 +12,39 @@ data class PlayPurchase(
     val isPurchased: Boolean,
     /** False until the app confirms back to Play that it delivered what was paid for. */
     val isAcknowledged: Boolean,
+    /**
+     * Obfuscated account identifier (SHA-256 hash of Firebase UID) recorded by Play during purchase,
+     * or null for legacy purchases made prior to T2.
+     */
+    val obfuscatedAccountId: String? = null,
 )
 
 /**
  * Turns what Play reports into the plan the app should behave as.
  *
  * Pure and closed by default: anything unrecognized, pending or unrelated leaves the person on FREE.
- * The mistake this guards against is the opposite one — unlocking Pro for a purchase that has not
- * actually been paid for yet.
+ * The mistake this guards against is the opposite one — unlocking Pro or AI for a purchase that has not
+ * actually been paid for or that belongs to a different account.
  */
 object SubscriptionStatus {
 
     /**
-     * The highest plan any completed purchase grants.
+     * The highest plan any completed purchase grants for the specified [currentUserAccountHash].
      *
-     * Highest, not first: upgrading from Pro to CuentivoAI leaves both subscriptions reported for a
-     * while, and answering PRO there would take the assistant away from someone already paying for
-     * it.
-     *
-     * Ranked by [SubscriptionTier.rank], never by declaration order: what someone is entitled to is
-     * a commercial rule, and it must not change because a constant was moved for readability.
+     * Rules:
+     * - AI: strictly requires matching [currentUserAccountHash]. If [currentUserAccountHash] is null,
+     *   or [PlayPurchase.obfuscatedAccountId] is null or does not match, grants nothing.
+     * - Pro:
+     *   - If [PlayPurchase.obfuscatedAccountId] is null (legacy purchase prior to T2), grants PRO.
+     *   - If [PlayPurchase.obfuscatedAccountId] is non-null, grants PRO only if it matches [currentUserAccountHash].
+     * - In all other cases (unrecognized product, pending purchase, mismatched user), falls back to FREE.
      */
-    fun tierFrom(purchases: List<PlayPurchase>): SubscriptionTier =
+    fun tierFrom(
+        purchases: List<PlayPurchase>,
+        currentUserAccountHash: String? = null,
+    ): SubscriptionTier =
         purchases.filter { it.isPurchased }
-            .mapNotNull { it.grantedTier() }
+            .mapNotNull { it.grantedTier(currentUserAccountHash) }
             .maxByOrNull { it.rank }
             ?: SubscriptionTier.FREE
 
@@ -47,18 +56,30 @@ object SubscriptionStatus {
      * money back while the app goes on treating them as subscribers.
      */
     fun needsAcknowledgement(purchases: List<PlayPurchase>): List<PlayPurchase> =
-        purchases.filter { it.isPurchased && it.grantedTier() != null && !it.isAcknowledged }
+        purchases.filter { it.isPurchased && it.isRecognizedSubscription() && !it.isAcknowledged }
+
+    private fun PlayPurchase.isRecognizedSubscription(): Boolean =
+        productIds.contains(SubscriptionTier.AI_PRODUCT_ID) ||
+            productIds.contains(SubscriptionTier.PRO_PRODUCT_ID)
 
     /**
      * Access is granted before acknowledgement, never after.
-     *
-     * Google's own order is: deliver the entitlement, then acknowledge. Waiting for the
-     * acknowledgement round trip would leave someone who just paid staring at the free plan.
      */
-    private fun PlayPurchase.grantedTier(): SubscriptionTier? = when {
-        productIds.contains(SubscriptionTier.AI_PRODUCT_ID) -> SubscriptionTier.AI
-        productIds.contains(SubscriptionTier.PRO_PRODUCT_ID) -> SubscriptionTier.PRO
-        // Anything else Play reports is unrelated to a plan and grants nothing.
+    fun PlayPurchase.grantedTier(currentUserAccountHash: String? = null): SubscriptionTier? = when {
+        productIds.contains(SubscriptionTier.AI_PRODUCT_ID) -> {
+            if (currentUserAccountHash != null && obfuscatedAccountId == currentUserAccountHash) {
+                SubscriptionTier.AI
+            } else {
+                null
+            }
+        }
+        productIds.contains(SubscriptionTier.PRO_PRODUCT_ID) -> {
+            if (obfuscatedAccountId == null || (currentUserAccountHash != null && obfuscatedAccountId == currentUserAccountHash)) {
+                SubscriptionTier.PRO
+            } else {
+                null
+            }
+        }
         else -> null
     }
 }

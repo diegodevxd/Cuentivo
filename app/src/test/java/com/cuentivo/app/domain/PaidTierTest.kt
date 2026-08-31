@@ -15,11 +15,20 @@ import org.junit.Test
  */
 class PaidTierTest {
 
+    private val testUserId = "user_test_paid_tier"
+    private val testUserHash = BillingAccountHasher.obfuscate(testUserId)!!
+
     private fun purchase(
         productId: String,
         isPurchased: Boolean = true,
         isAcknowledged: Boolean = true,
-    ) = PlayPurchase(listOf(productId), isPurchased, isAcknowledged)
+        obfuscatedAccountId: String? = testUserHash,
+    ) = PlayPurchase(
+        productIds = listOf(productId),
+        isPurchased = isPurchased,
+        isAcknowledged = isAcknowledged,
+        obfuscatedAccountId = obfuscatedAccountId,
+    )
 
     @Test
     fun `free is the only unpaid plan`() {
@@ -32,7 +41,7 @@ class PaidTierTest {
     fun `buying cuentivo ai unlocks the ai plan`() {
         assertEquals(
             SubscriptionTier.AI,
-            SubscriptionStatus.tierFrom(listOf(purchase(SubscriptionTier.AI_PRODUCT_ID))),
+            SubscriptionStatus.tierFrom(listOf(purchase(SubscriptionTier.AI_PRODUCT_ID)), testUserHash),
         )
     }
 
@@ -44,15 +53,15 @@ class PaidTierTest {
             purchase(SubscriptionTier.PRO_PRODUCT_ID),
             purchase(SubscriptionTier.AI_PRODUCT_ID),
         )
-        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(both))
-        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(both.reversed()))
+        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(both, testUserHash))
+        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(both.reversed(), testUserHash))
     }
 
     @Test
     fun `a pending ai purchase does not unlock anything`() {
         assertEquals(
             SubscriptionTier.FREE,
-            SubscriptionStatus.tierFrom(listOf(purchase(SubscriptionTier.AI_PRODUCT_ID, isPurchased = false))),
+            SubscriptionStatus.tierFrom(listOf(purchase(SubscriptionTier.AI_PRODUCT_ID, isPurchased = false)), testUserHash),
         )
     }
 

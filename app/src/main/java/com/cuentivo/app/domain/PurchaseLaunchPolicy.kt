@@ -118,19 +118,20 @@ object PurchaseLaunchPolicy {
 
         val activePurchases = resolved.purchases.filter { it.isPurchased }
 
-        // If the target product is already active, block double purchase.
-        if (SubscriptionReplacementPolicy.isProductAlreadyActive(activePurchases, targetProductId)) {
+        // If the target product is already active for this account, block double purchase.
+        if (SubscriptionReplacementPolicy.isProductAlreadyActive(activePurchases, targetProductId, obfuscatedAccountId)) {
             return PurchaseLaunchDecision.Blocked(PurchaseBlockReason.ALREADY_ACTIVE)
         }
 
-        val activeProducts = activePurchases
-            .flatMap { it.productIds }
-            .filter { it == SubscriptionTier.PRO_PRODUCT_ID || it == SubscriptionTier.AI_PRODUCT_ID }
+        val activeTiers = activePurchases
+            .mapNotNull { purchase ->
+                com.cuentivo.app.domain.SubscriptionStatus.run { purchase.grantedTier(obfuscatedAccountId) }
+            }
             .distinct()
 
-        // If both Pro and AI are active simultaneously, treat as inconsistent / in-flight state.
-        val hasPro = activeProducts.contains(SubscriptionTier.PRO_PRODUCT_ID)
-        val hasAi = activeProducts.contains(SubscriptionTier.AI_PRODUCT_ID)
+        // If both Pro and AI are active simultaneously for this account, treat as inconsistent / in-flight state.
+        val hasPro = activeTiers.contains(SubscriptionTier.PRO)
+        val hasAi = activeTiers.contains(SubscriptionTier.AI)
         if (hasPro && hasAi) {
             return PurchaseLaunchDecision.Blocked(PurchaseBlockReason.INCONSISTENT_STATE)
         }
@@ -138,6 +139,7 @@ object PurchaseLaunchPolicy {
         val productToReplace = SubscriptionReplacementPolicy.findProductToReplace(
             activePurchases = activePurchases,
             targetProductId = targetProductId,
+            currentUserAccountHash = obfuscatedAccountId,
         )
 
         if (productToReplace != null) {

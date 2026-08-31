@@ -15,6 +15,7 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
+import com.cuentivo.app.domain.BillingAccountHasher
 import com.cuentivo.app.domain.BillingReconnectPolicy
 import com.cuentivo.app.domain.BillingRequest
 import com.cuentivo.app.domain.PlayPurchase
@@ -167,13 +168,7 @@ class BillingGateway(
             .build()
         client.queryPurchasesAsync(params) { result, purchases ->
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                val reported = purchases.map { purchase ->
-                    PlayPurchase(
-                        productIds = purchase.products,
-                        isPurchased = purchase.purchaseState == Purchase.PurchaseState.PURCHASED,
-                        isAcknowledged = purchase.isAcknowledged,
-                    )
-                }
+                val reported = purchases.map { it.toPlayPurchase() }
                 purchasesQueryState = PurchasesQueryState.Resolved(
                     purchases = reported,
                     queriedUserId = request.userId,
@@ -229,13 +224,7 @@ class BillingGateway(
                 return@queryPurchasesAsync
             }
 
-            val reported = purchases.map { purchase ->
-                PlayPurchase(
-                    productIds = purchase.products,
-                    isPurchased = purchase.purchaseState == Purchase.PurchaseState.PURCHASED,
-                    isAcknowledged = purchase.isAcknowledged,
-                )
-            }
+            val reported = purchases.map { it.toPlayPurchase() }
             val queryState = PurchasesQueryState.Resolved(
                 purchases = reported,
                 queriedUserId = userId,
@@ -380,14 +369,9 @@ class BillingGateway(
      *   late reply can never be mistaken for a newer one.
      */
     private fun applyPurchases(purchases: List<Purchase>, request: BillingRequest) {
-        val reported = purchases.map { purchase ->
-            PlayPurchase(
-                productIds = purchase.products,
-                isPurchased = purchase.purchaseState == Purchase.PurchaseState.PURCHASED,
-                isAcknowledged = purchase.isAcknowledged,
-            )
-        }
-        onTierChanged(SubscriptionStatus.tierFrom(reported), request.userId)
+        val reported = purchases.map { it.toPlayPurchase() }
+        val userAccountHash = BillingAccountHasher.obfuscate(request.userId)
+        onTierChanged(SubscriptionStatus.tierFrom(reported, userAccountHash), request.userId)
 
         // Capture purchase tokens for T3 backend validation.
         // Project Rule 4: NEVER log or expose purchase tokens.
@@ -410,6 +394,22 @@ class BillingGateway(
         val params = AcknowledgePurchaseParams.newBuilder()
             .setPurchaseToken(purchase.purchaseToken)
             .build()
-        client.acknowledgePurchase(params) { /* A failure is retried by the next refresh(). */ }
+        client.acknowledgePurchase(params) { result ->
+            if (result.responseCode == BillingClient.BillingResponseCode.OK) {
+                // Refreshing pulls the now-acknowledged purchases so isAcknowledged flips to true.
+                refresh(connectionRequest.userId)
+            }
+        }
     }
 }
+
+/**
+ * Maps a Google Play Billing [Purchase] object to our domain model [PlayPurchase], faithfully
+ * propagating the [Purchase.getAccountIdentifiers] obfuscated account ID.
+ */
+internal fun Purchase.toPlayPurchase(): PlayPurchase = PlayPurchase(
+    productIds = products,
+    isPurchased = purchaseState == Purchase.PurchaseState.PURCHASED,
+    isAcknowledged = isAcknowledged,
+    obfuscatedAccountId = accountIdentifiers?.obfuscatedAccountId,
+)

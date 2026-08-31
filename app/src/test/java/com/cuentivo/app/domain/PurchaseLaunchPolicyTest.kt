@@ -6,14 +6,20 @@ import org.junit.Test
 
 class PurchaseLaunchPolicyTest {
 
+    private val testUserId = "user_12345_firebase_uid"
+    private val expectedObfuscatedId = BillingAccountHasher.obfuscate(testUserId)!!
+
     private fun purchase(
         productId: String,
         isPurchased: Boolean = true,
         isAcknowledged: Boolean = true,
-    ) = PlayPurchase(listOf(productId), isPurchased, isAcknowledged)
-
-    private val testUserId = "user_12345_firebase_uid"
-    private val expectedObfuscatedId = BillingAccountHasher.obfuscate(testUserId)!!
+        obfuscatedAccountId: String? = expectedObfuscatedId,
+    ) = PlayPurchase(
+        productIds = listOf(productId),
+        isPurchased = isPurchased,
+        isAcknowledged = isAcknowledged,
+        obfuscatedAccountId = obfuscatedAccountId,
+    )
 
     @Test
     fun query_pending_blocks_purchase() {
@@ -84,6 +90,28 @@ class PurchaseLaunchPolicyTest {
     }
 
     @Test
+    fun legacy_pro_buying_ai_replaces_pro_with_prorated_charge() {
+        val legacyPro = purchase(SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = null)
+        val decision = PurchaseLaunchPolicy.evaluate(
+            queryState = PurchasesQueryState.Resolved(
+                purchases = listOf(legacyPro),
+                queriedUserId = testUserId,
+            ),
+            currentUserId = testUserId,
+            targetProductId = SubscriptionTier.AI_PRODUCT_ID,
+        )
+        assertEquals(
+            PurchaseLaunchDecision.Proceed(
+                targetProductId = SubscriptionTier.AI_PRODUCT_ID,
+                productToReplace = SubscriptionTier.PRO_PRODUCT_ID,
+                replacementMode = ReplacementMode.CHARGE_PRORATED,
+                obfuscatedAccountId = expectedObfuscatedId,
+            ),
+            decision,
+        )
+    }
+
+    @Test
     fun active_ai_buying_pro_replaces_ai_with_deferred_mode() {
         val decision = PurchaseLaunchPolicy.evaluate(
             queryState = PurchasesQueryState.Resolved(
@@ -116,6 +144,39 @@ class PurchaseLaunchPolicyTest {
         )
         assertEquals(
             PurchaseLaunchDecision.Blocked(PurchaseBlockReason.ALREADY_ACTIVE),
+            decision,
+        )
+    }
+
+    @Test
+    fun user_b_can_purchase_ai_when_device_has_user_a_ai_purchase() {
+        // Crucial commercial fix: User B on the same device is not blocked from purchasing AI
+        // when User A's AI purchase is present on the device.
+        val userAId = "user_a_uid"
+        val userAHash = BillingAccountHasher.obfuscate(userAId)!!
+        val userBId = "user_b_uid"
+        val userBHash = BillingAccountHasher.obfuscate(userBId)!!
+
+        val userAPurchase = purchase(
+            productId = SubscriptionTier.AI_PRODUCT_ID,
+            obfuscatedAccountId = userAHash,
+        )
+
+        val decision = PurchaseLaunchPolicy.evaluate(
+            queryState = PurchasesQueryState.Resolved(
+                purchases = listOf(userAPurchase),
+                queriedUserId = userBId,
+            ),
+            currentUserId = userBId,
+            targetProductId = SubscriptionTier.AI_PRODUCT_ID,
+        )
+        assertEquals(
+            PurchaseLaunchDecision.Proceed(
+                targetProductId = SubscriptionTier.AI_PRODUCT_ID,
+                productToReplace = null,
+                replacementMode = null,
+                obfuscatedAccountId = userBHash,
+            ),
             decision,
         )
     }

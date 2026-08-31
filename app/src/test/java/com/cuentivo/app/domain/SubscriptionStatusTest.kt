@@ -5,59 +5,121 @@ import org.junit.Test
 
 class SubscriptionStatusTest {
 
+    private val userA = "user_diego_firebase_uid"
+    private val userAHash = BillingAccountHasher.obfuscate(userA)!!
+    private val userB = "user_other_firebase_uid"
+    private val userBHash = BillingAccountHasher.obfuscate(userB)!!
+
     private fun purchase(
         productId: String = SubscriptionTier.PRO_PRODUCT_ID,
         isPurchased: Boolean = true,
         isAcknowledged: Boolean = true,
-    ) = PlayPurchase(listOf(productId), isPurchased, isAcknowledged)
+        obfuscatedAccountId: String? = null,
+    ) = PlayPurchase(
+        productIds = listOf(productId),
+        isPurchased = isPurchased,
+        isAcknowledged = isAcknowledged,
+        obfuscatedAccountId = obfuscatedAccountId,
+    )
 
     @Test
     fun `no purchases means free`() {
-        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(emptyList()))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(emptyList(), userAHash))
     }
 
     @Test
-    fun `a completed purchase of the pro product unlocks pro`() {
-        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(purchase())))
+    fun `a completed purchase of legacy pro product without account identifier unlocks pro`() {
+        // Critical protection for existing production customers who subscribed before T2.
+        // A purchase with no obfuscatedAccountId MUST continue granting PRO to avoid breaking real paying users.
+        val legacyPro = purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = null)
+        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyPro), userAHash))
+        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyPro), userBHash))
+        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyPro), currentUserAccountHash = null))
     }
 
     @Test
-    fun `a completed purchase of the ai product unlocks ai`() {
-        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(listOf(purchase(productId = SubscriptionTier.AI_PRODUCT_ID))))
+    fun `a completed purchase of pro product with matching account identifier unlocks pro`() {
+        val proForUserA = purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = userAHash)
+        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(proForUserA), userAHash))
     }
 
     @Test
-    fun `when both pro and ai are reported the higher rank ai wins`() {
+    fun `a completed purchase of pro product with different account identifier returns free`() {
+        val proForUserA = purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = userAHash)
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(proForUserA), userBHash))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(proForUserA), currentUserAccountHash = null))
+    }
+
+    @Test
+    fun `a completed purchase of the ai product with matching account identifier unlocks ai`() {
+        val aiForUserA = purchase(productId = SubscriptionTier.AI_PRODUCT_ID, obfuscatedAccountId = userAHash)
+        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(listOf(aiForUserA), userAHash))
+    }
+
+    @Test
+    fun `a completed purchase of the ai product with different account identifier returns free`() {
+        // The exact bug found by Diego: 2nd user signing in on the device must NOT get AI entitlement.
+        val aiForUserA = purchase(productId = SubscriptionTier.AI_PRODUCT_ID, obfuscatedAccountId = userAHash)
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(aiForUserA), userBHash))
+    }
+
+    @Test
+    fun `a completed purchase of the ai product with no account identifier returns free`() {
+        // Since cuentivo_ai_mensual was introduced in T2, every AI purchase must have an account identifier.
+        val aiWithoutId = purchase(productId = SubscriptionTier.AI_PRODUCT_ID, obfuscatedAccountId = null)
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(aiWithoutId), userAHash))
+    }
+
+    @Test
+    fun `a completed purchase of the ai product with unauthenticated user returns free`() {
+        val aiForUserA = purchase(productId = SubscriptionTier.AI_PRODUCT_ID, obfuscatedAccountId = userAHash)
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(aiForUserA), currentUserAccountHash = null))
+    }
+
+    @Test
+    fun `when both pro and ai are reported for the same user the higher rank ai wins`() {
         val purchases = listOf(
-            purchase(productId = SubscriptionTier.PRO_PRODUCT_ID),
-            purchase(productId = SubscriptionTier.AI_PRODUCT_ID),
+            purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = userAHash),
+            purchase(productId = SubscriptionTier.AI_PRODUCT_ID, obfuscatedAccountId = userAHash),
         )
-        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(purchases))
+        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(purchases, userAHash))
+    }
+
+    @Test
+    fun `when legacy pro and another users ai are reported legacy pro is preserved while ai is rejected`() {
+        val purchases = listOf(
+            purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = null),
+            purchase(productId = SubscriptionTier.AI_PRODUCT_ID, obfuscatedAccountId = userAHash),
+        )
+        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(purchases, userBHash))
     }
 
     @Test
     fun `a pending purchase does not unlock pro`() {
         // Cash payment methods leave a purchase pending for hours. Granting Pro here would hand the
         // paid plan to anyone willing to start a payment and never finish it.
-        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(purchase(isPurchased = false))))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(purchase(isPurchased = false)), userAHash))
     }
 
     @Test
     fun `a pending ai purchase does not unlock ai`() {
-        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(purchase(productId = SubscriptionTier.AI_PRODUCT_ID, isPurchased = false))))
+        val pendingAi = purchase(productId = SubscriptionTier.AI_PRODUCT_ID, isPurchased = false, obfuscatedAccountId = userAHash)
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(pendingAi), userAHash))
     }
 
     @Test
     fun `a purchase of some other product does not unlock pro`() {
-        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(purchase(productId = "otra_cosa"))))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(purchase(productId = "otra_cosa")), userAHash))
     }
 
     @Test
     fun `access is granted before the purchase is acknowledged`() {
         // Google's order is deliver first, acknowledge second; waiting would show the free plan to
         // someone who just paid.
-        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(purchase(isAcknowledged = false))))
-        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(listOf(purchase(productId = SubscriptionTier.AI_PRODUCT_ID, isAcknowledged = false))))
+        val unackPro = purchase(isAcknowledged = false, obfuscatedAccountId = userAHash)
+        val unackAi = purchase(productId = SubscriptionTier.AI_PRODUCT_ID, isAcknowledged = false, obfuscatedAccountId = userAHash)
+        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(unackPro), userAHash))
+        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(listOf(unackAi), userAHash))
     }
 
     @Test

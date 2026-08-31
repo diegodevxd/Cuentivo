@@ -36,27 +36,47 @@ object SubscriptionReplacementPolicy {
     }
 
     /**
-     * Determines whether [targetProductId] is already active in the list of [activePurchases].
+     * Determines whether [targetProductId] is already active for [currentUserAccountHash] in [activePurchases].
      */
-    fun isProductAlreadyActive(activePurchases: List<PlayPurchase>, targetProductId: String): Boolean {
-        return activePurchases.any { it.isPurchased && it.productIds.contains(targetProductId) }
+    fun isProductAlreadyActive(
+        activePurchases: List<PlayPurchase>,
+        targetProductId: String,
+        currentUserAccountHash: String? = null,
+    ): Boolean {
+        val targetTier = when (targetProductId) {
+            SubscriptionTier.AI_PRODUCT_ID -> SubscriptionTier.AI
+            SubscriptionTier.PRO_PRODUCT_ID -> SubscriptionTier.PRO
+            else -> null
+        } ?: return false
+        return activePurchases.any { purchase ->
+            purchase.isPurchased &&
+                com.cuentivo.app.domain.SubscriptionStatus.run { purchase.grantedTier(currentUserAccountHash) } == targetTier
+        }
     }
 
     /**
-     * Finds the primary active subscription product ID that should be replaced when buying [targetProductId].
+     * Finds the primary active subscription product ID that should be replaced when buying [targetProductId]
+     * for [currentUserAccountHash].
      *
      * In transient states where Play reports multiple active purchases (e.g. during an in-flight replacement),
      * this selects the highest-ranking active subscription that differs from [targetProductId].
      */
-    fun findProductToReplace(activePurchases: List<PlayPurchase>, targetProductId: String): String? {
-        val activeProducts = activePurchases
+    fun findProductToReplace(
+        activePurchases: List<PlayPurchase>,
+        targetProductId: String,
+        currentUserAccountHash: String? = null,
+    ): String? {
+        val activeTiers = activePurchases
             .filter { it.isPurchased }
-            .flatMap { it.productIds }
-            .filter { it != targetProductId && (it == SubscriptionTier.PRO_PRODUCT_ID || it == SubscriptionTier.AI_PRODUCT_ID) }
+            .mapNotNull { purchase ->
+                com.cuentivo.app.domain.SubscriptionStatus.run { purchase.grantedTier(currentUserAccountHash) }
+            }
 
         return when {
-            activeProducts.contains(SubscriptionTier.AI_PRODUCT_ID) -> SubscriptionTier.AI_PRODUCT_ID
-            activeProducts.contains(SubscriptionTier.PRO_PRODUCT_ID) -> SubscriptionTier.PRO_PRODUCT_ID
+            targetProductId == SubscriptionTier.AI_PRODUCT_ID && activeTiers.contains(SubscriptionTier.PRO) ->
+                SubscriptionTier.PRO_PRODUCT_ID
+            targetProductId == SubscriptionTier.PRO_PRODUCT_ID && activeTiers.contains(SubscriptionTier.AI) ->
+                SubscriptionTier.AI_PRODUCT_ID
             else -> null
         }
     }
