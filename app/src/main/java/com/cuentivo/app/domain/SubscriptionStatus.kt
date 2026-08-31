@@ -41,7 +41,7 @@ object SubscriptionStatus {
      */
     fun tierFrom(
         purchases: List<PlayPurchase>,
-        currentUserAccountHash: String? = null,
+        currentUserAccountHash: String?,
     ): SubscriptionTier =
         purchases.filter { it.isPurchased }
             .mapNotNull { it.grantedTier(currentUserAccountHash) }
@@ -65,7 +65,7 @@ object SubscriptionStatus {
     /**
      * Access is granted before acknowledgement, never after.
      */
-    fun PlayPurchase.grantedTier(currentUserAccountHash: String? = null): SubscriptionTier? = when {
+    internal fun PlayPurchase.grantedTier(currentUserAccountHash: String?): SubscriptionTier? = when {
         productIds.contains(SubscriptionTier.AI_PRODUCT_ID) -> {
             if (!currentUserAccountHash.isNullOrBlank() && obfuscatedAccountId == currentUserAccountHash) {
                 SubscriptionTier.AI

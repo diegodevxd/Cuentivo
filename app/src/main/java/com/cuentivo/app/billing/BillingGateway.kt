@@ -386,18 +386,18 @@ class BillingGateway(
         // care which account happens to be signed in.
         val pending = SubscriptionStatus.needsAcknowledgement(reported).toSet()
         purchases.forEachIndexed { index, purchase ->
-            if (reported[index] in pending) acknowledge(purchase)
+            if (reported[index] in pending) acknowledge(purchase, request.userId)
         }
     }
 
-    private fun acknowledge(purchase: Purchase) {
+    private fun acknowledge(purchase: Purchase, userId: String?) {
         val params = AcknowledgePurchaseParams.newBuilder()
             .setPurchaseToken(purchase.purchaseToken)
             .build()
         client.acknowledgePurchase(params) { result ->
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                 // Refreshing pulls the now-acknowledged purchases so isAcknowledged flips to true.
-                refresh(connectionRequest.userId)
+                refresh(userId)
             }
         }
     }

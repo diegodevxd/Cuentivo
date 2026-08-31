@@ -41,7 +41,7 @@ object SubscriptionReplacementPolicy {
     fun isProductAlreadyActive(
         activePurchases: List<PlayPurchase>,
         targetProductId: String,
-        currentUserAccountHash: String? = null,
+        currentUserAccountHash: String?,
     ): Boolean {
         val targetTier = when (targetProductId) {
             SubscriptionTier.AI_PRODUCT_ID -> SubscriptionTier.AI
@@ -64,7 +64,7 @@ object SubscriptionReplacementPolicy {
     fun findProductToReplace(
         activePurchases: List<PlayPurchase>,
         targetProductId: String,
-        currentUserAccountHash: String? = null,
+        currentUserAccountHash: String?,
     ): String? {
         val activeTiers = activePurchases
             .filter { it.isPurchased }

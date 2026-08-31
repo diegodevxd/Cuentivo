@@ -19,7 +19,13 @@ payload=$(cat 2>/dev/null || true)
 SECRETS='keystore\.properties|\.jks|\.keystore|google-services\.json|serviceAccount|service-account|\.p12|\.pem|CUENTIVOAI_[A-Z_]*KEY'
 
 # Comandos que vuelcan contenido. `ls`, `stat` y `test` quedan fuera a propósito.
-DUMPERS='cat |head |tail |less |more |strings |xxd |od |base64 |Get-Content|gc |type |awk |sed |grep |rg |Select-String'
+#
+# El volcador tiene que aplicarse AL secreto, no sólo aparecer en el mismo comando. Sin esa
+# precisión el guard bloquea trabajo legítimo — un mensaje que menciona `keystore.properties`
+# y termina en `| tail -2` no está volcando nada — y un guard que estorba se acaba apagando,
+# que es la peor forma de perder la protección. Por eso se exige que el nombre del secreto
+# aparezca en el MISMO segmento que el volcador, sin un pipe ni un `;` de por medio.
+DUMPERS='(cat|head|tail|less|more|strings|xxd|od|base64|Get-Content|gc|type|awk|sed|grep|rg|Select-String)[[:space:]][^|;&]*'
 
 tool=$(printf '%s' "$payload" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
 
@@ -40,9 +46,7 @@ case "$tool" in
   Bash|PowerShell)
     cmd=$(printf '%s' "$payload" | grep -oE '"command"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' | head -1)
     [ -z "$cmd" ] && exit 0
-    if printf '%s' "$cmd" | grep -qE "$SECRETS"; then
-      printf '%s' "$cmd" | grep -qE "$DUMPERS" && deny "el comando volcaria el contenido de un secreto"
-    fi
+    printf '%s' "$cmd" | grep -qE "${DUMPERS}(${SECRETS})" && deny "el comando volcaria el contenido de un secreto"
     ;;
 esac
 

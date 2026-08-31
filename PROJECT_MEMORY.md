@@ -223,6 +223,16 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
   la función que la consuma: hasta que exista, **nada revoca el tier cuando alguien cancela o pide
   reembolso**. La suscripción retiene los mensajes 7 días, así que esa función **debe existir antes
   de que entre a pagar cualquier persona distinta de Diego**.
+- **Deuda comercial abierta: el Pro heredado sin identificador de cuenta.** Desde el fix de
+  titularidad (2026-08-28), una compra que Play reporta con `obfuscatedAccountId` vacío concede
+  **PRO a cualquier cuenta de Cuentivo del dispositivo**. Es el precio deliberado de no quitarle Pro
+  a los clientes que compraron antes de T2, y **no hay forma de atribuir una compra histórica**. Pero
+  como señaló Codex: *vacío no demuestra que la compra sea antigua*, y a diferencia de AI, **los
+  beneficios de Pro se aplican en el cliente** (`SyncEntitlement.allowsCloudSync`), sin freno
+  autoritativo del servidor. No es fuga de datos entre cuentas —Firestore sigue aislando por
+  identidad— pero sí permite beneficios de Pro a quien no pagó. **Antes de ampliar la venta de Pro**
+  hay que resolverlo: migrar/revincular el Pro histórico, o ponerle fecha de caducidad a esta
+  tolerancia.
 - **El enforcement de App Check sigue apagado.** Falta leer el panel con tráfico posterior al
   vínculo de Play Integrity, mirando la barra del día y no el acumulado. Lo ya descartado con
   evidencia está en el histórico; no volver a perseguirlo.
