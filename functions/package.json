@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:firestore-emulator": "node scripts/runFirestoreEmulatorTests.js",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "release:check": "node scripts/releaseCheck.js"
   },
   "dependencies": {
     "@google/genai": "^2.18.0",

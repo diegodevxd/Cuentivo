@@ -291,3 +291,10 @@ al mergear recursos. Lo más seguro es redactar el inglés sin apóstrofos ("do 
   emulador: `vitest.config.ts` sólo toma `test/**/*.test.ts`, y `firestoreEmulator.gate.ts` va
   aparte con `npm run test:firestore-emulator`. Reportar el total de `npm test` como si cubriera el
   gate es reportar evidencia que no ocurrió.
+- **Antes de desplegar `functions/`, corre `npm --prefix functions run release:check`.** Encadena
+  `npm ci` limpio → lint → pruebas → **gate del emulador** → borrar `lib/` y compilar, y **falla si
+  falta el JDK** en vez de saltarse el gate en silencio. No despliega: eso lo autoriza Diego aparte.
+  Existe porque este proyecto ya tuvo **tres fallos de la misma familia**, todos verdes haciendo
+  menos de lo que parecían: `npm test` que no cubre el gate del emulador, `npm test` que no valida
+  el lockfile —sólo `npm ci` lo caza— y `firebase deploy` que publicaba `lib/` sin compilar. Ese
+  último ya tiene además su propia red: el hook `predeploy` de `firebase.json` recompila siempre.

@@ -76,10 +76,10 @@ class SubscriptionReplacementPolicyTest {
     }
 
     @Test
-    fun isProductAlreadyActive_respects_legacy_pro_for_any_user() {
-        val legacyPro = listOf(purchase(SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = null))
-        assertTrue(SubscriptionReplacementPolicy.isProductAlreadyActive(legacyPro, SubscriptionTier.PRO_PRODUCT_ID, testUserHash))
-        assertTrue(SubscriptionReplacementPolicy.isProductAlreadyActive(legacyPro, SubscriptionTier.PRO_PRODUCT_ID, "other_user_hash"))
+    fun `isProductAlreadyActive returns false for pro without account identifier`() {
+        val unlinkedPro = listOf(purchase(SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = null))
+        assertFalse(SubscriptionReplacementPolicy.isProductAlreadyActive(unlinkedPro, SubscriptionTier.PRO_PRODUCT_ID, testUserHash))
+        assertFalse(SubscriptionReplacementPolicy.isProductAlreadyActive(unlinkedPro, SubscriptionTier.PRO_PRODUCT_ID, "other_user_hash"))
     }
 
     @Test

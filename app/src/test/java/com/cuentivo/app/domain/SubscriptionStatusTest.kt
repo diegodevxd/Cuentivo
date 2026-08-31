@@ -28,19 +28,20 @@ class SubscriptionStatusTest {
     }
 
     @Test
-    fun `a completed purchase of legacy pro product without account identifier unlocks pro`() {
-        // Critical protection for existing production customers who subscribed before T2.
-        // A purchase with no obfuscatedAccountId MUST continue granting PRO to avoid breaking real paying users.
+    fun `a completed purchase of pro product without account identifier returns free`() {
+        // Strict ownership check: zero historical Pro subscribers exist in production, so there are no
+        // paying customers to protect by tolerating an empty account identifier.
+        // A purchase with no obfuscatedAccountId strictly returns FREE for Pro (symmetrical with AI).
         val legacyPro = purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = null)
-        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyPro), userAHash))
-        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyPro), userBHash))
-        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyPro), currentUserAccountHash = null))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(legacyPro), userAHash))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(legacyPro), userBHash))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(legacyPro), currentUserAccountHash = null))
 
         // Play returns an empty string "" instead of null when no account was attached.
         val legacyProEmptyString = purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = "")
-        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyProEmptyString), userAHash))
-        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyProEmptyString), userBHash))
-        assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(listOf(legacyProEmptyString), currentUserAccountHash = null))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(legacyProEmptyString), userAHash))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(legacyProEmptyString), userBHash))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(listOf(legacyProEmptyString), currentUserAccountHash = null))
     }
 
     @Test
@@ -96,12 +97,14 @@ class SubscriptionStatusTest {
     }
 
     @Test
-    fun `when legacy pro and another users ai are reported legacy pro is preserved while ai is rejected`() {
+    fun `when pro for user b and ai for user a are reported user b gets pro while ai is rejected`() {
         val purchases = listOf(
-            purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = null),
+            purchase(productId = SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = userBHash),
             purchase(productId = SubscriptionTier.AI_PRODUCT_ID, obfuscatedAccountId = userAHash),
         )
         assertEquals(SubscriptionTier.PRO, SubscriptionStatus.tierFrom(purchases, userBHash))
+        assertEquals(SubscriptionTier.AI, SubscriptionStatus.tierFrom(purchases, userAHash))
+        assertEquals(SubscriptionTier.FREE, SubscriptionStatus.tierFrom(purchases, currentUserAccountHash = null))
     }
 
     @Test

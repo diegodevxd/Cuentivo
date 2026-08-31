@@ -34,9 +34,8 @@ object SubscriptionStatus {
      * Rules:
      * - AI: strictly requires matching [currentUserAccountHash]. If [currentUserAccountHash] is null,
      *   or [PlayPurchase.obfuscatedAccountId] is null or does not match, grants nothing.
-     * - Pro:
-     *   - If [PlayPurchase.obfuscatedAccountId] is null (legacy purchase prior to T2), grants PRO.
-     *   - If [PlayPurchase.obfuscatedAccountId] is non-null, grants PRO only if it matches [currentUserAccountHash].
+     * - Pro: strictly requires matching [currentUserAccountHash]. If [currentUserAccountHash] is null,
+     *   or [PlayPurchase.obfuscatedAccountId] is null or does not match, grants nothing.
      * - In all other cases (unrecognized product, pending purchase, mismatched user), falls back to FREE.
      */
     fun tierFrom(
@@ -64,6 +63,15 @@ object SubscriptionStatus {
 
     /**
      * Access is granted before acknowledgement, never after.
+     *
+     * Strict ownership check for both AI and Pro:
+     * - Identificador que coincide con el usuario actual: concede.
+     * - Cualquier otro caso, incluido ausente o vacío: no concede (FREE).
+     *
+     * Condición que hace segura esta simplificación:
+     * La app de PRODUCCIÓN es la versionCode 32, que NO lleva el sello de T2. O sea que cualquiera
+     * que compre Pro desde la app publicada hoy genera una compra SIN identificador. Mientras el conteo
+     * de suscriptores de Pro siga en cero eso da igual, pero deja de darlo en cuanto alguien compre.
      */
     internal fun PlayPurchase.grantedTier(currentUserAccountHash: String?): SubscriptionTier? = when {
         productIds.contains(SubscriptionTier.AI_PRODUCT_ID) -> {
@@ -74,7 +82,7 @@ object SubscriptionStatus {
             }
         }
         productIds.contains(SubscriptionTier.PRO_PRODUCT_ID) -> {
-            if (obfuscatedAccountId.isNullOrBlank() || (!currentUserAccountHash.isNullOrBlank() && obfuscatedAccountId == currentUserAccountHash)) {
+            if (!currentUserAccountHash.isNullOrBlank() && obfuscatedAccountId == currentUserAccountHash) {
                 SubscriptionTier.PRO
             } else {
                 null

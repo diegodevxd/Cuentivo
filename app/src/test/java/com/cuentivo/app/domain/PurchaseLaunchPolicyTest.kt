@@ -90,11 +90,11 @@ class PurchaseLaunchPolicyTest {
     }
 
     @Test
-    fun legacy_pro_buying_ai_replaces_pro_with_prorated_charge() {
-        val legacyPro = purchase(SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = null)
+    fun unlinked_pro_buying_ai_treats_as_fresh_purchase() {
+        val unlinkedPro = purchase(SubscriptionTier.PRO_PRODUCT_ID, obfuscatedAccountId = null)
         val decision = PurchaseLaunchPolicy.evaluate(
             queryState = PurchasesQueryState.Resolved(
-                purchases = listOf(legacyPro),
+                purchases = listOf(unlinkedPro),
                 queriedUserId = testUserId,
             ),
             currentUserId = testUserId,
@@ -103,8 +103,8 @@ class PurchaseLaunchPolicyTest {
         assertEquals(
             PurchaseLaunchDecision.Proceed(
                 targetProductId = SubscriptionTier.AI_PRODUCT_ID,
-                productToReplace = SubscriptionTier.PRO_PRODUCT_ID,
-                replacementMode = ReplacementMode.CHARGE_PRORATED,
+                productToReplace = null,
+                replacementMode = null,
                 obfuscatedAccountId = expectedObfuscatedId,
             ),
             decision,
