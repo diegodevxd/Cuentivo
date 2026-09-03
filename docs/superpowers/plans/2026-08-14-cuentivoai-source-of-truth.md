@@ -13,7 +13,18 @@
 > - **Núcleo N5: cerrado, 5 de 5** (2026-08-30). T0 a T9.
 > - **Entitlement de Play: verificado de punta a punta.** Una compra real desde Play Store concedió
 >   el tier y el gateway respondió. Las cuatro callables están desplegadas en `us-south1`.
-> - **Producción pública: sigue en NO-GO.** Esto no cambió.
+> - **Producción pública: AUTORIZADA Y SUBIDA el 2026-08-31**, con el AAB `v36` (`88fb072`), tras
+>   cerrar las cinco condiciones. **El NO-GO público terminó.** Cualquier persona puede comprar el
+>   plan de $299, no sólo el propietario.
+>
+> **Las cinco condiciones, cerradas con evidencia ejecutada:** núcleo 5/5; consumidor de RTDN
+> desplegado y confirmado en logs de producción; privacidad completa —política con su sección de IA,
+> declaración de Seguridad de los datos enviada y enlace dentro de la app—; **simulacro del apagador
+> ejecutado en producción**, con acta y la prueba de que apagar corta el gasto a cero; y **App Check
+> con enforcement encendido en Firestore**, verificado con la app instalada desde Play Store.
+>
+> **Lo único que queda abierto es medir los $299 con una cohorte limpia**, y eso es tiempo, no
+> trabajo. El precio se lanzó **elegido, no medido**, y así quedó registrado desde el principio.
 >
 > **Condiciones del GO público, ninguna cumplida** (criterio de Codex, 2026-08-30): consumidor de
 > RTDN operativo; App Check con enforcement encendido **y probado** desde una instalación de Play

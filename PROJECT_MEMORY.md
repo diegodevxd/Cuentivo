@@ -15,6 +15,53 @@ No es un source of truth. Manda, en este orden:
 HEAD `1ed3001`. Lo que queda para producción ya no es código: simulacro del apagador, enforcement de
 App Check y cohorte limpia de métricas.
 
+## CuentivoAI se subió a PRODUCCIÓN el 2026-08-31, con el AAB `v36` (`88fb072`)
+
+**El NO-GO público terminó.** Diego lo autorizó y lo subió tras cerrar las cinco condiciones. A
+partir de aquí, cualquier persona puede comprar el plan de $299 — no sólo él.
+
+**Lo que eso cambia, y hay que tenerlo presente:**
+
+- **Ya hay dinero de terceros de por medio.** El consumidor de RTDN está vivo, así que cancelaciones
+  y reembolsos se procesan; pero cualquier defecto que aparezca ahora le pasa a alguien que pagó.
+- **El apagador es real y está ensayado.** Si los costos se disparan o la IA empieza a equivocarse,
+  se apaga `aiControl/global.enabled` y el gasto se detiene en cero. El runbook tiene el
+  procedimiento y el acta del simulacro del 31 de agosto.
+- **Empieza la medición limpia.** El contador `aiUsage` quedó contaminado el 2026-08-25, así que la
+  primera cohorte útil para validar los $299 arranca ahora.
+- **Vigilar los primeros días:** Crashlytics, el panel diario de App Check, el gasto de Gemini y las
+  reseñas. Un fallo en el arranque se corrige mucho mejor con lanzamiento gradual que después.
+
+## Cierre del 31 de agosto: las cinco condiciones de producción, cerradas
+
+**Sólo queda una cosa abierta, y no es de teclado: medir los $299 con una cohorte limpia.**
+
+| Condición | Estado |
+|---|---|
+| Núcleo CuentivoAI | ✅ 5 de 5 |
+| Revocación por notificaciones de Play | ✅ desplegada y confirmada en logs |
+| Privacidad y Play Data Safety | ✅ política, declaración enviada y enlace en la app |
+| **Simulacro del apagador** | ✅ **ejecutado en producción**, acta en el runbook |
+| **App Check en Firestore** | ✅ **enforcement encendido y verificado** |
+| Validar el precio de $299 | ⬜ requiere cohorte, no trabajo |
+
+**El simulacro dejó la prueba que faltaba:** con la IA apagada, una petición real entró, se
+autenticó, pasó App Check y **murió en 216 ms sin tocar Gemini** — cero `AI_PROVIDER_INVOCATION`,
+frente a los 1113 ms de latencia del modelo con la IA encendida. **Apagar no cuesta dinero**, y eso
+ya no es una afirmación de diseño. Corte total: 5 min 10 s, del 19:25:29 al 19:30:39.
+
+**Y una lección operativa que quedó escrita:** el TTL de 5 minutos es el **techo**, no el tiempo
+típico — el camino del servidor avisa al instante y reabrir la app fuerza una consulta nueva.
+
+**Último defecto encontrado y cerrado (v36):** la app **dejaba comprar con la sesión anónima**.
+Diego lo vivió con dinero real: pagó como anónimo, inició sesión, y no pudo usar lo que había
+pagado. Ningún guarda falló —la compra se selló con el uid anónimo, la titularidad estricta la
+rechazó bien, y el servidor rechaza anónimos por diseño— pero **la app vendió algo imposible de
+usar**. `PurchaseLaunchPolicy` gana un noveno motivo, `ANONYMOUS_SESSION`, y ahora lleva a iniciar
+sesión en vez de a la pantalla de pago. **Deuda menor anotada:** ese parámetro tiene default `false`,
+o sea que falla hacia el lado inseguro si un futuro llamador lo omite; hoy los dos call sites lo
+pasan y hay pruebas, pero conviene volverlo obligatorio junto con los otros defaults.
+
 ## Lo que pasó el 30 y 31 de agosto
 
 **Diego probó en Play de verdad, y esa prueba destapó cuatro defectos que ninguna suite veía.**
