@@ -17,6 +17,10 @@ import { createFirestoreSubscriptionEntitlementRepository } from "./ai/subscript
 
 const AI_BOUNDARY = {
   region: "us-south1",
+  // Cloud Run ingress must stay publicly invocable: Firebase Auth and App Check are enforced
+  // inside each handler, never at the invoker layer. Declared here so every redeploy restores
+  // the binding instead of depending on console state, which is how verifyAiSubscription lost it.
+  invoker: "public",
   enforceAppCheck: true,
   maxInstances: 1,
   timeoutSeconds: 15,

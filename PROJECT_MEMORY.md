@@ -11,9 +11,52 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-08-31. **El núcleo está cerrado y el código pendiente, terminado.**
-HEAD `1ed3001`. Lo que queda para producción ya no es código: simulacro del apagador, enforcement de
-App Check y cohorte limpia de métricas.
+**Última actualización:** 2026-09-04. **El núcleo está cerrado y el código pendiente, terminado.**
+Lo que queda para producción ya no es código: cohorte limpia de métricas y la observabilidad que el
+incidente del 4 de septiembre dejó al descubierto.
+
+## 2026-09-04 — CuentivoAI se cayó en producción: tres bugs apilados, resueltos
+
+Diego reportó que CuentivoAI dejó de funcionar: la compra pasaba, la app lo dejaba entrar, y al
+escribir el servidor respondía que debía pagar. **No fue una regresión de código: eran tres
+defectos de infraestructura apilados, cada uno tapando al siguiente**, dormidos desde el 26 de agosto.
+
+1. **`verifyAiSubscription` sin permiso de invocación.** Faltaba `allUsers` →
+   `roles/cloudfunctions.invoker`. Cloud Run devolvía 401 *"access token could not be verified"* y
+   la función **nunca ejecutaba**. La pista estuvo en `run.googleapis.com/client-name`:
+   `cli-firebase` en las tres callables sanas, `cloudfunctions` en la rota. Se desplegó por otra
+   ruta y no recibió el binding que el CLI de Firebase aplica.
+2. **El secret de la cuenta de servicio de Play contenía 1 byte: una llave de apertura.** El JSON se
+   pegó por terminal al crearlo y el shell se comió el resto. Superado el 401, la función moría en
+   `PLAY_API_UNAVAILABLE`. La cuenta `play-entitlement-verifier@` y sus permisos en Play Console
+   siempre estuvieron correctos.
+3. **La imagen del contenedor ya no existía** en Artifact Registry, así que **no se podía crear
+   ninguna revisión** para arreglar lo anterior — ni por consola ni por gcloud.
+
+**Por qué nadie lo vio:** el entitlement manual del 24 de agosto (vencimiento
+`2026-09-01T00:00:00Z`) mantuvo CuentivoAI funcionando todo ese tiempo. Venció el 31 a las 18:00
+hora local y los tres defectos salieron juntos. `aiEntitlements` tenía **un solo documento**, el de
+Diego: ningún tercero se quedó sin servicio.
+
+**Arreglo:** los dos bindings de IAM restaurados —Cloud Run y Cloud Functions son capas distintas
+con IAM propio, y arreglar sólo la primera no basta—, una versión nueva del secret con la llave
+completa (2392 bytes, subida con `--data-file`, nunca por pipe) y deploy de las cuatro callables,
+que reconstruyó la imagen. Verificado en logs: `AI_INTERPRET_RESULT · AI_PROPOSAL`, tres respuestas
+de Gemini entre 808 y 877 ms.
+
+**Mecanizado para que no se repita:** `AI_BOUNDARY` declara ahora `invoker: "public"`, así que cada
+deploy restaura el binding en vez de depender del estado de la consola.
+
+**Lo que este incidente deja abierto.** Ninguna de las tres fallas era detectable por las pruebas:
+`release:check` verifica el código, y estas eran de configuración de producción.
+
+- **`verifyAiSubscription.ts` se traga el error real.** El `catch` alrededor de
+  `playApi.getSubscription` colapsa cinco causas distintas en `PLAY_API_UNAVAILABLE` sin registrar
+  ninguna. Diagnosticar el secret vacío costó horas que un `logger.warn` con el tipo de error habría
+  ahorrado. **Es el pendiente de mayor retorno.**
+- **Nada vigila que las callables respondan.** Un 401 permanente vivió cinco días sin alerta.
+- **Nada vigila que un entitlement se acerque a expirar sin renovarse**, que es justo la señal que
+  habría delatado los tres bugs antes de que el usuario los sintiera.
 
 ## CuentivoAI se subió a PRODUCCIÓN el 2026-08-31, con el AAB `v36` (`88fb072`)
 
@@ -295,8 +338,10 @@ de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de Cuen
 - **El control plane live personal está cerrado, pero no el entitlement comercial.** Cuota,
   hard cap, rate limit y kill switch ya están desplegados/probados; Play todavía no concede ni
   revoca el tier AI server-side, por lo que beta y AAB CuentivoAI continúan bloqueados.
-- **El entitlement AI actual fue creado manualmente para el usuario de prueba.** Billing/Play aún
-  no concede ni revoca el tier CuentivoAI de forma server-side.
+- ~~El entitlement AI fue creado manualmente para el usuario de prueba.~~ **Resuelto el
+  2026-09-04:** la verificación server-side funcionó de punta a punta por primera vez y
+  `verifyAiSubscription` ya escribe el entitlement desde una compra real de Play. Ver el incidente
+  del 4 de septiembre.
 - **N5 cerrada, 9 de 9 (2026-08-30). El núcleo queda en 5 de 5.** T0 a T9, todas
   verificadas reejecutando, no por reporte del implementador. Estado del gate al cerrar T8: **930
   pruebas JVM en 104 clases, 0 fallos**; **functions 266** con lint de TypeScript limpio; **gate del
