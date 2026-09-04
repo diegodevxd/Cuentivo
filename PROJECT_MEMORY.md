@@ -47,16 +47,68 @@ de Gemini entre 808 y 877 ms.
 **Mecanizado para que no se repita:** `AI_BOUNDARY` declara ahora `invoker: "public"`, así que cada
 deploy restaura el binding en vez de depender del estado de la consola.
 
-**Lo que este incidente deja abierto.** Ninguna de las tres fallas era detectable por las pruebas:
-`release:check` verifica el código, y estas eran de configuración de producción.
+## Escaneo dirigido del 2026-09-04: dos defectos más, cerrados en `97ccd62`
 
-- **`verifyAiSubscription.ts` se traga el error real.** El `catch` alrededor de
-  `playApi.getSubscription` colapsa cinco causas distintas en `PLAY_API_UNAVAILABLE` sin registrar
-  ninguna. Diagnosticar el secret vacío costó horas que un `logger.warn` con el tipo de error habría
-  ahorrado. **Es el pendiente de mayor retorno.**
-- **Nada vigila que las callables respondan.** Un 401 permanente vivió cinco días sin alerta.
-- **Nada vigila que un entitlement se acerque a expirar sin renovarse**, que es justo la señal que
-  habría delatado los tres bugs antes de que el usuario los sintiera.
+Ese mismo día se buscaron a propósito los caminos que sólo se ejercitan en producción, con
+revisión cruzada de Codex. Aparecieron dos, y ninguno lo veía la suite.
+
+**El consumidor de RTDN llevaba once horas fallando cada cinco minutos.** El deploy de la
+madrugada excluyó `handlePlayRtdnNotification` para esquivar el `--force` que exige su política de
+reintentos, y quedó apuntando a la versión 1 del secret. Consecuencia: **nada revocaba
+suscripciones**. Se corrigió desplegando las cinco funciones, tras comprobar que las cinco
+desplegadas son las cinco del código y que por tanto `--force` no borraba nada.
+
+**`aiEntitlements` lo escribían dos productores que compiten —verificación y RTDN— sin leer el
+estado previo, así que la última escritura ganaba siempre.** Falla en las dos direcciones: una
+verificación lenta reactivaba una suscripción ya cancelada, y como la app verifica **todas** las
+compras owned al arrancar, una expirada apagaba a la vigente. El entitlement guarda ahora
+`sourceTokenHash` y toda escritura pasa por `entitlementWriteDecision`:
+
+| Situación | Regla |
+|---|---|
+| Mismo token | Gana la observación más reciente; el empate nunca concede acceso |
+| Otro token, por RTDN | Nunca adopta: una notificación tardía no revoca una compra nueva |
+| Otro token, verificación **activa** | Adopta si es más nueva o empata |
+| Otro token, verificación **inactiva** | No adopta: un token histórico no revoca al vigente |
+| Documento legado sin `sourceTokenHash` | Sólo lo adopta una verificación, y sujeta a la regla temporal |
+
+`updateEntitlement` pasó de `set(merge)` suelto a `runTransaction`, y el RTDN toma el timestamp
+**después** de consultar Play. `TOKEN_NOT_BOUND` y `LEGACY_SOURCE_UNRESOLVED` salen por
+`logger.warn PLAY_RTDN_UNRESOLVED` con sólo el motivo: no se reintentan —ningún replay crea un
+binding— pero dejan de ser invisibles.
+
+**Dos lecciones de método que conviene conservar, porque se contradicen y las dos son ciertas:**
+
+- **Codex rechazó el diff cuatro veces y las cuatro tenía razón**: el legado que aceptaba cualquier
+  escritura, el caso del gate que se quería dejar como deuda, la verificación obsoleta que seguía
+  siendo obsoleta, y la verificación inactiva de otro token. Ninguna la detecta una prueba: son
+  huecos de razonamiento sobre orden de eventos.
+- **El gate del emulador cazó lo que ninguna revisión de diseño habría visto**: el `tx.get` del
+  entitlement estaba después del `tx.set` del token, y Firestore exige que todas las lecturas
+  precedan a las escrituras. Pasaba las 291 unitarias en verde porque el bridge en memoria no
+  impone esa regla, y habría roto **todas** las verificaciones de compra en producción.
+
+También quedó verificado que un primer intento de comprobar la honestidad de las pruebas dio un
+**falso verde**: el script decía haber neutralizado las guardas y no había reemplazado nada. Contar
+las ocurrencias antes y después es parte del procedimiento, no un extra.
+
+**Lo que sigue abierto tras el escaneo:**
+
+- **`verifyAiSubscription.ts` todavía se traga el error real.** El `catch` alrededor de
+  `playApi.getSubscription` colapsa cinco causas en `PLAY_API_UNAVAILABLE` sin registrar ninguna.
+  Codex encontró el mismo patrón en `firestoreControlPlane.ts:225`, `:293` y `:317`, donde un
+  documento ausente y una caída de Firestore lucen igual que el apagador. **Es el pendiente de mayor
+  retorno**: diagnosticar el secret vacío costó horas que un `logger.warn` habría ahorrado.
+- **Nada vigila que las callables respondan.** Un 401 permanente vivió cinco días sin alerta, y el
+  RTDN falló once horas sin que nadie se enterara.
+- **Nada vigila que un entitlement se acerque a expirar sin renovarse.**
+- **La retención de imágenes en Artifact Registry sigue sin revisar.** Fue la causa de que no se
+  pudiera crear ninguna revisión, y nada impide que vuelva a borrarse.
+- **La UI concede acceso visual sin confirmación del servidor**: `MainActivity.kt:391` ignora el
+  resultado de la verificación y `AiEntryPolicy.kt:26` abre el asistente con el tier local. No es
+  brecha —el gateway niega— pero produce la pantalla muerta que originó el reporte.
+- Codex **descartó** problemas en `FinancialDao`: las rutas de dinero reservan clave dentro de
+  `@Transaction` y las guardas de cancelación son coherentes.
 
 ## CuentivoAI se subió a PRODUCCIÓN el 2026-08-31, con el AAB `v36` (`88fb072`)
 
