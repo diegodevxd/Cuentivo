@@ -213,6 +213,7 @@ describe("firestore emulator concurrency gate", () => {
       expiresAtEpochMillis: initialExpiry,
       lastVerifiedAtEpochMillis: NOW,
       productId: product,
+      sourceTokenHash: TEST_TOKEN_HASH,
     });
 
     // 2. Reprocesar: Same user re-verifying with extended expiry
@@ -256,6 +257,7 @@ describe("firestore emulator concurrency gate", () => {
       expiresAtEpochMillis: revokedExpiry,
       lastVerifiedAtEpochMillis: NOW + 1500,
       productId: product,
+      sourceTokenHash: TEST_TOKEN_HASH,
     });
 
     // 4. Token robado: Different user attempting to use the same token
@@ -558,6 +560,7 @@ describe("firestore emulator concurrency gate", () => {
       expiresAtEpochMillis: initialExpiry,
       lastVerifiedAtEpochMillis: NOW,
       productId: product,
+      sourceTokenHash: TEST_TOKEN_HASH,
     });
 
     // 2. RTDN Refund / Voided Purchase Notification arrives
@@ -604,6 +607,7 @@ describe("firestore emulator concurrency gate", () => {
       expiresAtEpochMillis: 0,
       lastVerifiedAtEpochMillis: NOW + 5000,
       productId: product,
+      sourceTokenHash: TEST_TOKEN_HASH,
     });
 
     // 3. Reprocessing the exact same refund notification leaves the exact same revoked state
@@ -616,6 +620,121 @@ describe("firestore emulator concurrency gate", () => {
       expiresAtEpochMillis: 0,
       lastVerifiedAtEpochMillis: NOW + 5000,
       productId: product,
+      sourceTokenHash: TEST_TOKEN_HASH,
     });
+  });
+
+  test("entitlement ordering against firestore: a stale verification and a replaced token cannot revoke access", async () => {
+    // Exercises the real runTransaction paths, not the in-memory bridge: both writers read the
+    // stored entitlement and honour source token plus observation time. Unit tests cannot cover
+    // this — they neither enforce Firestore's read-before-write rule nor persist state.
+    const subRepo = createFirestoreSubscriptionEntitlementRepository(firestore);
+    const product = "cuentivo_ai_mensual";
+    const uid = `gate-order-${randomUUID()}`;
+    const tokenA = `tokenA-${randomUUID()}`;
+    const tokenB = `tokenB-${randomUUID()}`;
+    const hashA = hashPurchaseToken(tokenA);
+    const hashB = hashPurchaseToken(tokenB);
+    const expiry = NOW + 30 * 86400 * 1000;
+
+    // 1. Token A is verified and becomes the source of the entitlement.
+    await subRepo.recordSubscription({
+      uid,
+      purchaseToken: tokenA,
+      productId: product,
+      enabled: true,
+      expiresAtEpochMillis: expiry,
+      nowEpochMillis: NOW,
+    });
+
+    // 2. An RTDN for token A revokes it, observed later than the verification.
+    const revoke = await subRepo.updateEntitlement({
+      uid,
+      productId: product,
+      purchaseToken: tokenA,
+      enabled: false,
+      expiresAtEpochMillis: NOW,
+      nowEpochMillis: NOW + 2000,
+    });
+    expect(revoke).toBe("APPLIED");
+
+    // 3. A verification of token A that observed Play *before* the cancellation lands late.
+    //    Applying it would hand back access the user already cancelled.
+    const stale = await subRepo.recordSubscription({
+      uid,
+      purchaseToken: tokenA,
+      productId: product,
+      enabled: true,
+      expiresAtEpochMillis: expiry,
+      nowEpochMillis: NOW + 1000,
+    });
+    expect(stale).toEqual({ status: "STALE_IGNORED" });
+
+    const afterStale = (await firestore.doc(entitlementPath(uid)).get()).data();
+    expect(afterStale?.["enabled"]).toBe(false);
+    expect(afterStale?.["sourceTokenHash"]).toBe(hashA);
+
+    // 4. The user resubscribes: token B is verified and adopts the entitlement.
+    const adopt = await subRepo.recordSubscription({
+      uid,
+      purchaseToken: tokenB,
+      productId: product,
+      enabled: true,
+      expiresAtEpochMillis: expiry,
+      nowEpochMillis: NOW + 3000,
+    });
+    expect(adopt).toEqual({
+      status: "RECORDED",
+      enabled: true,
+      expiresAtEpochMillis: expiry,
+    });
+    expect((await firestore.doc(entitlementPath(uid)).get()).data()?.["sourceTokenHash"]).toBe(hashB);
+
+    // 5. A late RTDN about the *replaced* token A must not revoke the new subscription,
+    //    even though it is observed later than everything else.
+    const foreign = await subRepo.updateEntitlement({
+      uid,
+      productId: product,
+      purchaseToken: tokenA,
+      enabled: false,
+      expiresAtEpochMillis: NOW,
+      nowEpochMillis: NOW + 9000,
+    });
+    expect(foreign).toBe("IGNORED_SUPERSEDED");
+
+    const finalDoc = (await firestore.doc(entitlementPath(uid)).get()).data();
+    expect(finalDoc?.["enabled"]).toBe(true);
+    expect(finalDoc?.["sourceTokenHash"]).toBe(hashB);
+  });
+
+  test("entitlement ordering against firestore: an RTDN cannot adopt a legacy entitlement", async () => {
+    // Documents written before source-token tracking exist in production. A notification about
+    // some historical token must not become their source and revoke a paying user.
+    const subRepo = createFirestoreSubscriptionEntitlementRepository(firestore);
+    const product = "cuentivo_ai_mensual";
+    const uid = `gate-legacy-${randomUUID()}`;
+    const legacyToken = `legacy-${randomUUID()}`;
+
+    await firestore.doc(entitlementPath(uid)).set({
+      enabled: true,
+      expiresAtEpochMillis: NOW + 30 * 86400 * 1000,
+      lastVerifiedAtEpochMillis: NOW,
+      productId: product,
+    });
+
+    const result = await subRepo.updateEntitlement({
+      uid,
+      productId: product,
+      purchaseToken: legacyToken,
+      enabled: false,
+      expiresAtEpochMillis: NOW,
+      nowEpochMillis: NOW + 5000,
+    });
+
+    expect(result).toBe("IGNORED_LEGACY_SOURCE");
+
+    const doc = (await firestore.doc(entitlementPath(uid)).get()).data();
+    expect(doc?.["enabled"]).toBe(true);
+    expect(doc?.["sourceTokenHash"]).toBeUndefined();
   });
 });

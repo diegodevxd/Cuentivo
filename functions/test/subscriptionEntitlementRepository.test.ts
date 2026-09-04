@@ -3,6 +3,7 @@ import {
   recordSubscriptionInTransaction,
   tokenBindingPath,
   entitlementPath,
+  entitlementWriteDecision,
   type SubscriptionTransactionBridge,
 } from "../src/ai/subscriptionEntitlementRepository.js";
 import { hashPurchaseToken } from "../src/ai/playSubscriptionVerifier.js";
@@ -69,6 +70,7 @@ describe("subscriptionEntitlementRepository", () => {
       expiresAtEpochMillis: EXPIRES,
       lastVerifiedAtEpochMillis: NOW,
       productId: PRODUCT_ID,
+      sourceTokenHash: TOKEN_HASH,
     });
   });
 
@@ -145,5 +147,208 @@ describe("subscriptionEntitlementRepository", () => {
 
     // user_owner entitlement is untouched
     expect(store.get(entitlementPath("user_owner"))?.["expiresAtEpochMillis"]).toBe(EXPIRES);
+  });
+
+  test("a verification that observed Play earlier does not overwrite a later cancellation", async () => {
+    // The race that loses revocation: a slow verification reads Play as active, an RTDN then
+    // records the cancellation, and the verification finally lands. Writing blindly would
+    // re-enable a subscription the user already cancelled.
+    const CANCELLED_AT = NOW;
+    const { bridge, store } = createMemoryBridge({
+      [tokenBindingPath(TOKEN_HASH)]: {
+        uid: "user_owner",
+        boundAtEpochMillis: NOW - 60000,
+        productId: PRODUCT_ID,
+        tokenHash: TOKEN_HASH,
+      },
+      [entitlementPath("user_owner")]: {
+        enabled: false,
+        expiresAtEpochMillis: 0,
+        lastVerifiedAtEpochMillis: CANCELLED_AT,
+        productId: PRODUCT_ID,
+        sourceTokenHash: TOKEN_HASH,
+      },
+    });
+
+    const result = await recordSubscriptionInTransaction(bridge, {
+      uid: "user_owner",
+      purchaseToken: TOKEN,
+      productId: PRODUCT_ID,
+      enabled: true,
+      expiresAtEpochMillis: EXPIRES,
+      nowEpochMillis: CANCELLED_AT - 30000, // observed Play before the cancellation
+    });
+
+    expect(result).toEqual({ status: "STALE_IGNORED" });
+    expect(store.get(entitlementPath("user_owner"))?.["enabled"]).toBe(false);
+  });
+
+  describe("entitlementWriteDecision", () => {
+    const OTHER_TOKEN_HASH = hashPurchaseToken("a_different_play_token_222");
+
+    test("applies when nothing is stored yet", () => {
+      expect(
+        entitlementWriteDecision(null, {
+          sourceTokenHash: TOKEN_HASH,
+          enabled: true,
+          nowEpochMillis: NOW,
+          origin: "VERIFICATION",
+        }),
+      ).toBe("APPLY");
+    });
+
+    test("a verification adopts a document written before sourceTokenHash existed", () => {
+      // Legacy entitlements carry no source token; a verification just asked Play about a token
+      // it knows belongs to this user, so it can establish the source safely.
+      expect(
+        entitlementWriteDecision(
+          { enabled: true, lastVerifiedAtEpochMillis: NOW },
+          {
+            sourceTokenHash: TOKEN_HASH,
+            enabled: true,
+            nowEpochMillis: NOW + 5000,
+            origin: "VERIFICATION",
+          },
+        ),
+      ).toBe("APPLY");
+    });
+
+    test("a stale verification cannot adopt a legacy document either", () => {
+      // Being a verification does not make an old observation current: a legacy entitlement
+      // already revoked at T2 must not be re-enabled by a verification that saw Play at T1.
+      expect(
+        entitlementWriteDecision(
+          { enabled: false, lastVerifiedAtEpochMillis: NOW },
+          {
+            sourceTokenHash: TOKEN_HASH,
+            enabled: true,
+            nowEpochMillis: NOW - 5000,
+            origin: "VERIFICATION",
+          },
+        ),
+      ).toBe("IGNORE_STALE");
+    });
+
+    test("an RTDN cannot revoke a legacy entitlement it cannot prove it owns", () => {
+      // Without a stored source token, a notification about some historical token would become
+      // the first sourceTokenHash and cut off a subscription that is still being paid for.
+      expect(
+        entitlementWriteDecision(
+          { enabled: true, lastVerifiedAtEpochMillis: NOW },
+          {
+            sourceTokenHash: TOKEN_HASH,
+            enabled: false,
+            nowEpochMillis: NOW + 5000,
+            origin: "RTDN",
+          },
+        ),
+      ).toBe("IGNORE_LEGACY_UNRESOLVED");
+    });
+
+    test("an RTDN for a replaced token cannot revoke a newly purchased subscription", () => {
+      // The user resubscribed with a new token. A late notification about the old one says
+      // inactive. Letting it through would revoke a subscription that was just paid for.
+      expect(
+        entitlementWriteDecision(
+          { enabled: true, lastVerifiedAtEpochMillis: NOW, sourceTokenHash: TOKEN_HASH },
+          {
+            sourceTokenHash: OTHER_TOKEN_HASH,
+            enabled: false,
+            nowEpochMillis: NOW + 60000,
+            origin: "RTDN",
+          },
+        ),
+      ).toBe("IGNORE_FOREIGN_TOKEN");
+    });
+
+    test("a verification adopts a new token when it observed Play more recently", () => {
+      // Same situation, opposite direction: the resubscription's own verification must be able
+      // to take ownership of the entitlement.
+      expect(
+        entitlementWriteDecision(
+          { enabled: false, lastVerifiedAtEpochMillis: NOW, sourceTokenHash: TOKEN_HASH },
+          {
+            sourceTokenHash: OTHER_TOKEN_HASH,
+            enabled: true,
+            nowEpochMillis: NOW + 60000,
+            origin: "VERIFICATION",
+          },
+        ),
+      ).toBe("APPLY");
+    });
+
+    test("an inactive verification of a different token cannot revoke the active source", () => {
+      // The app verifies every owned purchase on launch, so an expired historical token gets
+      // verified alongside the live one. Its inactive result says nothing about the token that
+      // is actually granting access.
+      expect(
+        entitlementWriteDecision(
+          { enabled: true, lastVerifiedAtEpochMillis: NOW, sourceTokenHash: TOKEN_HASH },
+          {
+            sourceTokenHash: OTHER_TOKEN_HASH,
+            enabled: false,
+            nowEpochMillis: NOW + 60000,
+            origin: "VERIFICATION",
+          },
+        ),
+      ).toBe("IGNORE_FOREIGN_TOKEN");
+    });
+
+    test("an active verification of a new token adopts even on an exact tie", () => {
+      // A resubscription must not be refused because a different subscription ended in the same
+      // millisecond: they are separate purchases.
+      expect(
+        entitlementWriteDecision(
+          { enabled: false, lastVerifiedAtEpochMillis: NOW, sourceTokenHash: TOKEN_HASH },
+          {
+            sourceTokenHash: OTHER_TOKEN_HASH,
+            enabled: true,
+            nowEpochMillis: NOW,
+            origin: "VERIFICATION",
+          },
+        ),
+      ).toBe("APPLY");
+    });
+
+    test("an older observation of the same token never overwrites a newer one", () => {
+      expect(
+        entitlementWriteDecision(
+          { enabled: false, lastVerifiedAtEpochMillis: NOW, sourceTokenHash: TOKEN_HASH },
+          {
+            sourceTokenHash: TOKEN_HASH,
+            enabled: true,
+            nowEpochMillis: NOW - 1,
+            origin: "VERIFICATION",
+          },
+        ),
+      ).toBe("IGNORE_STALE");
+    });
+
+    test("an exact timestamp tie never resolves towards granting access", () => {
+      expect(
+        entitlementWriteDecision(
+          { enabled: false, lastVerifiedAtEpochMillis: NOW, sourceTokenHash: TOKEN_HASH },
+          {
+            sourceTokenHash: TOKEN_HASH,
+            enabled: true,
+            nowEpochMillis: NOW,
+            origin: "VERIFICATION",
+          },
+        ),
+      ).toBe("IGNORE_STALE");
+
+      // ...but a tie that revokes is applied, so revocation is never the one dropped.
+      expect(
+        entitlementWriteDecision(
+          { enabled: true, lastVerifiedAtEpochMillis: NOW, sourceTokenHash: TOKEN_HASH },
+          {
+            sourceTokenHash: TOKEN_HASH,
+            enabled: false,
+            nowEpochMillis: NOW,
+            origin: "RTDN",
+          },
+        ),
+      ).toBe("APPLY");
+    });
   });
 });

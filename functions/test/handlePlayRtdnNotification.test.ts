@@ -28,6 +28,7 @@ describe("handlePlayRtdnNotification", () => {
     playApiResponse?: PlaySubscriptionV2Response | null;
     playApiError?: Error;
     tokenBinding?: TokenBinding | null;
+    updateResult?: "APPLIED" | "IGNORED_SUPERSEDED" | "IGNORED_LEGACY_SOURCE";
     onIgnored?: (reason: string) => void;
     onProcessed?: (details: { uid: string; enabled: boolean; expiresAtEpochMillis: number }) => void;
   }) {
@@ -56,6 +57,7 @@ describe("handlePlayRtdnNotification", () => {
       }),
       updateEntitlement: vi.fn(async (input: UpdateEntitlementInput) => {
         recordedUpdates.push(input);
+        return overrides?.updateResult ?? ("APPLIED" as const);
       }),
     };
 
@@ -155,6 +157,7 @@ describe("handlePlayRtdnNotification", () => {
       {
         uid: TEST_UID,
         productId: SUPPORTED_AI_PRODUCT_ID,
+        purchaseToken: TEST_TOKEN,
         enabled: true,
         expiresAtEpochMillis: FUTURE_MILLIS,
         nowEpochMillis: NOW_MILLIS,
@@ -192,6 +195,7 @@ describe("handlePlayRtdnNotification", () => {
         {
           uid: TEST_UID,
           productId: SUPPORTED_AI_PRODUCT_ID,
+          purchaseToken: TEST_TOKEN,
           enabled: false,
           expiresAtEpochMillis: FUTURE_MILLIS,
           nowEpochMillis: NOW_MILLIS,
@@ -228,6 +232,7 @@ describe("handlePlayRtdnNotification", () => {
       {
         uid: TEST_UID,
         productId: SUPPORTED_AI_PRODUCT_ID,
+        purchaseToken: TEST_TOKEN,
         enabled: false,
         expiresAtEpochMillis: 0,
         nowEpochMillis: NOW_MILLIS,
@@ -347,5 +352,55 @@ describe("handlePlayRtdnNotification", () => {
     // 5. Invalid string / null
     expect(parsePlayRtdnPayload(null)).toBeNull();
     expect(parsePlayRtdnPayload("not_valid_json_nor_base64_json!@#$")).toBeNull();
+  });
+
+  test("a notification rejected as superseded is reported ignored, not processed", async () => {
+    // The repository refuses writes that describe a subscription the user already replaced.
+    // The handler must treat that as a resolved outcome — no retry, no success signal — or the
+    // caller would believe a revocation landed when it did not.
+    const onIgnored = vi.fn();
+    const onProcessed = vi.fn();
+    const deps = createTestDeps({ updateResult: "IGNORED_SUPERSEDED", onIgnored, onProcessed });
+    const handler = createPlayRtdnHandler(deps);
+
+    const payload: PlayRtdnPayload = {
+      version: "1.0",
+      packageName: PACKAGE_NAME,
+      subscriptionNotification: {
+        purchaseToken: TEST_TOKEN,
+        subscriptionId: SUPPORTED_AI_PRODUCT_ID,
+      },
+    };
+
+    const result = await handler(payload);
+
+    expect(result).toEqual({ status: "IGNORED", reason: "SUPERSEDED_BY_NEWER_STATE" });
+    expect(onIgnored).toHaveBeenCalledWith("SUPERSEDED_BY_NEWER_STATE");
+    expect(onProcessed).not.toHaveBeenCalled();
+  });
+
+  test("a notification against a legacy entitlement is reported unresolved, not processed", async () => {
+    // An entitlement written before source-token tracking cannot be proven to belong to this
+    // notification's token. Revoking on that basis could cut off a paying user, so the event is
+    // surfaced for reconciliation instead of applied.
+    const onIgnored = vi.fn();
+    const onProcessed = vi.fn();
+    const deps = createTestDeps({ updateResult: "IGNORED_LEGACY_SOURCE", onIgnored, onProcessed });
+    const handler = createPlayRtdnHandler(deps);
+
+    const payload: PlayRtdnPayload = {
+      version: "1.0",
+      packageName: PACKAGE_NAME,
+      subscriptionNotification: {
+        purchaseToken: TEST_TOKEN,
+        subscriptionId: SUPPORTED_AI_PRODUCT_ID,
+      },
+    };
+
+    const result = await handler(payload);
+
+    expect(result).toEqual({ status: "IGNORED", reason: "LEGACY_SOURCE_UNRESOLVED" });
+    expect(onIgnored).toHaveBeenCalledWith("LEGACY_SOURCE_UNRESOLVED");
+    expect(onProcessed).not.toHaveBeenCalled();
   });
 });

@@ -172,13 +172,35 @@ export function createPlayRtdnHandler(deps: {
       expiresAtEpochMillis = 0;
     }
 
-    await deps.repository.updateEntitlement({
+    // `now` timestamps the observation of Play, not the start of a call of unbounded duration.
+    // The entitlement write is ordered by this value, so taking it earlier would let a slow
+    // notification outrank a verification that actually observed Play later.
+    const observedAtEpochMillis = deps.now();
+
+    const update = await deps.repository.updateEntitlement({
       uid: binding.uid,
       productId,
+      purchaseToken,
       enabled,
       expiresAtEpochMillis,
-      nowEpochMillis: deps.now(),
+      nowEpochMillis: observedAtEpochMillis,
     });
+
+    // The stored entitlement is owned by a newer token or a newer observation: this notification
+    // describes a subscription the user already replaced, and applying it would revoke a
+    // legitimate one. Dropping it is the correct outcome, not a failure to retry.
+    if (update === "IGNORED_SUPERSEDED") {
+      deps.onIgnored?.("SUPERSEDED_BY_NEWER_STATE");
+      return { status: "IGNORED", reason: "SUPERSEDED_BY_NEWER_STATE" };
+    }
+
+    // The entitlement predates source-token tracking, so this notification cannot prove it
+    // describes the subscription currently granting access. Revoking on that basis could cut off
+    // a paying user; the next verification adopts a source and restores normal handling.
+    if (update === "IGNORED_LEGACY_SOURCE") {
+      deps.onIgnored?.("LEGACY_SOURCE_UNRESOLVED");
+      return { status: "IGNORED", reason: "LEGACY_SOURCE_UNRESOLVED" };
+    }
 
     deps.onProcessed?.({
       uid: binding.uid,

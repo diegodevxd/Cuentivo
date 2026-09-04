@@ -178,6 +178,17 @@ export const handlePlayRtdnNotification = onMessagePublished(
       packageName: PACKAGE_NAME,
       now: () => Date.now(),
       onIgnored: (reason) => {
+        // TOKEN_NOT_BOUND means a real Play event arrived for a purchase this backend never
+        // verified, so there is no uid to act on and nothing revokes. Retrying cannot help —
+        // no replay creates a binding — but it must be visible: a rising count means purchases
+        // are landing while verification is broken. Reason only; never uid or token.
+        // LEGACY_SOURCE_UNRESOLVED joins it: an entitlement written before source-token tracking
+        // cannot be revoked from a notification alone, so those events need an explicit
+        // reconciliation rather than silence.
+        if (reason === "TOKEN_NOT_BOUND" || reason === "LEGACY_SOURCE_UNRESOLVED") {
+          logger.warn("PLAY_RTDN_UNRESOLVED", { reason });
+          return;
+        }
         logger.info("PLAY_RTDN_IGNORED", { reason });
       },
       onProcessed: (details) => {
