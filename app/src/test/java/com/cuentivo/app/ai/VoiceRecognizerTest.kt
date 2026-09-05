@@ -70,17 +70,48 @@ class VoiceRecognizerTest {
     }
 
     @Test
-    fun `RECORD_AUDIO is never in main manifest and present in debug manifest`() {
-        val mainManifest = File("src/main/AndroidManifest.xml").readText()
-        assertFalse(
-            "RECORD_AUDIO must NEVER appear in main manifest (release safety)",
-            mainManifest.contains("RECORD_AUDIO"),
+    fun `RECORD_AUDIO and RecognitionService queries are declared in manifest as direct children`() {
+        val mainManifest = File("src/main/AndroidManifest.xml")
+        assertTrue("main manifest must exist", mainManifest.exists())
+
+        val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+        val builder = factory.newDocumentBuilder()
+        val doc = builder.parse(mainManifest)
+        val root = doc.documentElement
+        assertEquals("root element must be manifest", "manifest", root.nodeName)
+
+        fun org.w3c.dom.Element.directChildren(name: String): List<org.w3c.dom.Element> {
+            val list = mutableListOf<org.w3c.dom.Element>()
+            val children = this.childNodes
+            for (i in 0 until children.length) {
+                val node = children.item(i)
+                if (node.nodeType == org.w3c.dom.Node.ELEMENT_NODE && node.nodeName == name) {
+                    list.add(node as org.w3c.dom.Element)
+                }
+            }
+            return list
+        }
+
+        val permissions = root.directChildren("uses-permission")
+        val hasRecordAudio = permissions.any { it.getAttribute("android:name") == "android.permission.RECORD_AUDIO" }
+        assertTrue(
+            "RECORD_AUDIO must be explicitly declared as a direct uses-permission child of manifest",
+            hasRecordAudio,
         )
 
-        val debugManifest = File("src/debug/AndroidManifest.xml").readText()
+        val queriesElements = root.directChildren("queries")
+        assertTrue("manifest must contain at least one direct queries child", queriesElements.isNotEmpty())
+
+        val hasRecognitionService = queriesElements.any { queries ->
+            queries.directChildren("intent").any { intent ->
+                intent.directChildren("action").any { action ->
+                    action.getAttribute("android:name") == "android.speech.RecognitionService"
+                }
+            }
+        }
         assertTrue(
-            "RECORD_AUDIO must be declared in debug manifest",
-            debugManifest.contains("RECORD_AUDIO"),
+            "android.speech.RecognitionService must be strictly declared under manifest > queries > intent > action in main manifest",
+            hasRecognitionService,
         )
     }
 }

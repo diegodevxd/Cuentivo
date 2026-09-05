@@ -6,6 +6,16 @@
          the setting on, and never automatically — see the Account sheet. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Voice recognition for CuentivoAI dictation. Only requested when user taps mic button. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Queries declaration for Android 11+ package visibility required by SpeechRecognizer -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <!--
       Backup is off on purpose. cuentivo.db is a financial ledger and the app deliberately binds it
       to one signed-in account: LocalSessionGuard wipes it when a different uid appears. An automatic

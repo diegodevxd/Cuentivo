@@ -57,6 +57,9 @@ interface VoiceRecognizer {
         onPartialResult: (String) -> Unit,
         onFinalResult: (String) -> Unit,
         onError: (VoiceUnavailableReason) -> Unit,
+        onRmsChanged: ((Float) -> Unit)? = null,
+        onEndOfSpeech: (() -> Unit)? = null,
+        onListeningStarted: (() -> Unit)? = null,
     )
     fun cancel()
     fun destroy()
@@ -74,6 +77,7 @@ class AndroidVoiceRecognizer(
 ) : VoiceRecognizer {
 
     private var recognizer: SpeechRecognizer? = null
+    private var activeSessionId: Long = 0L
 
     private data class RecognizerSelection(
         val recognizer: SpeechRecognizer,
@@ -89,6 +93,9 @@ class AndroidVoiceRecognizer(
         onPartialResult: (String) -> Unit,
         onFinalResult: (String) -> Unit,
         onError: (VoiceUnavailableReason) -> Unit,
+        onRmsChanged: ((Float) -> Unit)?,
+        onEndOfSpeech: (() -> Unit)?,
+        onListeningStarted: (() -> Unit)?,
     ) {
         destroy()
 
@@ -97,21 +104,40 @@ class AndroidVoiceRecognizer(
             return
         }
 
+        val sessionId = ++activeSessionId
         startListeningInternal(
+            sessionId = sessionId,
             allowOnDevice = true,
             onPartialResult = onPartialResult,
             onFinalResult = onFinalResult,
             onError = onError,
+            onRmsChanged = onRmsChanged,
+            onEndOfSpeech = onEndOfSpeech,
+            onListeningStarted = onListeningStarted,
         )
     }
 
     private fun startListeningInternal(
+        sessionId: Long,
         allowOnDevice: Boolean,
         onPartialResult: (String) -> Unit,
         onFinalResult: (String) -> Unit,
         onError: (VoiceUnavailableReason) -> Unit,
+        onRmsChanged: ((Float) -> Unit)? = null,
+        onEndOfSpeech: (() -> Unit)? = null,
+        onListeningStarted: (() -> Unit)? = null,
     ) {
-        destroy()
+        // Destroy existing recognizer before creating a new one without invalidating the active session
+        recognizer?.let {
+            it.setRecognitionListener(null)
+            it.cancel()
+            it.destroy()
+        }
+        recognizer = null
+
+        if (sessionId != activeSessionId) {
+            return
+        }
 
         val selection = if (allowOnDevice) {
             createRecognizer()
@@ -126,20 +152,43 @@ class AndroidVoiceRecognizer(
         recognizer = speechRecognizer
 
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onReadyForSpeech(params: Bundle?) {
+                if (sessionId == activeSessionId && recognizer === speechRecognizer) {
+                    onListeningStarted?.invoke()
+                }
+            }
+            override fun onBeginningOfSpeech() {
+                if (sessionId == activeSessionId && recognizer === speechRecognizer) {
+                    onListeningStarted?.invoke()
+                }
+            }
+            override fun onRmsChanged(rmsdB: Float) {
+                if (sessionId == activeSessionId && recognizer === speechRecognizer) {
+                    onRmsChanged?.invoke(rmsdB)
+                }
+            }
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
+            override fun onEndOfSpeech() {
+                if (sessionId == activeSessionId && recognizer === speechRecognizer) {
+                    onEndOfSpeech?.invoke()
+                }
+            }
 
             override fun onError(error: Int) {
+                if (sessionId != activeSessionId || recognizer !== speechRecognizer) {
+                    return
+                }
                 if (shouldRetryWithSystemRecognizer(selection.isOnDevice, error)) {
-                    // Retry EXACTLY ONCE with the system/network recognizer, releasing the on-device one first
+                    // Retry EXACTLY ONCE with the system/network recognizer within the same active session
                     startListeningInternal(
+                        sessionId = sessionId,
                         allowOnDevice = false,
                         onPartialResult = onPartialResult,
                         onFinalResult = onFinalResult,
                         onError = onError,
+                        onRmsChanged = onRmsChanged,
+                        onEndOfSpeech = onEndOfSpeech,
+                        onListeningStarted = onListeningStarted,
                     )
                 } else {
                     onError(mapSpeechRecognizerError(error))
@@ -147,12 +196,18 @@ class AndroidVoiceRecognizer(
             }
 
             override fun onResults(results: Bundle?) {
+                if (sessionId != activeSessionId || recognizer !== speechRecognizer) {
+                    return
+                }
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val text = matches?.firstOrNull().orEmpty()
                 onFinalResult(text)
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
+                if (sessionId != activeSessionId || recognizer !== speechRecognizer) {
+                    return
+                }
                 val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val text = matches?.firstOrNull().orEmpty()
                 onPartialResult(text)
@@ -176,11 +231,17 @@ class AndroidVoiceRecognizer(
     }
 
     override fun cancel() {
-        recognizer?.cancel()
+        activeSessionId++
+        recognizer?.let {
+            it.setRecognitionListener(null)
+            it.cancel()
+        }
     }
 
     override fun destroy() {
+        activeSessionId++
         recognizer?.let {
+            it.setRecognitionListener(null)
             it.cancel()
             it.destroy()
         }

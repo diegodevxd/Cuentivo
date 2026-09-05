@@ -157,3 +157,11 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+// Ensures the release merged manifest is regenerated and declared as input before running unit test guards
+afterEvaluate {
+    tasks.named("testDebugUnitTest") {
+        dependsOn("processReleaseMainManifest")
+        inputs.file(layout.buildDirectory.file("intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml"))
+    }
+}

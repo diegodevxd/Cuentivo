@@ -467,7 +467,7 @@
     <string name="claim_blocked_detail">Necesitamos revisar si esta cuenta ya tiene un negocio antes de crear uno. Revisa tu conexión e inténtalo de nuevo.</string>
     <string name="claim_blocked_retry">Reintentar</string>
     <string name="ai_debug_lab_entry">AI</string>
-    <string name="ai_debug_lab_title">Prueba AI</string>
+    <string name="ai_debug_lab_title">CuentivoAI</string>
     <string name="ai_debug_lab_warning">Historial local por 30 días. Ningún borrador registra ventas o abonos sin confirmación.</string>
     <string name="ai_debug_lab_close">Cerrar</string>
     <string name="ai_debug_lab_input_hint">Describe la venta o el pago</string>
@@ -491,7 +491,7 @@
     <string name="ai_debug_chat_gallery">Galería</string>
     <string name="ai_debug_chat_camera_unavailable">Captura con cámara no disponible en esta versión</string>
     <string name="ai_debug_chat_draft_note">Borrador - no registra nada</string>
-    <string name="ai_daily_chat_greeting">Hola, soy CuentivoAI, tu asistente para registrar ventas más rápido. Cuéntame una venta, un abono, una deuda o una consulta de tu negocio; prepararé un borrador para que lo revises antes de registrarlo.</string>
+    <string name="ai_daily_chat_greeting">Cuéntame una venta, abono o consulta de tu negocio. Prepararé un borrador para que lo revises antes de registrarlo.</string>
     <string name="ai_daily_chat_out_of_scope">Soy CuentivoAI, un asistente para tu negocio. No puedo conversar sobre temas personales, pero sí ayudarte con ventas, abonos, clientes, productos, deudas y cobros.</string>
     <string name="ai_daily_chat_clear_today">Borrar día</string>
     <string name="ai_daily_chat_clear_dialog_title">¿Borrar conversación de hoy?</string>
@@ -562,6 +562,7 @@
     <!-- Voice to text (AiDebugLabScreen / VoiceCapturePolicy) -->
     <string name="ai_voice_button">Voz</string>
     <string name="ai_voice_listening">Escuchando… habla ahora</string>
+    <string name="ai_voice_processing">Procesando voz…</string>
     <string name="ai_voice_cancel">Cancelar</string>
     <string name="ai_voice_unavailable_no_recognizer">Tu dispositivo no cuenta con un servicio de reconocimiento de voz disponible.</string>
     <string name="ai_voice_unavailable_permission_denied">Se necesita permiso de micrófono para dictar. Actívalo en los ajustes de tu teléfono.</string>

@@ -467,7 +467,7 @@
     <string name="claim_blocked_detail">We need to check whether this account already has a business before creating one. Check your connection and try again.</string>
     <string name="claim_blocked_retry">Try again</string>
     <string name="ai_debug_lab_entry">AI</string>
-    <string name="ai_debug_lab_title">AI Lab</string>
+    <string name="ai_debug_lab_title">CuentivoAI</string>
     <string name="ai_debug_lab_warning">Local history for 30 days. No draft records sales or payments without confirmation.</string>
     <string name="ai_debug_lab_close">Close</string>
     <string name="ai_debug_lab_input_hint">Describe a sale or payment</string>
@@ -491,7 +491,7 @@
     <string name="ai_debug_chat_gallery">Gallery</string>
     <string name="ai_debug_chat_camera_unavailable">Camera capture is not available in this version</string>
     <string name="ai_debug_chat_draft_note">Draft - nothing is recorded</string>
-    <string name="ai_daily_chat_greeting">Hi, I\'m CuentivoAI, your assistant to record sales faster. Tell me about a sale, a payment, a debt, or a business query; I\'ll prepare a draft for you to review before recording.</string>
+    <string name="ai_daily_chat_greeting">Tell me about a sale, payment, or question about your business. I will prepare a draft for you to review before recording.</string>
     <string name="ai_daily_chat_out_of_scope">I\'m CuentivoAI, an assistant for your business. I cannot discuss personal topics, but I can help you with sales, payments, customers, products, debts, and collections.</string>
     <string name="ai_daily_chat_clear_today">Clear day</string>
     <string name="ai_daily_chat_clear_dialog_title">Clear today\'s conversation?</string>
@@ -562,6 +562,7 @@
     <!-- Voice to text (AiDebugLabScreen / VoiceCapturePolicy) -->
     <string name="ai_voice_button">Voice</string>
     <string name="ai_voice_listening">Listening… speak now</string>
+    <string name="ai_voice_processing">Processing voice…</string>
     <string name="ai_voice_cancel">Cancel</string>
     <string name="ai_voice_unavailable_no_recognizer">Your device does not have a speech recognition service available.</string>
     <string name="ai_voice_unavailable_permission_denied">Microphone permission is needed to dictate. Enable it in your phone settings.</string>

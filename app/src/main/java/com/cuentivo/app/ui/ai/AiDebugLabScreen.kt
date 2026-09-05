@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +36,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -53,12 +57,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.ui.res.painterResource
 import com.cuentivo.app.ai.AndroidVoiceRecognizer
 import com.cuentivo.app.ai.VoiceCaptureMachine
 import com.cuentivo.app.ai.VoiceCaptureModel
 import com.cuentivo.app.ai.VoiceCaptureState
 import com.cuentivo.app.ai.VoiceRecognizer
 import com.cuentivo.app.ai.VoiceUnavailableReason
+import com.cuentivo.app.ai.normalizeRmsDb
 import com.cuentivo.app.R
 import com.cuentivo.app.ai.AiBusinessQueryResult
 import com.cuentivo.app.ai.AiDailyMessageKind
@@ -87,6 +99,7 @@ import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -169,6 +182,25 @@ fun AiDebugLabScreen(
         }
     }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, effectiveVoiceRecognizer) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE || event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                // Cancel active capture when leaving foreground (e.g. opening camera or backgrounding).
+                // Do NOT cancel when state is PermissionRequired: Android system permission dialog causes
+                // ON_PAUSE and cancelling here would revert to Idle before the user can grant permission.
+                if (voiceModel.state is VoiceCaptureState.Listening || voiceModel.state is VoiceCaptureState.Processing) {
+                    effectiveVoiceRecognizer.cancel()
+                    voiceModel = VoiceCaptureMachine.onCancel(voiceModel)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     LaunchedEffect(repository) {
         isHydrated = false
         val loaded = withContext(Dispatchers.IO) {
@@ -222,6 +254,16 @@ fun AiDebugLabScreen(
             },
             onError = { reason ->
                 voiceModel = VoiceCaptureMachine.onError(voiceModel, reason, generation)
+            },
+            onRmsChanged = { rms ->
+                val level = normalizeRmsDb(rms)
+                voiceModel = VoiceCaptureMachine.onAmplitude(voiceModel, level, generation)
+            },
+            onEndOfSpeech = {
+                voiceModel = VoiceCaptureMachine.onEndOfSpeech(voiceModel, generation)
+            },
+            onListeningStarted = {
+                voiceModel = VoiceCaptureMachine.onListeningResumed(voiceModel, generation)
             },
         )
     }
@@ -370,11 +412,27 @@ fun AiDebugLabScreen(
                 )
                 TextButton(onClick = closeLab) { Text(stringResource(R.string.ai_debug_lab_close)) }
             }
-            Text(
-                text = stringResource(R.string.ai_debug_lab_warning),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            // The notice is informational, not a failure: it used to sit here permanently in the
+            // error colour, so the first thing a paying user saw on entering was a red alert.
+            // It now fades in, states its point, and leaves. What actually protects the user —
+            // that nothing is recorded without confirming — is said again at confirmation time,
+            // which is when it can be acted on.
+            var noticeVisible by remember { mutableStateOf(true) }
+            LaunchedEffect(Unit) {
+                delay(NOTICE_VISIBLE_MILLIS)
+                noticeVisible = false
+            }
+            AnimatedVisibility(
+                visible = noticeVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Text(
+                    text = stringResource(R.string.ai_debug_lab_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             // Temporary operational chat transcript: user bubbles and neutral assistant cards.
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -523,7 +581,37 @@ fun AiDebugLabScreen(
                 )
             }
             if (voiceModel.state is VoiceCaptureState.Listening) {
-                val partial = (voiceModel.state as VoiceCaptureState.Listening).partialText
+                val listeningState = voiceModel.state as VoiceCaptureState.Listening
+                val partial = listeningState.partialText
+                val level = listeningState.level
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        VoiceWaveformBars(
+                            level = level,
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                        Text(
+                            text = if (partial.isNotBlank()) partial else stringResource(R.string.ai_voice_listening),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = cancelVoiceCapture) {
+                            Text(stringResource(R.string.ai_voice_cancel))
+                        }
+                    }
+                }
+            } else if (voiceModel.state is VoiceCaptureState.Processing) {
+                val processingState = voiceModel.state as VoiceCaptureState.Processing
+                val partial = processingState.partialText
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer,
                     shape = MaterialTheme.shapes.small,
@@ -534,7 +622,7 @@ fun AiDebugLabScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = if (partial.isNotBlank()) partial else stringResource(R.string.ai_voice_listening),
+                            text = if (partial.isNotBlank()) partial else stringResource(R.string.ai_voice_processing),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.weight(1f),
@@ -569,37 +657,44 @@ fun AiDebugLabScreen(
                 }
             }
             // Bottom-aligned composer: text send uses the turn policy.
+            val isVoiceActive = voiceModel.state is VoiceCaptureState.Listening || voiceModel.state is VoiceCaptureState.Processing
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = model.text,
                     onValueChange = { model = AiDebugLabMachine.onTextChanged(model, it) },
                     modifier = Modifier.weight(1f),
                     placeholder = { Text(stringResource(R.string.ai_debug_lab_input_hint)) },
-                    enabled = isHydrated && model.state != AiDebugLabState.Sending && voiceModel.state !is VoiceCaptureState.Listening,
+                    enabled = isHydrated && model.state != AiDebugLabState.Sending && !isVoiceActive,
                     maxLines = 4,
                 )
                 Spacer(Modifier.width(8.dp))
-                TextButton(
+                IconButton(
                     enabled = isHydrated && model.state != AiDebugLabState.Sending,
                     onClick = {
-                        if (voiceModel.state is VoiceCaptureState.Listening) {
+                        if (isVoiceActive) {
                             cancelVoiceCapture()
                         } else {
                             onMicTapped()
                         }
                     },
-                ) {
-                    Text(
-                        if (voiceModel.state is VoiceCaptureState.Listening) {
-                            stringResource(R.string.ai_voice_cancel)
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = if (isVoiceActive) {
+                            MaterialTheme.colorScheme.primary
                         } else {
-                            stringResource(R.string.ai_voice_button)
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         },
+                    ),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_mic),
+                        contentDescription = stringResource(R.string.ai_voice_button),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
                 Spacer(Modifier.width(8.dp))
                 Button(
-                    enabled = isHydrated && model.canSubmit,
+                    enabled = isHydrated && model.canSubmit && !isVoiceActive,
                     onClick = {
                         val trimmedText = model.text.trim()
                         val request = AiInterpretRequest(
@@ -717,25 +812,44 @@ fun AiDebugLabScreen(
                             }
                         }
                     },
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
                 ) {
-                    Text(stringResource(R.string.ai_debug_lab_send))
+                    Text(
+                        text = stringResource(R.string.ai_debug_lab_send),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    enabled = isHydrated && model.state != AiDebugLabState.Sending,
-                    onClick = { showClearDialog = true },
-                ) {
-                    Text(stringResource(R.string.ai_daily_chat_clear_today))
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 if (ocrEngine != null) {
-                    Spacer(Modifier.width(8.dp))
                     TextButton(
                         enabled = isHydrated && model.state != AiDebugLabState.Sending,
                         onClick = { showSourceSelector = true },
                     ) {
                         Text(stringResource(R.string.ai_debug_lab_capture))
                     }
+                    Spacer(Modifier.weight(1f))
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                TextButton(
+                    enabled = isHydrated && model.state != AiDebugLabState.Sending,
+                    onClick = { showClearDialog = true },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.ai_daily_chat_clear_today),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
@@ -1412,4 +1526,41 @@ internal fun formatCents(cents: Long, absolute: Boolean = false): String {
     val decimal = BigDecimal.valueOf(cents, 2)
     val formatted = if (absolute) decimal.abs() else decimal
     return "$" + formatted.toPlainString()
+}
+
+/**
+ * How long the informational notice stays on screen before fading out. Long enough to be read
+ * without hurrying by someone who does not read fast, short enough to stop being furniture.
+ */
+private const val NOTICE_VISIBLE_MILLIS = 7000L
+
+@Composable
+private fun VoiceWaveformBars(
+    level: Float,
+    modifier: Modifier = Modifier,
+) {
+    val barWeights = remember { listOf(0.4f, 0.7f, 1.0f, 0.8f, 0.5f) }
+    Row(
+        modifier = modifier.height(24.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        barWeights.forEach { weight ->
+            val targetFraction = (0.2f + 0.8f * (level * weight)).coerceIn(0.2f, 1f)
+            val animatedFraction by animateFloatAsState(
+                targetValue = targetFraction,
+                label = "waveform-bar",
+            )
+            val barHeight = (24.dp * animatedFraction).coerceAtLeast(4.dp)
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(barHeight)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(2.dp),
+                    ),
+            )
+        }
+    }
 }

@@ -19,7 +19,13 @@ enum class VoiceUnavailableReason {
 sealed interface VoiceCaptureState {
     data object Idle : VoiceCaptureState
     data object PermissionRequired : VoiceCaptureState
-    data class Listening(val partialText: String = "") : VoiceCaptureState
+    data class Listening(
+        val partialText: String = "",
+        val level: Float = 0f,
+    ) : VoiceCaptureState
+    data class Processing(
+        val partialText: String = "",
+    ) : VoiceCaptureState
     data class Transcribed(val text: String) : VoiceCaptureState
     data class Unavailable(val reason: VoiceUnavailableReason) : VoiceCaptureState
 }
@@ -44,8 +50,8 @@ object VoiceCaptureMachine {
         hasPermission: Boolean,
         isRecognizerAvailable: Boolean = true,
     ): VoiceCaptureModel {
-        // Single-flight: cannot restart while already listening.
-        if (model.state is VoiceCaptureState.Listening) {
+        // Single-flight: cannot restart while already listening or processing.
+        if (model.state is VoiceCaptureState.Listening || model.state is VoiceCaptureState.Processing) {
             return model
         }
         val nextGeneration = model.generation + 1
@@ -105,7 +111,40 @@ object VoiceCaptureMachine {
         if (generation != model.generation || model.state !is VoiceCaptureState.Listening) {
             return model
         }
-        return model.copy(state = VoiceCaptureState.Listening(partialText = partialText))
+        return model.copy(state = model.state.copy(partialText = partialText))
+    }
+
+    fun onEndOfSpeech(
+        model: VoiceCaptureModel,
+        generation: Long,
+    ): VoiceCaptureModel {
+        if (generation != model.generation || model.state !is VoiceCaptureState.Listening) {
+            return model
+        }
+        return model.copy(
+            state = VoiceCaptureState.Processing(partialText = model.state.partialText),
+        )
+    }
+
+    // DEUDA TÉCNICA / HUECO CONOCIDO:
+    // La conexión real entre los callbacks del reconocedor (VoiceRecognizer) y la pantalla (AiDebugLabScreen)
+    // NO está cubierta por pruebas unitarias de la JVM. Cubrirla de forma fidedigna y sin objetos paralelos
+    // ficticios exige extraer esa coordinación a un objeto orquestador que la pantalla realmente instancie y use.
+    fun onListeningResumed(
+        model: VoiceCaptureModel,
+        generation: Long,
+    ): VoiceCaptureModel {
+        if (generation != model.generation) {
+            return model
+        }
+        val partial = when (val s = model.state) {
+            is VoiceCaptureState.Listening -> s.partialText
+            is VoiceCaptureState.Processing -> s.partialText
+            else -> return model
+        }
+        return model.copy(
+            state = VoiceCaptureState.Listening(partialText = partial, level = 0f),
+        )
     }
 
     fun onFinalResult(
@@ -113,7 +152,7 @@ object VoiceCaptureMachine {
         text: String,
         generation: Long,
     ): VoiceCaptureModel {
-        if (generation != model.generation || model.state !is VoiceCaptureState.Listening) {
+        if (generation != model.generation || (model.state !is VoiceCaptureState.Listening && model.state !is VoiceCaptureState.Processing)) {
             return model
         }
         val trimmed = text.trim()
@@ -128,10 +167,24 @@ object VoiceCaptureMachine {
         reason: VoiceUnavailableReason,
         generation: Long,
     ): VoiceCaptureModel {
-        if (generation != model.generation || model.state !is VoiceCaptureState.Listening) {
+        if (generation != model.generation || (model.state !is VoiceCaptureState.Listening && model.state !is VoiceCaptureState.Processing)) {
             return model
         }
         return model.copy(state = VoiceCaptureState.Unavailable(reason))
+    }
+
+    fun onAmplitude(
+        model: VoiceCaptureModel,
+        level: Float,
+        generation: Long,
+    ): VoiceCaptureModel {
+        if (generation != model.generation || model.state !is VoiceCaptureState.Listening) {
+            return model
+        }
+        val currentListening = model.state
+        return model.copy(
+            state = currentListening.copy(level = level.coerceIn(0f, 1f)),
+        )
     }
 
     fun onCancel(model: VoiceCaptureModel): VoiceCaptureModel {
@@ -143,4 +196,14 @@ object VoiceCaptureMachine {
             generation = model.generation + 1,
         )
     }
+}
+
+/**
+ * Pure function mapping Android framework rmsdB (typically -2dB to 10dB)
+ * to a normalized 0f..1f range bounded by coerceIn(0f, 1f).
+ */
+fun normalizeRmsDb(rmsdB: Float): Float {
+    val minDb = -2f
+    val maxDb = 10f
+    return ((rmsdB - minDb) / (maxDb - minDb)).coerceIn(0f, 1f)
 }

@@ -228,6 +228,7 @@ class AiDebugLabGuardsTest {
         assertTrue("must use DisposableEffect for recognizer cleanup", source.contains("DisposableEffect(effectiveVoiceRecognizer)"))
         assertTrue("must call destroy on dispose", source.contains("effectiveVoiceRecognizer.destroy()"))
         assertTrue("closeLab must destroy recognizer", source.contains("effectiveVoiceRecognizer.destroy()"))
+        assertTrue("must cancel voice capture on ON_PAUSE or ON_STOP", source.contains("Lifecycle.Event.ON_PAUSE") && source.contains("Lifecycle.Event.ON_STOP"))
         assertTrue("must use VoiceCaptureMachine for state transitions", source.contains("VoiceCaptureMachine"))
         assertFalse("must not create direct SpeechRecognizer in screen", source.contains("SpeechRecognizer.createSpeechRecognizer"))
     }
@@ -322,22 +323,89 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `microphone permission is strictly declared only in debug manifest`() {
-        val debugManifest = File("src/debug/AndroidManifest.xml")
-        assertTrue(
-            "debug manifest must exist and declare RECORD_AUDIO",
-            debugManifest.exists() && debugManifest.readText().contains("RECORD_AUDIO"),
-        )
-
+    fun `microphone permission is declared in manifest as direct uses-permission child for release voice dictation`() {
         val mainManifest = File("src/main/AndroidManifest.xml")
-        if (mainManifest.exists()) {
-            assertFalse("main manifest must not declare RECORD_AUDIO", mainManifest.readText().contains("RECORD_AUDIO"))
+        assertTrue("main manifest must exist", mainManifest.exists())
+
+        fun org.w3c.dom.Element.directChildren(name: String): List<org.w3c.dom.Element> {
+            val list = mutableListOf<org.w3c.dom.Element>()
+            val children = this.childNodes
+            for (i in 0 until children.length) {
+                val node = children.item(i)
+                if (node.nodeType == org.w3c.dom.Node.ELEMENT_NODE && node.nodeName == name) {
+                    list.add(node as org.w3c.dom.Element)
+                }
+            }
+            return list
         }
 
-        val releaseManifest = File("src/release/AndroidManifest.xml")
-        if (releaseManifest.exists()) {
-            assertFalse("release manifest must not declare RECORD_AUDIO", releaseManifest.readText().contains("RECORD_AUDIO"))
+        fun checkManifest(file: File, description: String) {
+            assertTrue("$description must exist at ${file.path}", file.exists())
+            val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+            val builder = factory.newDocumentBuilder()
+            val doc = builder.parse(file)
+            val root = doc.documentElement
+            assertEquals("root element must be manifest", "manifest", root.nodeName)
+
+            val permissions = root.directChildren("uses-permission")
+            val hasRecordAudio = permissions.any { it.getAttribute("android:name") == "android.permission.RECORD_AUDIO" }
+            assertTrue(
+                "RECORD_AUDIO must be declared as a direct uses-permission child of manifest in $description",
+                hasRecordAudio,
+            )
         }
+
+        checkManifest(mainManifest, "main manifest")
+
+        val releaseMergedManifest = File("build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml")
+        checkManifest(releaseMergedManifest, "release merged manifest")
+    }
+
+    @Test
+    fun `queries block declares RecognitionService intent action as direct children for Android 11+ package visibility`() {
+        val mainManifest = File("src/main/AndroidManifest.xml")
+        assertTrue("main manifest must exist", mainManifest.exists())
+
+        fun org.w3c.dom.Element.directChildren(name: String): List<org.w3c.dom.Element> {
+            val list = mutableListOf<org.w3c.dom.Element>()
+            val children = this.childNodes
+            for (i in 0 until children.length) {
+                val node = children.item(i)
+                if (node.nodeType == org.w3c.dom.Node.ELEMENT_NODE && node.nodeName == name) {
+                    list.add(node as org.w3c.dom.Element)
+                }
+            }
+            return list
+        }
+
+        fun checkQueries(file: File, description: String) {
+            assertTrue("$description must exist at ${file.path}", file.exists())
+            val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+            val builder = factory.newDocumentBuilder()
+            val doc = builder.parse(file)
+            val root = doc.documentElement
+            assertEquals("root element must be manifest", "manifest", root.nodeName)
+
+            val queriesElements = root.directChildren("queries")
+            assertTrue("manifest must contain at least one direct queries child in $description", queriesElements.isNotEmpty())
+
+            val hasRecognitionService = queriesElements.any { queries ->
+                queries.directChildren("intent").any { intent ->
+                    intent.directChildren("action").any { action ->
+                        action.getAttribute("android:name") == "android.speech.RecognitionService"
+                    }
+                }
+            }
+            assertTrue(
+                "RecognitionService must be strictly declared under direct hierarchy: manifest > queries > intent > action in $description",
+                hasRecognitionService,
+            )
+        }
+
+        checkQueries(mainManifest, "main manifest")
+
+        val releaseMergedManifest = File("build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml")
+        checkQueries(releaseMergedManifest, "release merged manifest")
     }
 
     @Test
