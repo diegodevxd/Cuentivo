@@ -2,106 +2,153 @@
 
 **Fecha:** 2026-09-05
 **Estado:** diseño, sin implementar
-**Decisiones de producto tomadas por Diego el 2026-09-05**
+**Revisado por Codex el 2026-09-05; sus objeciones están incorporadas abajo.**
 
 ## Qué resuelve
 
 Un negocio que lleva años apuntando fiado en una libreta no se pasa a una app si tiene que
-capturar cien renglones a mano. Le toma una foto a la página y CuentivoAI propone las ventas y
-abonos que encuentra, para que el dueño los revise y los registre de una vez.
+capturar cien renglones a mano. Le toma una foto a la página, CuentivoAI lee lo que hay y le
+pregunta qué es cada cosa, y el dueño lo registra de una vez.
 
-Es el argumento de venta más fuerte que tiene CuentivoAI, porque ataca el momento exacto en que
-alguien decide si adopta la app o la abandona.
+Es el argumento de venta más fuerte de CuentivoAI porque ataca el momento exacto en que alguien
+decide si adopta la app o vuelve al papel.
 
-## Decisiones tomadas
+## Decisiones de producto
 
-| Decisión | Elegido | Descartado y por qué |
-|---|---|---|
-| Revisión | **Lista editable, una confirmación al final** | Uno por uno: con veinte filas la gente abandona a la mitad. Sólo lo dudoso: rompe la confirmación explícita y mete dinero que nadie revisó. |
-| Alcance | **Página completa de libreta** | Una operación por foto sale antes pero no resuelve el problema real, que es pasar la libreta. |
-| Clientes | **Crearlos, marcando cuáles son nuevos** | Sólo clientes existentes no sirve en una libreta virgen; preguntar uno por uno suma demasiados toques. |
+| Decisión | Elegido |
+|---|---|
+| Revisión | Lista editable con **una sola confirmación** al final |
+| Alcance | **Página completa** de libreta, no una operación suelta |
+| Clientes nuevos | Se crean, **marcados como nuevos** para detectar nombres mal leídos |
+| **Tipo de movimiento** | **Gemini propone, el usuario decide.** Deuda anterior, venta o abono es un campo editable más |
+| Fechas | **La que dice la libreta.** Si el renglón no la trae, el usuario elige una para la página |
+| Cargos sin producto | **Permitidos.** "Juan, $300" se registra como cargo a la cuenta, sin inventar un producto |
 
-## El riesgo central, y cómo se compensa
+La decisión del tipo de movimiento es la que hace viable la promesa. Una página real mezcla
+compras, abonos y saldos arrastrados de antes; la app no puede adivinar cuál es cuál sin
+equivocarse, y tampoco puede ignorarlos sin perder justo lo que el usuario quiere migrar.
 
-**La letra manuscrita se lee mal.** Un 3 se confunde con un 8, un nombre se parte, un renglón
-tachado se interpreta como vigente. Eso no es un defecto a corregir: es una propiedad del
-problema, y el diseño lo asume desde el principio.
+## El riesgo central: interpretar, no leer
 
-La decisión de una sola confirmación al final acelera el flujo, pero abre un riesgo conocido: la
-gente confirma sin leer. El control compensatorio es **mostrar el total agregado de forma
-prominente antes de confirmar** — "se registrarán 18 ventas por $12,450 y 4 abonos por $3,100".
-Nadie revisa dieciocho renglones, pero casi cualquiera detecta que el total no cuadra con lo que
-tiene en la cabeza. El total es la red, no la lista.
+**El peligro mayor no es leer mal una cifra: es registrar correctamente algo que la libreta no
+representa como venta.** Una página trae "saldo anterior $500", subtotales, tachaduras y notas.
+Sumarlo todo produce deuda ficticia **aunque cada número esté perfectamente leído**.
 
-Consecuencia de diseño: los montos y el total van en tipografía grande y con contraste alto, y los
-renglones que la IA no leyó con claridad se marcan visualmente y **no** se incluyen hasta que el
-usuario los toque.
+Por eso la primera versión acepta únicamente **movimientos identificables** —con su monto, su
+cliente y su tipo confirmado por el usuario— y nunca inventa una venta para cuadrar una página.
+Debe poder decir explícitamente *"esta página no alcanza para registrar estos movimientos"*, por
+ejemplo cuando empieza a mitad de la historia y sus abonos no tienen deuda que los justifique.
+
+## Por qué el total agregado no basta
+
+La primera versión de este plan proponía mostrar el total como red de seguridad. **No alcanza**, y
+conviene dejar escrito por qué para que nadie lo reintroduzca:
+
+- Cambiar un cargo de Ana a Rosa **conserva el total**.
+- Omitir $500 y duplicar otros $500 también lo conserva.
+- Y sobre todo: mucha gente usa la libreta **precisamente porque no conoce el agregado de
+  memoria**. No puede detectar un total equivocado.
+
+Se mantiene una sola confirmación, con estos controles:
+
+- **Ventas y abonos separados**, con número de operaciones y cuántas filas quedaron excluidas.
+- **Agrupación por cliente**, mostrando deuda anterior → deuda resultante, y cuáles clientes se van
+  a crear.
+- **El fragmento ampliado de la foto junto a cada propuesta.** Revisar el texto que produjo la IA
+  contra otro texto producido por ella no es verificación: hay que poder mirar el renglón original.
+- Un resumen final del tipo "crear 3 clientes y registrar 18 movimientos", ligado exactamente a la
+  versión editada de la lista.
+
+La incertidumbre se distingue por campo —importe, cliente, fecha y tipo—, no como una marca global.
+Y tocar un renglón dudoso **abre la corrección**, no activa una casilla: si no se resuelve el campo
+en duda, ese renglón no entra.
+
+El grado de confianza que declare Gemini no garantiza que detecte sus propios errores, así que las
+filas "claras" también llevan evidencia accesible. Antes de publicar hay que medir con páginas
+reales anotadas a mano, contando **errores monetarios aceptados como claros**, no porcentaje de
+texto reconocido.
+
+## Registro: lote atómico
+
+La versión anterior de este plan asumía "veinte escrituras que pueden fallar a la mitad". Es una
+premisa equivocada: son escrituras **locales en Room**, y `FinancialDao` ya tiene métodos
+transaccionales. Para un máximo de 25 operaciones se hace **todo o nada**: validar, resolver
+clientes compartidos, calcular saldos intermedios y registrar en una transacción. La llamada a
+Gemini y la red quedan fuera de esa transacción.
+
+Eso evita de raíz los problemas que sí tiene el éxito parcial:
+
+- **Dos abonos del mismo cliente**: `FinancialDao.kt:585` compara contra el saldo esperado, así que
+  el segundo sería rechazado tras aplicarse el primero. En un lote atómico los saldos intermedios
+  se calculan antes de escribir.
+- **Un cliente repetido en varias filas** se crea una sola vez, no una por renglón.
+- **Resultado desconocido** (escritura aplicada cuya respuesta se perdió) deja de ser un caso a
+  distinguir.
+- Las claves de idempotencia las genera **código confiable, nunca Gemini**, y quedan ligadas al
+  negocio y al contenido aprobado.
+
+Queda un caso que la idempotencia técnica no resuelve: **volver a fotografiar la misma página**
+genera propuestas nuevas con claves nuevas. Hay que detectarlo en la revisión, no en la escritura.
+
+Ojo al integrar: algunos ejecutores devuelven `StalePreview` en vez de lanzar. El ejecutor del lote
+debe convertir cualquier rechazo en rollback.
+
+## Permisos y privacidad
+
+**No se añaden permisos.** Usando la cámara externa y el Photo Picker no hace falta `CAMERA` ni
+lectura general de imágenes, y esa infraestructura ya existe en la app. Es una simplificación
+grande respecto al plan original.
+
+Sobre la foto, la promesa correcta es **"sin archivo permanente de fotos en Cuentivo"**, no "no se
+guarda en ningún lado". Esto último sería falso en la política de privacidad: la cámara escribe un
+archivo temporal local —necesario además para comparar durante la revisión— y el proveedor de IA
+retiene registros para supervisión de abuso. Lo que sí se garantiza: temporal local hasta terminar
+o descartar, limpieza tras interrupciones, y ninguna foto en la infraestructura del proyecto. El
+borrador y el comprobante del lote sí pueden persistirse **sin conservar la imagen**.
+
+## Cruce con la voz
+
+Abrir la cámara ya cancela el dictado, pero eso no basta: quedan volver de la cámara, dictar
+mientras se procesa la foto, recibir tarde una propuesta vieja, tomar una segunda foto, cambiar de
+negocio o salir a media confirmación.
+
+Para la primera versión, **la voz se deshabilita durante extracción, revisión y confirmación**.
+Editar con teclado es suficiente y elimina toda esa clase de carreras. Cancelar la extracción
+invalida su respuesta; cancelar durante la escritura tiene un resultado definido, nunca un mensaje
+ambiguo que invite a fotografiar otra vez.
+
+La sesión de importación se identifica **antes de abrir la cámara**, ligada al negocio y a una
+versión del borrador, y sólo su resultado vigente puede modificar la revisión.
 
 ## Contrato
 
-El contrato v2 valida una lista blanca de exactamente cuatro claves y propone **una** operación.
-Añadir una imagen y varias operaciones no cabe: se introduce `contractVersion: 3`, y v2 sigue
-aceptándose para los clientes ya instalados. Precedente: en T4 se descubrió que agregar una clave
-a la raíz rompía todo cliente publicado.
+`contractVersion: 3`, con v2 intacto para los clientes ya instalados: el parser de v2 exige
+exactamente cuatro claves en la raíz, y en T4 ya se comprobó que agregar una rompe todo cliente
+publicado.
 
-- La imagen viaja **en la petición y no se guarda en ningún lado**. No hay Storage, no hay costo de
-  almacenamiento, no hay fotos de clientes en la infraestructura, y la declaración de privacidad se
-  mantiene simple: la foto se procesa y se descarta.
-- `gemini-3.5-flash-lite` ya es multimodal; no hay cambio de modelo.
-- Límite duro de renglones por foto, para acotar costo y tiempo de revisión. Empezar en **25** y
-  ajustar con uso real.
-- El schema de propuesta pasa de una operación a una **lista** de operaciones, cada una con su
-  propio grado de certeza para poder marcar las dudosas.
-
-## Idempotencia del lote
-
-Es la parte donde se pierde dinero si se hace mal. Confirmar veinte operaciones no es una
-transacción: son veinte escrituras que pueden fallar a la mitad, y el usuario puede tocar dos veces.
-
-- Cada operación propuesta lleva su propia `idempotencyKey` **generada al proponer, no al
-  confirmar**, para que un doble toque no duplique.
-- La confirmación reusa `reserveOperation` de `FinancialDao`, que ya garantiza que un reintento
-  devuelva el `resultId` original en vez de duplicar el cargo.
-- Un fallo a media lista deja registrado lo que ya entró y muestra explícitamente qué faltó, con la
-  opción de reintentar sólo eso. Nunca se reintenta el lote entero a ciegas.
-- Los clientes nuevos se crean **antes** de las ventas que los referencian, dentro del mismo flujo,
-  para que ninguna venta quede huérfana.
-
-## Permisos y Play
-
-Suma **cámara** y **lectura de imágenes**, además del micrófono que ya entró en la Fase A. Implica:
-
-- Declararlo en Seguridad de los datos de Play, en el mismo envío que el AAB.
-- La política de privacidad debe decir que se toma una foto, que se envía al proveedor de IA para
-  extraer texto, y que no se almacena.
-- Igual que con `RECORD_AUDIO`, verificar con `aapt2` sobre el APK de release empaquetado, no sobre
-  el manifiesto fuente.
-
-Lección de la Fase A que aplica aquí: `RECORD_AUDIO` no bastaba sin la declaración `<queries>`.
-Antes de dar por buena la cámara hay que confirmar que **funciona en un teléfono**, no que compila.
+- La respuesta pasa de una operación a una **lista**, cada una con su tipo propuesto y su
+  incertidumbre por campo.
+- Límite de **25 renglones por foto**. Alcanzarlo produce un aviso explícito de **página
+  incompleta**, nunca truncamiento silencioso.
+- El proveedor actual limita la salida a **512 tokens**; v3 necesita su propio presupuesto o las
+  listas largas se cortarán a media respuesta.
 
 ## Orden de implementación
 
-1. **Contrato v3 y schema de lista**, con v2 intacto. Pruebas de que un cliente v2 sigue funcionando.
-2. **Extracción**: enviar imagen a Gemini y devolver la lista de operaciones con su certeza.
-   Sin UI todavía.
-3. **Pantalla de revisión**: lista editable, dudosos marcados y excluidos, total agregado
-   prominente, una confirmación.
-4. **Confirmación idempotente**: creación de clientes nuevos primero, escritura por operación,
-   manejo de fallo parcial.
-5. **Permisos y captura**: cámara y galería, con el mismo cuidado de ciclo de vida que la voz —
-   abrir la cámara ya cancela el dictado, y ese camino se cruza aquí.
-6. **Prueba física con una libreta real**, no con una imagen generada.
+1. Contrato v3 y schema de lista, con v2 intacto y pruebas de compatibilidad.
+2. Extracción: imagen a Gemini, lista de operaciones con tipo propuesto e incertidumbre por campo.
+3. Ejecutores: fecha de la libreta y cargo sin producto.
+4. Pantalla de revisión: tipo editable, evidencia de la foto por renglón, agrupación por cliente.
+5. Registro atómico del lote.
+6. Prueba física con **una libreta real**, no con una imagen generada.
 
-## Lo que no entra
+## Fuera de alcance
 
-- Guardar las fotos: no hay caso de uso que lo justifique y multiplica costo y responsabilidad.
-- Corregir la ortografía de los nombres leídos: el usuario los edita en la lista.
-- Reconocer libretas con formatos de tabla complejos: primero el caso común, renglones simples.
+Cámara propia, edición del lote por voz, coordinaciones distribuidas, reconocer tablas complejas,
+corregir la ortografía de los nombres, y guardar las fotos.
 
 ## Deuda que se arrastra de la Fase A
 
 - La conexión entre el adaptador de voz y la pantalla no está cubierta por pruebas JVM.
 - Falta el timeout del estado `Processing` y que el texto parcial no tape el aviso de procesando.
-- La recomposición del waveform no está acotada; medir en un teléfono de gama baja antes de
-  optimizar a ciegas.
+- La recomposición del waveform no está acotada; medir en gama baja antes de optimizar a ciegas.
