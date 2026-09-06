@@ -203,11 +203,15 @@ export function buildSystemInstruction(referenceDate: ReferenceDate): string {
   ].join("\n");
 }
 
+export type GeminiPart =
+  | Readonly<{ text: string }>
+  | Readonly<{ inlineData: { mimeType: string; data: string } }>;
+
 export interface GeminiClientSeam {
   models: {
     generateContent(params: {
       model: string;
-      contents: string;
+      contents: string | readonly GeminiPart[];
       config?: {
         systemInstruction?: string;
         responseMimeType?: string;
@@ -236,23 +240,27 @@ export type ProviderFailureListener = (failure: ProviderFailureTelemetry) => voi
 const ALLOWED_HTTP_STATUSES = new Set([400, 401, 403, 404, 408, 429, 500, 502, 503, 504]);
 
 function extractAllowedHttpStatus(error: unknown): number | null {
-  if (typeof error !== "object" || error === null) {
+  try {
+    if (typeof error !== "object" || error === null) {
+      return null;
+    }
+    const candidate =
+      "status" in error && typeof (error as { status: unknown }).status === "number"
+        ? (error as { status: number }).status
+        : "statusCode" in error && typeof (error as { statusCode: unknown }).statusCode === "number"
+          ? (error as { statusCode: number }).statusCode
+          : "response" in error &&
+              typeof (error as { response?: { status?: unknown } }).response?.status === "number"
+            ? (error as { response: { status: number } }).response.status
+            : null;
+
+    if (candidate !== null && Number.isInteger(candidate) && ALLOWED_HTTP_STATUSES.has(candidate)) {
+      return candidate;
+    }
+    return null;
+  } catch {
     return null;
   }
-  const candidate =
-    "status" in error && typeof (error as { status: unknown }).status === "number"
-      ? (error as { status: number }).status
-      : "statusCode" in error && typeof (error as { statusCode: unknown }).statusCode === "number"
-        ? (error as { statusCode: number }).statusCode
-        : "response" in error &&
-            typeof (error as { response?: { status?: unknown } }).response?.status === "number"
-          ? (error as { response: { status: number } }).response.status
-          : null;
-
-  if (candidate !== null && Number.isInteger(candidate) && ALLOWED_HTTP_STATUSES.has(candidate)) {
-    return candidate;
-  }
-  return null;
 }
 
 export type GeminiClientFactory = (options: {
@@ -352,6 +360,25 @@ class GeminiTextProvider implements TextInterpretationProvider {
   }
 }
 
+export function adaptGoogleGenAiClient(sdk: GoogleGenAI): GeminiClientSeam {
+  return {
+    models: {
+      async generateContent(params) {
+        const sdkContents =
+          typeof params.contents === "string"
+            ? params.contents
+            : params.contents.map((part) => ({ ...part }));
+        const response = await sdk.models.generateContent({
+          model: params.model,
+          contents: sdkContents,
+          config: params.config,
+        });
+        return { text: response.text };
+      },
+    },
+  };
+}
+
 export function createGeminiTextProvider(
   options: Readonly<{
     apiKey: string;
@@ -365,10 +392,12 @@ export function createGeminiTextProvider(
       ? clientOrFactory
       : (clientOptions) =>
           clientOrFactory ??
-          new GoogleGenAI({
-            apiKey: clientOptions.apiKey,
-            httpOptions: clientOptions.httpOptions,
-          });
+          adaptGoogleGenAiClient(
+            new GoogleGenAI({
+              apiKey: clientOptions.apiKey,
+              httpOptions: clientOptions.httpOptions,
+            }),
+          );
 
   const client = clientFactory({
     apiKey: options.apiKey,

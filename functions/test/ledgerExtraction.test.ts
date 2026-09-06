@@ -14,6 +14,7 @@ const VALID_OPERATION_PRIOR_DEBT: LedgerOperation = {
   description: "Saldo libreta vieja",
   date: { year: 2026, month: 8, day: 15 },
   uncertainFields: ["DATE"],
+  unreadableFields: [],
   region: { x: 0.1, y: 0.2, width: 0.8, height: 0.05 },
 };
 
@@ -23,6 +24,7 @@ const VALID_OPERATION_SALE: LedgerOperation = {
   customerName: "Don Pepe",
   amountCents: "35000",
   uncertainFields: [],
+  unreadableFields: [],
 };
 
 const VALID_OPERATION_PAYMENT: LedgerOperation = {
@@ -32,6 +34,7 @@ const VALID_OPERATION_PAYMENT: LedgerOperation = {
   amountCents: "10000",
   description: "Abono efectivo",
   uncertainFields: ["AMOUNT", "CUSTOMER"],
+  unreadableFields: [],
 };
 
 describe("parseLedgerExtraction", () => {
@@ -104,6 +107,7 @@ describe("parseLedgerExtraction", () => {
       customerName: `Cliente ${i}`,
       amountCents: "1000",
       uncertainFields: [],
+      unreadableFields: [],
     }));
     expect(parseLedgerExtraction({ operations: ops, pageIncomplete: false })).toBeNull();
   });
@@ -115,6 +119,7 @@ describe("parseLedgerExtraction", () => {
       customerName: `Cliente ${i}`,
       amountCents: "1000",
       uncertainFields: [],
+      unreadableFields: [],
     }));
     const result = parseLedgerExtraction({ operations: ops, pageIncomplete: false });
     expect(result).not.toBeNull();
@@ -139,6 +144,7 @@ describe("parseLedgerExtraction", () => {
             customerName: "Don Pepe",
             amountCents: badAmount,
             uncertainFields: [],
+            unreadableFields: [],
           },
         ],
         pageIncomplete: false,
@@ -169,6 +175,7 @@ describe("parseLedgerExtraction", () => {
             customerName: "Don Pepe",
             amountCents: badAmount,
             uncertainFields: [],
+            unreadableFields: [],
           },
         ],
         pageIncomplete: false,
@@ -360,6 +367,151 @@ describe("parseLedgerExtraction", () => {
     });
   });
 
+  describe("unreadableFields validation and mandatory omission rules", () => {
+    test("accepts empty unreadableFields when mandatory fields are present", () => {
+      const op = { ...VALID_OPERATION_SALE, unreadableFields: [] };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations[0]?.unreadableFields).toEqual([]);
+      expect(res?.operations[0]?.customerName).toBe("Don Pepe");
+      expect(res?.operations[0]?.amountCents).toBe("35000");
+      expect(res?.operations[0]?.proposedKind).toBe("SALE");
+    });
+
+    test("allows omitting amountCents only when declared in unreadableFields", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Don Pepe",
+        uncertainFields: [],
+        unreadableFields: ["AMOUNT"],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(1);
+      expect(res?.operations[0]?.amountCents).toBeUndefined();
+      expect(res?.operations[0]?.unreadableFields).toEqual(["AMOUNT"]);
+    });
+
+    test("allows omitting customerName only when declared in unreadableFields", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        amountCents: "2000",
+        uncertainFields: [],
+        unreadableFields: ["CUSTOMER"],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(1);
+      expect(res?.operations[0]?.customerName).toBeUndefined();
+      expect(res?.operations[0]?.unreadableFields).toEqual(["CUSTOMER"]);
+    });
+
+    test("allows omitting proposedKind only when declared in unreadableFields", () => {
+      const op = {
+        lineIndex: 0,
+        customerName: "Don Pepe",
+        amountCents: "2000",
+        uncertainFields: [],
+        unreadableFields: ["KIND"],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(1);
+      expect(res?.operations[0]?.proposedKind).toBeUndefined();
+      expect(res?.operations[0]?.unreadableFields).toEqual(["KIND"]);
+    });
+
+    test("allows omitting all three mandatory fields when all are declared in unreadableFields", () => {
+      const op = {
+        lineIndex: 0,
+        uncertainFields: [],
+        unreadableFields: ["CUSTOMER", "AMOUNT", "KIND"],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(1);
+      expect(res?.operations[0]?.customerName).toBeUndefined();
+      expect(res?.operations[0]?.amountCents).toBeUndefined();
+      expect(res?.operations[0]?.proposedKind).toBeUndefined();
+    });
+
+    test("discards with INVALID_MONEY when amountCents is missing and NOT in unreadableFields", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Don Pepe",
+        uncertainFields: [],
+        unreadableFields: [],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(0);
+      expect(res?.discards).toEqual([{ inputIndex: 0, lineIndex: 0, reason: "INVALID_MONEY" }]);
+    });
+
+    test("discards with INVALID_CUSTOMER when customerName is missing and NOT in unreadableFields", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        amountCents: "1000",
+        uncertainFields: [],
+        unreadableFields: [],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(0);
+      expect(res?.discards).toEqual([{ inputIndex: 0, lineIndex: 0, reason: "INVALID_CUSTOMER" }]);
+    });
+
+    test("discards with MALFORMED when proposedKind is missing and NOT in unreadableFields", () => {
+      const op = {
+        lineIndex: 0,
+        customerName: "Don Pepe",
+        amountCents: "1000",
+        uncertainFields: [],
+        unreadableFields: [],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(0);
+      expect(res?.discards).toEqual([{ inputIndex: 0, lineIndex: 0, reason: "MALFORMED" }]);
+    });
+
+    test("discards with INVALID_UNREADABLE_FIELDS when a field is in BOTH uncertainFields and unreadableFields", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Don Pepe",
+        uncertainFields: ["AMOUNT"],
+        unreadableFields: ["AMOUNT"],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(0);
+      expect(res?.discards).toEqual([{ inputIndex: 0, lineIndex: 0, reason: "INVALID_UNREADABLE_FIELDS" }]);
+    });
+
+    test("discards with INVALID_UNREADABLE_FIELDS when unreadableFields has duplicates", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Don Pepe",
+        uncertainFields: [],
+        unreadableFields: ["AMOUNT", "AMOUNT"],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(0);
+      expect(res?.discards).toEqual([{ inputIndex: 0, lineIndex: 0, reason: "INVALID_UNREADABLE_FIELDS" }]);
+    });
+
+    test("discards with INVALID_UNREADABLE_FIELDS when unreadableFields has unknown value", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Don Pepe",
+        amountCents: "1000",
+        uncertainFields: [],
+        unreadableFields: ["UNKNOWN_FIELD"],
+      };
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(0);
+      expect(res?.discards).toEqual([{ inputIndex: 0, lineIndex: 0, reason: "INVALID_UNREADABLE_FIELDS" }]);
+    });
+  });
+
   describe("region discard vs operation validity", () => {
     test.each([
       ["out of range x", { x: -0.1, y: 0.1, width: 0.5, height: 0.1 }],
@@ -400,6 +552,7 @@ describe("parseLedgerExtraction", () => {
         customerName = "Pepe";
         amountCents = "100";
         uncertainFields = [];
+        unreadableFields = [];
       }
       const res = parseLedgerExtraction({ operations: [new OpModel()], pageIncomplete: false });
       expect(res?.operations).toHaveLength(0);
@@ -423,6 +576,7 @@ describe("parseLedgerExtraction", () => {
         customerName: "Pepe",
         amountCents: "100",
         uncertainFields: [],
+        unreadableFields: [],
       };
       const res = parseLedgerExtraction({ operations: [explosiveOp], pageIncomplete: false });
       expect(res?.operations).toHaveLength(0);
@@ -434,6 +588,7 @@ describe("parseLedgerExtraction", () => {
         customerName: "Pepe",
         amountCents: "100",
         uncertainFields: [],
+        unreadableFields: [],
         region: {
           get x(): number {
             throw new Error("Explosive region getter");

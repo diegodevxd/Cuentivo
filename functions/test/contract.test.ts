@@ -5,6 +5,7 @@ import {
   createNotConfiguredResponse,
   parseLedgerExtraction,
   parseSafeAiProposal,
+  isRegisterableLedgerOperation,
   validateAuthorizeAiActionRequest,
   validateExtractLedgerPageRequest,
   validateInterpretAiRequest,
@@ -356,5 +357,101 @@ describe("contract parseLedgerExtraction export", () => {
   test("re-exports parseLedgerExtraction function", () => {
     expect(typeof parseLedgerExtraction).toBe("function");
     expect(parseLedgerExtraction(null)).toBeNull();
+  });
+});
+
+describe("contract isRegisterableLedgerOperation invariant", () => {
+  const VALID_REGISTERABLE_OP = {
+    lineIndex: 0,
+    proposedKind: "SALE" as const,
+    customerName: "Juan Pérez",
+    amountCents: "10000",
+    uncertainFields: [] as const,
+    unreadableFields: [] as const,
+  };
+
+  test("returns true only when both unreadableFields and uncertainFields are empty and values are canonical", () => {
+    expect(isRegisterableLedgerOperation(VALID_REGISTERABLE_OP)).toBe(true);
+  });
+
+  test("rejects operation when uncertainFields has any items (e.g. AMOUNT in doubt)", () => {
+    expect(
+      isRegisterableLedgerOperation({
+        ...VALID_REGISTERABLE_OP,
+        uncertainFields: ["AMOUNT" as const],
+      })
+    ).toBe(false);
+    expect(
+      isRegisterableLedgerOperation({
+        ...VALID_REGISTERABLE_OP,
+        uncertainFields: ["DATE" as const],
+      })
+    ).toBe(false);
+    expect(
+      isRegisterableLedgerOperation({
+        ...VALID_REGISTERABLE_OP,
+        uncertainFields: ["CUSTOMER" as const],
+      })
+    ).toBe(false);
+    expect(
+      isRegisterableLedgerOperation({
+        ...VALID_REGISTERABLE_OP,
+        uncertainFields: ["KIND" as const],
+      })
+    ).toBe(false);
+  });
+
+  test("rejects operation when unreadableFields has any items", () => {
+    expect(
+      isRegisterableLedgerOperation({
+        ...VALID_REGISTERABLE_OP,
+        unreadableFields: ["AMOUNT" as const],
+      })
+    ).toBe(false);
+  });
+
+  test.each([
+    ["empty string", ""],
+    ["whitespace string", "   "],
+    ["number as money", 10000 as unknown as string],
+    ["negative string", "-100"],
+    ["decimal string", "100.50"],
+    ["leading zeros", "00500"],
+    ["too long (19 digits)", "1" + "0".repeat(18)],
+  ])("rejects non-canonical amountCents (%s)", (_desc, badAmount) => {
+    expect(
+      isRegisterableLedgerOperation({
+        ...VALID_REGISTERABLE_OP,
+        amountCents: badAmount,
+      })
+    ).toBe(false);
+  });
+
+  test.each([
+    ["empty string", ""],
+    ["whitespace string", "   "],
+    ["over max length (81 chars)", "A".repeat(81)],
+  ])("rejects invalid customerName (%s)", (_desc, badCustomer) => {
+    expect(
+      isRegisterableLedgerOperation({
+        ...VALID_REGISTERABLE_OP,
+        customerName: badCustomer,
+      })
+    ).toBe(false);
+  });
+
+  test("rejects missing or invalid proposedKind", () => {
+    expect(
+      isRegisterableLedgerOperation({
+        ...VALID_REGISTERABLE_OP,
+        proposedKind: undefined,
+      })
+    ).toBe(false);
+    expect(
+      isRegisterableLedgerOperation({
+        ...VALID_REGISTERABLE_OP,
+        proposedKind: "INVALID_KIND" as unknown as "SALE",
+      })
+    ).toBe(false);
   });
 });

@@ -4,9 +4,11 @@ const { execSync } = require("child_process");
 
 const contractPath = path.resolve(__dirname, "../src/contract.ts");
 const extractionPath = path.resolve(__dirname, "../src/ai/ledgerExtraction.ts");
+const ledgerProviderPath = path.resolve(__dirname, "../src/ai/geminiLedgerProvider.ts");
 
 const originalContract = fs.readFileSync(contractPath, "utf8");
 const originalExtraction = fs.readFileSync(extractionPath, "utf8");
+const originalLedgerProvider = fs.readFileSync(ledgerProviderPath, "utf8");
 
 function runVitestJson(args) {
   const cmd = `npx vitest run ${args} --reporter=json`;
@@ -42,7 +44,7 @@ function runVitestJson(args) {
 
 function verifyBaseline(description) {
   console.log(`\n=== Checking baseline (${description}) ===`);
-  const res = runVitestJson("test/contract.test.ts test/ledgerExtraction.test.ts");
+  const res = runVitestJson("test/contract.test.ts test/ledgerExtraction.test.ts test/geminiLedgerProvider.test.ts");
   const { parsed } = res;
 
   // Check test files for top-level compilation or import errors
@@ -152,8 +154,8 @@ try {
   verifyMutation(
     "Reject JSON number as money",
     extractionPath,
-    'if (typeof amountCents !== "string" || !CANONICAL_CENTS_RE.test(amountCents))',
-    'if (false && (typeof amountCents !== "string" || !CANONICAL_CENTS_RE.test(amountCents)))',
+    'if (typeof rawAmount !== "string" || !CANONICAL_CENTS_RE.test(rawAmount))',
+    'if (false && (typeof rawAmount !== "string" || !CANONICAL_CENTS_RE.test(rawAmount)))',
     "test/ledgerExtraction.test.ts",
     "money is never a JSON number"
   );
@@ -188,11 +190,31 @@ try {
     "validateExtractLedgerPageRequest"
   );
 
-  // Step 6: Post-mutation restoration green baseline
+  // Step 6 (Fase B Paso 2): Neutralize token budget calculation: reduce MAX_LEDGER_OUTPUT_TOKENS to 512
+  verifyMutation(
+    "Ledger output token budget (MAX_LEDGER_OUTPUT_TOKENS >= worst-case)",
+    ledgerProviderPath,
+    "export const MAX_LEDGER_OUTPUT_TOKENS = 8192;",
+    "export const MAX_LEDGER_OUTPUT_TOKENS = 512;",
+    "test/geminiLedgerProvider.test.ts",
+    "MAX_LEDGER_OUTPUT_TOKENS strictly exceeds 512 and is sufficient"
+  );
+
+  // Step 7 (Fase B Paso 2): Neutralize multimodal image part: remove inlineData mimeType
+  verifyMutation(
+    "Pass image as inlineData with mimeType to Gemini",
+    ledgerProviderPath,
+    "mimeType: input.imageMimeType,",
+    "mimeType: \"text/plain\",",
+    "test/geminiLedgerProvider.test.ts",
+    "passes image as inlineData with mimeType"
+  );
+
+  // Step 8: Post-mutation restoration green baseline
   verifyBaseline("Post-restoration");
 
   console.log("\n============================================================");
-  console.log(">>> ALL 4 HONESTY MUTATION TESTS PASSED (EVIDENCE CONFIRMED) <<<");
+  console.log(">>> ALL 6 HONESTY MUTATION TESTS PASSED (EVIDENCE CONFIRMED) <<<");
   console.log("============================================================");
 } catch (e) {
   console.error("Honesty test failed:", e.message || e);
@@ -200,6 +222,7 @@ try {
 } finally {
   fs.writeFileSync(contractPath, originalContract, "utf8");
   fs.writeFileSync(extractionPath, originalExtraction, "utf8");
+  fs.writeFileSync(ledgerProviderPath, originalLedgerProvider, "utf8");
   if (failed) {
     process.exit(1);
   }

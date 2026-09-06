@@ -266,6 +266,8 @@ export type ProposedLedgerKind = "PRIOR_DEBT" | "SALE" | "PAYMENT";
 
 export type UncertainLedgerField = "AMOUNT" | "CUSTOMER" | "DATE" | "KIND";
 
+export type UnreadableLedgerField = "AMOUNT" | "CUSTOMER" | "DATE" | "KIND";
+
 export type LedgerRegion = Readonly<{
   x: number;
   y: number;
@@ -273,16 +275,83 @@ export type LedgerRegion = Readonly<{
   height: number;
 }>;
 
+/**
+ * A candidate ledger operation parsed from raw model output.
+ *
+ * Invariant:
+ * An operation with ANY unreadable fields (unreadableFields.length > 0) or missing customerName,
+ * amountCents or proposedKind CANNOT be registered directly. It requires manual user completion
+ * in the review UI before it can be submitted for atomic ledger booking in Step 5.
+ */
 export type LedgerOperation = Readonly<{
+  lineIndex: number;
+  proposedKind?: ProposedLedgerKind;
+  customerName?: string;
+  amountCents?: string;
+  description?: string;
+  date?: SafeDateCandidate;
+  uncertainFields: readonly UncertainLedgerField[];
+  unreadableFields: readonly UnreadableLedgerField[];
+  region?: LedgerRegion;
+}>;
+
+export const CANONICAL_LEDGER_CENTS_RE = /^(0|[1-9][0-9]{0,17})$/;
+export const MAX_LEDGER_CUSTOMER_NAME_LENGTH = 80;
+
+/**
+ * An operation that is fully resolved, complete, and ready for atomic batch registration.
+ *
+ * Invariant:
+ * - unreadableFields is empty (no unreadable fields).
+ * - uncertainFields is empty (all doubtful fields have been resolved by the user).
+ * - customerName is non-blank after trim and bounded to at most MAX_LEDGER_CUSTOMER_NAME_LENGTH code units.
+ * - amountCents is a canonical non-negative integer string up to 18 digits (never JSON number, empty string, negative, etc.).
+ * - proposedKind is one of the valid ProposedLedgerKind values.
+ */
+export type RegisterableLedgerOperation = Readonly<{
   lineIndex: number;
   proposedKind: ProposedLedgerKind;
   customerName: string;
   amountCents: string;
   description?: string;
   date?: SafeDateCandidate;
-  uncertainFields: readonly UncertainLedgerField[];
+  uncertainFields: readonly [];
+  unreadableFields: readonly [];
   region?: LedgerRegion;
 }>;
+
+/**
+ * Checks whether an operation is registerable without requiring user resolution or completion.
+ * Requires:
+ * - unreadableFields and uncertainFields to both be empty.
+ * - proposedKind to be a valid ProposedLedgerKind ("PRIOR_DEBT" | "SALE" | "PAYMENT").
+ * - customerName to be a non-blank string of at most MAX_LEDGER_CUSTOMER_NAME_LENGTH (80) chars after trim.
+ * - amountCents to match canonical decimal centavos format (1 to 18 digits, no leading zeros unless "0").
+ */
+export function isRegisterableLedgerOperation(op: LedgerOperation): op is RegisterableLedgerOperation {
+  if (op.unreadableFields.length !== 0 || op.uncertainFields.length !== 0) {
+    return false;
+  }
+  if (
+    op.proposedKind !== "PRIOR_DEBT" &&
+    op.proposedKind !== "SALE" &&
+    op.proposedKind !== "PAYMENT"
+  ) {
+    return false;
+  }
+  if (
+    typeof op.customerName !== "string" ||
+    op.customerName.length === 0 ||
+    op.customerName.length > MAX_LEDGER_CUSTOMER_NAME_LENGTH ||
+    op.customerName.trim().length === 0
+  ) {
+    return false;
+  }
+  if (typeof op.amountCents !== "string" || !CANONICAL_LEDGER_CENTS_RE.test(op.amountCents)) {
+    return false;
+  }
+  return true;
+}
 
 export type LedgerDiscardReason =
   | "MALFORMED"
@@ -291,6 +360,7 @@ export type LedgerDiscardReason =
   | "INVALID_MONEY"
   | "INVALID_CUSTOMER"
   | "INVALID_UNCERTAIN_FIELDS"
+  | "INVALID_UNREADABLE_FIELDS"
   | "DISALLOWED_PROPERTIES";
 
 export type LedgerDiscardDiagnostic = Readonly<{

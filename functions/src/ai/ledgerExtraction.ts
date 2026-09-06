@@ -6,17 +6,9 @@ import type {
   ProposedLedgerKind,
   SafeDateCandidate,
   UncertainLedgerField,
+  UnreadableLedgerField,
 } from "../contract.js";
 import { MAX_DISPLAY_NAME_LENGTH } from "./interpretation.js";
-
-/**
- * TOKEN BUDGET NOTE (Fase B - Paso 2 dependency):
- * geminiTextProvider.ts currently fixes maxOutputTokens to 512.
- * A list of up to 25 ledger operations with regions, descriptions and uncertain fields
- * cannot fit in 512 tokens and would be truncated mid-response, causing JSON parse failure.
- * Do NOT connect v3 extract_ledger_page to the Gemini provider without raising the provider's
- * token budget appropriately in Step 2.
- */
 
 export const MAX_LEDGER_OPERATIONS = 25;
 
@@ -27,6 +19,13 @@ const PROPOSED_KINDS: readonly ProposedLedgerKind[] = [
 ];
 
 const UNCERTAIN_FIELDS: readonly UncertainLedgerField[] = [
+  "AMOUNT",
+  "CUSTOMER",
+  "DATE",
+  "KIND",
+];
+
+const UNREADABLE_FIELDS: readonly UnreadableLedgerField[] = [
   "AMOUNT",
   "CUSTOMER",
   "DATE",
@@ -165,17 +164,20 @@ function parseRegion(value: unknown): LedgerRegion | null {
   return { x, y, width, height };
 }
 
-function parseUncertainFields(value: unknown): readonly UncertainLedgerField[] | null {
+function parseFieldList<T extends string>(
+  value: unknown,
+  allowedValues: readonly T[],
+): readonly T[] | null {
   if (!Array.isArray(value)) {
     return null;
   }
-  const seen = new Set<UncertainLedgerField>();
-  const result: UncertainLedgerField[] = [];
+  const seen = new Set<T>();
+  const result: T[] = [];
   for (const item of value) {
-    if (typeof item !== "string" || !(UNCERTAIN_FIELDS as readonly string[]).includes(item)) {
+    if (typeof item !== "string" || !(allowedValues as readonly string[]).includes(item)) {
       return null;
     }
-    const typed = item as UncertainLedgerField;
+    const typed = item as T;
     if (seen.has(typed)) {
       return null; // No duplicates allowed
     }
@@ -193,6 +195,7 @@ const OPERATION_ALLOWED_KEYS = [
   "description",
   "date",
   "uncertainFields",
+  "unreadableFields",
   "region",
 ] as const;
 
@@ -216,79 +219,118 @@ function parseSingleOperation(value: unknown): SingleOpParseResult {
       return { ok: false, lineIndex: candidateLineIndex, reason: "DISALLOWED_PROPERTIES" };
     }
 
-  if (candidateLineIndex === undefined) {
-    return { ok: false, reason: "MALFORMED" };
-  }
-
-  const proposedKind = value["proposedKind"];
-  if (
-    typeof proposedKind !== "string" ||
-    !(PROPOSED_KINDS as readonly string[]).includes(proposedKind)
-  ) {
-    return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
-  }
-
-  const customerName = value["customerName"];
-  if (!isNonblankBounded(customerName, MAX_DISPLAY_NAME_LENGTH)) {
-    return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_CUSTOMER" };
-  }
-
-  // Hard rule: amountCents MUST NEVER be a JSON number.
-  const amountCents = value["amountCents"];
-  if (typeof amountCents !== "string" || !CANONICAL_CENTS_RE.test(amountCents)) {
-    return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_MONEY" };
-  }
-
-  let description: string | undefined;
-  if ("description" in value && value["description"] !== undefined) {
-    const rawDesc = value["description"];
-    if (!isNonblankBounded(rawDesc, MAX_DISPLAY_NAME_LENGTH)) {
-      return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+    if (candidateLineIndex === undefined) {
+      return { ok: false, reason: "MALFORMED" };
     }
-    description = rawDesc;
-  }
 
-  let date: SafeDateCandidate | undefined;
-  if ("date" in value && value["date"] !== undefined) {
-    const parsedDate = parseStructuredDate(value["date"]);
-    if (!parsedDate) {
-      return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+    // Parse uncertainFields and unreadableFields
+    const uncertainFieldsRaw = value["uncertainFields"];
+    const parsedUncertainFields = parseFieldList(uncertainFieldsRaw, UNCERTAIN_FIELDS);
+    if (!parsedUncertainFields) {
+      return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_UNCERTAIN_FIELDS" };
     }
-    date = parsedDate;
-  }
 
-  const uncertainFieldsRaw = value["uncertainFields"];
-  const parsedUncertainFields = parseUncertainFields(uncertainFieldsRaw);
-  if (!parsedUncertainFields) {
-    return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_UNCERTAIN_FIELDS" };
-  }
+    const unreadableFieldsRaw = value["unreadableFields"];
+    const parsedUnreadableFields = parseFieldList(unreadableFieldsRaw, UNREADABLE_FIELDS);
+    if (!parsedUnreadableFields) {
+      return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_UNREADABLE_FIELDS" };
+    }
 
-  let region: LedgerRegion | undefined;
-  if ("region" in value && value["region"] !== undefined) {
-    try {
-      const parsedRegion = parseRegion(value["region"]);
-      // Spec: if region is malformed, discard the region, NOT the operation.
-      if (parsedRegion) {
-        region = parsedRegion;
+    // Invariant: a field cannot be in uncertainFields AND unreadableFields simultaneously
+    for (const unreadable of parsedUnreadableFields) {
+      if (parsedUncertainFields.includes(unreadable as UncertainLedgerField)) {
+        return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_UNREADABLE_FIELDS" };
       }
-    } catch {
-      // Discard only the region if its getters throw
     }
-  }
 
-  return {
-    ok: true,
-    op: {
-      lineIndex: candidateLineIndex,
-      proposedKind: proposedKind as ProposedLedgerKind,
-      customerName,
-      amountCents,
-      ...(description !== undefined ? { description } : {}),
-      ...(date !== undefined ? { date } : {}),
-      uncertainFields: parsedUncertainFields,
-      ...(region !== undefined ? { region } : {}),
-    },
-  };
+    const isKindUnreadable = parsedUnreadableFields.includes("KIND");
+    let proposedKind: ProposedLedgerKind | undefined;
+    if ("proposedKind" in value && value["proposedKind"] !== undefined) {
+      const rawKind = value["proposedKind"];
+      if (
+        typeof rawKind !== "string" ||
+        !(PROPOSED_KINDS as readonly string[]).includes(rawKind)
+      ) {
+        return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+      }
+      proposedKind = rawKind as ProposedLedgerKind;
+    } else if (!isKindUnreadable) {
+      // proposedKind may only be omitted if declared in unreadableFields
+      return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+    }
+
+    const isCustomerUnreadable = parsedUnreadableFields.includes("CUSTOMER");
+    let customerName: string | undefined;
+    if ("customerName" in value && value["customerName"] !== undefined) {
+      const rawCustomer = value["customerName"];
+      if (!isNonblankBounded(rawCustomer, MAX_DISPLAY_NAME_LENGTH)) {
+        return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_CUSTOMER" };
+      }
+      customerName = rawCustomer;
+    } else if (!isCustomerUnreadable) {
+      // customerName may only be omitted if declared in unreadableFields
+      return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_CUSTOMER" };
+    }
+
+    const isAmountUnreadable = parsedUnreadableFields.includes("AMOUNT");
+    let amountCents: string | undefined;
+    if ("amountCents" in value && value["amountCents"] !== undefined) {
+      const rawAmount = value["amountCents"];
+      // Hard rule: amountCents MUST NEVER be a JSON number.
+      if (typeof rawAmount !== "string" || !CANONICAL_CENTS_RE.test(rawAmount)) {
+        return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_MONEY" };
+      }
+      amountCents = rawAmount;
+    } else if (!isAmountUnreadable) {
+      // amountCents may only be omitted if declared in unreadableFields
+      return { ok: false, lineIndex: candidateLineIndex, reason: "INVALID_MONEY" };
+    }
+
+    let description: string | undefined;
+    if ("description" in value && value["description"] !== undefined) {
+      const rawDesc = value["description"];
+      if (!isNonblankBounded(rawDesc, MAX_DISPLAY_NAME_LENGTH)) {
+        return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+      }
+      description = rawDesc;
+    }
+
+    let date: SafeDateCandidate | undefined;
+    if ("date" in value && value["date"] !== undefined) {
+      const parsedDate = parseStructuredDate(value["date"]);
+      if (!parsedDate) {
+        return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+      }
+      date = parsedDate;
+    }
+
+    let region: LedgerRegion | undefined;
+    if ("region" in value && value["region"] !== undefined) {
+      try {
+        const parsedRegion = parseRegion(value["region"]);
+        // Spec: if region is malformed, discard the region, NOT the operation.
+        if (parsedRegion) {
+          region = parsedRegion;
+        }
+      } catch {
+        // Discard only the region if its getters throw
+      }
+    }
+
+    return {
+      ok: true,
+      op: {
+        lineIndex: candidateLineIndex,
+        ...(proposedKind !== undefined ? { proposedKind } : {}),
+        ...(customerName !== undefined ? { customerName } : {}),
+        ...(amountCents !== undefined ? { amountCents } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(date !== undefined ? { date } : {}),
+        uncertainFields: parsedUncertainFields,
+        unreadableFields: parsedUnreadableFields,
+        ...(region !== undefined ? { region } : {}),
+      },
+    };
   } catch {
     return { ok: false, reason: "MALFORMED" };
   }
