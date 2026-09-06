@@ -146,6 +146,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
     // androidTest only: lets the E2E build a real SyncWorker without WorkManager scheduling it.
     // Deliberately not `implementation` â€” none of this reaches the release APK.
     androidTestImplementation("androidx.work:work-testing:2.11.2")
@@ -158,10 +159,11 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
 
-// Ensures the release merged manifest is regenerated and declared as input before running unit test guards
+// Ensures the release merged manifest and shared test fixtures are declared as inputs
 afterEvaluate {
     tasks.named("testDebugUnitTest") {
         dependsOn("processReleaseMainManifest")
         inputs.file(layout.buildDirectory.file("intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml"))
+        inputs.file(rootProject.file("shared-fixtures/ledgerOperationFixtures.json"))
     }
 }

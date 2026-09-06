@@ -27,6 +27,11 @@ import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.RequiresClarificationProposal
 import com.cuentivo.app.ai.SafeAiProposalValidator
 import com.cuentivo.app.ai.UnresolvedSlot
+import com.cuentivo.app.ai.ledger.CustomerReviewGroup
+import com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic
+import com.cuentivo.app.ai.ledger.LedgerOperation
+import com.cuentivo.app.ai.ledger.LedgerReview
+import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import java.time.LocalDate
 import java.util.Collections
 
@@ -68,6 +73,23 @@ sealed interface AiDebugLabState {
         val result: AiBusinessQueryResult,
         val proposal: BusinessQueryProposal? = null,
     ) : AiDebugLabState
+
+    /** Pure ledger import states. No Room or network dependencies. */
+    data class LedgerExtracting(
+        val sessionId: String,
+        val businessId: String,
+    ) : AiDebugLabState
+    data class LedgerReviewing(
+        val sessionId: String,
+        val businessId: String,
+        val review: LedgerReview,
+        val existingCustomerBalances: Map<String, Long> = emptyMap(),
+    ) : AiDebugLabState
+    data class LedgerConfirming(
+        val sessionId: String,
+        val businessId: String,
+        val review: LedgerReview,
+    ) : AiDebugLabState
 }
 
 sealed interface AiSaleChoiceOutcome {
@@ -92,6 +114,17 @@ sealed interface AiQueryChoiceOutcome {
     data object Ignored : AiQueryChoiceOutcome
 }
 
+sealed interface AiLedgerConfirmOutcome {
+    data object Ignored : AiLedgerConfirmOutcome
+    data class Started(
+        val model: AiDebugLabModel,
+        val sessionId: String,
+        val businessId: String,
+        val review: LedgerReview,
+        val generation: Long,
+    ) : AiLedgerConfirmOutcome
+}
+
 /** Immutable lab view state; [generation] is the single-flight/cancellation token. */
 data class AiDebugLabModel(
     val state: AiDebugLabState = AiDebugLabState.TextEditing,
@@ -102,6 +135,19 @@ data class AiDebugLabModel(
     /** Blank text or an in-flight request must not send; the gateway is never called then. */
     val canSubmit: Boolean
         get() = text.isNotBlank() && state == AiDebugLabState.TextEditing
+
+    /** Voice is strictly disabled during extraction, review, confirmation, and sending. */
+    val isVoiceDisabled: Boolean
+        get() = when (state) {
+            AiDebugLabState.Sending,
+            is AiDebugLabState.PaymentConfirming,
+            is AiDebugLabState.SaleConfirming,
+            is AiDebugLabState.QueryResolving,
+            is AiDebugLabState.LedgerExtracting,
+            is AiDebugLabState.LedgerReviewing,
+            is AiDebugLabState.LedgerConfirming -> true
+            else -> false
+        }
 }
 
 /**
@@ -263,7 +309,10 @@ object AiDebugLabMachine {
             AiDebugLabState.Sending,
             is AiDebugLabState.PaymentConfirming,
             is AiDebugLabState.SaleConfirming,
-            is AiDebugLabState.QueryResolving -> model
+            is AiDebugLabState.QueryResolving,
+            is AiDebugLabState.LedgerExtracting,
+            is AiDebugLabState.LedgerReviewing,
+            is AiDebugLabState.LedgerConfirming -> model
             AiDebugLabState.TextEditing -> model.copy(text = newText)
             // From a result state the next turn starts: accept text and return to editing.
             else -> model.copy(state = AiDebugLabState.TextEditing, text = newText)
@@ -868,6 +917,157 @@ object AiDebugLabMachine {
             choice = choice,
             generation = nextGeneration,
         )
+    }
+
+    /**
+     * Starts ledger extraction. Validates non-blank sessionId and businessId.
+     * Bumps generation token and transitions to LedgerExtracting.
+     */
+    fun onStartLedgerExtraction(
+        model: AiDebugLabModel,
+        sessionId: String,
+        businessId: String,
+    ): AiDebugLabModel {
+        if (sessionId.isBlank() || businessId.isBlank()) return model
+        val nextGeneration = model.generation + 1
+        return model.copy(
+            state = AiDebugLabState.LedgerExtracting(
+                sessionId = sessionId,
+                businessId = businessId,
+            ),
+            generation = nextGeneration,
+        )
+    }
+
+    /**
+     * Delivers ledger extraction results. Only applies if matching active session, business,
+     * generation, and state is LedgerExtracting. Builds deterministic LedgerReview.
+     */
+    fun onLedgerExtractionResult(
+        model: AiDebugLabModel,
+        sessionId: String,
+        businessId: String,
+        operations: List<LedgerOperation>,
+        discards: List<LedgerDiscardDiagnostic> = emptyList(),
+        unreadTextRemaining: Boolean = false,
+        pageIncomplete: Boolean = false,
+        existingCustomerBalances: Map<String, Long> = emptyMap(),
+        generation: Long,
+    ): AiDebugLabModel {
+        if (generation != model.generation) return model
+        val state = model.state as? AiDebugLabState.LedgerExtracting ?: return model
+        if (state.sessionId != sessionId || state.businessId != businessId) return model
+
+        val frozenBalances: Map<String, Long> = Collections.unmodifiableMap(
+            LinkedHashMap(existingCustomerBalances)
+        )
+
+        val review = LedgerReviewEngine.build(
+            operations = operations,
+            discards = discards,
+            unreadTextRemaining = unreadTextRemaining,
+            pageIncomplete = pageIncomplete,
+            existingCustomerBalances = frozenBalances,
+        )
+
+        return model.copy(
+            state = AiDebugLabState.LedgerReviewing(
+                sessionId = sessionId,
+                businessId = businessId,
+                review = review,
+                existingCustomerBalances = frozenBalances,
+            ),
+        )
+    }
+
+    /**
+     * Pure update to the active reviews operations. Only valid while in LedgerReviewing with matching sessionId.
+     * Retains the existing customer balances context without requiring callers to re-inject it.
+     */
+    fun onUpdateLedgerOperations(
+        model: AiDebugLabModel,
+        sessionId: String,
+        existingCustomerBalances: Map<String, Long>? = null,
+        transform: (List<LedgerOperation>) -> List<LedgerOperation>,
+    ): AiDebugLabModel {
+        val state = model.state as? AiDebugLabState.LedgerReviewing ?: return model
+        if (state.sessionId != sessionId) return model
+
+        val balancesToUse = Collections.unmodifiableMap(
+            LinkedHashMap(existingCustomerBalances ?: state.existingCustomerBalances)
+        )
+        val updatedOps = transform(state.review.operations)
+        val updatedReview = LedgerReviewEngine.build(
+            operations = updatedOps,
+            discards = state.review.discards,
+            unreadTextRemaining = state.review.unreadTextRemaining,
+            pageIncomplete = state.review.pageIncomplete,
+            existingCustomerBalances = balancesToUse,
+        )
+
+        return model.copy(
+            state = state.copy(
+                review = updatedReview,
+                existingCustomerBalances = balancesToUse,
+            ),
+        )
+    }
+
+    /**
+     * Transitions from LedgerReviewing to LedgerConfirming with incremented generation.
+     *
+     * Financial gate:
+     * If there are blocking financial diagnostics (OVERFLOW, PAYMENT_WITHOUT_DEBT,
+     * PAYMENT_EXCEEDS_DEBT, ZERO_AMOUNT) or if there are zero executable operations,
+     * confirmation is strictly blocked (returns [AiLedgerConfirmOutcome.Ignored]).
+     */
+    fun onConfirmLedger(
+        model: AiDebugLabModel,
+        sessionId: String,
+        businessId: String,
+    ): AiLedgerConfirmOutcome {
+        if (sessionId.isBlank() || businessId.isBlank()) return AiLedgerConfirmOutcome.Ignored
+        val state = model.state as? AiDebugLabState.LedgerReviewing ?: return AiLedgerConfirmOutcome.Ignored
+        if (state.sessionId != sessionId || state.businessId != businessId) return AiLedgerConfirmOutcome.Ignored
+
+        // Financial gate: blocking diagnostics or zero executable operations cannot proceed to confirmation
+        if (state.review.summary.hasFinancialErrors || state.review.summary.executableOperationsCount == 0) {
+            return AiLedgerConfirmOutcome.Ignored
+        }
+
+        val nextGeneration = model.generation + 1
+        val nextModel = model.copy(
+            state = AiDebugLabState.LedgerConfirming(
+                sessionId = sessionId,
+                businessId = businessId,
+                review = state.review,
+            ),
+            generation = nextGeneration,
+        )
+
+        return AiLedgerConfirmOutcome.Started(
+            model = nextModel,
+            sessionId = sessionId,
+            businessId = businessId,
+            review = state.review,
+            generation = nextGeneration,
+        )
+    }
+
+    /**
+     * Cancels any active ledger flow (extraction, review, confirmation), invalidates in-flight
+     * responses via generation increment, and cleanly resets state to TextEditing.
+     */
+    fun onCancelLedger(model: AiDebugLabModel): AiDebugLabModel {
+        return when (model.state) {
+            is AiDebugLabState.LedgerExtracting,
+            is AiDebugLabState.LedgerReviewing,
+            is AiDebugLabState.LedgerConfirming -> model.copy(
+                state = AiDebugLabState.TextEditing,
+                generation = model.generation + 1,
+            )
+            else -> model
+        }
     }
 
     fun onReset(model: AiDebugLabModel): AiDebugLabModel =

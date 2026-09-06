@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { describe, expect, test } from "vitest";
 import {
   MAX_INTERPRET_TEXT_LENGTH,
@@ -453,5 +455,16 @@ describe("contract isRegisterableLedgerOperation invariant", () => {
         proposedKind: "INVALID_KIND" as unknown as "SALE",
       })
     ).toBe(false);
+  });
+
+  test("executes all shared fixtures from shared-fixtures/ledgerOperationFixtures.json", () => {
+    const fixturesPath = path.resolve(__dirname, "../../shared-fixtures/ledgerOperationFixtures.json");
+    expect(fs.existsSync(fixturesPath)).toBe(true);
+    const fixtures = JSON.parse(fs.readFileSync(fixturesPath, "utf8"));
+    expect(fixtures.length).toBeGreaterThanOrEqual(25);
+    for (const f of fixtures) {
+      const result = isRegisterableLedgerOperation(f.op);
+      expect(result).toBe(f.expected);
+    }
   });
 });

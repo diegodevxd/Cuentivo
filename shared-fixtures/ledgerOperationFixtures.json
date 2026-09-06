@@ -1,0 +1,329 @@
+[
+  {
+    "name": "valid standard sale",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": true
+  },
+  {
+    "name": "valid standard payment",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "PAYMENT",
+      "customerName": "Maria",
+      "amountCents": "500",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": true
+  },
+  {
+    "name": "valid standard prior debt",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "PRIOR_DEBT",
+      "customerName": "Carlos",
+      "amountCents": "15000",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": true
+  },
+  {
+    "name": "zero amount is registerable in contract v3",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "0",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": true
+  },
+  {
+    "name": "FEFF only customer name is rejected by JS trim and Kotlin mirror",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "﻿",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "FEFF surrounded by whitespace only is rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "  ﻿  ",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "interleaved FEFF and whitespace is rejected by JS trim and Kotlin mirror",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "﻿ ﻿ ﻿",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "FEFF with valid characters is accepted",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "﻿Juan﻿",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": true
+  },
+  {
+    "name": "100 with newline is rejected by JS regex",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100\n",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "uncertain amount rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [
+        "AMOUNT"
+      ],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "uncertain customer rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [
+        "CUSTOMER"
+      ],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "uncertain date rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [
+        "DATE"
+      ],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "uncertain kind rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [
+        "KIND"
+      ],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "unreadable amount rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": [
+        "AMOUNT"
+      ]
+    },
+    "expected": false
+  },
+  {
+    "name": "unreadable customer rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": [
+        "CUSTOMER"
+      ]
+    },
+    "expected": false
+  },
+  {
+    "name": "unreadable date rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": [
+        "DATE"
+      ]
+    },
+    "expected": false
+  },
+  {
+    "name": "unreadable kind rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": [
+        "KIND"
+      ]
+    },
+    "expected": false
+  },
+  {
+    "name": "missing kind rejected",
+    "op": {
+      "lineIndex": 0,
+      "customerName": "Juan",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "empty customer name rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "whitespace only customer name rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "   ",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "80 char customer name accepted",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": true
+  },
+  {
+    "name": "81 char customer name rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "amountCents": "100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "negative amount rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "-100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "leading zeros rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "0100",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  },
+  {
+    "name": "18 digits accepted",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "999999999999999999",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": true
+  },
+  {
+    "name": "19 digits rejected",
+    "op": {
+      "lineIndex": 0,
+      "proposedKind": "SALE",
+      "customerName": "Juan",
+      "amountCents": "9999999999999999999",
+      "uncertainFields": [],
+      "unreadableFields": []
+    },
+    "expected": false
+  }
+]
