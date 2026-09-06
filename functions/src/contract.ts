@@ -247,3 +247,189 @@ export function validateAuthorizeAiActionRequest(input: unknown): AuthorizeAiAct
     value: { contractVersion: 1, requestId, action: AUTHORIZE_ACTION },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Contract v3: extract_ledger_page
+// ---------------------------------------------------------------------------
+
+export type ExtractLedgerPageImageMimeType = "image/jpeg" | "image/png" | "image/webp";
+
+export type ExtractLedgerPageRequest = Readonly<{
+  contractVersion: 3;
+  requestId: string;
+  action: "extract_ledger_page";
+  imageBase64: string;
+  imageMimeType: ExtractLedgerPageImageMimeType;
+}>;
+
+export type ProposedLedgerKind = "PRIOR_DEBT" | "SALE" | "PAYMENT";
+
+export type UncertainLedgerField = "AMOUNT" | "CUSTOMER" | "DATE" | "KIND";
+
+export type LedgerRegion = Readonly<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}>;
+
+export type LedgerOperation = Readonly<{
+  lineIndex: number;
+  proposedKind: ProposedLedgerKind;
+  customerName: string;
+  amountCents: string;
+  description?: string;
+  date?: SafeDateCandidate;
+  uncertainFields: readonly UncertainLedgerField[];
+  region?: LedgerRegion;
+}>;
+
+export type LedgerDiscardReason =
+  | "MALFORMED"
+  | "OUT_OF_ORDER"
+  | "DUPLICATE_LINE_INDEX"
+  | "INVALID_MONEY"
+  | "INVALID_CUSTOMER"
+  | "INVALID_UNCERTAIN_FIELDS"
+  | "DISALLOWED_PROPERTIES";
+
+export type LedgerDiscardDiagnostic = Readonly<{
+  inputIndex: number;
+  lineIndex?: number;
+  reason: LedgerDiscardReason;
+}>;
+
+export type LedgerExtractionResult = Readonly<{
+  operations: readonly LedgerOperation[];
+  discards: readonly LedgerDiscardDiagnostic[];
+  unreadTextRemaining: boolean;
+  pageIncomplete: boolean;
+}>;
+
+export type ExtractLedgerPageResponse = Readonly<{
+  contractVersion: 3;
+  requestId: string;
+  status: InterpretAiStatus;
+  operations: readonly LedgerOperation[] | null;
+  discards: readonly LedgerDiscardDiagnostic[];
+  unreadTextRemaining: boolean;
+  pageIncomplete: boolean;
+}>;
+
+export type ExtractLedgerPageValidation =
+  | Readonly<{ ok: true; value: ExtractLedgerPageRequest }>
+  | Readonly<{ ok: false; reason: "invalid-request" }>;
+
+export const MAX_LEDGER_IMAGE_BASE64_LENGTH = 8_000_000;
+
+export const BASE64_ALPHABET_RE = /^[A-Za-z0-9+/]+$/;
+
+export function isWellFormedBase64(str: string): boolean {
+  if (str.length === 0 || str.length % 4 !== 0) {
+    return false;
+  }
+  const prefix = str.slice(0, -4);
+  if (prefix.length > 0 && !BASE64_ALPHABET_RE.test(prefix)) {
+    return false;
+  }
+  const last4 = str.slice(-4);
+  return (
+    /^[A-Za-z0-9+/]{4}$/.test(last4) ||
+    /^[A-Za-z0-9+/]{3}=$/.test(last4) ||
+    /^[A-Za-z0-9+/]{2}==$/.test(last4)
+  );
+}
+
+const EXTRACT_LEDGER_ACTION = "extract_ledger_page";
+
+const EXTRACT_LEDGER_KEYS = [
+  "contractVersion",
+  "requestId",
+  "action",
+  "imageBase64",
+  "imageMimeType",
+] as const;
+
+const ALLOWED_IMAGE_MIME_TYPES: readonly ExtractLedgerPageImageMimeType[] = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
+/**
+ * Accepts exactly the v3 extract_ledger_page allow-list: a plain non-null object whose only keys
+ * are contractVersion, requestId, action, imageBase64 and imageMimeType, with contractVersion 3,
+ * action "extract_ledger_page", a 36-character UUID, non-empty well-formed base64 image data of at
+ * most MAX_LEDGER_IMAGE_BASE64_LENGTH code units, and an allowed mime type.
+ *
+ * Hardened object checks: strictly requires prototype to be Object.prototype or null, with no
+ * symbols or inherited keys, and wraps access safely so no input or throwing getter can escape.
+ *
+ * Every failure returns the fixed rejection { ok: false, reason: "invalid-request" }.
+ * Never throws, never normalizes, never logs.
+ */
+export function validateExtractLedgerPageRequest(input: unknown): ExtractLedgerPageValidation {
+  try {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      Object.getOwnPropertySymbols(input).length > 0
+    ) {
+      return { ok: false, reason: "invalid-request" };
+    }
+    const proto = Object.getPrototypeOf(input);
+    if (proto !== Object.prototype && proto !== null) {
+      return { ok: false, reason: "invalid-request" };
+    }
+    const record = input as Record<string, unknown>;
+    const ownNames = Object.getOwnPropertyNames(record);
+    if (
+      ownNames.length !== EXTRACT_LEDGER_KEYS.length ||
+      !EXTRACT_LEDGER_KEYS.every((key) => Object.prototype.hasOwnProperty.call(record, key))
+    ) {
+      return { ok: false, reason: "invalid-request" };
+    }
+    if (record["contractVersion"] !== 3 || record["action"] !== EXTRACT_LEDGER_ACTION) {
+      return { ok: false, reason: "invalid-request" };
+    }
+    const requestId = record["requestId"];
+    if (
+      typeof requestId !== "string" ||
+      requestId.length !== 36 ||
+      !UUID_V1_TO_V5.test(requestId)
+    ) {
+      return { ok: false, reason: "invalid-request" };
+    }
+    const imageMimeType = record["imageMimeType"];
+    if (
+      typeof imageMimeType !== "string" ||
+      !(ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(imageMimeType)
+    ) {
+      return { ok: false, reason: "invalid-request" };
+    }
+    const imageBase64 = record["imageBase64"];
+    if (
+      typeof imageBase64 !== "string" ||
+      imageBase64.length === 0 ||
+      imageBase64.length > MAX_LEDGER_IMAGE_BASE64_LENGTH ||
+      !isWellFormedBase64(imageBase64)
+    ) {
+      return { ok: false, reason: "invalid-request" };
+    }
+    return {
+      ok: true,
+      value: {
+        contractVersion: 3,
+        requestId,
+        action: EXTRACT_LEDGER_ACTION,
+        imageBase64,
+        imageMimeType: imageMimeType as ExtractLedgerPageImageMimeType,
+      },
+    };
+  } catch {
+    return { ok: false, reason: "invalid-request" };
+  }
+}
+
+export { parseLedgerExtraction } from "./ai/ledgerExtraction.js";
