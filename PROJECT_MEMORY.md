@@ -11,7 +11,7 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-09-04. **El núcleo está cerrado y el código pendiente, terminado.**
+**Última actualización:** 2026-09-06. **Fase B en curso: 3 de 6 pasos commiteados.**
 Lo que queda para producción ya no es código: cohorte limpia de métricas y la observabilidad que el
 incidente del 4 de septiembre dejó al descubierto.
 
@@ -330,15 +330,21 @@ general continúan cerradas.
 
 ## Último gate verificado
 
-Cierre de voz (`cc0df03`), reejecutado por Claude con XML posterior al commit: Android JVM
-**802/802** en 93 clases con `--rerun-tasks`, focal `VoiceRecognizerTest` 7/7, `assembleDebug`,
-`assembleRelease`, `lintDebug`, paridad de claves **471 = 471**, puerta del idioma limpia y
-`git diff --check`. Functions **226/226** con build/lint tras la regla de venta de contado.
+Fase B pasos 1-3 (`b30a408`, `b3f21f2`, `aadbb5c`), todo reejecutado por Claude, no tomado del
+reporte del implementador:
 
-Gate live de Fase 2 (previo): Functions 225/225, Firestore Emulator 2/2, JVM 767/767, prueba física
-2/2. Evidencia: `docs/superpowers/operations/2026-08-25-cuentivoai-phase-2-live-validation.md`.
-**Ojo:** ese registro cita la configuración restaurada en `true / true / 50 / 3`. Los valores
-**vigentes** son `monthlyActionLimit = 500` y `perMinuteLimit = 20`, subidos a mano el 2026-08-25.
+- **Functions 422/422** en 17 archivos (venía de 291), con `lint` y `build` en 0.
+- **Android JVM 976/976** con `--rerun-tasks` (venía de 959), y `assembleDebug`.
+- **Room, instrumentadas: `AiSaleExecutionIsolationTest` 29/29**, tras arrancar el emulador en frío.
+  Incluye el cargo sin producto con consulta real de saldo, auditoría por acción e id, y el reintento
+  que deja un solo cargo.
+- `functions/scripts/verifyLedgerGuards.js`: 6 mutaciones, línea base verde antes y después.
+
+**Dos avisos sobre esta evidencia.** La corrida instrumentada *completa* aborta con
+`INSTRUMENTATION_ABORTED` en `ProductPhotoSourceTest` tras ~243 pruebas: eso **no cuenta como
+verde**, y por eso la clase financiera se verificó aparte con arranque en frío. Y `adb devices`
+puede decir `device` con el emulador ya medio muerto; el chequeo bueno es
+`dumpsys user | grep RUNNING_UNLOCKED`.
 
 ## Orquestamiento
 
@@ -356,6 +362,33 @@ Gate live de Fase 2 (previo): Functions 225/225, Firestore Emulator 2/2, JVM 767
   borrar ni modificar.
 
 ## Qué sigue
+
+**0. Fase B — pasar la libreta de papel con una foto.** Es la pista activa. Plan en
+`docs/superpowers/plans/2026-09-05-cuentivoai-foto-libreta.md`; los encargos y las seis rondas de
+revisión de Codex, en `docs/superpowers/encargos/2026-09-05-fase-b-paso-*.md` (sin versionar).
+
+| Paso | Estado |
+|---|---|
+| 1. Contrato v3 y schema de lista | **Hecho**, `b30a408` |
+| 2. Extracción: imagen a Gemini | **Hecho**, `b3f21f2` |
+| 3. Ejecutores: fecha de libreta y cargo sin producto | **Hecho**, `aadbb5c` |
+| 4. Pantalla de revisión con evidencia por renglón | Siguiente |
+| 5. Registro atómico del lote | Pendiente |
+| 6. Prueba física con una libreta real | Pendiente |
+
+Decisión de producto del 2026-09-06: **un renglón ilegible llega marcado y el usuario lo completa a
+mano**, con el recorte de la foto al lado. Por eso v3 separa `unreadableFields` de
+`uncertainFields`, y una operación con campos ilegibles no es registrable. Descartarla en silencio
+rompía la promesa de pasar la libreta entera.
+
+Dos pendientes nacidos aquí, a cerrar **antes** de dar la Fase B por terminada:
+
+- **La clave de idempotencia no incorpora el contenido confirmado.** Hoy depende sólo de
+  `confirmationKey`: reusarla con otra fecha u otro importe devuelve el resultado anterior. Va en el
+  paso 5, donde vive el lote.
+- **Al conectar la libreta hay que usar `confirmLedger`**, no el ejecutor estándar, o se pierde la
+  frontera que obliga a declarar la fecha.
+
 
 1. **Cerrar el núcleo: salida del laboratorio a beta (N5)** con feature flags y observabilidad. Es la
    pista activa y lo único que queda del 4-de-5. Exige su propio plan antes de tocar código: qué
