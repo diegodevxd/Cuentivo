@@ -6,6 +6,7 @@ import com.cuentivo.app.ai.AiPaymentCustomerCandidate
 import com.cuentivo.app.ai.AiPaymentPreviewResult
 import com.cuentivo.app.ai.AiProposalSaleLine
 import com.cuentivo.app.ai.AiResolvedPaymentPreview
+import com.cuentivo.app.ai.AiSaleConfirmationLine
 import com.cuentivo.app.ai.BusinessQueryProposal
 import com.cuentivo.app.ai.BusinessQueryType
 import com.cuentivo.app.ai.CallableAiProposalResult
@@ -1100,12 +1101,13 @@ class AiDebugLabMachineTest {
         assertEquals("cust-1", started.request.customerId)
         assertEquals("cust-1:10000", started.request.sourceCustomerFingerprint)
         assertEquals(1, started.request.lines.size)
-        assertEquals("prod-1", started.request.lines[0].productId)
-        assertEquals("Jabón", started.request.lines[0].productNameSnapshot)
-        assertEquals(2, started.request.lines[0].quantity)
-        assertEquals(5000L, started.request.lines[0].unitPriceCents)
-        assertEquals(10000L, started.request.lines[0].lineTotalCents)
-        assertEquals("prod-1:10000:5000", started.request.lines[0].sourceProductFingerprint)
+        val firstLine = started.request.lines[0] as AiSaleConfirmationLine.CatalogProduct
+        assertEquals("prod-1", firstLine.productId)
+        assertEquals("Jabón", firstLine.productNameSnapshot)
+        assertEquals(2, firstLine.quantity)
+        assertEquals(5000L, firstLine.unitPriceCents)
+        assertEquals(10000L, firstLine.lineTotalCents)
+        assertEquals("prod-1:10000:5000", firstLine.sourceProductFingerprint)
         assertEquals(10000L, started.request.totalCents)
         assertEquals(3000L, started.request.initialPaymentCents)
         assertEquals(java.time.LocalDate.of(2026, 8, 30).toEpochDay(), started.request.promisedPaymentEpochDay)

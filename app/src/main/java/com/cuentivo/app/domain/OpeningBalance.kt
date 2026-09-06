@@ -11,6 +11,93 @@ data class OpeningBalanceEntry(
     val charge: AccountMovementEntity,
 )
 
+/** What an uncataloged debt or charge sale produces, ready to be written in one transaction. */
+data class UncatalogedSaleEntry(
+    val sale: SaleEntity,
+    val item: SaleItemEntity,
+    val charge: AccountMovementEntity,
+)
+
+/**
+ * Shared factory for single-item uncataloged charge sales (OpeningBalance and AiSaleExecution).
+ * Guarantees consistent validation, trimming, 160-char length cap, and entity creation.
+ */
+object UncatalogedSaleBuilder {
+    const val MAX_DESCRIPTION_LENGTH = 160
+
+    fun build(
+        saleId: String,
+        itemId: String,
+        chargeId: String,
+        businessId: String,
+        customerId: String,
+        sellerUserId: String,
+        amountCents: Long,
+        saleNumber: String,
+        saleDateEpochDay: Long,
+        todayEpochDay: Long,
+        nowEpochMillis: Long,
+        dueDateEpochDay: Long? = null,
+        notes: String? = null,
+        lineNameSnapshot: String,
+    ): UncatalogedSaleEntry {
+        require(amountCents > 0) { "Amount must be positive." }
+        require(saleDateEpochDay > 0) { "Sale date must be positive." }
+        require(saleDateEpochDay <= todayEpochDay) { "Sale date cannot be in the future." }
+        if (dueDateEpochDay != null) {
+            require(dueDateEpochDay >= saleDateEpochDay) {
+                "Due date ($dueDateEpochDay) cannot be earlier than sale date ($saleDateEpochDay)."
+            }
+        }
+        val trimmedName = lineNameSnapshot.trim()
+        require(trimmedName.isNotBlank()) { "Line name snapshot must not be blank." }
+        require(trimmedName.length <= MAX_DESCRIPTION_LENGTH) {
+            "Line name snapshot exceeds maximum length of $MAX_DESCRIPTION_LENGTH characters."
+        }
+        val sale = SaleEntity(
+            id = saleId,
+            businessId = businessId,
+            customerId = customerId,
+            sellerUserId = sellerUserId,
+            saleNumber = saleNumber,
+            saleDateEpochDay = saleDateEpochDay,
+            dueDateEpochDay = dueDateEpochDay,
+            subtotalCents = amountCents,
+            discountCents = 0L,
+            totalCents = amountCents,
+            isCanceled = false,
+            notes = notes,
+            createdAtEpochMillis = nowEpochMillis,
+            updatedAtEpochMillis = nowEpochMillis,
+        )
+        val item = SaleItemEntity(
+            id = itemId,
+            saleId = saleId,
+            productId = null,
+            productNameSnapshot = trimmedName,
+            quantity = 1L,
+            unitPriceCents = amountCents,
+            discountCents = 0L,
+            subtotalCents = amountCents,
+        )
+        val charge = AccountMovementEntity(
+            id = chargeId,
+            businessId = businessId,
+            customerId = customerId,
+            saleId = saleId,
+            paymentId = null,
+            type = "CHARGE",
+            amountCents = amountCents,
+            direction = "DEBIT",
+            occurredAtEpochMillis = nowEpochMillis,
+            createdByUserId = sellerUserId,
+            reversesMovementId = null,
+            notes = notes,
+        )
+        return UncatalogedSaleEntry(sale, item, charge)
+    }
+}
+
 /**
  * Turns "this person already owed me $500" into the same three rows any other sale produces.
  *
@@ -37,6 +124,7 @@ object OpeningBalance {
      * what gets translated.
      */
     const val LINE_NAME = "Saldo anterior"
+    const val MAX_DESCRIPTION_LENGTH = UncatalogedSaleBuilder.MAX_DESCRIPTION_LENGTH
 
     fun entry(
         saleId: String,
@@ -51,52 +139,34 @@ object OpeningBalance {
         /** Days from today the two of them agreed on, or null when there was never a date. */
         dueInDays: Long? = null,
         notes: String? = null,
+        /**
+         * The date of the sale as recorded in the notebook, defaulting to todayEpochDay.
+         * Must be positive and not in the future (<= todayEpochDay).
+         */
+        saleDateEpochDay: Long = todayEpochDay,
+        /**
+         * The description of the debt / uncatalogued line. Defaults to LINE_NAME ("Saldo anterior").
+         */
+        lineNameSnapshot: String = LINE_NAME,
     ): OpeningBalanceEntry {
-        require(amountCents > 0) { "An opening balance must be positive." }
         require(dueInDays == null || dueInDays > 0) { "An agreed date cannot be today or earlier." }
-        val sale = SaleEntity(
-            id = saleId,
+        val record = UncatalogedSaleBuilder.build(
+            saleId = saleId,
+            itemId = itemId,
+            chargeId = chargeId,
             businessId = businessId,
             customerId = customerId,
             sellerUserId = ownerUserId,
-            // Its own prefix so this is recognisable in the ledger without joining anything.
-            saleNumber = "SA-$nowEpochMillis",
-            // Dated today rather than guessed: nobody knows when the notebook entry was made, and
-            // inventing a date would feed the payment score evidence that was never observed.
-            saleDateEpochDay = todayEpochDay,
-            dueDateEpochDay = dueInDays?.let { todayEpochDay + it },
-            subtotalCents = amountCents,
-            discountCents = 0L,
-            totalCents = amountCents,
-            isCanceled = false,
-            notes = notes,
-            createdAtEpochMillis = nowEpochMillis,
-            updatedAtEpochMillis = nowEpochMillis,
-        )
-        val item = SaleItemEntity(
-            id = itemId,
-            saleId = saleId,
-            productId = null,
-            productNameSnapshot = LINE_NAME,
-            quantity = 1L,
-            unitPriceCents = amountCents,
-            discountCents = 0L,
-            subtotalCents = amountCents,
-        )
-        val charge = AccountMovementEntity(
-            id = chargeId,
-            businessId = businessId,
-            customerId = customerId,
-            saleId = saleId,
-            paymentId = null,
-            type = "CHARGE",
             amountCents = amountCents,
-            direction = "DEBIT",
-            occurredAtEpochMillis = nowEpochMillis,
-            createdByUserId = ownerUserId,
-            reversesMovementId = null,
+            saleNumber = "SA-$nowEpochMillis",
+            saleDateEpochDay = saleDateEpochDay,
+            todayEpochDay = todayEpochDay,
+            nowEpochMillis = nowEpochMillis,
+            dueDateEpochDay = dueInDays?.let { todayEpochDay + it },
             notes = notes,
+            lineNameSnapshot = lineNameSnapshot,
         )
-        return OpeningBalanceEntry(sale, item, charge)
+        return OpeningBalanceEntry(record.sale, record.item, record.charge)
     }
 }
+

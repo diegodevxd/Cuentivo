@@ -70,4 +70,89 @@ class OpeningBalanceTest {
     fun `a negative balance is refused`() {
         entry(amountCents = -1)
     }
+
+    @Test
+    fun `explicit saleDateEpochDay is preserved in sale`() {
+        val result = OpeningBalance.entry(
+            saleId = "sale-1",
+            itemId = "item-1",
+            chargeId = "charge-1",
+            businessId = "biz",
+            customerId = "cust",
+            ownerUserId = "owner",
+            amountCents = 50_000,
+            todayEpochDay = 20_000,
+            nowEpochMillis = 1_700_000_000_000,
+            saleDateEpochDay = 19_500,
+            lineNameSnapshot = "Past debt",
+        )
+        assertEquals(19_500L, result.sale.saleDateEpochDay)
+        assertEquals("Past debt", result.item.productNameSnapshot)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a sale date in the future is refused`() {
+        OpeningBalance.entry(
+            saleId = "sale-1",
+            itemId = "item-1",
+            chargeId = "charge-1",
+            businessId = "biz",
+            customerId = "cust",
+            ownerUserId = "owner",
+            amountCents = 50_000,
+            todayEpochDay = 20_000,
+            nowEpochMillis = 1_700_000_000_000,
+            saleDateEpochDay = 20_001,
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a non-positive sale date is refused`() {
+        OpeningBalance.entry(
+            saleId = "sale-1",
+            itemId = "item-1",
+            chargeId = "charge-1",
+            businessId = "biz",
+            customerId = "cust",
+            ownerUserId = "owner",
+            amountCents = 50_000,
+            todayEpochDay = 20_000,
+            nowEpochMillis = 1_700_000_000_000,
+            saleDateEpochDay = 0,
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a blank line name snapshot is refused`() {
+        OpeningBalance.entry(
+            saleId = "sale-1",
+            itemId = "item-1",
+            chargeId = "charge-1",
+            businessId = "biz",
+            customerId = "cust",
+            ownerUserId = "owner",
+            amountCents = 50_000,
+            todayEpochDay = 20_000,
+            nowEpochMillis = 1_700_000_000_000,
+            lineNameSnapshot = "   ",
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a line name snapshot longer than 160 characters is refused`() {
+        OpeningBalance.entry(
+            saleId = "sale-1",
+            itemId = "item-1",
+            chargeId = "charge-1",
+            businessId = "biz",
+            customerId = "cust",
+            ownerUserId = "owner",
+            amountCents = 50_000,
+            todayEpochDay = 20_000,
+            nowEpochMillis = 1_700_000_000_000,
+            lineNameSnapshot = "A".repeat(161),
+        )
+    }
 }
+
+

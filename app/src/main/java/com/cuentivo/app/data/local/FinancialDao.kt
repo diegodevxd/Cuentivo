@@ -784,16 +784,24 @@ interface FinancialDao {
         val createdProductIds = newProducts.map { it.id }.toSet()
         for (item in items) {
             require(item.productNameSnapshot.isNotBlank()) { "Product name snapshot must not be blank." }
-            val productId = item.productId ?: return ExpectedSaleResult.StaleData
-            if (productId !in createdProductIds) {
-                val product = productForSale(productId) ?: return ExpectedSaleResult.StaleData
-                if (product.businessId != sale.businessId || !product.isActive || product.deletedAtEpochMillis != null) {
-                    return ExpectedSaleResult.StaleData
-                }
-                val currentProdFingerprint = "${product.id}:${product.updatedAtEpochMillis}:${product.salePriceCents}"
-                val expectedFingerprint = expectedProductFingerprints[productId]
-                if (currentProdFingerprint != expectedFingerprint) {
-                    return ExpectedSaleResult.StaleData
+            val productId = item.productId
+            if (productId == null) {
+                require(item.quantity == 1L) { "Uncataloged line must have quantity 1." }
+                require(item.unitPriceCents > 0L) { "Uncataloged line must have positive unit price." }
+                require(item.discountCents == 0L) { "Uncataloged line cannot have discount." }
+                require(item.subtotalCents == item.unitPriceCents) { "Uncataloged line subtotal must equal unit price." }
+                require((expectedProductFingerprints as Map<*, *>)[null] == null) { "Uncataloged line cannot have product fingerprint." }
+            } else {
+                if (productId !in createdProductIds) {
+                    val product = productForSale(productId) ?: return ExpectedSaleResult.StaleData
+                    if (product.businessId != sale.businessId || !product.isActive || product.deletedAtEpochMillis != null) {
+                        return ExpectedSaleResult.StaleData
+                    }
+                    val currentProdFingerprint = "${product.id}:${product.updatedAtEpochMillis}:${product.salePriceCents}"
+                    val expectedFingerprint = expectedProductFingerprints[productId]
+                    if (currentProdFingerprint != expectedFingerprint) {
+                        return ExpectedSaleResult.StaleData
+                    }
                 }
             }
         }

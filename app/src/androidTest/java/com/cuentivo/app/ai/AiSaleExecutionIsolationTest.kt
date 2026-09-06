@@ -16,6 +16,7 @@ import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
 import com.cuentivo.app.data.local.StoredSaleBundle
 import com.cuentivo.app.data.local.SyncOperationEntity
+import com.cuentivo.app.domain.AuditAction
 import com.cuentivo.app.domain.CustomerRepository
 import com.cuentivo.app.domain.ProductRepository
 import com.cuentivo.app.domain.SaleRepository
@@ -1766,5 +1767,88 @@ class AiSaleExecutionIsolationTest {
 
         val countsAfterSecond = countAllTables()
         assertEquals("Retry must not duplicate DB rows", countsAfterFirst, countsAfterSecond)
+    }
+
+    @Test
+    fun uncatalogedChargeExecutionRecordsSaleAndChargeUpdatesBalanceAndReplaysIdempotently() = runBlocking {
+        val service = createService()
+        val initialBalance = database.financialDao().customerBalanceCents(businessId, customerId)
+        val countsBefore = countAllTables()
+
+        val request = AiSaleConfirmationRequest(
+            confirmationKey = "conf-uncataloged-charge-1",
+            businessId = businessId,
+            customerId = customerId,
+            sourceCustomerFingerprint = "$customerId:10000",
+            lines = listOf(
+                AiSaleConfirmationLine.UncatalogedCharge(
+                    productNameSnapshot = "Deuda anterior libreta",
+                    unitPriceCents = 35000L,
+                    lineTotalCents = 35000L,
+                ),
+            ),
+            totalCents = 35000L,
+            initialPaymentCents = 10000L,
+            saleDateEpochDay = 20400L,
+            promisedPaymentEpochDay = 20450L,
+        )
+
+        // First execution
+        val result1 = service.confirm(request)
+        assertTrue("result1 must be Recorded", result1 is AiSaleExecutionResult.Recorded)
+        val recorded1 = result1 as AiSaleExecutionResult.Recorded
+        assertNotNull(recorded1.saleId)
+        assertNotNull(recorded1.paymentId)
+
+        // Verify balance actually increased by net charge: total 35000 - initialPayment 10000 = +25000
+        val balanceAfterFirst = database.financialDao().customerBalanceCents(businessId, customerId)
+        assertEquals(initialBalance + 25000L, balanceAfterFirst)
+
+        // Verify item entity created has null productId, quantity 1, and trimmed description
+        val items = database.financialDao().itemsForSale(recorded1.saleId)
+        assertEquals(1, items.size)
+        assertNull(items[0].productId)
+        assertEquals(1L, items[0].quantity)
+        assertEquals("Deuda anterior libreta", items[0].productNameSnapshot)
+        assertEquals(35000L, items[0].unitPriceCents)
+        assertEquals(35000L, items[0].subtotalCents)
+
+        // Verify sale dates and payment date
+        val sale = database.financialDao().saleForId(recorded1.saleId)
+        assertNotNull(sale)
+        assertEquals(20400L, sale?.saleDateEpochDay)
+        assertEquals(20450L, sale?.dueDateEpochDay)
+
+        val payment = database.financialDao().paymentForId(recorded1.paymentId!!)
+        assertNotNull(payment)
+        assertEquals(20400L, payment?.paymentDateEpochDay)
+        assertEquals(10000L, payment?.amountCents)
+
+        // Verify audit log has been written with specific SALE_CREATED and PAYMENT_REGISTERED events
+        val auditLogs = database.auditDao().forBusiness(businessId)
+        assertTrue(
+            "Must record SALE_CREATED audit event for saleId",
+            auditLogs.any { it.action == AuditAction.SALE_CREATED.code && it.entityId == recorded1.saleId },
+        )
+        assertTrue(
+            "Must record PAYMENT_REGISTERED audit event for paymentId",
+            auditLogs.any { it.action == AuditAction.PAYMENT_REGISTERED.code && it.entityId == recorded1.paymentId },
+        )
+        val countsAfterFirst = countAllTables()
+
+        // Re-execute with same confirmationKey (idempotent replay)
+        val result2 = service.confirm(request)
+        assertTrue("result2 must be Recorded", result2 is AiSaleExecutionResult.Recorded)
+        val recorded2 = result2 as AiSaleExecutionResult.Recorded
+        assertEquals(recorded1.saleId, recorded2.saleId)
+        assertEquals(recorded1.paymentId, recorded2.paymentId)
+
+        // Verify customer balance did not change again
+        val balanceAfterSecond = database.financialDao().customerBalanceCents(businessId, customerId)
+        assertEquals(balanceAfterFirst, balanceAfterSecond)
+
+        // Verify database counts are strictly unchanged
+        val countsAfterSecond = countAllTables()
+        assertEquals("Replay must not create duplicate DB rows", countsAfterFirst, countsAfterSecond)
     }
 }

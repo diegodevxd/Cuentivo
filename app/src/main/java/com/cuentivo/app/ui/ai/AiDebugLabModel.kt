@@ -720,7 +720,7 @@ object AiDebugLabMachine {
             customerId = preview.customerId,
             sourceCustomerFingerprint = preview.sourceCustomerFingerprint,
             lines = preview.lines.map { line ->
-                AiSaleConfirmationLine(
+                AiSaleConfirmationLine.CatalogProduct(
                     productId = line.productId,
                     productNameSnapshot = line.productName,
                     quantity = line.quantity,

@@ -20,7 +20,7 @@ import org.junit.Test
 
 class AiSaleExecutionTest {
 
-    private val validLine = AiSaleConfirmationLine(
+    private val validLine = AiSaleConfirmationLine.CatalogProduct(
         productId = "prod-1",
         productNameSnapshot = "Jabón",
         quantity = 2,
@@ -531,4 +531,242 @@ class AiSaleExecutionTest {
         )
         assertEquals(AiSaleExecutionResult.Rejected, service.confirm(request))
     }
+
+    @Test
+    fun `explicit past notebook saleDateEpochDay is recorded on sale entity`() = runBlocking {
+        var recordedSale: SaleEntity? = null
+        val request = validRequest.copy(saleDateEpochDay = 20450L)
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ ->
+                recordedSale = sale
+                ExpectedSaleResult.Recorded(sale.id, null)
+            },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(request)
+        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertEquals(20450L, recordedSale?.saleDateEpochDay)
+    }
+
+    @Test
+    fun `future saleDateEpochDay is Rejected`() = runBlocking {
+        val request = validRequest.copy(saleDateEpochDay = 20501L)
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(request)
+        assertEquals(AiSaleExecutionResult.Rejected, result)
+    }
+
+    @Test
+    fun `zero or negative saleDateEpochDay is Rejected`() = runBlocking {
+        val requestZero = validRequest.copy(saleDateEpochDay = 0L)
+        val requestNegative = validRequest.copy(saleDateEpochDay = -1L)
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(requestZero))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(requestNegative))
+    }
+
+    @Test
+    fun `uncataloged charge line without product records null productId and uncataloged item id`() = runBlocking {
+        var recordedSale: SaleEntity? = null
+        var recordedItems: List<SaleItemEntity>? = null
+        var recordedProductFps: Map<String, String>? = null
+
+        val uncatalogedLine = AiSaleConfirmationLine.UncatalogedCharge(
+            productNameSnapshot = "Deuda libreta",
+            unitPriceCents = 30000L,
+            lineTotalCents = 30000L,
+        )
+        val request = validRequest.copy(
+            lines = listOf(uncatalogedLine),
+            totalCents = 30000L,
+            saleDateEpochDay = 20400L,
+        )
+
+        val service = AiSaleExecutionService(
+            registerSale = { idempotencyKey, sale, items, _, _, expectedProdFps, _, _, _, _, _, _, _, _ ->
+                recordedSale = sale
+                recordedItems = items
+                recordedProductFps = expectedProdFps
+                ExpectedSaleResult.Recorded(sale.id, null)
+            },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(request)
+        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertEquals(20400L, recordedSale?.saleDateEpochDay)
+        assertEquals(1, recordedItems?.size)
+        val item = recordedItems!![0]
+        assertNull(item.productId)
+        assertEquals("Deuda libreta", item.productNameSnapshot)
+        assertEquals(1L, item.quantity)
+        assertEquals(30000L, item.unitPriceCents)
+        assertEquals(30000L, item.subtotalCents)
+        assertEquals(SaleOperationIds.uncatalogedSaleItem("ai-sale-key-sale-1", 0), item.id)
+        assertTrue(recordedProductFps?.isEmpty() == true)
+    }
+
+    @Test
+    fun `uncataloged charge line with blank or overly long name is rejected`() = runBlocking {
+        val blankLine = AiSaleConfirmationLine.UncatalogedCharge(
+            productNameSnapshot = "   ",
+            unitPriceCents = 15000L,
+            lineTotalCents = 15000L,
+        )
+        val longLine = AiSaleConfirmationLine.UncatalogedCharge(
+            productNameSnapshot = "A".repeat(161),
+            unitPriceCents = 15000L,
+            lineTotalCents = 15000L,
+        )
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = listOf(blankLine), totalCents = 15000L)))
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = listOf(longLine), totalCents = 15000L)))
+    }
+
+    @Test
+    fun `uncataloged charge line rejecting mismatch line total or zero price`() = runBlocking {
+        val lineMismatchTotal = AiSaleConfirmationLine.UncatalogedCharge(
+            productNameSnapshot = "Deuda",
+            unitPriceCents = 1000L,
+            lineTotalCents = 2000L, // lineTotal != unitPrice
+        )
+        val validLinePart = AiSaleConfirmationLine.UncatalogedCharge(
+            productNameSnapshot = "Jabón",
+            unitPriceCents = 1000L,
+            lineTotalCents = 1000L,
+        )
+        val lineZeroPrice = AiSaleConfirmationLine.UncatalogedCharge(
+            productNameSnapshot = "Deuda",
+            unitPriceCents = 0L,
+            lineTotalCents = 0L,
+        )
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        // Mismatch between unitPrice and lineTotal
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(validRequest.copy(lines = listOf(lineMismatchTotal), totalCents = 2000L)))
+        // Zero price combined with a valid 1000L line: calculated sum (1000 + 0 = 1000) matches totalCents (1000),
+        // proving the rejection is strictly caused by unitPriceCents <= 0L on the uncataloged line.
+        assertEquals(
+            AiSaleExecutionResult.Rejected,
+            service.confirm(validRequest.copy(lines = listOf(validLinePart, lineZeroPrice), totalCents = 1000L)),
+        )
+    }
+
+    @Test
+    fun `confirmLedger with mandatory saleDateEpochDay records exact historical sale date`() = runBlocking {
+        var recordedSale: SaleEntity? = null
+        val uncatalogedLine = AiSaleConfirmationLine.UncatalogedCharge(
+            productNameSnapshot = "Saldo libreta",
+            unitPriceCents = 25000L,
+            lineTotalCents = 25000L,
+        )
+        val ledgerRequest = AiLedgerSaleConfirmationRequest(
+            confirmationKey = "ledger-key-1",
+            businessId = "biz-1",
+            customerId = "cust-1",
+            sourceCustomerFingerprint = "cust-1:1000",
+            lines = listOf(uncatalogedLine),
+            totalCents = 25000L,
+            initialPaymentCents = 5000L,
+            saleDateEpochDay = 20410L, // Non-nullable, mandatory on ledger request
+            promisedPaymentEpochDay = 20450L,
+        )
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, payment, _, _, _, _, _, _, _ ->
+                recordedSale = sale
+                ExpectedSaleResult.Recorded(sale.id, payment?.id)
+            },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirmLedger(ledgerRequest)
+        assertTrue(result is AiSaleExecutionResult.Recorded)
+        assertEquals(20410L, recordedSale?.saleDateEpochDay)
+    }
+
+    @Test
+    fun `sale with promised payment date earlier than sale date is rejected`() = runBlocking {
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val request = validRequest.copy(
+            saleDateEpochDay = 20400L,
+            promisedPaymentEpochDay = 20399L, // earlier than sale date
+        )
+        assertEquals(AiSaleExecutionResult.Rejected, service.confirm(request))
+    }
+
+    @Test
+    fun `initial payment on past sale date records payment with historical sale date`() = runBlocking {
+        var recordedPayment: PaymentEntity? = null
+
+        val uncatalogedLine = AiSaleConfirmationLine.UncatalogedCharge(
+            productNameSnapshot = "Deuda libreta",
+            unitPriceCents = 30000L,
+            lineTotalCents = 30000L,
+        )
+        val request = validRequest.copy(
+            lines = listOf(uncatalogedLine),
+            totalCents = 30000L,
+            initialPaymentCents = 10000L,
+            saleDateEpochDay = 20400L,
+            promisedPaymentEpochDay = 20450L,
+        )
+
+        val service = AiSaleExecutionService(
+            registerSale = { _, sale, _, _, _, _, payment, _, _, _, _, _, _, _ ->
+                recordedPayment = payment
+                ExpectedSaleResult.Recorded(sale.id, payment?.id)
+            },
+            currentUserId = { "user-1" },
+            nowMillis = { 5000L },
+            todayEpochDay = { 20500L },
+        )
+
+        val result = service.confirm(request)
+        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertNotNull(recordedPayment)
+        assertEquals("Initial payment must be dated to effectiveSaleDate", 20400L, recordedPayment?.paymentDateEpochDay)
+    }
 }
+
