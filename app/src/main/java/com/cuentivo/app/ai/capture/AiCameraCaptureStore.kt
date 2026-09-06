@@ -55,6 +55,18 @@ class AiCameraCaptureStore private constructor(
         deleteStaleExceptName(except?.let(::captureName))
     }
 
+    /**
+     * Same cleanup, but sparing several captures at once. Two flows now write here at the same
+     * time: a photo for the chat and a photographed ledger page. Sparing only one of them meant
+     * starting one flow could delete the other one out from under the camera.
+     */
+    fun deleteStaleExcept(keep: Collection<Uri?>) {
+        val keepNames = keep.filterNotNull().mapNotNull(::captureName).toSet()
+        directory.listFiles()?.forEach { file ->
+            if (file.name !in keepNames) file.delete()
+        }
+    }
+
     /** The file behind a URI this store issued; throws for anything else. */
     internal fun fileFor(uri: Uri): File =
         requireNotNull(captureName(uri)?.let(::safeFile))

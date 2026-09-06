@@ -202,6 +202,13 @@ data class LedgerReviewSummary(
     /** True if any operation has a blocking financial diagnostic. */
     val hasFinancialErrors: Boolean
         get() = financialDiagnostics.isNotEmpty()
+
+    /**
+     * Whether this page can be confirmed at all. Same condition the machine enforces on the
+     * confirm transition, exposed here so the screen mirrors the block instead of deciding it.
+     */
+    val canConfirm: Boolean
+        get() = !hasFinancialErrors && executableOperationsCount > 0
 }
 
 /**
@@ -497,4 +504,135 @@ object LedgerReviewEngine {
     ): List<LedgerOperation> {
         return currentOperations.filterNot { it.lineIndex == lineIndex }
     }
+}
+
+/**
+ * Edits the user makes on the review, as pure list transformations.
+ *
+ * These live here and not inside the Composable on purpose: whether an edit resolves the doubt on a
+ * row decides whether that row gets registered, and this project's rule is that a test must be able
+ * to invoke that decision without a device. The screen calls these and draws the result.
+ *
+ * Filling a field always stores what the user typed. The doubt on that field is cleared **only when
+ * the new value would actually be accepted**, so a row corrected with garbage keeps its mark and
+ * still does not enter. That asymmetry is the point: the user can see their correction on screen
+ * without it silently becoming registrable.
+ */
+object LedgerReviewEdits {
+
+    private fun replace(
+        operations: List<LedgerOperation>,
+        lineIndex: Int,
+        edit: (LedgerOperation) -> LedgerOperation,
+    ): List<LedgerOperation> = operations.map { if (it.lineIndex == lineIndex) edit(it) else it }
+
+    /**
+     * True when this amount would satisfy the same money rule the executors apply.
+     *
+     * Zero is canonical for the contract but the executors reject it, so a row corrected to "0"
+     * keeps its mark: otherwise the doubt would look resolved on screen and the row would still be
+     * refused at the end, with nothing pointing at the field that caused it.
+     */
+    fun isAcceptableAmount(amountCents: String?): Boolean =
+        !amountCents.isNullOrEmpty() &&
+            amountCents != "0" &&
+            CANONICAL_LEDGER_CENTS_RE.matches(amountCents)
+
+    /** True when this name would satisfy the same customer rule the executors apply. */
+    fun isAcceptableCustomer(customerName: String?): Boolean =
+        !customerName.isNullOrEmpty() &&
+            customerName.length <= MAX_LEDGER_CUSTOMER_NAME_LENGTH &&
+            trimJsWhitespace(customerName).isNotEmpty()
+
+    fun applyAmount(
+        operations: List<LedgerOperation>,
+        lineIndex: Int,
+        amountCents: String,
+    ): List<LedgerOperation> = replace(operations, lineIndex) { op ->
+        val accepted = isAcceptableAmount(amountCents)
+        op.copy(
+            amountCents = amountCents,
+            uncertainFields = if (accepted) op.uncertainFields - UncertainLedgerField.AMOUNT else op.uncertainFields,
+            unreadableFields = if (accepted) op.unreadableFields - UnreadableLedgerField.AMOUNT else op.unreadableFields,
+        )
+    }
+
+    fun applyCustomer(
+        operations: List<LedgerOperation>,
+        lineIndex: Int,
+        customerName: String,
+    ): List<LedgerOperation> = replace(operations, lineIndex) { op ->
+        val accepted = isAcceptableCustomer(customerName)
+        op.copy(
+            customerName = customerName,
+            uncertainFields = if (accepted) op.uncertainFields - UncertainLedgerField.CUSTOMER else op.uncertainFields,
+            unreadableFields = if (accepted) op.unreadableFields - UnreadableLedgerField.CUSTOMER else op.unreadableFields,
+        )
+    }
+
+    /**
+     * Choosing a kind resolves it by definition: the user picked one, so there is nothing left in
+     * doubt. Gemini proposes, the user decides.
+     */
+    /**
+     * True when this date could be a date written in a notebook: a real calendar day, not in the
+     * future. Today is passed in rather than read: this layer has no clock, which is what lets it
+     * be tested without a device.
+     */
+    fun isAcceptableDate(date: SafeDateCandidate?, todayEpochDay: Long): Boolean {
+        if (date == null) return false
+        val day = runCatching {
+            java.time.LocalDate.of(date.year, date.month, date.day)
+        }.getOrNull() ?: return false
+        return day.toEpochDay() <= todayEpochDay
+    }
+
+    /**
+     * A date the person typed while looking at the page. A date in the future is not a date from a
+     * notebook, so it is stored but never resolves the doubt.
+     */
+    fun applyDate(
+        operations: List<LedgerOperation>,
+        lineIndex: Int,
+        date: SafeDateCandidate?,
+        todayEpochDay: Long,
+    ): List<LedgerOperation> = replace(operations, lineIndex) { op ->
+        // A row the notebook simply did not date is legitimate: the contract makes date optional
+        // and step 5 resolves it with the date chosen for the page. What is never legitimate is a
+        // date that does not exist or has not happened yet.
+        val accepted = date == null || isAcceptableDate(date, todayEpochDay)
+        op.copy(
+            date = date,
+            // A rejected date does not merely fail to clear the mark: it adds one. Otherwise a row
+            // whose date Gemini read cleanly could be edited to tomorrow, or emptied, and stay
+            // confirmable because there was no doubt to preserve.
+            uncertainFields = if (accepted) {
+                op.uncertainFields - UncertainLedgerField.DATE
+            } else {
+                (op.uncertainFields + UncertainLedgerField.DATE).distinct()
+            },
+            unreadableFields = if (accepted) op.unreadableFields - UnreadableLedgerField.DATE else op.unreadableFields,
+        )
+    }
+
+    fun applyKind(
+        operations: List<LedgerOperation>,
+        lineIndex: Int,
+        kind: ProposedLedgerKind,
+    ): List<LedgerOperation> = replace(operations, lineIndex) { op ->
+        op.copy(
+            proposedKind = kind,
+            uncertainFields = op.uncertainFields - UncertainLedgerField.KIND,
+            unreadableFields = op.unreadableFields - UnreadableLedgerField.KIND,
+        )
+    }
+
+    /**
+     * Drops a row the user does not want to import. Nothing financial is being deleted here: this
+     * is a draft that has not been written yet.
+     */
+    fun removeRow(
+        operations: List<LedgerOperation>,
+        lineIndex: Int,
+    ): List<LedgerOperation> = operations.filterNot { it.lineIndex == lineIndex }
 }

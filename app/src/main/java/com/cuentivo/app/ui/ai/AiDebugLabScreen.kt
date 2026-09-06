@@ -90,6 +90,9 @@ import com.cuentivo.app.ai.CreateSaleProposal
 import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.capture.AiCameraCaptureStore
 import com.cuentivo.app.ai.capture.AiCapturePolicy
+import com.cuentivo.app.ai.ledger.LedgerReviewEdits
+import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
+import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
 import com.cuentivo.app.ai.capture.AiCaptureStore
 import com.cuentivo.app.ai.capture.AiOcrEngine
 import com.cuentivo.app.data.local.AiDailyChatRepository
@@ -159,6 +162,8 @@ fun AiDebugLabScreen(
     confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
     onOpenPaywall: (() -> Unit)? = null,
     voiceRecognizer: VoiceRecognizer? = null,
+    extractLedgerPage: (suspend (requestId: String, imageBase64: String, imageMimeType: String) -> LedgerExtractionCallResult)? = null,
+    ledgerBalancesResolver: (suspend (businessId: String) -> Map<String, Long>)? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     var voiceModel by remember { mutableStateOf(VoiceCaptureModel()) }
@@ -166,6 +171,7 @@ fun AiDebugLabScreen(
     var showClearDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var showSourceSelector by remember { mutableStateOf(false) }
+    var showLedgerSourceSelector by remember { mutableStateOf(false) }
     var cameraUnavailable by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val effectiveVoiceRecognizer = voiceRecognizer ?: remember(context) { AndroidVoiceRecognizer(context) }
@@ -174,6 +180,16 @@ fun AiDebugLabScreen(
     }
     val cameraStore = remember(context) { AiCameraCaptureStore(context) }
     var pendingCaptureUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
+    // The photographed page stays on disk for as long as the review needs it: the crop beside each
+    // row is the only way to check what the model read against what the notebook says. Deleted when
+    // the import ends, whichever way it ends.
+    var ledgerCaptureFilePath by rememberSaveable { mutableStateOf<String?>(null) }
+    val ledgerCaptureFile: java.io.File? = ledgerCaptureFilePath?.let { java.io.File(it) }
+    var ledgerSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    // The business the import belongs to, captured when it starts: reading activeBusinessId on the
+    // way back would let a page taken for one business land on another.
+    var ledgerBusinessId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingLedgerUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
     val ocrEngine = remember(context) { debugAiOcrEngine(context) }
 
     DisposableEffect(effectiveVoiceRecognizer) {
@@ -216,7 +232,7 @@ fun AiDebugLabScreen(
     // leaving composition can mean the Activity was destroyed while the camera app was still
     // writing to that very file, and deleting it there threw away the photo the user just took.
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { cameraStore.deleteStale(except = pendingCaptureUri) }
+        withContext(Dispatchers.IO) { cameraStore.deleteStaleExcept(listOf(pendingCaptureUri, pendingLedgerUri)) }
     }
 
     // One close action: cancel the in-flight request (generation bump) BEFORE closing, so a late
@@ -307,6 +323,124 @@ fun AiDebugLabScreen(
         }
     }
 
+    // Importing a page of a paper notebook: its own launchers, so a photo taken for the chat can
+    // never be mistaken for a page under review and the other way round.
+    val discardLedgerCapture: () -> Unit = {
+        ledgerCaptureFile?.delete()
+        ledgerCaptureFilePath = null
+        ledgerSessionId = null
+        ledgerBusinessId = null
+    }
+
+    val runLedgerExtraction: (java.io.File, String) -> Unit = { file, mimeType ->
+        val call = extractLedgerPage
+        val businessId = ledgerBusinessId
+        val sessionId = ledgerSessionId
+        if (call == null || businessId.isNullOrBlank() || sessionId == null) {
+            file.delete()
+            discardLedgerCapture()
+        } else {
+            ledgerCaptureFilePath = file.absolutePath
+            model = AiDebugLabMachine.onStartLedgerExtraction(model, sessionId, businessId)
+            val token = model.generation
+            scope.launch {
+                val balances = if (ledgerBalancesResolver != null) {
+                    withContext(Dispatchers.IO) {
+                        runCatching { ledgerBalancesResolver(businessId) }.getOrDefault(emptyMap())
+                    }
+                } else {
+                    emptyMap()
+                }
+                val outcome = withContext(Dispatchers.IO) {
+                    val bytes = runCatching { file.readBytes() }.getOrNull()
+                    if (bytes == null) {
+                        null
+                    } else {
+                        val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                        call(java.util.UUID.randomUUID().toString(), encoded, mimeType)
+                    }
+                }
+                // The failure path checks the token too. Without it a slow extraction that failed
+                // could cancel the review of a later photo and delete its file underneath it.
+                if (token == model.generation) {
+                    when (outcome) {
+                        is LedgerExtractionCallResult.Extracted -> {
+                            model = AiDebugLabMachine.onLedgerExtractionResult(
+                                model = model,
+                                sessionId = sessionId,
+                                businessId = businessId,
+                                operations = outcome.extraction.operations,
+                                discards = outcome.extraction.discards,
+                                unreadTextRemaining = outcome.extraction.unreadTextRemaining,
+                                pageIncomplete = outcome.extraction.pageIncomplete,
+                                existingCustomerBalances = balances,
+                                generation = token,
+                            )
+                        }
+                        else -> {
+                            // A page that could not be read leaves nothing behind: no half review,
+                            // and no photo waiting on disk for an import that is not happening.
+                            discardLedgerCapture()
+                            model = AiDebugLabMachine.onCancelLedger(model)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val ledgerCameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { success ->
+        val uri = pendingLedgerUri ?: return@rememberLauncherForActivityResult
+        pendingLedgerUri = null
+        if (!success) {
+            cameraStore.delete(uri)
+            discardLedgerCapture()
+            return@rememberLauncherForActivityResult
+        }
+        val file = cameraStore.fileFor(uri)
+        if (!AiLedgerImagePolicy.isWithinCallableCap(file.length())) {
+            cameraStore.delete(uri)
+            discardLedgerCapture()
+            return@rememberLauncherForActivityResult
+        }
+        runLedgerExtraction(file, "image/jpeg")
+    }
+
+    val ledgerPickLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) {
+            discardLedgerCapture()
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val prepared = withContext(Dispatchers.IO) {
+                val mimeType = context.contentResolver.getType(uri)
+                if (!AiCapturePolicy.isAllowedMime(mimeType)) return@withContext null
+                val target = captureStore.createCaptureFile(mimeType!!) ?: return@withContext null
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    } ?: return@runCatching null
+                    if (!AiLedgerImagePolicy.isWithinCallableCap(target.length())) {
+                        target.delete()
+                        null
+                    } else {
+                        target to mimeType
+                    }
+                }.getOrNull()
+            }
+            if (prepared == null) {
+                // A copy that failed halfway still left a file behind.
+                discardLedgerCapture()
+            } else {
+                runLedgerExtraction(prepared.first, prepared.second)
+            }
+        }
+    }
+
     BackHandler(onBack = closeLab)
 
     val pickImageLauncher = rememberLauncherForActivityResult(
@@ -390,6 +524,68 @@ fun AiDebugLabScreen(
         }
     }
 
+    // Reviewing a photographed ledger page takes over the whole surface: it is a different task
+    // from the chat, and mixing them would let a stray dictation edit a page under review.
+    val ledgerReviewing = model.state as? AiDebugLabState.LedgerReviewing
+    if (ledgerReviewing != null) {
+        val cancelLedger = {
+            discardLedgerCapture()
+            model = AiDebugLabMachine.onCancelLedger(model)
+        }
+        Dialog(
+            onDismissRequest = cancelLedger,
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            LedgerReviewContent(
+                review = ledgerReviewing.review,
+                captureFile = ledgerCaptureFile,
+                onUpdateAmount = { lineIndex, amountCents ->
+                    model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
+                        LedgerReviewEdits.applyAmount(operations, lineIndex, amountCents)
+                    }
+                },
+                onUpdateCustomer = { lineIndex, customerName ->
+                    model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
+                        LedgerReviewEdits.applyCustomer(operations, lineIndex, customerName)
+                    }
+                },
+                onUpdateKind = { lineIndex, kind ->
+                    model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
+                        LedgerReviewEdits.applyKind(operations, lineIndex, kind)
+                    }
+                },
+                onUpdateDate = { lineIndex, date ->
+                    model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
+                        LedgerReviewEdits.applyDate(
+                            operations,
+                            lineIndex,
+                            date,
+                            java.time.LocalDate.now().toEpochDay(),
+                        )
+                    }
+                },
+                onRemoveRow = { lineIndex ->
+                    model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
+                        LedgerReviewEdits.removeRow(operations, lineIndex)
+                    }
+                },
+                onConfirm = {
+                    // The batch write itself is Fase B step 5. The machine already refuses to
+                    // start on a page with financial errors, so this transition is the seam that
+                    // step 5 will complete rather than a button that silently does nothing.
+                    val outcome = AiDebugLabMachine.onConfirmLedger(model, ledgerReviewing.sessionId, ledgerReviewing.businessId)
+                    if (outcome is AiLedgerConfirmOutcome.Started) {
+                        model = outcome.model
+                        // Confirming ends the import, so the photo goes with it. The batch write is
+                        // step 5 and works from the reviewed operations, not from the image.
+                        discardLedgerCapture()
+                    }
+                },
+                onCancel = cancelLedger,
+            )
+        }
+        return
+    }
     Dialog(
         onDismissRequest = closeLab,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -669,7 +865,10 @@ fun AiDebugLabScreen(
                 )
                 Spacer(Modifier.width(8.dp))
                 IconButton(
-                    enabled = isHydrated && model.state != AiDebugLabState.Sending,
+                    // isVoiceDisabled, not just Sending: dictating while a photographed page is being
+                    // extracted, reviewed or written is the race the plan closes by turning voice
+                    // off, and hiding the button is not the same as refusing the input.
+                    enabled = isHydrated && !model.isVoiceDisabled,
                     onClick = {
                         if (isVoiceActive) {
                             cancelVoiceCapture()
@@ -835,6 +1034,21 @@ fun AiDebugLabScreen(
                     ) {
                         Text(stringResource(R.string.ai_debug_lab_capture))
                     }
+                    if (extractLedgerPage != null && activeBusinessId?.isNotBlank() == true) {
+                        TextButton(
+                            enabled = isHydrated && !model.isVoiceDisabled,
+                            onClick = {
+                                // The import session is named before the camera opens, so a result
+                                // that arrives late, or from a photo taken for a different page,
+                                // cannot land on the review the person is looking at.
+                                ledgerSessionId = java.util.UUID.randomUUID().toString()
+                                ledgerBusinessId = activeBusinessId
+                                showLedgerSourceSelector = true
+                            },
+                        ) {
+                            Text(stringResource(R.string.ai_ledger_import_entry))
+                        }
+                    }
                     Spacer(Modifier.weight(1f))
                 } else {
                     Spacer(Modifier.weight(1f))
@@ -853,6 +1067,52 @@ fun AiDebugLabScreen(
                 }
             }
         }
+        if (showLedgerSourceSelector) {
+            ModalBottomSheet(onDismissRequest = {
+                showLedgerSourceSelector = false
+                discardLedgerCapture()
+            }) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                ) {
+                    TextButton(
+                        onClick = {
+                            showLedgerSourceSelector = false
+                            cameraUnavailable = false
+                            cameraStore.deleteStaleExcept(listOf(pendingCaptureUri, pendingLedgerUri))
+                            val attempt = runCatching {
+                                val uri = cameraStore.createCaptureUri()
+                                pendingLedgerUri = uri
+                                ledgerCameraLauncher.launch(uri)
+                            }
+                            if (attempt.isFailure) {
+                                pendingLedgerUri?.let(cameraStore::delete)
+                                pendingLedgerUri = null
+                                discardLedgerCapture()
+                                cameraUnavailable = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.ai_debug_chat_camera)) }
+                    TextButton(
+                        onClick = {
+                            showLedgerSourceSelector = false
+                            ledgerPickLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.ai_debug_chat_gallery)) }
+                    TextButton(
+                        onClick = {
+                            showLedgerSourceSelector = false
+                            discardLedgerCapture()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.ai_debug_lab_close)) }
+                }
+            }
+        }
         if (showSourceSelector) {
             ModalBottomSheet(onDismissRequest = { showSourceSelector = false }) {
                 Column(
@@ -862,7 +1122,7 @@ fun AiDebugLabScreen(
                         onClick = {
                             showSourceSelector = false
                             cameraUnavailable = false
-                            cameraStore.deleteStale(except = pendingCaptureUri)
+                            cameraStore.deleteStaleExcept(listOf(pendingCaptureUri, pendingLedgerUri))
                             val attempt = runCatching {
                                 val uri = cameraStore.createCaptureUri()
                                 pendingCaptureUri = uri

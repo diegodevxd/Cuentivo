@@ -5,6 +5,7 @@ import { defineSecret } from "firebase-functions/params";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createInterpretAiHandler } from "./interpretAiRequest.js";
+import { createExtractLedgerPageHandler } from "./extractLedgerPage.js";
 import { createAuthorizeAiHandler } from "./authorizeAiAction.js";
 import { createVerifyAiSubscriptionHandler } from "./verifyAiSubscription.js";
 import { createGetAiAvailabilityHandler } from "./getAiAvailability.js";
@@ -12,6 +13,7 @@ import { createPlayRtdnHandler } from "./handlePlayRtdnNotification.js";
 import { createAiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import { createFirestoreControlPlaneRepository } from "./ai/firestoreControlPlane";
 import { createGeminiTextProvider } from "./ai/geminiTextProvider";
+import { createGeminiLedgerProvider } from "./ai/geminiLedgerProvider";
 import { createDefaultPlaySubscriptionApi } from "./ai/playSubscriptionVerifier";
 import { createFirestoreSubscriptionEntitlementRepository } from "./ai/subscriptionEntitlementRepository";
 
@@ -99,6 +101,62 @@ export const interpretAiRequest = onCall(
       throw new HttpsError(result.code, "Request rejected");
     }
     logger.info("AI_INTERPRET_RESULT", { status: result.status });
+    return result;
+  },
+);
+
+/**
+ * Reading a photographed notebook page. Shares the AI boundary, the secret, the edge guard, the
+ * control plane quota and the durable claim with interpretAiRequest on purpose: an image costs far
+ * more than a sentence, so it must not get its own unmetered door into the provider.
+ *
+ * Longer timeout and more memory than the text path: a page carries an image in the request body.
+ */
+export const extractLedgerPage = onCall(
+  { ...AI_BOUNDARY, timeoutSeconds: 60, memory: "512MiB", concurrency: 1, secrets: [geminiApiKey] },
+  async (request) => {
+    const apiKey = geminiApiKey.value();
+    const provider = apiKey
+      ? createGeminiLedgerProvider({
+          apiKey,
+          timeoutMillis: 45000,
+          onFailure: (failure) => {
+            logger.warn("AI_PROVIDER_FAILURE", {
+              category: failure.category,
+              status: failure.status,
+            });
+          },
+        })
+      : null;
+    const repository = controlPlaneRepository();
+    const result = await createExtractLedgerPageHandler({
+      authorize: (input) => repository.authorize(input),
+      claimProviderInvocation: (input) => repository.claimProviderInvocation(input),
+      provider,
+      guard: aiEdgeGuard,
+      now: () => Date.now(),
+      onRejected: (reason) => {
+        logger.warn("AI_REJECTED", { reason });
+      },
+      onProviderInvocation: () => {
+        logger.info("AI_PROVIDER_INVOCATION");
+      },
+      onProviderLatency: (durationMillis) => {
+        logger.info("AI_PROVIDER_LATENCY", { durationMillis });
+      },
+    })({
+      auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
+      data: request.data,
+    });
+    if ("code" in result) {
+      throw new HttpsError(result.code, "Request rejected");
+    }
+    // Never log the operations themselves: they carry customer names and amounts.
+    logger.info("AI_LEDGER_RESULT", {
+      status: result.status,
+      operationCount: result.operations?.length ?? 0,
+      pageIncomplete: result.pageIncomplete,
+    });
     return result;
   },
 );

@@ -256,7 +256,13 @@ class AiDebugLabGuardsTest {
         assertTrue("must use rememberSaveable for the pending URI", source.contains("rememberSaveable"))
         assertTrue("must define a URI saver", source.contains("Saver<Uri?, String>"))
         assertTrue("must bind the saver via stateSaver", source.contains("stateSaver"))
-        assertTrue("must sweep stale captures on entry", source.contains("deleteStale(except = pendingCaptureUri)"))
+        // The sweep must spare BOTH pending captures: the chat photo and the ledger page are
+        // written to the same directory, and sparing only one of them deleted the other one out
+        // from under the camera.
+        assertTrue(
+            "must sweep stale captures on entry sparing both pending captures",
+            source.contains("deleteStaleExcept(listOf(pendingCaptureUri, pendingLedgerUri))"),
+        )
     }
 
     @Test

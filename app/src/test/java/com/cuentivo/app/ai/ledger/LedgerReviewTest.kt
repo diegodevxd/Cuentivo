@@ -574,17 +574,23 @@ class LedgerReviewTest {
     fun ronda3_confirmation_blocked_when_financial_diagnostic_present() {
         val initial = AiDebugLabModel()
         val extracting = AiDebugLabMachine.onStartLedgerExtraction(initial, "sess-1", "biz-1")
+        val validOp = LedgerOperation(99, ProposedLedgerKind.SALE, "ValidCustomer", "1500")
 
         // 1. Zero amount: syntactically registerable but financially blocked
+        // Paired with a valid executable operation (executableOperationsCount > 0) to isolate the financial error block.
         val zeroReviewing = AiDebugLabMachine.onLedgerExtractionResult(
             model = extracting,
             sessionId = "sess-1",
             businessId = "biz-1",
-            operations = listOf(LedgerOperation(1, ProposedLedgerKind.SALE, "Juan", "0")),
+            operations = listOf(
+                LedgerOperation(1, ProposedLedgerKind.SALE, "Juan", "0"),
+                validOp,
+            ),
             generation = extracting.generation,
         )
         val zeroState = zeroReviewing.state as AiDebugLabState.LedgerReviewing
         assertTrue(zeroState.review.summary.hasFinancialErrors)
+        assertTrue("Must have at least 1 executable op to isolate financial error from zero-op check", zeroState.review.summary.executableOperationsCount > 0)
         val zeroOutcome = AiDebugLabMachine.onConfirmLedger(zeroReviewing, "sess-1", "biz-1")
         assertSame(AiLedgerConfirmOutcome.Ignored, zeroOutcome)
 
@@ -593,12 +599,16 @@ class LedgerReviewTest {
             model = extracting,
             sessionId = "sess-1",
             businessId = "biz-1",
-            operations = listOf(LedgerOperation(1, ProposedLedgerKind.PAYMENT, "Maria", "500")),
+            operations = listOf(
+                LedgerOperation(1, ProposedLedgerKind.PAYMENT, "Maria", "500"),
+                validOp,
+            ),
             existingCustomerBalances = emptyMap(),
             generation = extracting.generation,
         )
         val pmtState = pmtReviewing.state as AiDebugLabState.LedgerReviewing
         assertTrue(pmtState.review.summary.hasFinancialErrors)
+        assertTrue("Must have at least 1 executable op to isolate financial error from zero-op check", pmtState.review.summary.executableOperationsCount > 0)
         val pmtOutcome = AiDebugLabMachine.onConfirmLedger(pmtReviewing, "sess-1", "biz-1")
         assertSame(AiLedgerConfirmOutcome.Ignored, pmtOutcome)
 
@@ -607,12 +617,16 @@ class LedgerReviewTest {
             model = extracting,
             sessionId = "sess-1",
             businessId = "biz-1",
-            operations = listOf(LedgerOperation(1, ProposedLedgerKind.PAYMENT, "Carlos", "1000")),
+            operations = listOf(
+                LedgerOperation(1, ProposedLedgerKind.PAYMENT, "Carlos", "1000"),
+                validOp,
+            ),
             existingCustomerBalances = mapOf(CustomerNameNormalizer.key("Carlos") to 400L),
             generation = extracting.generation,
         )
         val pmtExceedState = pmtExceedReviewing.state as AiDebugLabState.LedgerReviewing
         assertTrue(pmtExceedState.review.summary.hasFinancialErrors)
+        assertTrue("Must have at least 1 executable op to isolate financial error from zero-op check", pmtExceedState.review.summary.executableOperationsCount > 0)
         val pmtExceedOutcome = AiDebugLabMachine.onConfirmLedger(pmtExceedReviewing, "sess-1", "biz-1")
         assertSame(AiLedgerConfirmOutcome.Ignored, pmtExceedOutcome)
 
@@ -623,12 +637,14 @@ class LedgerReviewTest {
             businessId = "biz-1",
             operations = listOf(
                 LedgerOperation(1, ProposedLedgerKind.SALE, "OverflowUser", "100"),
+                validOp,
             ),
             existingCustomerBalances = mapOf(CustomerNameNormalizer.key("OverflowUser") to Long.MAX_VALUE),
             generation = extracting.generation,
         )
         val overflowState = overflowReviewing.state as AiDebugLabState.LedgerReviewing
         assertTrue(overflowState.review.summary.hasFinancialErrors)
+        assertTrue("Must have at least 1 executable op to isolate financial error from zero-op check", overflowState.review.summary.executableOperationsCount > 0)
         val overflowOutcome = AiDebugLabMachine.onConfirmLedger(overflowReviewing, "sess-1", "biz-1")
         assertSame(AiLedgerConfirmOutcome.Ignored, overflowOutcome)
     }

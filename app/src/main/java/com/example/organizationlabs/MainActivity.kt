@@ -1477,6 +1477,7 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 } else {
+                    val ledgerExtractionGateway = remember { com.cuentivo.app.ai.ledger.LedgerExtractionGateway() }
                     CuentivoApp(
                         state,
                         customers,
@@ -1512,6 +1513,20 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     salePreviewResolver = aiSalePreviewResolver::resolve,
+                    // Reading a photographed notebook page goes through the same paid boundary as the rest of
+                    // CuentivoAI: the callable enforces auth, App Check, entitlement and quota, and the client
+                    // only carries the image there and the operations back.
+                    // The review shows what each customer already owed, so it has to come from the
+                    // ledger itself. Without it every customer looks new with a zero balance and
+                    // legitimate payments get refused for having no debt to pay.
+                    ledgerBalancesResolver = { businessId ->
+                        database.customerDao().activeWithBalances(businessId).associate { row ->
+                            row.customer.normalizedName to row.balanceCents
+                        }
+                    },
+                    extractLedgerPage = { requestId, imageBase64, imageMimeType ->
+                        ledgerExtractionGateway.extractPage(requestId, imageBase64, imageMimeType)
+                    },
                     confirmSale = { request ->
                         val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
                         if (activeBusinessId == null || activeBusinessId != request.businessId || currentUserId.isBlank()) {
