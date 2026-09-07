@@ -85,7 +85,15 @@ fun LedgerReviewContent(
     modifier: Modifier = Modifier,
 ) {
     var editingOperation by remember { mutableStateOf<LedgerOperation?>(null) }
+    // The rows still waiting to be confirmed, as line indices. Kept as indices and not as objects
+    // because every edit rebuilds the review, and the object held here would go stale mid-walk.
+    var pendingReviewQueue by remember { mutableStateOf<List<Int>>(emptyList()) }
     val hasRowsWithoutDate = review.operations.filter { isRegisterableLedgerOperation(it) }.any { it.date == null }
+    // What the model read but would not vouch for. Registering one of these without a person having
+    // looked at it is the whole thing this feature must never do, so they stay out of the count --
+    // but leaving the person to discover, unaided, that every row needs a tap is how a working
+    // import looked like a dead button.
+    val rowsNeedingReview = review.operations.filterNot { isRegisterableLedgerOperation(it) }
 
     Column(
         modifier = modifier
@@ -143,11 +151,20 @@ fun LedgerReviewContent(
         }
 
         // Financial & Date Block Alert (if any)
-        if (review.summary.hasFinancialErrors || review.summary.executableOperationsCount == 0 || review.summary.hasMissingDates) {
+        // Also when some rows are fine and others are not: a page that registers 8 of its 20 rows
+        // and says nothing about the other 12 is the quiet half-import this screen exists to prevent.
+        if (review.summary.hasFinancialErrors || review.summary.executableOperationsCount == 0 ||
+            review.summary.hasMissingDates || rowsNeedingReview.isNotEmpty()
+        ) {
             FinancialErrorBanner(
                 diagnostics = review.summary.financialDiagnostics,
                 hasZeroOps = review.summary.executableOperationsCount == 0,
                 hasMissingDates = review.summary.hasMissingDates,
+                rowsNeedingReviewCount = rowsNeedingReview.size,
+                onStartReview = {
+                    pendingReviewQueue = rowsNeedingReview.map { it.lineIndex }.drop(1)
+                    editingOperation = rowsNeedingReview.firstOrNull()
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -200,7 +217,10 @@ fun LedgerReviewContent(
         EditLedgerOperationDialog(
             operation = op,
             captureFile = captureFile,
-            onDismiss = { editingOperation = null },
+            onDismiss = {
+                editingOperation = null
+                pendingReviewQueue = emptyList()
+            },
             onSave = { updatedName, updatedAmount, updatedKind, updatedDate ->
                 // Saving is an explicit confirmation of all three fields, not a diff. Someone who
                 // opens a doubtful row, checks it against the crop and saves has resolved the
@@ -210,7 +230,13 @@ fun LedgerReviewContent(
                 onUpdateAmount(op.lineIndex, updatedAmount)
                 onUpdateKind(op.lineIndex, updatedKind)
                 onUpdateDate(op.lineIndex, updatedDate)
-                editingOperation = null
+                // Straight on to the next doubtful row. Twenty rows means twenty confirmations
+                // either way -- what changes is whether the person has to hunt for each one.
+                val nextLineIndex = pendingReviewQueue.firstOrNull()
+                pendingReviewQueue = pendingReviewQueue.drop(1)
+                editingOperation = nextLineIndex?.let { next ->
+                    review.operations.firstOrNull { it.lineIndex == next }
+                }
             },
         )
     }
@@ -353,6 +379,8 @@ private fun FinancialErrorBanner(
     diagnostics: List<OperationFinancialDiagnostic>,
     hasZeroOps: Boolean,
     hasMissingDates: Boolean = false,
+    rowsNeedingReviewCount: Int = 0,
+    onStartReview: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -366,11 +394,27 @@ private fun FinancialErrorBanner(
         ) {
             if (hasZeroOps && diagnostics.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.ai_ledger_error_zero_operations),
+                    text = if (rowsNeedingReviewCount > 0) {
+                        stringResource(R.string.ai_ledger_error_rows_need_review, rowsNeedingReviewCount)
+                    } else {
+                        stringResource(R.string.ai_ledger_error_zero_operations)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     fontWeight = FontWeight.Medium,
                 )
+            }
+            if (rowsNeedingReviewCount > 0) {
+                TextButton(
+                    onClick = onStartReview,
+                    modifier = Modifier.testTag("ledger-start-review-button"),
+                ) {
+                    Text(
+                        text = stringResource(R.string.ai_ledger_action_review_uncertain, rowsNeedingReviewCount),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
             }
             if (hasMissingDates && diagnostics.isEmpty() && !hasZeroOps) {
                 Text(
@@ -769,7 +813,10 @@ private fun EditLedgerOperationDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("ledger-edit-cancel-button"),
+            ) {
                 Text(stringResource(R.string.ai_ledger_action_cancel))
             }
         },

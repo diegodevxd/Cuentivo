@@ -655,6 +655,8 @@
     <string name="ai_ledger_badge_uncertain">Dudoso</string>
     <string name="ai_ledger_unresolved_notice">Renglón con datos pendientes de resolver</string>
     <string name="ai_ledger_error_zero_operations">No hay operaciones listas para registrar. Resuelve los campos dudosos o ilegibles.</string>
+    <string name="ai_ledger_error_rows_need_review">Gemini leyó %1$d renglones con dudas. Revísalos contra la foto para poder registrarlos.</string>
+    <string name="ai_ledger_action_review_uncertain">Revisar los %1$d dudosos</string>
     <string name="ai_ledger_error_zero_amount">Renglón con importe en cero: el monto debe ser mayor a cero centavos.</string>
     <string name="ai_ledger_error_overflow">Renglón con desbordamiento numérico: el monto excede el límite permitido.</string>
     <string name="ai_ledger_error_payment_without_debt">Abono sin deuda: el cliente no tiene saldo pendiente por cobrar.</string>
