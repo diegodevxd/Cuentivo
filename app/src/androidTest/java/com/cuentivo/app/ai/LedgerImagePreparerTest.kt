@@ -90,8 +90,20 @@ class LedgerImagePreparerTest {
     }
 
     @Test
-    fun the_sample_size_never_upscales() {
+    fun the_sample_size_decodes_cheaply_without_throwing_away_detail() {
+        // It stops one step BEFORE going under the target, so the precise scaling still has pixels
+        // to work with. Halving all the way down is what erased the small raised centavos.
         assertEquals(1, LedgerImagePreparer.sampleSizeFor(800, 600))
-        assertEquals(4, LedgerImagePreparer.sampleSizeFor(8000, 6000))
+        assertEquals(2, LedgerImagePreparer.sampleSizeFor(8000, 6000))
+    }
+
+    @Test
+    fun a_page_just_over_the_limit_is_not_halved_to_a_quarter() {
+        val file = writeJpeg("justover.jpg", 4801, 3600)
+
+        LedgerImagePreparer.prepareInPlace(file)
+
+        val (width, height) = sizeOf(file)
+        assertEquals("A page just over the limit must land ON the limit", LedgerImagePreparer.MAX_EDGE_PIXELS, maxOf(width, height))
     }
 }

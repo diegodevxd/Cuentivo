@@ -61,20 +61,40 @@ object LedgerImagePreparer {
         val decoded = runCatching { BitmapFactory.decodeFile(source.absolutePath, options) }.getOrNull()
             ?: return null
 
-        val rotated = if (rotation == 0f) {
+        // Sampling only halves, so a 4801 px page would land near 1200 when 2400 is allowed —
+        // and the first thing to disappear at that size are the small raised centavos. Decode
+        // conservatively, then scale exactly to the limit.
+        val longestEdge = maxOf(decoded.width, decoded.height)
+        val scaled = if (longestEdge <= MAX_EDGE_PIXELS) {
             decoded
+        } else {
+            val ratio = MAX_EDGE_PIXELS.toDouble() / longestEdge
+            val target = runCatching {
+                Bitmap.createScaledBitmap(
+                    decoded,
+                    (decoded.width * ratio).toInt().coerceAtLeast(1),
+                    (decoded.height * ratio).toInt().coerceAtLeast(1),
+                    true,
+                )
+            }.getOrNull() ?: return null
+            if (target !== decoded) decoded.recycle()
+            target
+        }
+
+        val rotated = if (rotation == 0f) {
+            scaled
         } else {
             runCatching {
                 Bitmap.createBitmap(
-                    decoded,
+                    scaled,
                     0,
                     0,
-                    decoded.width,
-                    decoded.height,
+                    scaled.width,
+                    scaled.height,
                     Matrix().apply { postRotate(rotation) },
                     true,
                 )
-            }.getOrNull().also { if (it !== decoded) decoded.recycle() } ?: return null
+            }.getOrNull().also { if (it !== scaled) scaled.recycle() } ?: return null
         }
 
         return try {
@@ -90,10 +110,15 @@ object LedgerImagePreparer {
     }
 
     /**
-     * Largest power of two that brings both edges under [MAX_EDGE_PIXELS]. Never upscales: a photo
-     * already small enough is decoded as it is.
+     * Largest power of two that still leaves both edges at or above [MAX_EDGE_PIXELS], so the decode
+     * is cheap without throwing away detail the final scaling still needs. Returns 1 for a photo
+     * that is already small: nothing is ever upscaled.
+     *
+     * takeWhile before lastOrNull on purpose: the sequence is infinite, and  over it never
+     * returns.
      */
     fun sampleSizeFor(width: Int, height: Int): Int =
         generateSequence(1) { it * 2 }
-            .first { width / it <= MAX_EDGE_PIXELS && height / it <= MAX_EDGE_PIXELS }
+            .takeWhile { width / it >= MAX_EDGE_PIXELS && height / it >= MAX_EDGE_PIXELS }
+            .lastOrNull() ?: 1
 }

@@ -106,7 +106,13 @@ describe("GeminiLedgerProvider", () => {
 
       const itemProps = ops.items.properties;
       expect(itemProps.amountCents.type).toBe("string");
-      expect(itemProps.amountCents.pattern).toBe("^(0|[1-9][0-9]{0,17})$");
+      // El schema NO lleva pattern, ni minLength, ni uniqueItems, ni exclusiveMinimum: Gemini
+      // acepta solo un subconjunto de JSON Schema y una sola palabra fuera de el hace que rechace
+      // la peticion entera con INVALID_ARGUMENT, sin decir cual. El formato canonico de centavos lo
+      // sigue exigiendo parseLedgerExtraction, que es la garantia de verdad.
+      expect(itemProps.amountCents.pattern).toBeUndefined();
+      expect(itemProps.customerName.minLength).toBeUndefined();
+      expect(itemProps.uncertainFields.uniqueItems).toBeUndefined();
       expect(itemProps.proposedKind.enum).toEqual(["PRIOR_DEBT", "SALE", "PAYMENT"]);
       expect(itemProps.uncertainFields.items.enum).toEqual(["AMOUNT", "CUSTOMER", "DATE", "KIND"]);
       expect(itemProps.unreadableFields.items.enum).toEqual(["AMOUNT", "CUSTOMER", "DATE", "KIND"]);
