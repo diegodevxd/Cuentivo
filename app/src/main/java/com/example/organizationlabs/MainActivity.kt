@@ -1567,6 +1567,19 @@ class MainActivity : ComponentActivity() {
                             row.customer.normalizedName to row.balanceCents
                         }
                     },
+                    ledgerCustomersResolver = { businessId ->
+                        // Only active, undeleted customers: the same set the rest of the app treats
+                        // as existing. An open balance stands in for "recently active" -- the query
+                        // already computes it, and somebody who owes money is far likelier to be the
+                        // person a notebook line is about than one settled up a year ago.
+                        database.customerDao().activeWithBalances(businessId).map { row ->
+                            com.cuentivo.app.domain.CustomerCandidate(
+                                id = row.customer.id,
+                                name = row.customer.name,
+                                hasRecentActivity = row.balanceCents != 0L,
+                            )
+                        }
+                    },
                     extractLedgerPage = { requestId, imageBase64, imageMimeType ->
                         ledgerExtractionGateway.extractPage(requestId, imageBase64, imageMimeType)
                     },

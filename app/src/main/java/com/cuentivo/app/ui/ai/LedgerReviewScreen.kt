@@ -81,6 +81,9 @@ fun LedgerReviewContent(
     onUpdateDate: (lineIndex: Int, date: SafeDateCandidate?) -> Unit,
     onUpdatePageDate: (pageDateEpochDay: Long?) -> Unit,
     onRemoveRow: (lineIndex: Int) -> Unit,
+    /** Existing customers this page's rows resemble, keyed by lineIndex. Offers, never decisions. */
+    customerMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>> = emptyMap(),
+    onAcceptCustomerAnchor: (lineIndex: Int, candidate: com.cuentivo.app.domain.CustomerCandidate) -> Unit = { _, _ -> },
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -218,6 +221,15 @@ fun LedgerReviewContent(
         EditLedgerOperationDialog(
             operation = op,
             captureFile = captureFile,
+            customerMatch = customerMatches[op.lineIndex],
+            onAcceptCustomerAnchor = { candidate ->
+                onAcceptCustomerAnchor(op.lineIndex, candidate)
+                val nextLineIndex = pendingReviewQueue.firstOrNull()
+                pendingReviewQueue = pendingReviewQueue.drop(1)
+                editingOperation = nextLineIndex?.let { next ->
+                    review.operations.firstOrNull { it.lineIndex == next }
+                }
+            },
             onDismiss = {
                 editingOperation = null
                 pendingReviewQueue = emptyList()
@@ -707,6 +719,8 @@ private fun RowCropThumbnail(
 private fun EditLedgerOperationDialog(
     operation: LedgerOperation,
     captureFile: File?,
+    customerMatch: com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>? = null,
+    onAcceptCustomerAnchor: (com.cuentivo.app.domain.CustomerCandidate) -> Unit = {},
     onDismiss: () -> Unit,
     onSave: (customerName: String, amountCents: String, kind: ProposedLedgerKind, date: SafeDateCandidate?) -> Unit,
 ) {
@@ -757,6 +771,22 @@ private fun EditLedgerOperationDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
+
+                // What the notebook says next to who the business already knows. Offered, not
+                // applied: the name on the paper stays until somebody says these are the same
+                // person, because that decision is what the money follows afterwards.
+                val candidate = customerMatch?.candidate
+                if (candidate != null) {
+                    TextButton(
+                        onClick = { onAcceptCustomerAnchor(candidate) },
+                        modifier = Modifier.fillMaxWidth().testTag("ledger-accept-customer-match"),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.ai_ledger_customer_match_action, candidate.name),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
 
                 OutlinedTextField(
                     value = amount,

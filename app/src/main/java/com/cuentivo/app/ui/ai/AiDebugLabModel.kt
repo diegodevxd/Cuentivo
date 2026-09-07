@@ -84,7 +84,18 @@ sealed interface AiDebugLabState {
         val businessId: String,
         val review: LedgerReview,
         val existingCustomerBalances: Map<String, Long> = emptyMap(),
-    ) : AiDebugLabState
+        /**
+         * The customers this business already has, loaded once when the page arrived.
+         *
+         * Held in the state rather than re-read per edit so the candidates a person is choosing
+         * between cannot change underneath them mid-review.
+         */
+        val customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate> = emptyList(),
+    ) : AiDebugLabState {
+        /** What the app may offer, recomputed from the rows as they are edited. */
+        val customerMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>>
+            get() = com.cuentivo.app.domain.LedgerCustomerMatching.matchesFor(review.operations, customerCandidates)
+    }
     data class LedgerConfirming(
         val sessionId: String,
         val businessId: String,
@@ -957,6 +968,7 @@ object AiDebugLabMachine {
         unreadTextRemaining: Boolean = false,
         pageIncomplete: Boolean = false,
         existingCustomerBalances: Map<String, Long> = emptyMap(),
+        customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate> = emptyList(),
         generation: Long,
         todayEpochDay: Long = java.time.LocalDate.now().toEpochDay(),
     ): AiDebugLabModel {
@@ -983,6 +995,7 @@ object AiDebugLabMachine {
                 businessId = businessId,
                 review = review,
                 existingCustomerBalances = frozenBalances,
+                customerCandidates = java.util.Collections.unmodifiableList(ArrayList(customerCandidates)),
             ),
         )
     }

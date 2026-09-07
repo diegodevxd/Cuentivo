@@ -164,4 +164,54 @@ class LedgerGuidedReviewTest {
         // 999 pesos, not 999 cents. Off by a hundred is the whole bug.
         composeRule.runOnIdle { assertEquals("99900", savedCents) }
     }
+
+    @Test fun a_customer_the_business_already_has_is_offered_but_never_applied_on_its_own() {
+        // The whole point of the match, and its limit. "Rosa Martnez" on the paper resembles the
+        // real "Rosa Martinez", so the app says so -- and does nothing else. Anchoring decides whose
+        // debt this is, and a wrong anchor on a payment settles somebody else's real debt, which in
+        // an append-only ledger costs a compensating movement and an awkward conversation.
+        val rosa = com.cuentivo.app.domain.CustomerCandidate("cust-rosa", "Rosa Martinez")
+        var anchoredTo: String? = null
+
+        composeRule.setContent {
+            var operations by remember { mutableStateOf(listOf(doubtfulSale(0, "Rosa Martnez"))) }
+            val review = LedgerReviewEngine.build(operations = operations, todayEpochDay = today)
+            LedgerReviewContent(
+                review = review,
+                captureFile = null,
+                customerMatches = com.cuentivo.app.domain.LedgerCustomerMatching.matchesFor(
+                    operations,
+                    listOf(rosa),
+                ),
+                onAcceptCustomerAnchor = { line, candidate ->
+                    anchoredTo = candidate.id
+                    operations = LedgerReviewEngine.setOperationCustomerAnchor(
+                        currentOperations = operations,
+                        lineIndex = line,
+                        customerId = candidate.id,
+                        customerName = candidate.name,
+                    )
+                },
+                onUpdateAmount = { line, amount -> operations = LedgerReviewEdits.applyAmount(operations, line, amount) },
+                onUpdateCustomer = { line, name -> operations = LedgerReviewEdits.applyCustomer(operations, line, name) },
+                onUpdateKind = { line, kind -> operations = LedgerReviewEdits.applyKind(operations, line, kind) },
+                onUpdateDate = { line, date -> operations = LedgerReviewEdits.applyDate(operations, line, date, today) },
+                onUpdatePageDate = { },
+                onRemoveRow = { },
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-start-review-button").performClick()
+        // Offered, and nothing anchored until it is tapped.
+        composeRule.onNodeWithTag("ledger-accept-customer-match").assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals(null, anchoredTo) }
+
+        composeRule.onNodeWithTag("ledger-accept-customer-match").performClick()
+
+        composeRule.runOnIdle { assertEquals("cust-rosa", anchoredTo) }
+        // Accepting is a human confirmation, so the row becomes registerable.
+        composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsEnabled()
+    }
 }

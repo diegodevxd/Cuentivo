@@ -95,6 +95,7 @@ import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
 import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
 import com.cuentivo.app.ai.ledger.LedgerImagePreparer
 import com.cuentivo.app.ai.ledger.LedgerOperation
+import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.ai.capture.AiCaptureStore
 import com.cuentivo.app.ai.capture.AiOcrEngine
@@ -167,6 +168,8 @@ fun AiDebugLabScreen(
     voiceRecognizer: VoiceRecognizer? = null,
     extractLedgerPage: (suspend (requestId: String, imageBase64: String, imageMimeType: String) -> LedgerExtractionCallResult)? = null,
     ledgerBalancesResolver: (suspend (businessId: String) -> Map<String, Long>)? = null,
+    /** The customers this business already has, so a misread name can be matched against them. */
+    ledgerCustomersResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.CustomerCandidate>)? = null,
     confirmLedgerBatch: (suspend (businessId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
@@ -350,6 +353,13 @@ fun AiDebugLabScreen(
                 } else {
                     emptyMap()
                 }
+                val customerCandidates = if (ledgerCustomersResolver != null) {
+                    withContext(Dispatchers.IO) {
+                        runCatching { ledgerCustomersResolver(businessId) }.getOrDefault(emptyList())
+                    }
+                } else {
+                    emptyList()
+                }
                 val outcome = withContext(Dispatchers.IO) {
                     val bytes = runCatching { file.readBytes() }.getOrNull()
                     if (bytes == null) {
@@ -373,6 +383,7 @@ fun AiDebugLabScreen(
                                 unreadTextRemaining = outcome.extraction.unreadTextRemaining,
                                 pageIncomplete = outcome.extraction.pageIncomplete,
                                 existingCustomerBalances = balances,
+                                customerCandidates = customerCandidates,
                                 generation = token,
                             )
                         }
@@ -511,6 +522,20 @@ fun AiDebugLabScreen(
             LedgerReviewContent(
                 review = ledgerReviewing.review,
                 captureFile = ledgerCaptureFile,
+                customerMatches = ledgerReviewing.customerMatches,
+                onAcceptCustomerAnchor = { lineIndex, candidate ->
+                    // Only from an explicit tap. A score, however high, never calls this: showing a
+                    // candidate is not the same as somebody confirming it, and a wrong anchor on a
+                    // payment settles another person's real debt.
+                    model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
+                        LedgerReviewEngine.setOperationCustomerAnchor(
+                            currentOperations = operations,
+                            lineIndex = lineIndex,
+                            customerId = candidate.id,
+                            customerName = candidate.name,
+                        )
+                    }
+                },
                 onUpdateAmount = { lineIndex, amountCents ->
                     model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
                         LedgerReviewEdits.applyAmount(operations, lineIndex, amountCents)
