@@ -5,8 +5,14 @@ Nada se declara listo sin la salida real de los comandos.
 
 ## 0. Antes de empezar
 
-- Rama de trabajo `codex/neo-fintech`, árbol comiteado o con los cambios aislados que se van a subir.
-- Emulador `Medium_Phone` (API 37) disponible para las instrumentadas: `adb devices`.
+- Rama de trabajo `diegodevxd/feature-cuentivo-ai`, árbol comiteado o con los cambios aislados
+  que se van a subir. (`codex/neo-fintech` fue la rama hasta agosto de 2026.)
+- Un dispositivo para las instrumentadas. Hoy se usa el **teléfono físico A059P** conectado en
+  depuración; el emulador `Medium_Phone` (API 37) sirve igual pero se degrada con el uso.
+  Comprobar con `adb devices`, y si es emulador esperar además a que `adb shell dumpsys user` dé
+  `0=RUNNING_UNLOCKED`: `adb devices` dice `device` con el sistema todavía a medias.
+- **Si la app instalada en el teléfono es la debug, `installDebug` actualiza encima.** No
+  desinstalar: eso borra la base local de Room y obliga a registrar otra vez el token de App Check.
 - Entorno Gradle (Norton interfiere TLS; si se limpia `C:\tmp`, reexportar el cacerts):
 
 ```powershell
@@ -25,7 +31,7 @@ $env:JAVA_TOOL_OPTIONS='-Djavax.net.ssl.trustStore=C:\tmp\cuentivo-jbr-cacerts -
 ## 2. Puertas locales
 
 ```powershell
-.\gradlew.bat testDebugUnitTest --no-daemon --no-configuration-cache --no-watch-fs --console=plain
+.\gradlew.bat testDebugUnitTest --rerun-tasks --no-daemon --no-configuration-cache --no-watch-fs --console=plain
 .\gradlew.bat compileDebugAndroidTestKotlin
 .\gradlew.bat lintDebug
 ```
@@ -40,17 +46,56 @@ $env:JAVA_TOOL_OPTIONS='-Djavax.net.ssl.trustStore=C:\tmp\cuentivo-jbr-cacerts -
 - Instrumentadas relevantes en el emulador:
 
 ```powershell
-$env:ANDROID_SERIAL='emulator-5554'
 .\gradlew.bat connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.ui.CuentivoAppTest'
 ```
 
-- Paridad de idiomas (es/en) — deben ser iguales, hoy 363 + plurals:
+- Paridad de idiomas (es/en) — deben ser iguales. El número envejece, así que cuenta, no lo copies:
 
 ```powershell
 rg -c "<string name=" app/src/main/res/values/strings.xml app/src/main/res/values-en/strings.xml
 ```
 
 - Puerta del idioma de `CLAUDE.md` (no literales visibles en `ui/`).
+
+## 2b. Declaraciones de Play que viajan CON el AAB
+
+No son código y **bloquean la publicación** si faltan. Van en el mismo envío que el binario, no
+después.
+
+- **Seguridad de los datos** (Play Console → Política y programas → Contenido de la app → Seguridad
+  de los datos). Lo que la app hace hoy y cómo se declara:
+
+| Dato | ¿Se recopila? | ¿Efímero? | ¿Obligatorio? |
+|---|---|---|---|
+| Audio (grabaciones de voz) | Sí | **Sí** | No, el usuario puede escribir |
+| Fotos | Sí | **No** | No, sólo para importar libreta |
+
+  El audio va al reconocimiento de voz de Android —prefiere el del dispositivo y cae al de Google si
+  no está— y **Cuentivo nunca lo recibe, sólo texto**: por eso es efímero. La foto en cambio la
+  transmite el propio backend a Gemini, **que retiene registros para supervisión de abuso**, así que
+  ahí efímero es "No".
+
+  Revisa además que el texto que CuentivoAI ya enviaba a Gemini —con **nombres de clientes** e
+  **importes**— esté declarado como información personal y financiera.
+
+- **Política de privacidad**: tiene que mencionar el micrófono y la foto. La frase correcta sobre la
+  foto es **"sin archivo permanente de fotos en Cuentivo"**, nunca "no se guarda en ningún lado":
+  existe un temporal local mientras dura la revisión y el proveedor retiene registros de abuso.
+  Decir lo segundo sería falso en un documento legal. Subir también la fecha de actualización.
+
+- **Permisos del manifiesto**: hoy `RECORD_AUDIO` y `POST_NOTIFICATIONS`. **No hay `CAMERA`** a
+  propósito: la foto usa la cámara del sistema y el Photo Picker. Si algún día aparece `CAMERA`,
+  es un error de diseño, no una mejora.
+
+## 2c. Instrumentadas financieras, aparte
+
+La suite instrumentada completa aborta en `ProductPhotoSourceTest`, y **ese aborto no cuenta como
+verde**. Las clases que tocan dinero se corren una por una:
+
+```powershell
+.gradlew.bat connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.ai.AiSaleExecutionIsolationTest'
+.gradlew.bat connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.ai.LedgerBatchIsolationTest'
+```
 
 ## 3. Firma y llave
 

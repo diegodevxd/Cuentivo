@@ -68,7 +68,7 @@ solas; en otros agentes son sólo documentación, así que ahí hay que aplicarl
 
 ### Emulador
 
-SDK en `C:\Users\pibed\AppData\Local\Android\Sdk`, `adb` en `$SDK/platform-tools/`. Hay un AVD, `Medium_Phone`, **API 37** — es la única imagen instalada, por eso nada por debajo de API 33 se ha probado nunca. Para `adb pull` desde Git Bash hace falta `MSYS_NO_PATHCONV=1` y rutas de Windows, o falla.
+SDK en `C:\Users\pibed\AppData\Local\Android\Sdk`, `adb` en `$SDK/platform-tools/`. Hay un AVD, `Medium_Phone`, **API 37** — es la única imagen instalada, por eso nada por debajo de API 33 se ha probado nunca. Para `adb pull` desde Git Bash hace falta `MSYS_NO_PATHCONV=1` y rutas de Windows, o falla. Cuando el teléfono físico de Diego (A059P, Android 16) está conectado en depuración, sustituye al emulador y es la ruta preferida: no se degrada.
 
 **El emulador se degrada con el uso.** Si una suite aborta con `INSTRUMENTATION_ABORTED: System has crashed` o aparece `RootViewWithoutFocusException`, la causa suele ser un SIGSEGV del driver GL que deja un diálogo ANR de `com.android.systemui` dueño del foco. Se comprueba con `adb shell dumpsys window | grep mCurrentFocus` y se resuelve arrancando en frío hasta que `adb shell dumpsys user` dé `0=RUNNING_UNLOCKED`:
 
@@ -252,7 +252,7 @@ El trabajo de i18n no está hecho hasta que esto salga vacío (salvo etiquetas d
 grep -rnE '(Text\(|text = |label = |title = |detail = |placeholder = |contentDescription = |emptyText = |actionLabel = |eyebrow = |note = |backDescription = )"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ¿¡][^"]*"' app/src/main/java/com/cuentivo/app/ui --include=*.kt | grep -vE '"\$ "|" · "|testTag|neo-action-press|"Cuentivo"'
 ```
 
-Y la paridad de claves debe seguir cuadrando (2026-08-24: 436 y 436). El número envejece, así que cuenta, no confíes en esta línea:
+Y la paridad de claves debe seguir cuadrando (2026-09-06: 609 y 609). El número envejece, así que cuenta, no confíes en esta línea:
 
 ```bash
 grep -c "<string name=" app/src/main/res/values/strings.xml app/src/main/res/values-en/strings.xml
@@ -269,7 +269,7 @@ al mergear recursos. Lo más seguro es redactar el inglés sin apóstrofos ("do 
 
 ## Notas del repositorio
 
-- Rama de trabajo `codex/neo-fintech`, con upstream en `origin`. `main` quedó en el commit inicial.
+- Rama de trabajo `diegodevxd/feature-cuentivo-ai`, con upstream en `origin`. `codex/neo-fintech` lo fue hasta agosto de 2026 y `main` quedó en el commit inicial.
 - `app/google-services.json` **sí está en `.gitignore`** (y también `*.apk`, `*.aab`, `/dist/`, `/artifacts/`, `*.jks`, `keystore.properties`). Aun así, revisa lo que quedó en staging antes de comitear.
 - `.audit-betterorganitazion/` es la app web original (PWA con Supabase/Stripe) como repo git anidado e ignorado. Es la referencia para la migración de datos: **no se compila ni se modifica**.
 - `.agents/skills/` + `skills-lock.json`: 11 skills de Firebase vendorizadas con hash de integridad.
