@@ -161,11 +161,8 @@ class FirestoreSyncGateway(
                 payload = operation.payload,
                 isPermissionDenied = isPermissionDenied(exception),
             )
-            if (worthChecking && remoteDocumentExists(path)) {
-                // The document is already there and the rules forbid touching it again, which is
-                // exactly what they should do. The row has nothing left to accomplish, so it is
-                // finished rather than parked as a failure that can never clear.
-                SyncUploadResult.Success
+            if (worthChecking) {
+                resolveAgainstPublishedCopy(path, operation.payload, failure)
             } else {
                 SyncUploadResult.Failure(failure)
             }
@@ -173,16 +170,36 @@ class FirestoreSyncGateway(
     }
 
     /**
-     * Asked of the server, never the cache: on the phone that showed this, the cache is precisely
-     * what could not be trusted. Only reached after a denial, so it costs nothing in the normal path.
+     * Decides what a denial means once the server has been asked what is actually up there.
      *
-     * A read that itself fails answers false, and the original denial stands. Claiming a row is done
-     * because we could not check would delete evidence of a write that never landed.
+     * Three answers, and they are genuinely different. The same document already published: the row
+     * is finished. A different document under the same id: these are never rewritable, so the row
+     * can never succeed and is parked saying exactly that, instead of hiding a divergence nobody
+     * would ever look at again. Nothing there at all: the denial was real, and it stands.
+     *
+     * Asked of the server, never the cache -- on the phone that showed this, the cache is precisely
+     * what could not be trusted. Only reached after a denial, so the normal path pays nothing.
      */
-    private fun remoteDocumentExists(path: String): Boolean = try {
-        Tasks.await(firestore.document(path).get(Source.SERVER)).exists()
-    } catch (_: Exception) {
-        false
+    private fun resolveAgainstPublishedCopy(
+        path: String,
+        payload: String,
+        denial: SyncFailure,
+    ): SyncUploadResult {
+        val snapshot = try {
+            Tasks.await(firestore.document(path).get(Source.SERVER))
+        } catch (error: Exception) {
+            // Could not ask. That is not the same as "will never work", and parking it permanently
+            // on an unreachable network would strand the row for good over a temporary outage.
+            return SyncUploadResult.Failure(SyncFailure.Transient(error.message ?: "could not read the published copy"))
+        }
+        val remote = snapshot.data ?: return SyncUploadResult.Failure(denial)
+        return if (SyncRemoteImmutability.isAlreadyTheSameDocument(payload.asFirestoreMap(), remote)) {
+            SyncUploadResult.Success
+        } else {
+            SyncUploadResult.Failure(
+                SyncFailure.Permanent("already published with different content at $path"),
+            )
+        }
     }
 
     private fun isPermissionDenied(exception: Exception): Boolean =

@@ -57,6 +57,31 @@ object SyncRemoteImmutability {
         else -> false
     }
 
+    /**
+     * Whether the document already up there is the very one this row was trying to publish.
+     *
+     * Existing is not the same as matching, and the difference matters. If the remote copy holds
+     * something else under the same id, the row is not done -- it is a divergence, and these
+     * documents can never be rewritten, so nobody would ever notice it again if the row were quietly
+     * dropped. So: identical means finished, different means parked with an error that says so.
+     *
+     * Compared after normalising numbers, because the same cents arrive as Int from the queued JSON
+     * and as Long from Firestore, and an amount that matches must not read as a conflict.
+     */
+    fun isAlreadyTheSameDocument(payload: Map<String, Any?>, remote: Map<String, Any?>): Boolean {
+        if (payload.keys != remote.keys) return false
+        return payload.keys.all { normalize(payload[it]) == normalize(remote[it]) }
+    }
+
+    private fun normalize(value: Any?): Any? = when (value) {
+        null -> null
+        is Double -> if (value == Math.floor(value) && !value.isInfinite()) value.toLong() else value
+        is Float -> normalize(value.toDouble())
+        is Number -> value.toLong()
+        is Boolean, is String -> value
+        else -> value.toString()
+    }
+
     private fun roleOf(payload: String): String? = runCatching {
         JSONObject(payload).optString("role").takeIf { it.isNotEmpty() }
     }.getOrNull()

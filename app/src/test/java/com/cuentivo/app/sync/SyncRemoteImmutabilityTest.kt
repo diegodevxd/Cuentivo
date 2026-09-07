@@ -51,6 +51,58 @@ class SyncRemoteImmutabilityTest {
     }
 
     @Test
+    fun `the same cents match whether they arrive as Int or as Long`() {
+        // The queued JSON yields Int, Firestore answers Long. Reading that as a conflict would park
+        // every single financial row the moment this check started running.
+        assertTrue(
+            SyncRemoteImmutability.isAlreadyTheSameDocument(
+                mapOf("totalCents" to 40000, "notes" to null, "isCanceled" to false),
+                mapOf("totalCents" to 40000L, "notes" to null, "isCanceled" to false),
+            ),
+        )
+    }
+
+    @Test
+    fun `a different amount under the same id is not the same document`() {
+        // These documents can never be rewritten, so calling this settled would bury a divergence
+        // where nobody would ever look at it again.
+        assertFalse(
+            SyncRemoteImmutability.isAlreadyTheSameDocument(
+                mapOf("totalCents" to 40000L),
+                mapOf("totalCents" to 40001L),
+            ),
+        )
+    }
+
+    @Test
+    fun `a key too many or too few is not the same document`() {
+        assertFalse(
+            SyncRemoteImmutability.isAlreadyTheSameDocument(
+                mapOf("totalCents" to 1L),
+                mapOf("totalCents" to 1L, "notes" to "algo"),
+            ),
+        )
+        assertFalse(
+            SyncRemoteImmutability.isAlreadyTheSameDocument(
+                mapOf("totalCents" to 1L, "notes" to "algo"),
+                mapOf("totalCents" to 1L),
+            ),
+        )
+    }
+
+    @Test
+    fun `an owner membership whose remote role differs is not settled`() {
+        // Codex's objection, made into a test: the role in the payload says nothing about what is
+        // actually published under that id.
+        assertFalse(
+            SyncRemoteImmutability.isAlreadyTheSameDocument(
+                mapOf("userId" to "u", "role" to "OWNER", "status" to "ACTIVE"),
+                mapOf("userId" to "u", "role" to "OWNER", "status" to "REMOVED"),
+            ),
+        )
+    }
+
+    @Test
     fun `the server is only asked after a permission denial`() {
         // The extra read must never touch the normal path, nor a transient failure: a sale that
         // failed on a flaky network has not been published, and asking would cost a round trip on
