@@ -194,6 +194,8 @@ data class LedgerReviewSummary(
     val priorDebtsCount: Int,
     val excludedRowsCount: Int,
     val financialDiagnostics: List<OperationFinancialDiagnostic>,
+    val pageDateEpochDay: Long? = null,
+    val hasMissingDates: Boolean = false,
 ) {
     /** Legacy alias for compatibility. */
     val totalCustomersCount: Int
@@ -208,7 +210,7 @@ data class LedgerReviewSummary(
      * confirm transition, exposed here so the screen mirrors the block instead of deciding it.
      */
     val canConfirm: Boolean
-        get() = !hasFinancialErrors && executableOperationsCount > 0
+        get() = !hasFinancialErrors && executableOperationsCount > 0 && !hasMissingDates
 }
 
 /**
@@ -221,6 +223,7 @@ data class LedgerReview(
     val unreadTextRemaining: Boolean,
     val pageIncomplete: Boolean,
     val summary: LedgerReviewSummary,
+    val pageDateEpochDay: Long? = null,
 )
 
 /**
@@ -241,6 +244,7 @@ object LedgerReviewEngine {
         unreadTextRemaining: Boolean = false,
         pageIncomplete: Boolean = false,
         existingCustomerBalances: Map<String, Long> = emptyMap(),
+        pageDateEpochDay: Long? = null,
     ): LedgerReview {
         // Defensive copy: isolate snapshot from any caller modifications
         val frozenOps: List<LedgerOperation> = Collections.unmodifiableList(
@@ -385,6 +389,9 @@ object LedgerReviewEngine {
         val visibleCustomersCount = customerGroups.count { it.normalizedCustomerName.isNotEmpty() }
         val newCustomersCount = customerGroups.count { it.willBeCreatedAsCustomer }
 
+        val allExecutableOps = customerGroups.flatMap { it.executableOperations }
+        val hasMissingDates = allExecutableOps.any { it.date == null } && pageDateEpochDay == null
+
         val summary = LedgerReviewSummary(
             newCustomersCount = newCustomersCount,
             visibleCustomersCount = visibleCustomersCount,
@@ -396,6 +403,8 @@ object LedgerReviewEngine {
             priorDebtsCount = priorDebtsCount,
             excludedRowsCount = frozenDiscards.size,
             financialDiagnostics = Collections.unmodifiableList(allFinancialDiagnostics.toList()),
+            pageDateEpochDay = pageDateEpochDay,
+            hasMissingDates = hasMissingDates,
         )
 
         return LedgerReview(
@@ -405,6 +414,7 @@ object LedgerReviewEngine {
             unreadTextRemaining = unreadTextRemaining,
             pageIncomplete = pageIncomplete,
             summary = summary,
+            pageDateEpochDay = pageDateEpochDay,
         )
     }
 

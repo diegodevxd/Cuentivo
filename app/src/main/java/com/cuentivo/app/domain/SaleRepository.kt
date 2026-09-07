@@ -3,6 +3,8 @@ package com.cuentivo.app.domain
 import com.cuentivo.app.data.local.AccountMovementEntity
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ExpectedSaleResult
+import com.cuentivo.app.data.local.ExpectedLedgerBatchResult
+import com.cuentivo.app.data.local.StoredLedgerBatchBundle
 import com.cuentivo.app.data.local.FinancialDao
 import com.cuentivo.app.data.local.OperationEntity
 import com.cuentivo.app.data.local.PaymentAllocationEntity
@@ -110,4 +112,61 @@ class SaleRepository(private val financialDao: FinancialDao) {
             createdProducts = createdProducts,
         )
     }
+
+    suspend fun registerLedgerBatch(plan: PlannedLedgerBatch): ExpectedLedgerBatchResult =
+        financialDao.registerLedgerBatchIdempotently(
+            batchIdempotencyKey = plan.batchIdempotencyKey,
+            businessId = plan.businessId,
+            userId = plan.sellerUserId,
+            nowEpochMillis = plan.nowEpochMillis,
+            newCustomers = plan.newCustomers,
+            sales = plan.sales,
+            saleItems = plan.saleItems,
+            chargeMovements = plan.chargeMovements,
+            payments = plan.payments,
+            paymentMovements = plan.paymentMovements,
+            paymentAllocations = plan.paymentAllocations,
+            executableOperationsCount = plan.executableOperationsCount,
+        )
+
+    suspend fun storedLedgerBatchBundle(
+        businessId: String,
+        batchIdempotencyKey: String,
+        createdCustomerIds: List<String> = emptyList(),
+        saleIds: List<String> = emptyList(),
+        paymentIds: List<String> = emptyList(),
+    ): StoredLedgerBatchBundle? {
+        val opResult = financialDao.operationResultId(batchIdempotencyKey) ?: return null
+        if (opResult != batchIdempotencyKey) return null
+
+        val createdCustomers = createdCustomerIds.mapNotNull { customerId ->
+            financialDao.customerForPayment(customerId)?.takeIf { it.businessId == businessId }
+        }
+
+        val sales = saleIds.mapNotNull { saleId ->
+            financialDao.saleForId(saleId)?.takeIf { it.businessId == businessId }
+        }
+
+        val saleItems = sales.flatMap { financialDao.itemsForSale(it.id) }
+        val chargeMovements = sales.mapNotNull { financialDao.chargeMovementForSale(it.id) }
+
+        val payments = paymentIds.mapNotNull { paymentId ->
+            financialDao.paymentForId(paymentId)?.takeIf { it.businessId == businessId }
+        }
+        val paymentAllocations = payments.flatMap { financialDao.allocationsForPayment(it.id) }
+        val paymentMovements = payments.mapNotNull { financialDao.paymentMovement(businessId, it.id) }
+
+        return StoredLedgerBatchBundle(
+            batchIdempotencyKey = batchIdempotencyKey,
+            businessId = businessId,
+            createdCustomers = createdCustomers,
+            sales = sales,
+            saleItems = saleItems,
+            chargeMovements = chargeMovements,
+            payments = payments,
+            paymentAllocations = paymentAllocations,
+            paymentMovements = paymentMovements,
+        )
+    }
+
 }

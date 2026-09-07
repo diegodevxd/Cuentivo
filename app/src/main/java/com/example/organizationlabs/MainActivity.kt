@@ -1519,6 +1519,49 @@ class MainActivity : ComponentActivity() {
                     // The review shows what each customer already owed, so it has to come from the
                     // ledger itself. Without it every customer looks new with a zero balance and
                     // legitimate payments get refused for having no debt to pay.
+                    // Writing a photographed page: plan first with real debts, then one atomic
+                    // transaction. Returns how many operations were recorded, or null if nothing
+                    // was written, so the screen can tell the truth either way.
+                    confirmLedgerBatch = { businessId, operations ->
+                        val dao = database.financialDao()
+                        val repository = com.cuentivo.app.domain.SaleRepository(dao)
+                        val today = java.time.LocalDate.now().toEpochDay()
+                        com.cuentivo.app.domain.LedgerBatchCoordinator.confirm(
+                            businessId = businessId,
+                            userId = currentUserId,
+                            operations = operations,
+                            pageDateEpochDay = today,
+                            todayEpochDay = today,
+                            nowEpochMillis = System.currentTimeMillis(),
+                            alreadyRecorded = { key -> dao.operationResultId(key) != null },
+                            loadCustomersByNormalizedName = {
+                                database.customerDao().activeWithBalances(businessId)
+                                    .associate { row -> row.customer.normalizedName to row.customer }
+                            },
+                            loadOutstandingByCustomerId = {
+                                database.customerDao().activeWithBalances(businessId).associate { row ->
+                                    row.customer.id to dao.outstandingSalesForCustomer(businessId, row.customer.id)
+                                        .map { com.cuentivo.app.domain.OutstandingSale(it.id, it.outstandingCents, it.dueDateEpochDay, it.saleDateEpochDay) }
+                                }
+                            },
+                            write = { plan -> repository.registerLedgerBatch(plan) },
+                            enqueue = { plan ->
+                                // Best effort, exactly like the rest of this app: a row already
+                                // committed must not be reported as failed because the outbox
+                                // hiccuped. The known cost is the structural gap CLAUDE.md documents.
+                                val stamp = plan.nowEpochMillis
+                                runCatching {
+                                    plan.newCustomers.forEach { syncQueue.enqueue(it.businessId, "CUSTOMER", it.id, stamp, SyncPayloads.customer(it)) }
+                                    plan.sales.forEach { syncQueue.enqueue(it.businessId, "SALE", it.id, stamp, SyncPayloads.sale(it)) }
+                                    plan.saleItems.forEach { syncQueue.enqueue(businessId, "SALE_ITEM", it.id, stamp, SyncPayloads.saleItem(it)) }
+                                    plan.chargeMovements.forEach { syncQueue.enqueue(it.businessId, "MOVEMENT", it.id, stamp, SyncPayloads.movement(it)) }
+                                    plan.payments.forEach { syncQueue.enqueue(it.businessId, "PAYMENT", it.id, stamp, SyncPayloads.payment(it)) }
+                                    plan.paymentAllocations.forEach { syncQueue.enqueue(businessId, "PAYMENT_ALLOCATION", it.id, stamp, SyncPayloads.allocation(it)) }
+                                    plan.paymentMovements.forEach { syncQueue.enqueue(it.businessId, "MOVEMENT", it.id, stamp, SyncPayloads.movement(it)) }
+                                }
+                            },
+                        )
+                    },
                     ledgerBalancesResolver = { businessId ->
                         database.customerDao().activeWithBalances(businessId).associate { row ->
                             row.customer.normalizedName to row.balanceCents

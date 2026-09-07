@@ -141,6 +141,10 @@ object OpeningBalance {
         notes: String? = null,
         /**
          * The date of the sale as recorded in the notebook, defaulting to todayEpochDay.
+         * Defaulted to today rather than guessed for new customer onboarding: nobody knows when
+         * the notebook entry was made, and inventing a date would feed the payment score evidence
+         * that was never observed. The parameter exists precisely because a physical notebook or
+         * page import does provide an observed date.
          * Must be positive and not in the future (<= todayEpochDay).
          */
         saleDateEpochDay: Long = todayEpochDay,

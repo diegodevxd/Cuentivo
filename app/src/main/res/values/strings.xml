@@ -624,6 +624,9 @@
     <string name="ai_ledger_summary_new_customers_count">Nuevos clientes a crear: %1$d</string>
     <string name="ai_ledger_crop_not_available">Sin recorte disponible</string>
     <string name="ai_ledger_page_incomplete_warning">Puede faltar texto de esta página. Revisa que estén todos los renglones antes de registrar.</string>
+    <string name="ai_ledger_recorded">Listo: %1$d movimientos registrados de tu libreta.</string>
+    <string name="ai_ledger_recorded_with_skipped">Listo: %1$d movimientos registrados. %2$d renglones quedaron fuera.</string>
+    <string name="ai_ledger_failed">No se pudo registrar la libreta. No se guardó nada; puedes revisarla otra vez.</string>
     <string name="ai_ledger_row_date">Fecha: %1$s</string>
     <string name="ai_ledger_row_date_missing">Sin fecha en la libreta</string>
     <string name="ai_ledger_field_date">Fecha (AAAA-MM-DD)</string>
@@ -657,4 +660,7 @@
     <string name="ai_ledger_error_overflow">Renglón con desbordamiento numérico: el monto excede el límite permitido.</string>
     <string name="ai_ledger_error_payment_without_debt">Abono sin deuda: el cliente no tiene saldo pendiente por cobrar.</string>
     <string name="ai_ledger_error_payment_exceeds_debt">Abono excede la deuda: el monto abonado supera el saldo pendiente.</string>
+    <string name="ai_ledger_error_missing_page_date">Hay renglones sin fecha: ingresa una fecha para la página antes de registrar.</string>
+    <string name="ai_ledger_field_page_date">Fecha de la página (AAAA-MM-DD)</string>
+    <string name="ai_ledger_field_page_date_invalid">La fecha de la página no existe o es futura</string>
 </resources>

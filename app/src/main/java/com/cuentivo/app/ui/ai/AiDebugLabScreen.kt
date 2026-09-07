@@ -93,6 +93,8 @@ import com.cuentivo.app.ai.capture.AiCapturePolicy
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
 import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
+import com.cuentivo.app.ai.ledger.LedgerOperation
+import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.ai.capture.AiCaptureStore
 import com.cuentivo.app.ai.capture.AiOcrEngine
 import com.cuentivo.app.data.local.AiDailyChatRepository
@@ -164,6 +166,7 @@ fun AiDebugLabScreen(
     voiceRecognizer: VoiceRecognizer? = null,
     extractLedgerPage: (suspend (requestId: String, imageBase64: String, imageMimeType: String) -> LedgerExtractionCallResult)? = null,
     ledgerBalancesResolver: (suspend (businessId: String) -> Map<String, Long>)? = null,
+    confirmLedgerBatch: (suspend (businessId: String, operations: List<LedgerOperation>) -> Int?)? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     var voiceModel by remember { mutableStateOf(VoiceCaptureModel()) }
@@ -570,15 +573,34 @@ fun AiDebugLabScreen(
                     }
                 },
                 onConfirm = {
-                    // The batch write itself is Fase B step 5. The machine already refuses to
-                    // start on a page with financial errors, so this transition is the seam that
-                    // step 5 will complete rather than a button that silently does nothing.
+                    val write = confirmLedgerBatch
                     val outcome = AiDebugLabMachine.onConfirmLedger(model, ledgerReviewing.sessionId, ledgerReviewing.businessId)
-                    if (outcome is AiLedgerConfirmOutcome.Started) {
+                    if (outcome is AiLedgerConfirmOutcome.Started && write != null) {
                         model = outcome.model
-                        // Confirming ends the import, so the photo goes with it. The batch write is
-                        // step 5 and works from the reviewed operations, not from the image.
-                        discardLedgerCapture()
+                        val token = model.generation
+                        val sessionId = ledgerReviewing.sessionId
+                        val businessId = ledgerReviewing.businessId
+                        val operations = ledgerReviewing.review.operations
+                        val skipped = operations.count { !isRegisterableLedgerOperation(it) }
+                        scope.launch {
+                            val recorded = withContext(Dispatchers.IO) {
+                                runCatching { write(businessId, operations) }.getOrNull()
+                            }
+                            model = AiDebugLabMachine.onLedgerBatchResult(
+                                model = model,
+                                sessionId = sessionId,
+                                businessId = businessId,
+                                generation = token,
+                                recordedOperations = recorded,
+                                skippedOperations = skipped,
+                            )
+                            // The photo is released only once the page is written. Releasing it on
+                            // the way in would leave a failed import without the evidence the
+                            // person needs to correct it.
+                            if (recorded != null) {
+                                discardLedgerCapture()
+                            }
+                        }
                     }
                 },
                 onCancel = cancelLedger,
@@ -1217,6 +1239,14 @@ private fun ChatMessageRow(
             )
         }
         AiChatMessage.AssistantGreeting -> Text(stringResource(R.string.ai_daily_chat_greeting))
+        is AiChatMessage.AssistantLedgerRecorded -> Text(
+            if (message.skippedCount > 0) {
+                stringResource(R.string.ai_ledger_recorded_with_skipped, message.operationsCount, message.skippedCount)
+            } else {
+                stringResource(R.string.ai_ledger_recorded, message.operationsCount)
+            },
+        )
+        AiChatMessage.AssistantLedgerFailed -> Text(stringResource(R.string.ai_ledger_failed))
         AiChatMessage.AssistantOutOfScope -> Text(stringResource(R.string.ai_daily_chat_out_of_scope))
         AiChatMessage.AssistantPending -> Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp))

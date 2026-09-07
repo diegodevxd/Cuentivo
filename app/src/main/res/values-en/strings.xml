@@ -624,6 +624,9 @@
     <string name="ai_ledger_summary_new_customers_count">New customers to create: %1$d</string>
     <string name="ai_ledger_crop_not_available">No crop available</string>
     <string name="ai_ledger_page_incomplete_warning">Some text on this page may be missing. Check that every line is here before recording.</string>
+    <string name="ai_ledger_recorded">Done: %1$d entries recorded from your notebook.</string>
+    <string name="ai_ledger_recorded_with_skipped">Done: %1$d entries recorded. %2$d lines were left out.</string>
+    <string name="ai_ledger_failed">The notebook could not be recorded. Nothing was saved; you can review it again.</string>
     <string name="ai_ledger_row_date">Date: %1$s</string>
     <string name="ai_ledger_row_date_missing">No date in the notebook</string>
     <string name="ai_ledger_field_date">Date (YYYY-MM-DD)</string>
@@ -657,4 +660,7 @@
     <string name="ai_ledger_error_overflow">Row with numeric overflow: amount exceeds allowed limit.</string>
     <string name="ai_ledger_error_payment_without_debt">Payment without debt: customer has no outstanding balance.</string>
     <string name="ai_ledger_error_payment_exceeds_debt">Payment exceeds debt: payment amount exceeds outstanding balance.</string>
+    <string name="ai_ledger_error_missing_page_date">Some rows have no date: provide a page date before registering.</string>
+    <string name="ai_ledger_field_page_date">Page date (YYYY-MM-DD)</string>
+    <string name="ai_ledger_field_page_date_invalid">That page date does not exist or is in the future</string>
 </resources>

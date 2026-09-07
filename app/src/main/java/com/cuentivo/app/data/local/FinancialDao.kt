@@ -16,6 +16,23 @@ sealed interface ExpectedBalancePaymentResult {
     data object StaleBalance : ExpectedBalancePaymentResult
 }
 
+sealed interface ExpectedLedgerBatchResult {
+    data class Recorded(val batchIdempotencyKey: String, val executableOperationsCount: Int) : ExpectedLedgerBatchResult
+    data object StaleData : ExpectedLedgerBatchResult
+}
+
+data class StoredLedgerBatchBundle(
+    val batchIdempotencyKey: String,
+    val businessId: String,
+    val createdCustomers: List<CustomerEntity>,
+    val sales: List<SaleEntity>,
+    val saleItems: List<SaleItemEntity>,
+    val chargeMovements: List<AccountMovementEntity>,
+    val payments: List<PaymentEntity>,
+    val paymentAllocations: List<PaymentAllocationEntity>,
+    val paymentMovements: List<AccountMovementEntity>,
+)
+
 sealed interface ExpectedSaleResult {
     data class Recorded(val saleId: String, val paymentId: String?) : ExpectedSaleResult
     data object StaleData : ExpectedSaleResult
@@ -972,4 +989,187 @@ interface FinancialDao {
         recordAudit(operation, AuditAction.PAYMENT_CANCELED, payment.businessId, "PAYMENT", payment.id, refund.createdByUserId, refund.occurredAtEpochMillis)
         return payment.id
     }
+
+    @Transaction
+    suspend fun registerLedgerBatchIdempotently(
+        batchIdempotencyKey: String,
+        businessId: String,
+        userId: String,
+        nowEpochMillis: Long,
+        newCustomers: List<CustomerEntity>,
+        sales: List<SaleEntity>,
+        saleItems: List<SaleItemEntity>,
+        chargeMovements: List<AccountMovementEntity>,
+        payments: List<PaymentEntity>,
+        paymentMovements: List<AccountMovementEntity>,
+        paymentAllocations: List<PaymentAllocationEntity>,
+        executableOperationsCount: Int,
+    ): ExpectedLedgerBatchResult {
+        // Reserve BEFORE writing anything, like every other *Idempotently here. Reserving last
+        // would let two concurrent confirmations both find no reservation, both write the whole
+        // batch, and the loser report success on top of duplicated money.
+        val operation = OperationEntity(
+            idempotencyKey = batchIdempotencyKey,
+            type = "LEDGER_BATCH",
+            resultId = batchIdempotencyKey,
+            createdAtEpochMillis = nowEpochMillis,
+        )
+        if (reserveOperation(operation) == -1L) {
+            return ExpectedLedgerBatchResult.Recorded(batchIdempotencyKey, executableOperationsCount)
+        }
+
+        // Everything is checked before the first insert. A `return` inside a Room transaction
+        // COMMITS what was already written, so a rejection discovered halfway would leave half a
+        // notebook in the ledger. Rejections must happen while nothing has been written yet.
+        require(newCustomers.none { it.businessId != businessId }) { "Batch customer outside its business." }
+        require(sales.none { it.businessId != businessId }) { "Batch sale outside its business." }
+        require(chargeMovements.none { it.businessId != businessId }) { "Batch charge outside its business." }
+        require(payments.none { it.businessId != businessId }) { "Batch payment outside its business." }
+        require(paymentMovements.none { it.businessId != businessId }) { "Batch payment movement outside its business." }
+
+        // Referential integrity, applied here because there are no foreign keys in this schema.
+        val saleById = sales.associateBy { it.id }
+        require(saleItems.all { it.saleId in saleById }) { "A batch sale item has no sale." }
+        for (charge in chargeMovements) {
+            require(charge.type == "CHARGE" && charge.direction == "DEBIT") { "Batch charge must be CHARGE/DEBIT." }
+            val sale = saleById[charge.saleId]
+            requireNotNull(sale) { "A batch charge has no sale." }
+            require(charge.customerId == sale.customerId) { "Batch charge and sale disagree on the customer." }
+            require(charge.amountCents == sale.totalCents) { "Batch charge must equal its sale total." }
+        }
+        // Sales and their money have to agree with each other before any of it is written.
+        for (sale in sales) {
+            require(sale.totalCents > 0) { "A batch sale must be positive." }
+            require(chargeMovements.count { it.saleId == sale.id } == 1) { "A batch sale needs exactly one charge." }
+            require(saleItems.any { it.saleId == sale.id }) { "A batch sale needs at least one item." }
+        }
+        val itemTotalsBySale = saleItems.groupBy { it.saleId }
+            .mapValues { (_, items) -> items.fold(0L) { acc, item -> Math.addExact(acc, item.subtotalCents) } }
+        for (sale in sales) {
+            require(itemTotalsBySale[sale.id] == sale.totalCents) {
+                "A batch sale total must equal its items."
+            }
+        }
+
+        val paymentById = payments.associateBy { it.id }
+        for (payment in payments) {
+            require(payment.amountCents > 0) { "A batch payment must be positive." }
+            val movements = paymentMovements.filter { it.paymentId == payment.id }
+            require(movements.size == 1) { "A batch payment needs exactly one movement." }
+            val movement = movements.first()
+            require(movement.customerId == payment.customerId) { "Batch payment movement must belong to its payment's customer." }
+            require(movement.amountCents == payment.amountCents) { "Batch payment movement must equal its payment." }
+            val assigned = paymentAllocations.filter { it.paymentId == payment.id }
+                .fold(0L) { acc, allocation -> Math.addExact(acc, allocation.amountCents) }
+            require(assigned <= payment.amountCents) { "A batch payment cannot assign more than it received." }
+        }
+        for (movement in paymentMovements) {
+            require(movement.type == "PAYMENT" && movement.direction == "CREDIT") { "Batch payment movement must be PAYMENT/CREDIT." }
+        }
+        for (allocation in paymentAllocations) {
+            require(allocation.amountCents > 0) { "A batch allocation must be positive." }
+        }
+        // No orphan movements: a payment movement with no payment in this batch is money nobody
+        // can trace back to what it settled.
+        for (movement in paymentMovements) {
+            require(movement.paymentId in paymentById) { "A batch payment movement has no payment." }
+        }
+        // Every customer the batch writes against must already be here, active and ours. A payment
+        // aimed at somebody else's customer is not a typo, it is money in the wrong ledger.
+        val batchCustomerIds = (sales.map { it.customerId } + payments.map { it.customerId }).toSet()
+        val newCustomerIds = newCustomers.map { it.id }.toSet()
+        for (customerId in batchCustomerIds - newCustomerIds) {
+            val existing = customerForPayment(customerId)
+            requireNotNull(existing) { "A batch row points at a customer that does not exist." }
+            require(existing.businessId == businessId) { "A batch row points at another business's customer." }
+            require(existing.isActive && existing.deletedAtEpochMillis == null) {
+                "A batch row points at an archived customer."
+            }
+        }
+        for (allocation in paymentAllocations) {
+            require(allocation.paymentId in paymentById) { "A batch allocation has no payment." }
+        }
+        // No over-allocation. A payment on a photographed page can settle a sale written earlier in
+        // the same page or a debt the customer already had, so what is still owed comes from this
+        // batch for the former and from the ledger for the latter.
+        paymentAllocations.groupBy { it.saleId }.forEach { (saleId, allocations) ->
+            val assigned = allocations.fold(0L) { acc, allocation -> Math.addExact(acc, allocation.amountCents) }
+            // Money must not cross customers: a payment can only settle what the person who paid
+            // actually owes.
+            for (allocation in allocations) {
+                val payer = requireNotNull(paymentById[allocation.paymentId]).customerId
+                val owner = saleById[saleId]?.customerId ?: saleForId(saleId)?.customerId
+                requireNotNull(owner) { "A batch allocation has no sale." }
+                require(owner == payer) { "A batch allocation settles another customer's sale." }
+            }
+            val inBatch = saleById[saleId]
+            val outstanding = if (inBatch != null) {
+                inBatch.totalCents
+            } else {
+                val existing = saleForId(saleId)
+                requireNotNull(existing) { "A batch allocation has no sale." }
+                require(existing.businessId == businessId) { "A batch allocation crosses businesses." }
+                require(!existing.isCanceled) { "A batch allocation targets a canceled sale." }
+                existing.totalCents - activeAllocatedPaymentCents(saleId)
+            }
+            require(assigned <= outstanding) { "A batch allocation exceeds what its sale still owes." }
+        }
+        // An id already in use is not a fresh customer: fail before writing, not after.
+        for (customer in newCustomers) {
+            require(customerForPayment(customer.id) == null) { "Batch customer id already exists." }
+        }
+
+        // Insert new customers
+        for (customer in newCustomers) {
+            insertCustomer(customer)
+        }
+
+        // Insert sales, items, charges
+        for (sale in sales) {
+            insertSale(sale)
+        }
+        insertSaleItems(saleItems)
+        for (charge in chargeMovements) {
+            insertMovement(charge)
+        }
+
+        // Insert payments, allocations, payment movements
+        for (payment in payments) {
+            insertPayment(payment)
+        }
+        insertAllocations(paymentAllocations)
+        for (movement in paymentMovements) {
+            insertMovement(movement)
+        }
+
+        // One audit row per financial fact, not one for the whole page. A single LEDGER_BATCH entry
+        // would say a page was imported and leave no way to answer which sale or which payment it
+        // was, which is the question an audit log exists to answer. The event id stays deterministic
+        // per row because it derives from the batch key plus the row's own id.
+        for (sale in sales) {
+            recordAudit(
+                operation = operation.copy(idempotencyKey = batchIdempotencyKey + ":sale:" + sale.id),
+                action = AuditAction.SALE_CREATED,
+                businessId = businessId,
+                entityType = "SALE",
+                entityId = sale.id,
+                userId = userId,
+                timestampEpochMillis = nowEpochMillis,
+            )
+        }
+        for (payment in payments) {
+            recordAudit(
+                operation = operation.copy(idempotencyKey = batchIdempotencyKey + ":payment:" + payment.id),
+                action = AuditAction.PAYMENT_REGISTERED,
+                businessId = businessId,
+                entityType = "PAYMENT",
+                entityId = payment.id,
+                userId = userId,
+                timestampEpochMillis = nowEpochMillis,
+            )
+        }
+
+        return ExpectedLedgerBatchResult.Recorded(batchIdempotencyKey, executableOperationsCount)
+    }
+
 }

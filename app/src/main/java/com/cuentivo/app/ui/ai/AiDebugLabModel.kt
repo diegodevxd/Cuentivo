@@ -89,6 +89,8 @@ sealed interface AiDebugLabState {
         val sessionId: String,
         val businessId: String,
         val review: LedgerReview,
+        /** Carried through so a failed write can return to the review with the debts it showed. */
+        val existingCustomerBalances: Map<String, Long> = emptyMap(),
     ) : AiDebugLabState
 }
 
@@ -157,6 +159,9 @@ data class AiDebugLabModel(
 sealed interface AiChatMessage {
     data class UserText(val text: String) : AiChatMessage
     data object AssistantGreeting : AiChatMessage
+    /** How a page import ended, so the chat says what happened instead of just closing. */
+    data class AssistantLedgerRecorded(val operationsCount: Int, val skippedCount: Int) : AiChatMessage
+    data object AssistantLedgerFailed : AiChatMessage
     data object AssistantOutOfScope : AiChatMessage
     data object AssistantPending : AiChatMessage
     data object AssistantUnavailable : AiChatMessage
@@ -1041,6 +1046,7 @@ object AiDebugLabMachine {
                 sessionId = sessionId,
                 businessId = businessId,
                 review = state.review,
+                existingCustomerBalances = state.existingCustomerBalances,
             ),
             generation = nextGeneration,
         )
@@ -1058,6 +1064,47 @@ object AiDebugLabMachine {
      * Cancels any active ledger flow (extraction, review, confirmation), invalidates in-flight
      * responses via generation increment, and cleanly resets state to TextEditing.
      */
+    /**
+     * Ends a confirmation. Guarded by session, business and generation like every other ledger
+     * transition: a write that answers late must never land on a page the person already left.
+     *
+     * Failure returns to the review with the operations intact rather than to the chat, because
+     * losing a reviewed page to a transient error would mean photographing and correcting it again.
+     */
+    fun onLedgerBatchResult(
+        model: AiDebugLabModel,
+        sessionId: String,
+        businessId: String,
+        generation: Long,
+        recordedOperations: Int?,
+        skippedOperations: Int,
+    ): AiDebugLabModel {
+        if (generation != model.generation) return model
+        val state = model.state as? AiDebugLabState.LedgerConfirming ?: return model
+        if (state.sessionId != sessionId || state.businessId != businessId) return model
+        return if (recordedOperations == null) {
+            model.copy(
+                state = AiDebugLabState.LedgerReviewing(
+                    sessionId = state.sessionId,
+                    businessId = state.businessId,
+                    review = state.review,
+                    existingCustomerBalances = state.existingCustomerBalances,
+                ),
+                messages = model.messages + AiChatMessage.AssistantLedgerFailed,
+                generation = model.generation + 1,
+            )
+        } else {
+            model.copy(
+                state = AiDebugLabState.TextEditing,
+                messages = model.messages + AiChatMessage.AssistantLedgerRecorded(
+                    operationsCount = recordedOperations,
+                    skippedCount = skippedOperations,
+                ),
+                generation = model.generation + 1,
+            )
+        }
+    }
+
     fun onCancelLedger(model: AiDebugLabModel): AiDebugLabModel {
         return when (model.state) {
             is AiDebugLabState.LedgerExtracting,
