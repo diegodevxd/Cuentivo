@@ -83,7 +83,19 @@ object AiLedgerBatchPlanner {
         val contentDigest = registrableOperations.joinToString(separator = "|") { op ->
             val dateEpoch = resolvedDatesByLineIndex[op.lineIndex] ?: 0L
             val normName = CustomerNameNormalizer.key(op.customerName.orEmpty())
-            "${op.lineIndex}:${op.proposedKind}:$normName:${op.amountCents}:${op.description.orEmpty()}:$dateEpoch"
+            // Free text is length-prefixed, not just glued together with separators. A customer
+            // called "Rosa: 2" and a description of "abono" used to run together into the same
+            // string as a customer "Rosa" with description "2:abono", and two different pages
+            // sharing a key is the worst failure this file can have: the second one is taken for a
+            // repeat of the first and is never written, silently, with no error to look at.
+            listOf(
+                op.lineIndex.toString(),
+                op.proposedKind.toString(),
+                field(normName),
+                field(op.amountCents.orEmpty()),
+                field(op.description.orEmpty()),
+                dateEpoch.toString(),
+            ).joinToString(separator = ":")
         }
         return "ai-ledger-batch-" + UUID.nameUUIDFromBytes(
             "$businessId:$contentDigest".toByteArray(StandardCharsets.UTF_8)
@@ -195,7 +207,27 @@ object AiLedgerBatchPlanner {
         for ((normKey, ops) in groupedOps) {
             val existingCust = existingCustomerMap[normKey]
             val existingSales = existingCust?.id?.let { existingOutstandingSalesByCustomerId[it] }.orEmpty()
-            var runningBalance = existingSales.filter { it.outstandingCents > 0 }.sumOf { it.outstandingCents }
+            // sumOf would wrap silently, and a wrapped balance is worse than a rejected page: a
+            // debt that overflows into a negative number turns a legitimate payment into
+            // PAYMENT_WITHOUT_DEBT, and one that overflows the other way accepts a payment larger
+            // than anything actually owed. Same treatment the running total already gets below.
+            var runningBalance = 0L
+            var openingOverflowed = false
+            for (sale in existingSales) {
+                if (sale.outstandingCents <= 0L) continue
+                try {
+                    runningBalance = Math.addExact(runningBalance, sale.outstandingCents)
+                } catch (_: ArithmeticException) {
+                    openingOverflowed = true
+                    break
+                }
+            }
+            if (openingOverflowed) {
+                rejections.add(
+                    BatchPlanningRejection.FinancialError(ops.first().lineIndex, FinancialRejectionReason.OVERFLOW)
+                )
+                continue
+            }
 
             for (op in ops) {
                 val cents = op.amountCents?.toLongOrNull() ?: 0L
@@ -443,6 +475,13 @@ object AiLedgerBatchPlanner {
 
         return BatchPlanningResult.Success(plan)
     }
+
+    /**
+     * Length-prefixes a free-text field so the digest cannot be made ambiguous by its contents.
+     * Prefix-free, so no combination of names, descriptions and separators can encode to the same
+     * string as a different combination.
+     */
+    private fun field(value: String): String = "${value.length}:$value"
 
     private fun toEpochDay(candidate: SafeDateCandidate): Long? {
         return runCatching {
