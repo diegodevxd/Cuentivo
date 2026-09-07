@@ -416,4 +416,279 @@ class AiLedgerBatchPlannerTest {
         assertTrue(rejection is BatchPlanningRejection.MissingDate)
         assertEquals(1, (rejection as BatchPlanningRejection.MissingDate).lineIndex)
     }
+
+    @Test
+    fun unaccepted_automatic_candidate_does_not_change_operation_nor_batch_key() {
+        val opUnanchored = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Mayra T5",
+            amountCents = "1000",
+            date = SafeDateCandidate(2026, 9, 1),
+            customerId = null, // Unaccepted / unanchored
+        )
+
+        val resolvedDates = mapOf(1 to todayEpochDay)
+        val keyUnanchored = AiLedgerBatchPlanner.batchKeyFor(businessId, listOf(opUnanchored), resolvedDates)
+
+        // Baseline key when customerId is null is identical to standard name-based key
+        val keyBaseline = AiLedgerBatchPlanner.batchKeyFor(
+            businessId,
+            listOf(opUnanchored.copy(customerId = null)),
+            resolvedDates,
+        )
+        assertEquals(keyBaseline, keyUnanchored)
+    }
+
+    @Test
+    fun accepting_customer_anchor_writes_sale_to_that_customerId_not_derived_from_name() {
+        val existingCustomer = CustomerEntity(
+            id = "customer-uuid-999",
+            businessId = businessId,
+            name = "Mayra T5",
+            normalizedName = "mayra t5",
+            phone = null,
+            email = null,
+            address = null,
+            notes = null,
+            creditLimitCents = 0L,
+            isActive = true,
+            createdAtEpochMillis = nowEpochMillis,
+            updatedAtEpochMillis = nowEpochMillis,
+            deletedAtEpochMillis = null,
+        )
+
+        val opAnchored = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Mayra T5 Raw Paper Text", // Raw paper text preserved!
+            amountCents = "3500",
+            date = SafeDateCandidate(2026, 9, 1),
+            customerId = existingCustomer.id, // Explicit human acceptance
+        )
+
+        val result = AiLedgerBatchPlanner.plan(
+            businessId = businessId,
+            userId = userId,
+            operations = listOf(opAnchored),
+            existingCustomerMap = mapOf(existingCustomer.normalizedName to existingCustomer),
+            existingOutstandingSalesByCustomerId = emptyMap(),
+            pageDateEpochDay = null,
+            todayEpochDay = todayEpochDay,
+            nowEpochMillis = nowEpochMillis,
+        )
+
+        assertTrue(result is BatchPlanningResult.Success)
+        val plan = (result as BatchPlanningResult.Success).plan
+
+        // Must write sale under customer-uuid-999 and NOT create a new customer entity
+        assertEquals(0, plan.newCustomers.size)
+        assertEquals(1, plan.sales.size)
+        assertEquals(existingCustomer.id, plan.sales.first().customerId)
+    }
+
+    @Test
+    fun anchored_payment_is_assigned_only_to_anchored_customer_sales() {
+        val custA = CustomerEntity(
+            id = "cust-A-111",
+            businessId = businessId,
+            name = "Rosa",
+            normalizedName = "rosa",
+            phone = null, email = null, address = null, notes = null,
+            creditLimitCents = 0L, isActive = true,
+            createdAtEpochMillis = nowEpochMillis, updatedAtEpochMillis = nowEpochMillis, deletedAtEpochMillis = null,
+        )
+        val custB = CustomerEntity(
+            id = "cust-B-222",
+            businessId = businessId,
+            name = "Rosa Maria",
+            normalizedName = "rosa maria",
+            phone = null, email = null, address = null, notes = null,
+            creditLimitCents = 0L, isActive = true,
+            createdAtEpochMillis = nowEpochMillis, updatedAtEpochMillis = nowEpochMillis, deletedAtEpochMillis = null,
+        )
+
+        val ops = listOf(
+            // Sale for Cust A
+            LedgerOperation(
+                lineIndex = 1,
+                proposedKind = ProposedLedgerKind.SALE,
+                customerName = "Rosa",
+                amountCents = "5000",
+                date = SafeDateCandidate(2026, 9, 1),
+                customerId = custA.id,
+            ),
+            // Payment anchored specifically to Cust A
+            LedgerOperation(
+                lineIndex = 2,
+                proposedKind = ProposedLedgerKind.PAYMENT,
+                customerName = "Rosa",
+                amountCents = "2000",
+                date = SafeDateCandidate(2026, 9, 2),
+                customerId = custA.id,
+            ),
+        )
+
+        val result = AiLedgerBatchPlanner.plan(
+            businessId = businessId,
+            userId = userId,
+            operations = ops,
+            existingCustomerMap = mapOf(custA.normalizedName to custA, custB.normalizedName to custB),
+            existingOutstandingSalesByCustomerId = emptyMap(),
+            pageDateEpochDay = null,
+            todayEpochDay = todayEpochDay,
+            nowEpochMillis = nowEpochMillis,
+        )
+
+        assertTrue(result is BatchPlanningResult.Success)
+        val plan = (result as BatchPlanningResult.Success).plan
+
+        assertEquals(custA.id, plan.payments.first().customerId)
+        assertEquals(custA.id, plan.paymentMovements.first().customerId)
+    }
+
+    @Test
+    fun two_operations_anchored_to_different_customers_do_not_merge_even_with_same_name() {
+        val ops = listOf(
+            LedgerOperation(
+                lineIndex = 1,
+                proposedKind = ProposedLedgerKind.SALE,
+                customerName = "Rosa",
+                amountCents = "1000",
+                date = SafeDateCandidate(2026, 9, 1),
+                customerId = "cust-uuid-1",
+            ),
+            LedgerOperation(
+                lineIndex = 2,
+                proposedKind = ProposedLedgerKind.SALE,
+                customerName = "Rosa",
+                amountCents = "2000",
+                date = SafeDateCandidate(2026, 9, 1),
+                customerId = "cust-uuid-2",
+            ),
+        )
+
+        // Both must exist: an anchor names somebody the person picked from a real list, and one
+        // that no longer exists is refused rather than minted.
+        val uno = customer("cust-uuid-1", "Rosa", "rosa")
+        val dos = customer("cust-uuid-2", "Rosa Perez", "rosa perez")
+
+        val result = AiLedgerBatchPlanner.plan(
+            businessId = businessId,
+            userId = userId,
+            operations = ops,
+            existingCustomerMap = mapOf(uno.normalizedName to uno, dos.normalizedName to dos),
+            existingOutstandingSalesByCustomerId = emptyMap(),
+            pageDateEpochDay = null,
+            todayEpochDay = todayEpochDay,
+            nowEpochMillis = nowEpochMillis,
+        )
+
+        assertTrue(result is BatchPlanningResult.Success)
+        val plan = (result as BatchPlanningResult.Success).plan
+
+        // The paper said "Rosa" on both rows. Without the anchors they would have merged into one
+        // customer and one running balance; with them, the money follows what the person picked.
+        assertEquals(2, plan.sales.size)
+        assertEquals("cust-uuid-1", plan.sales[0].customerId)
+        assertEquals("cust-uuid-2", plan.sales[1].customerId)
+        assertTrue("no debe crear clientes nuevos", plan.newCustomers.isEmpty())
+    }
+
+    private fun customer(id: String, name: String, normalized: String) = CustomerEntity(
+        id = id,
+        businessId = businessId,
+        name = name,
+        normalizedName = normalized,
+        phone = null,
+        email = null,
+        address = null,
+        notes = null,
+        creditLimitCents = 0L,
+        isActive = true,
+        createdAtEpochMillis = nowEpochMillis,
+        updatedAtEpochMillis = nowEpochMillis,
+        deletedAtEpochMillis = null,
+    )
+
+    @Test
+    fun plan_rejects_an_anchor_to_a_customer_that_no_longer_exists() {
+        // The page was reviewed, the person picked a customer from the list they were shown, and by
+        // the time they confirmed it was archived or deleted. Planning it anyway would build a
+        // CustomerEntity carrying that id, and insertCustomer aborts on conflict, so the whole
+        // transaction would blow up as an unexplained "could not register the notebook".
+        val result = AiLedgerBatchPlanner.plan(
+            businessId = businessId,
+            userId = userId,
+            operations = listOf(
+                LedgerOperation(
+                    lineIndex = 0,
+                    proposedKind = ProposedLedgerKind.SALE,
+                    customerName = "Rosa",
+                    amountCents = "25000",
+                    date = SafeDateCandidate(2026, 9, 1),
+                    customerId = "cliente-que-ya-no-esta",
+                ),
+            ),
+            existingCustomerMap = emptyMap(),
+            existingOutstandingSalesByCustomerId = emptyMap(),
+            pageDateEpochDay = null,
+            todayEpochDay = todayEpochDay,
+            nowEpochMillis = nowEpochMillis,
+        )
+
+        assertTrue(result is BatchPlanningResult.Rejected)
+        val rejection = (result as BatchPlanningResult.Rejected).rejections.first()
+        assertTrue(rejection is BatchPlanningRejection.UnknownCustomerAnchor)
+        assertEquals("cliente-que-ya-no-esta", (rejection as BatchPlanningRejection.UnknownCustomerAnchor).customerId)
+    }
+
+    @Test
+    fun an_anchor_never_mints_a_customer_carrying_its_own_id() {
+        // The only customers this planner creates are the ones the notebook named and nobody
+        // matched. If an anchor could mint one, it would be creating a row with an id chosen from a
+        // list somewhere else, which is how you end up with two customers sharing an identity.
+        val existing = CustomerEntity(
+            id = "cust-real",
+            businessId = businessId,
+            name = "Rosa",
+            normalizedName = CustomerNameNormalizer.key("Rosa"),
+            phone = null,
+            email = null,
+            address = null,
+            notes = null,
+            creditLimitCents = 0L,
+            isActive = true,
+            createdAtEpochMillis = nowEpochMillis,
+            updatedAtEpochMillis = nowEpochMillis,
+            deletedAtEpochMillis = null,
+        )
+
+        val result = AiLedgerBatchPlanner.plan(
+            businessId = businessId,
+            userId = userId,
+            operations = listOf(
+                LedgerOperation(
+                    lineIndex = 0,
+                    proposedKind = ProposedLedgerKind.SALE,
+                    customerName = "Rossa",
+                    amountCents = "25000",
+                    date = SafeDateCandidate(2026, 9, 1),
+                    customerId = "cust-real",
+                ),
+            ),
+            existingCustomerMap = mapOf(existing.normalizedName to existing),
+            existingOutstandingSalesByCustomerId = emptyMap(),
+            pageDateEpochDay = null,
+            todayEpochDay = todayEpochDay,
+            nowEpochMillis = nowEpochMillis,
+        )
+
+        assertTrue(result is BatchPlanningResult.Success)
+        val plan = (result as BatchPlanningResult.Success).plan
+        // The name on the paper said "Rossa" and the anchor said this is Rosa: no new customer, and
+        // the sale goes to the customer the person picked.
+        assertTrue("no debe crear ningun cliente", plan.newCustomers.isEmpty())
+        assertEquals("cust-real", plan.sales.single().customerId)
+    }
 }

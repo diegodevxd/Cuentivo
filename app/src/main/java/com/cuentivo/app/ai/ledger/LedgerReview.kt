@@ -70,6 +70,7 @@ data class LedgerOperation(
     val uncertainFields: List<UncertainLedgerField> = emptyList(),
     val unreadableFields: List<UnreadableLedgerField> = emptyList(),
     val region: LedgerRegion? = null,
+    val customerId: String? = null,
 ) {
     /**
      * Defensive copy to guarantee snapshot immutability regardless of caller list modifications.
@@ -129,11 +130,9 @@ fun isRegisterableLedgerOperation(op: LedgerOperation): Boolean {
         return false
     }
     val name = op.customerName
-    if (name.isNullOrEmpty() || name.length > MAX_LEDGER_CUSTOMER_NAME_LENGTH) {
-        return false
-    }
-    val trimmedName = trimJsWhitespace(name)
-    if (trimmedName.isEmpty()) {
+    val hasValidName = !name.isNullOrEmpty() && name.length <= MAX_LEDGER_CUSTOMER_NAME_LENGTH && trimJsWhitespace(name).isNotEmpty()
+    val hasValidCustomerId = !op.customerId.isNullOrBlank()
+    if (!hasValidName && !hasValidCustomerId) {
         return false
     }
     val cents = op.amountCents
@@ -262,7 +261,11 @@ object LedgerReviewEngine {
 
         val linkedGroups = LinkedHashMap<String, MutableList<LedgerOperation>>()
         for (op in frozenOps) {
-            val key = op.customerName?.let { CustomerNameNormalizer.key(it) } ?: ""
+            val key = if (!op.customerId.isNullOrBlank()) {
+                "id:${op.customerId}"
+            } else {
+                op.customerName?.let { CustomerNameNormalizer.key(it) } ?: ""
+            }
             linkedGroups.getOrPut(key) { mutableListOf() }.add(op)
         }
 
@@ -490,6 +493,36 @@ object LedgerReviewEngine {
             val updatedUnreadable = op.unreadableFields - UnreadableLedgerField.CUSTOMER
             op.copy(
                 customerName = customerName,
+                uncertainFields = updatedUncertain,
+                unreadableFields = updatedUnreadable,
+            )
+        }
+    }
+
+    /**
+     * Anchors a row to an existing customer, **and may only be called when a person accepted it**.
+     *
+     * The anchor is what decides whose debt this is, so a fuzzy match scoring 0.99 is not allowed to
+     * call this on its own: showing a candidate on screen is not the same as somebody confirming it,
+     * and a wrong anchor on a payment settles another person's real debt — which, in an append-only
+     * ledger, is undone with a compensating movement and an awkward conversation.
+     *
+     * Because it is an explicit human confirmation, it does clear CUSTOMER from both lists, exactly
+     * like editing the name by hand already does. The name read from the paper is kept untouched:
+     * it is the evidence of what the notebook said, and the id is what the money follows.
+     */
+    fun setOperationCustomerAnchor(
+        currentOperations: List<LedgerOperation>,
+        lineIndex: Int,
+        customerId: String,
+        customerName: String? = null,
+    ): List<LedgerOperation> {
+        return updateOperation(currentOperations, lineIndex) { op ->
+            val updatedUncertain = op.uncertainFields - UncertainLedgerField.CUSTOMER
+            val updatedUnreadable = op.unreadableFields - UnreadableLedgerField.CUSTOMER
+            op.copy(
+                customerId = customerId,
+                customerName = customerName ?: op.customerName,
                 uncertainFields = updatedUncertain,
                 unreadableFields = updatedUnreadable,
             )

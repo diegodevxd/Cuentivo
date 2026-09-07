@@ -24,6 +24,17 @@ sealed interface BatchPlanningRejection {
     data class MissingDate(val lineIndex: Int) : BatchPlanningRejection
     data class FinancialError(val lineIndex: Int, val reason: FinancialRejectionReason) : BatchPlanningRejection
     data class BlankBusinessOrUser(val message: String) : BatchPlanningRejection
+
+    /**
+     * The row was anchored to a customer that is no longer among the existing ones.
+     *
+     * It happens when the ledger is reviewed and the customer is archived, deleted or otherwise
+     * gone before the page is confirmed. Planning it anyway would build a CustomerEntity carrying
+     * that id, and `insertCustomer` aborts on conflict, so the whole transaction would blow up with
+     * an exception the person sees as "could not register the notebook" and nothing else. Rejecting
+     * here keeps the failure deterministic and nameable.
+     */
+    data class UnknownCustomerAnchor(val lineIndex: Int, val customerId: String) : BatchPlanningRejection
 }
 
 sealed interface BatchPlanningResult {
@@ -83,6 +94,7 @@ object AiLedgerBatchPlanner {
         val contentDigest = registrableOperations.joinToString(separator = "|") { op ->
             val dateEpoch = resolvedDatesByLineIndex[op.lineIndex] ?: 0L
             val normName = CustomerNameNormalizer.key(op.customerName.orEmpty())
+            val customerToken = if (!op.customerId.isNullOrBlank()) "id:${op.customerId}" else normName
             // Free text is length-prefixed, not just glued together with separators. A customer
             // called "Rosa: 2" and a description of "abono" used to run together into the same
             // string as a customer "Rosa" with description "2:abono", and two different pages
@@ -91,7 +103,7 @@ object AiLedgerBatchPlanner {
             listOf(
                 op.lineIndex.toString(),
                 op.proposedKind.toString(),
-                field(normName),
+                field(customerToken),
                 field(op.amountCents.orEmpty()),
                 field(op.description.orEmpty()),
                 dateEpoch.toString(),
@@ -196,16 +208,39 @@ object AiLedgerBatchPlanner {
             return BatchPlanningResult.Rejected(rejections)
         }
 
-        // 3. Group by customer normalized name to plan debt transitions and validate financials
+        // 3. Group by customer normalized name or explicit customerId anchor
+        val existingCustomersById = existingCustomerMap.values.associateBy { it.id }
+
+        // An anchor names a customer a person picked from the list they were shown. If it is not
+        // there any more, the page is planned against a customer nobody can point at, so it is
+        // refused before a single entity is built rather than exploding inside the transaction.
+        for (op in registrableOps) {
+            val anchored = op.customerId
+            if (!anchored.isNullOrBlank() && !existingCustomersById.containsKey(anchored)) {
+                rejections.add(BatchPlanningRejection.UnknownCustomerAnchor(op.lineIndex, anchored))
+            }
+        }
+        if (rejections.isNotEmpty()) {
+            return BatchPlanningResult.Rejected(rejections)
+        }
         val groupedOps = LinkedHashMap<String, MutableList<LedgerOperation>>()
         for (op in registrableOps) {
-            val key = com.cuentivo.app.domain.CustomerNameNormalizer.key(op.customerName.orEmpty())
+            val key = if (!op.customerId.isNullOrBlank()) {
+                "id:${op.customerId}"
+            } else {
+                com.cuentivo.app.domain.CustomerNameNormalizer.key(op.customerName.orEmpty())
+            }
             groupedOps.getOrPut(key) { mutableListOf() }.add(op)
         }
 
         // First pass: check for any financial errors across all groups
-        for ((normKey, ops) in groupedOps) {
-            val existingCust = existingCustomerMap[normKey]
+        for ((groupKey, ops) in groupedOps) {
+            val sampleOp = ops.first()
+            val existingCust = if (!sampleOp.customerId.isNullOrBlank()) {
+                existingCustomersById[sampleOp.customerId]
+            } else {
+                existingCustomerMap[groupKey]
+            }
             val existingSales = existingCust?.id?.let { existingOutstandingSalesByCustomerId[it] }.orEmpty()
             // sumOf would wrap silently, and a wrapped balance is worse than a rejected page: a
             // debt that overflows into a negative number turns a legitimate payment into
@@ -272,21 +307,29 @@ object AiLedgerBatchPlanner {
         val newCustomers = mutableListOf<CustomerEntity>()
         val createdCustomerMap = mutableMapOf<String, CustomerEntity>()
 
-        // Resolve customer entities (deduplicated by normalized name)
-        for ((normKey, ops) in groupedOps) {
-            val existing = existingCustomerMap[normKey]
-            if (existing != null) {
-                createdCustomerMap[normKey] = existing
+        // Resolve customer entities (deduplicated by normalized name or explicit anchor)
+        for ((groupKey, ops) in groupedOps) {
+            val sampleOp = ops.first()
+            val existing = if (!sampleOp.customerId.isNullOrBlank()) {
+                existingCustomersById[sampleOp.customerId]
             } else {
-                val displayName = ops.firstOrNull { !it.customerName.isNullOrBlank() }?.customerName?.trim() ?: normKey
+                existingCustomerMap[groupKey]
+            }
+            if (existing != null) {
+                createdCustomerMap[groupKey] = existing
+            } else {
+                val displayName = ops.firstOrNull { !it.customerName.isNullOrBlank() }?.customerName?.trim() ?: groupKey
+                // No anchor can reach here: an anchored group always resolves above, and one whose
+                // customer vanished was rejected before anything was built. A new customer is only
+                // ever minted for a name the notebook brought and nobody matched.
                 val customerId = UUID.nameUUIDFromBytes(
-                    "$batchKey:customer:$normKey".toByteArray(StandardCharsets.UTF_8)
+                    "$batchKey:customer:$groupKey".toByteArray(StandardCharsets.UTF_8)
                 ).toString()
                 val newCust = CustomerEntity(
                     id = customerId,
                     businessId = businessId,
                     name = displayName,
-                    normalizedName = normKey,
+                    normalizedName = groupKey,
                     phone = null,
                     email = null,
                     address = null,
@@ -298,7 +341,7 @@ object AiLedgerBatchPlanner {
                     deletedAtEpochMillis = null,
                 )
                 newCustomers.add(newCust)
-                createdCustomerMap[normKey] = newCust
+                createdCustomerMap[groupKey] = newCust
             }
         }
 
@@ -311,7 +354,7 @@ object AiLedgerBatchPlanner {
 
         // Track running outstanding sales per customer for multi-payment allocation
         val runningOutstandingSalesByCustomerId = mutableMapOf<String, MutableList<OutstandingSale>>()
-        for ((normKey, cust) in createdCustomerMap) {
+        for ((groupKey, cust) in createdCustomerMap) {
             val existing = existingOutstandingSalesByCustomerId[cust.id].orEmpty().map {
                 OutstandingSale(it.id, it.outstandingCents, it.dueDateEpochDay, it.saleDateEpochDay)
             }.toMutableList()
@@ -320,8 +363,8 @@ object AiLedgerBatchPlanner {
 
         // Process operations in order
         for (op in registrableOps) {
-            val normKey = com.cuentivo.app.domain.CustomerNameNormalizer.key(op.customerName.orEmpty())
-            val customer = checkNotNull(createdCustomerMap[normKey]) { "Customer must be resolved" }
+            val groupKey = if (!op.customerId.isNullOrBlank()) "id:${op.customerId}" else com.cuentivo.app.domain.CustomerNameNormalizer.key(op.customerName.orEmpty())
+            val customer = checkNotNull(createdCustomerMap[groupKey]) { "Customer must be resolved" }
             val amountCents = checkNotNull(op.amountCents?.toLongOrNull())
             val effectiveDate = checkNotNull(resolvedDatesByLineIndex[op.lineIndex])
             val opKey = "$batchKey:${op.lineIndex}"
