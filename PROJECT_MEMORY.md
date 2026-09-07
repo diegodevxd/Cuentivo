@@ -11,7 +11,7 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-09-06. **Fase B en curso: 3 de 6 pasos commiteados.**
+**Última actualización:** 2026-09-06 (tarde). **Fase B: 5 de 6 pasos commiteados.**
 Lo que queda para producción ya no es código: cohorte limpia de métricas y la observabilidad que el
 incidente del 4 de septiembre dejó al descubierto.
 
@@ -330,20 +330,22 @@ general continúan cerradas.
 
 ## Último gate verificado
 
-Fase B pasos 1-3 (`b30a408`, `b3f21f2`, `aadbb5c`), todo reejecutado por Claude, no tomado del
-reporte del implementador:
+Fase B pasos 1–5 (`b30a408`, `b3f21f2`, `aadbb5c`, `903d12e`, `90593ed`, `d8a5891`), todo
+reejecutado por Claude, nunca tomado del reporte del implementador:
 
-- **Functions 422/422** en 17 archivos (venía de 291), con `lint` y `build` en 0.
-- **Android JVM 976/976** con `--rerun-tasks` (venía de 959), y `assembleDebug`.
-- **Room, instrumentadas: `AiSaleExecutionIsolationTest` 29/29**, tras arrancar el emulador en frío.
-  Incluye el cargo sin producto con consulta real de saldo, auditoría por acción e id, y el reintento
-  que deja un solo cargo.
-- `functions/scripts/verifyLedgerGuards.js`: 6 mutaciones, línea base verde antes y después.
+- **Functions 436/436** en 18 archivos, con `lint` y `build` en 0.
+- **Android JVM 1037/1037** con `--rerun-tasks`, contadas desde los XML, y `assembleDebug`.
+- **Room, instrumentadas:** `AiSaleExecutionIsolationTest` 29/29, `LedgerReviewScreenTest` 4/4 y
+  `LedgerBatchIsolationTest` **9/9**, esta última **en el teléfono físico A059P**, no en emulador.
+- Paridad de claves **609 = 609** y puerta del idioma limpia (sólo las 4 etiquetas de animación).
 
-**Dos avisos sobre esta evidencia.** La corrida instrumentada *completa* aborta con
-`INSTRUMENTATION_ABORTED` en `ProductPhotoSourceTest` tras ~243 pruebas: eso **no cuenta como
-verde**, y por eso la clase financiera se verificó aparte con arranque en frío. Y `adb devices`
-puede decir `device` con el emulador ya medio muerto; el chequeo bueno es
+**Cómo se corre ahora:** el A059P de Diego está conectado en depuración y **sustituye al emulador**.
+La app instalada es la debug (`DEBUGGABLE`), así que `installDebug` actualiza encima **sin
+desinstalar**: desinstalar borraría la base local y el token de App Check ya registrado.
+
+**Avisos sobre esta evidencia.** La corrida instrumentada *completa* aborta en
+`ProductPhotoSourceTest`: eso **no cuenta como verde**, por eso las clases financieras se verifican
+por separado. Y `adb devices` puede decir `device` con el sistema a medias; el chequeo bueno es
 `dumpsys user | grep RUNNING_UNLOCKED`.
 
 ## Orquestamiento
@@ -363,62 +365,45 @@ puede decir `device` con el emulador ya medio muerto; el chequeo bueno es
 
 ## Qué sigue
 
-**0. Fase B — pasar la libreta de papel con una foto.** Es la pista activa. Plan en
-`docs/superpowers/plans/2026-09-05-cuentivoai-foto-libreta.md`; los encargos y las seis rondas de
-revisión de Codex, en `docs/superpowers/encargos/2026-09-05-fase-b-paso-*.md` (sin versionar).
+**0. Fase B — pasar la libreta de papel con una foto.** Pista activa. Plan en
+`docs/superpowers/plans/2026-09-05-cuentivoai-foto-libreta.md`; los encargos y las rondas de
+revisión de Codex, en `docs/superpowers/encargos/` (sin versionar).
 
 | Paso | Estado |
 |---|---|
 | 1. Contrato v3 y schema de lista | **Hecho**, `b30a408` |
 | 2. Extracción: imagen a Gemini | **Hecho**, `b3f21f2` |
 | 3. Ejecutores: fecha de libreta y cargo sin producto | **Hecho**, `aadbb5c` |
-| 4. Pantalla de revisión con evidencia por renglón | Siguiente |
-| 5. Registro atómico del lote | Pendiente |
-| 6. Prueba física con una libreta real | Pendiente |
+| 4a. Lógica pura de la revisión | **Hecho**, `903d12e` |
+| 4b. Pantalla, cámara, ciclo de vida de la foto y fecha | **Hecho**, `90593ed` |
+| 5. Registro atómico del lote | **Hecho**, `d8a5891` |
+| 6. Prueba física con una libreta real | **Pendiente, lo hace Diego** |
 
-Decisión de producto del 2026-09-06: **un renglón ilegible llega marcado y el usuario lo completa a
-mano**, con el recorte de la foto al lado. Por eso v3 separa `unreadableFields` de
-`uncertainFields`, y una operación con campos ilegibles no es registrable. Descartarla en silencio
-rompía la promesa de pasar la libreta entera.
+**Lo único que Codex llamó bloqueante para publicar:** la **fecha de página** la fija hoy sin que el
+usuario la elija (`LedgerBatchCoordinator`, `pageDateEpochDay = today`). Importar una libreta de
+hace meses la registraría entera como de hoy, que es justo la historia que esta función promete
+migrar.
 
-Dos pendientes nacidos aquí, a cerrar **antes** de dar la Fase B por terminada:
+**Deuda aceptable que Codex dio por no bloqueante, tareas concretas para AGY:**
 
-- **La clave de idempotencia no incorpora el contenido confirmado.** Hoy depende sólo de
-  `confirmationKey`: reusarla con otra fecha u otro importe devuelve el resultado anterior. Va en el
-  paso 5, donde vive el lote.
-- **Al conectar la libreta hay que usar `confirmLedger`**, no el ejecutor estándar, o se pierde la
-  frontera que obliga a declarar la fecha.
+- El callback de confirmación no aplica los límites de plan que sí aplica el camino normal de venta.
+- `AiLedgerBatchPlanner` duplica la validación financiera del 4a y suma la deuda inicial con
+  `sumOf`, sin `Math.addExact`.
+- El digest de la clave del lote concatena texto libre con separadores sin escape.
+- El DAO, al encontrar una reserva, devuelve el conteo recibido en vez de un resultado almacenado.
+- La máquina de estados no sobrevive la recreación de la Activity durante extracción o revisión.
 
-
-1. **Cerrar el núcleo: salida del laboratorio a beta (N5)** con feature flags y observabilidad. Es la
-   pista activa y lo único que queda del 4-de-5. Exige su propio plan antes de tocar código: qué
-   bandera enciende la IA, quién la puede encender, qué se observa y cómo se apaga sin publicar.
-   **El AAB que salga de N5 va primero a prueba cerrada de Play, y sólo después a producción**
-   (decisión de Diego, 2026-08-26). No se repite el camino directo a producción de la v32.
-   **CuentivoAI sale ya como plan de pago:** el usuario en Gratis o Pro que lo toque ve el muro de
-   suscripción. Eso mete la UI del plan y el entitlement de Play **dentro** de este release, no
-   después — ver el punto 2.
-2. **Producto de suscripción en Play + UI del plan de $299.** Antes estaba al final; la decisión de
-   sacar CuentivoAI como plan de pago lo vuelve **prerrequisito de la prueba cerrada**. Diseño escrito
-   en `docs/superpowers/specs/2026-08-25-cuentivoai-play-entitlement-design.md`. Implica fijar el
-   precio antes de medir la beta, que es exactamente lo que la fuente de verdad pedía evitar: la
-   decisión de producto gana, pero queda escrito que el número entró sin medición previa.
-3. **Decir por qué se rechazó.** `interpretAiRequest` colapsa seis caminos en un mismo `AI_UNAVAILABLE`
-   y ahí se pierden cuota agotada, rate limit, IA apagada y falta de entitlement. Propuesta escrita en
-   `.superpowers/sdd/propuesta-motivo-ai-unavailable.md`. Va **antes** de la prueba cerrada: ahora que
-   alguien va a **pagar** $299, leer "aún no disponible" al agotar cuota es un reembolso, no un bug.
-4. **Esperar la cohorte de la v32** — trabajo de calendario, no de teclado. Si la retención a la semana
-   vuelve a 20-29%, el muro era el problema; si sigue en el suelo, era otra cosa. Publicada al 20% para
-   atrapar fallas del build minificado; **subir a 100% en cuanto no aparezcan crashes**, porque en
-   lanzamiento parcial la cohorte se mezcla y la medición se ensucia.
-5. Encender enforcement de App Check tras revisar tráfico válido del día, generándolo desde una
-   instalación de Play Store.
-6. Después del núcleo: cobranza/PDF/WhatsApp/barcode y catálogo, cada uno con plan propio.
-
-Cada punto exige su propio diseño, autorización y gates. Ninguno se adelanta dentro del commit
-de otro. Fotos cloud/Storage es un proyecto **separado**, no dependencia de CuentivoAI.
+**Decisión de costo pendiente de Diego:** una foto consume la **misma cuota de acciones** que una
+frase de texto, y no cuesta lo mismo. Compartir cuota no es equivalencia de gasto.
 
 ## Blockers y pendientes vigentes
+
+**Play, al 2026-09-06:** Diego **ya envió a revisión** la declaración de Seguridad de los datos con
+Audio y Fotos. Falta que su web de política de privacidad mencione el micrófono y la foto; el prompt
+para esa edición se le entregó en la sesión. La frase correcta sobre la foto es **"sin archivo
+permanente de fotos en Cuentivo"**, nunca "no se guarda en ningún lado": existe el temporal local y
+el proveedor retiene registros para supervisión de abuso.
+
 
 - **El control plane live personal está cerrado, pero no el entitlement comercial.** Cuota,
   hard cap, rate limit y kill switch ya están desplegados/probados; Play todavía no concede ni
