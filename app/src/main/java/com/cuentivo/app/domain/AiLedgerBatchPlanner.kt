@@ -90,6 +90,33 @@ object AiLedgerBatchPlanner {
         ).toString()
     }
 
+    /**
+     * Resolves the effective epoch day for a row date candidate.
+     *
+     * Rules:
+     * - An absent date (null candidate) takes [pageDateEpochDay] if [pageDateEpochDay] is valid (> 0 and <= [todayEpochDay]).
+     * - An explicit date candidate MUST be valid calendar day and <= [todayEpochDay]. An invalid explicit candidate
+     *   returns null and NEVER falls back to [pageDateEpochDay].
+     */
+    internal fun resolveDate(
+        dateCandidate: SafeDateCandidate?,
+        pageDateEpochDay: Long?,
+        todayEpochDay: Long,
+    ): Long? {
+        if (dateCandidate == null) {
+            return if (pageDateEpochDay != null && pageDateEpochDay > 0 && pageDateEpochDay <= todayEpochDay) {
+                pageDateEpochDay
+            } else {
+                null
+            }
+        }
+        val candidateEpoch = toEpochDay(dateCandidate) ?: return null
+        if (candidateEpoch <= 0 || candidateEpoch > todayEpochDay) {
+            return null
+        }
+        return candidateEpoch
+    }
+
     /** The dates a page resolves to, so a caller can compute [batchKeyFor] without planning. */
     fun resolvedDatesFor(
         operations: List<LedgerOperation>,
@@ -98,8 +125,8 @@ object AiLedgerBatchPlanner {
     ): Map<Int, Long> {
         val resolved = mutableMapOf<Int, Long>()
         for (op in operations.filter { isRegisterableLedgerOperation(it) }) {
-            val effective = op.date?.let { toEpochDay(it) } ?: pageDateEpochDay
-            if (effective != null && effective > 0 && effective <= todayEpochDay) {
+            val effective = resolveDate(op.date, pageDateEpochDay, todayEpochDay)
+            if (effective != null) {
                 resolved[op.lineIndex] = effective
             }
         }
@@ -145,9 +172,8 @@ object AiLedgerBatchPlanner {
         // 2. Validate dates: each row must have a valid date <= todayEpochDay, or fallback to valid pageDateEpochDay
         val resolvedDatesByLineIndex = mutableMapOf<Int, Long>()
         for (op in registrableOps) {
-            val opDateEpoch = op.date?.let { toEpochDay(it) }
-            val effectiveDate = opDateEpoch ?: pageDateEpochDay
-            if (effectiveDate == null || effectiveDate <= 0 || effectiveDate > todayEpochDay) {
+            val effectiveDate = resolveDate(op.date, pageDateEpochDay, todayEpochDay)
+            if (effectiveDate == null) {
                 rejections.add(BatchPlanningRejection.MissingDate(op.lineIndex))
             } else {
                 resolvedDatesByLineIndex[op.lineIndex] = effectiveDate

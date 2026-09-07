@@ -284,7 +284,7 @@ fun CuentivoApp(
     confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
     extractLedgerPage: (suspend (requestId: String, imageBase64: String, imageMimeType: String) -> com.cuentivo.app.ai.ledger.LedgerExtractionCallResult)? = null,
     ledgerBalancesResolver: (suspend (businessId: String) -> Map<String, Long>)? = null,
-    confirmLedgerBatch: (suspend (businessId: String, operations: List<com.cuentivo.app.ai.ledger.LedgerOperation>) -> Int?)? = null,
+    confirmLedgerBatch: (suspend (businessId: String, operations: List<com.cuentivo.app.ai.ledger.LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
     businessQueryResolver: (suspend (businessId: String, proposal: com.cuentivo.app.ai.BusinessQueryProposal, choice: com.cuentivo.app.ai.AiEntityChoice?) -> com.cuentivo.app.ai.AiBusinessQueryResult)? = null,
     message: String? = null,
     onMessageShown: () -> Unit = {},

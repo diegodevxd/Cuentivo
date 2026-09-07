@@ -1,11 +1,18 @@
 package com.cuentivo.app.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
@@ -21,11 +28,12 @@ import org.junit.Test
 class LedgerReviewScreenTest {
     @get:Rule val composeRule = createComposeRule()
 
-    private fun sale(lineIndex: Int, name: String, cents: String) = LedgerOperation(
+    private fun sale(lineIndex: Int, name: String, cents: String, date: com.cuentivo.app.ai.ledger.SafeDateCandidate? = com.cuentivo.app.ai.ledger.SafeDateCandidate(2026, 9, 1)) = LedgerOperation(
         lineIndex = lineIndex,
         proposedKind = ProposedLedgerKind.SALE,
         customerName = name,
         amountCents = cents,
+        date = date,
     )
 
     @Test fun a_page_with_readable_rows_can_be_confirmed() {
@@ -39,6 +47,7 @@ class LedgerReviewScreenTest {
                 onUpdateCustomer = { _, _ -> },
                 onUpdateKind = { _, _ -> },
                 onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
                 onRemoveRow = { },
                 onConfirm = { },
                 onCancel = { },
@@ -57,6 +66,7 @@ class LedgerReviewScreenTest {
                     proposedKind = ProposedLedgerKind.SALE,
                     customerName = "Rosa",
                     amountCents = null,
+                    date = com.cuentivo.app.ai.ledger.SafeDateCandidate(2026, 9, 1),
                     unreadableFields = listOf(UnreadableLedgerField.AMOUNT),
                 ),
             ),
@@ -70,6 +80,7 @@ class LedgerReviewScreenTest {
                 onUpdateCustomer = { _, _ -> },
                 onUpdateKind = { _, _ -> },
                 onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
                 onRemoveRow = { },
                 onConfirm = { },
                 onCancel = { },
@@ -87,6 +98,7 @@ class LedgerReviewScreenTest {
                     proposedKind = ProposedLedgerKind.PAYMENT,
                     customerName = "Juan",
                     amountCents = "300000",
+                    date = com.cuentivo.app.ai.ledger.SafeDateCandidate(2026, 9, 1),
                 ),
                 sale(1, "Rosa", "25000"),
             ),
@@ -100,6 +112,7 @@ class LedgerReviewScreenTest {
                 onUpdateCustomer = { _, _ -> },
                 onUpdateKind = { _, _ -> },
                 onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
                 onRemoveRow = { },
                 onConfirm = { },
                 onCancel = { },
@@ -122,6 +135,7 @@ class LedgerReviewScreenTest {
                 onUpdateCustomer = { _, _ -> },
                 onUpdateKind = { _, _ -> },
                 onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
                 onRemoveRow = { },
                 onConfirm = { },
                 onCancel = { cancelled = true },
@@ -130,5 +144,58 @@ class LedgerReviewScreenTest {
 
         composeRule.onNodeWithTag("ledger-review-cancel-button").performClick()
         composeRule.runOnIdle { org.junit.Assert.assertTrue("Discarding the page must reach the caller.", cancelled) }
+    }
+
+    @Test fun typing_partial_page_date_does_not_clear_or_reset_input() {
+        val undatedSale = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa",
+            amountCents = "25000",
+            date = null,
+        )
+        val validPageDate = java.time.LocalDate.of(2026, 6, 15).toEpochDay()
+        val today = java.time.LocalDate.of(2026, 9, 1).toEpochDay()
+        val initialReview = LedgerReviewEngine.build(
+            operations = listOf(undatedSale),
+            pageDateEpochDay = validPageDate,
+            todayEpochDay = today,
+        )
+
+        composeRule.setContent {
+            var currentReview by remember { mutableStateOf(initialReview) }
+            LedgerReviewContent(
+                review = currentReview,
+                captureFile = null,
+                onUpdateAmount = { _, _ -> },
+                onUpdateCustomer = { _, _ -> },
+                onUpdateKind = { _, _ -> },
+                onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { newPageDate ->
+                    currentReview = LedgerReviewEngine.build(
+                        operations = currentReview.operations,
+                        discards = currentReview.discards,
+                        unreadTextRemaining = currentReview.unreadTextRemaining,
+                        pageIncomplete = currentReview.pageIncomplete,
+                        pageDateEpochDay = newPageDate,
+                        todayEpochDay = currentReview.todayEpochDay,
+                    )
+                },
+                onRemoveRow = { },
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        val field = composeRule.onNodeWithTag("ledger-page-date-field")
+        field.assertIsDisplayed()
+        field.assertTextContains("2026-06-15")
+
+        field.performTextReplacement("2026-06-")
+
+        composeRule.runOnIdle { }
+
+        field.assertTextContains("2026-06-")
+        composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsNotEnabled()
     }
 }

@@ -958,6 +958,7 @@ object AiDebugLabMachine {
         pageIncomplete: Boolean = false,
         existingCustomerBalances: Map<String, Long> = emptyMap(),
         generation: Long,
+        todayEpochDay: Long = java.time.LocalDate.now().toEpochDay(),
     ): AiDebugLabModel {
         if (generation != model.generation) return model
         val state = model.state as? AiDebugLabState.LedgerExtracting ?: return model
@@ -973,6 +974,7 @@ object AiDebugLabMachine {
             unreadTextRemaining = unreadTextRemaining,
             pageIncomplete = pageIncomplete,
             existingCustomerBalances = frozenBalances,
+            todayEpochDay = todayEpochDay,
         )
 
         return model.copy(
@@ -986,6 +988,37 @@ object AiDebugLabMachine {
     }
 
     /**
+     * Updates the page date of the active review in LedgerReviewing.
+     */
+    fun onUpdateLedgerPageDate(
+        model: AiDebugLabModel,
+        sessionId: String,
+        pageDateEpochDay: Long?,
+        todayEpochDay: Long? = null,
+    ): AiDebugLabModel {
+        val state = model.state as? AiDebugLabState.LedgerReviewing ?: return model
+        if (state.sessionId != sessionId) return model
+
+        val effectiveTodayEpochDay = todayEpochDay ?: state.review.todayEpochDay ?: java.time.LocalDate.now().toEpochDay()
+
+        val updatedReview = LedgerReviewEngine.build(
+            operations = state.review.operations,
+            discards = state.review.discards,
+            unreadTextRemaining = state.review.unreadTextRemaining,
+            pageIncomplete = state.review.pageIncomplete,
+            existingCustomerBalances = state.existingCustomerBalances,
+            pageDateEpochDay = pageDateEpochDay,
+            todayEpochDay = effectiveTodayEpochDay,
+        )
+
+        return model.copy(
+            state = state.copy(
+                review = updatedReview,
+            ),
+        )
+    }
+
+    /**
      * Pure update to the active reviews operations. Only valid while in LedgerReviewing with matching sessionId.
      * Retains the existing customer balances context without requiring callers to re-inject it.
      */
@@ -993,6 +1026,7 @@ object AiDebugLabMachine {
         model: AiDebugLabModel,
         sessionId: String,
         existingCustomerBalances: Map<String, Long>? = null,
+        todayEpochDay: Long? = null,
         transform: (List<LedgerOperation>) -> List<LedgerOperation>,
     ): AiDebugLabModel {
         val state = model.state as? AiDebugLabState.LedgerReviewing ?: return model
@@ -1002,12 +1036,15 @@ object AiDebugLabMachine {
             LinkedHashMap(existingCustomerBalances ?: state.existingCustomerBalances)
         )
         val updatedOps = transform(state.review.operations)
+        val effectiveTodayEpochDay = todayEpochDay ?: state.review.todayEpochDay ?: java.time.LocalDate.now().toEpochDay()
         val updatedReview = LedgerReviewEngine.build(
             operations = updatedOps,
             discards = state.review.discards,
             unreadTextRemaining = state.review.unreadTextRemaining,
             pageIncomplete = state.review.pageIncomplete,
             existingCustomerBalances = balancesToUse,
+            pageDateEpochDay = state.review.pageDateEpochDay,
+            todayEpochDay = effectiveTodayEpochDay,
         )
 
         return model.copy(
@@ -1021,9 +1058,9 @@ object AiDebugLabMachine {
     /**
      * Transitions from LedgerReviewing to LedgerConfirming with incremented generation.
      *
-     * Financial gate:
+     * Financial & date gate:
      * If there are blocking financial diagnostics (OVERFLOW, PAYMENT_WITHOUT_DEBT,
-     * PAYMENT_EXCEEDS_DEBT, ZERO_AMOUNT) or if there are zero executable operations,
+     * PAYMENT_EXCEEDS_DEBT, ZERO_AMOUNT), zero executable operations, or missing dates,
      * confirmation is strictly blocked (returns [AiLedgerConfirmOutcome.Ignored]).
      */
     fun onConfirmLedger(
@@ -1035,8 +1072,8 @@ object AiDebugLabMachine {
         val state = model.state as? AiDebugLabState.LedgerReviewing ?: return AiLedgerConfirmOutcome.Ignored
         if (state.sessionId != sessionId || state.businessId != businessId) return AiLedgerConfirmOutcome.Ignored
 
-        // Financial gate: blocking diagnostics or zero executable operations cannot proceed to confirmation
-        if (state.review.summary.hasFinancialErrors || state.review.summary.executableOperationsCount == 0) {
+        // Financial & date gate: must be confirmable
+        if (!state.review.summary.canConfirm) {
             return AiLedgerConfirmOutcome.Ignored
         }
 

@@ -366,4 +366,54 @@ class AiLedgerBatchPlannerTest {
             (result2 as BatchPlanningResult.Success).plan.batchIdempotencyKey,
         )
     }
+
+    @Test
+    fun resolveDate_absent_date_takes_page_date_and_invalid_date_does_not_take_page_date() {
+        val pageDate = LocalDate.of(2026, 8, 1).toEpochDay()
+
+        // 1. Absent date (null candidate) takes page date
+        assertEquals(pageDate, AiLedgerBatchPlanner.resolveDate(null, pageDate, todayEpochDay))
+
+        // 2. Invalid date candidate (Feb 31) does NOT take page date
+        val invalidCandidate = SafeDateCandidate(2026, 2, 31)
+        org.junit.Assert.assertNull(AiLedgerBatchPlanner.resolveDate(invalidCandidate, pageDate, todayEpochDay))
+
+        // 3. Future date candidate does NOT take page date
+        val futureCandidate = SafeDateCandidate(2026, 12, 31)
+        org.junit.Assert.assertNull(AiLedgerBatchPlanner.resolveDate(futureCandidate, pageDate, todayEpochDay))
+
+        // 4. Valid date candidate uses its own date
+        val validCandidate = SafeDateCandidate(2026, 8, 10)
+        assertEquals(LocalDate.of(2026, 8, 10).toEpochDay(), AiLedgerBatchPlanner.resolveDate(validCandidate, pageDate, todayEpochDay))
+    }
+
+    @Test
+    fun plan_rejects_invalid_date_candidate_even_when_page_date_is_provided() {
+        val pageDate = LocalDate.of(2026, 8, 15).toEpochDay()
+        val ops = listOf(
+            LedgerOperation(
+                lineIndex = 1,
+                proposedKind = ProposedLedgerKind.SALE,
+                customerName = "Ana",
+                amountCents = "1500",
+                date = SafeDateCandidate(2026, 2, 31), // Invalid calendar date
+            ),
+        )
+
+        val result = AiLedgerBatchPlanner.plan(
+            businessId = businessId,
+            userId = userId,
+            operations = ops,
+            existingCustomerMap = emptyMap(),
+            existingOutstandingSalesByCustomerId = emptyMap(),
+            pageDateEpochDay = pageDate,
+            todayEpochDay = todayEpochDay,
+            nowEpochMillis = nowEpochMillis,
+        )
+
+        assertTrue(result is BatchPlanningResult.Rejected)
+        val rejection = (result as BatchPlanningResult.Rejected).rejections.first()
+        assertTrue(rejection is BatchPlanningRejection.MissingDate)
+        assertEquals(1, (rejection as BatchPlanningRejection.MissingDate).lineIndex)
+    }
 }

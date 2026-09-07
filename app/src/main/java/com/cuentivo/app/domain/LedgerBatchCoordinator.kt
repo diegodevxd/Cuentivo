@@ -23,7 +23,7 @@ object LedgerBatchCoordinator {
         businessId: String,
         userId: String,
         operations: List<LedgerOperation>,
-        pageDateEpochDay: Long,
+        pageDateEpochDay: Long?,
         todayEpochDay: Long,
         nowEpochMillis: Long,
         alreadyRecorded: suspend (batchKey: String) -> Boolean,

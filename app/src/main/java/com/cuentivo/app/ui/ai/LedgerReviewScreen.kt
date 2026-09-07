@@ -56,9 +56,11 @@ import com.cuentivo.app.ai.ledger.CustomerReviewGroup
 import com.cuentivo.app.ai.ledger.FinancialRejectionReason
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReview
+import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.OperationFinancialDiagnostic
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
+import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -76,12 +78,14 @@ fun LedgerReviewContent(
     onUpdateCustomer: (lineIndex: Int, customerName: String) -> Unit,
     onUpdateKind: (lineIndex: Int, kind: ProposedLedgerKind) -> Unit,
     onUpdateDate: (lineIndex: Int, date: SafeDateCandidate?) -> Unit,
+    onUpdatePageDate: (pageDateEpochDay: Long?) -> Unit,
     onRemoveRow: (lineIndex: Int) -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var editingOperation by remember { mutableStateOf<LedgerOperation?>(null) }
+    val hasRowsWithoutDate = review.operations.filter { isRegisterableLedgerOperation(it) }.any { it.date == null }
 
     Column(
         modifier = modifier
@@ -115,6 +119,15 @@ fun LedgerReviewContent(
             modifier = Modifier.fillMaxWidth(),
         )
 
+        // Page date selector: shown ONLY when at least one registrable operation lacks a date
+        if (hasRowsWithoutDate) {
+            PageDateCard(
+                pageDateEpochDay = review.pageDateEpochDay,
+                onUpdatePageDate = onUpdatePageDate,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
         // A page that did not fit, or whose text the model could not finish reading, must say so
         // here. Confirming a partial import silently is how a notebook ends up half migrated with
         // nobody aware which half is missing.
@@ -129,11 +142,12 @@ fun LedgerReviewContent(
             )
         }
 
-        // Financial Block Alert (if any)
-        if (review.summary.hasFinancialErrors || review.summary.executableOperationsCount == 0) {
+        // Financial & Date Block Alert (if any)
+        if (review.summary.hasFinancialErrors || review.summary.executableOperationsCount == 0 || review.summary.hasMissingDates) {
             FinancialErrorBanner(
                 diagnostics = review.summary.financialDiagnostics,
                 hasZeroOps = review.summary.executableOperationsCount == 0,
+                hasMissingDates = review.summary.hasMissingDates,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -274,9 +288,71 @@ private fun LedgerSummaryCard(
 }
 
 @Composable
+private fun PageDateCard(
+    pageDateEpochDay: Long?,
+    onUpdatePageDate: (Long?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var dateText by remember {
+        mutableStateOf(
+            pageDateEpochDay?.let {
+                val localDate = java.time.LocalDate.ofEpochDay(it)
+                String.format("%04d-%02d-%02d", localDate.year, localDate.monthValue, localDate.dayOfMonth)
+            } ?: ""
+        )
+    }
+    val parsedDate = parseLedgerDateInput(dateText)
+    val dateIsBlank = dateText.isBlank()
+    val todayEpochDay = remember { java.time.LocalDate.now().toEpochDay() }
+    val isValidDate = parsedDate != null && LedgerReviewEdits.isAcceptableDate(parsedDate, todayEpochDay)
+    val dateIsWrong = !dateIsBlank && !isValidDate
+
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.ai_ledger_field_page_date),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            OutlinedTextField(
+                value = dateText,
+                onValueChange = { newText ->
+                    dateText = newText
+                    val candidate = parseLedgerDateInput(newText)
+                    if (candidate != null && LedgerReviewEdits.isAcceptableDate(candidate, todayEpochDay)) {
+                        val epochDay = java.time.LocalDate.of(candidate.year, candidate.month, candidate.day).toEpochDay()
+                        onUpdatePageDate(epochDay)
+                    } else {
+                        onUpdatePageDate(null)
+                    }
+                },
+                label = { Text(stringResource(R.string.ai_ledger_field_page_date)) },
+                placeholder = { Text(stringResource(R.string.ai_ledger_field_date_placeholder)) },
+                isError = dateIsWrong,
+                supportingText = if (dateIsWrong) {
+                    { Text(stringResource(R.string.ai_ledger_field_page_date_invalid)) }
+                } else null,
+                modifier = Modifier.fillMaxWidth().testTag("ledger-page-date-field"),
+                singleLine = true,
+            )
+        }
+    }
+}
+
+@Composable
 private fun FinancialErrorBanner(
     diagnostics: List<OperationFinancialDiagnostic>,
     hasZeroOps: Boolean,
+    hasMissingDates: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -291,6 +367,14 @@ private fun FinancialErrorBanner(
             if (hasZeroOps && diagnostics.isEmpty()) {
                 Text(
                     text = stringResource(R.string.ai_ledger_error_zero_operations),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            if (hasMissingDates && diagnostics.isEmpty() && !hasZeroOps) {
+                Text(
+                    text = stringResource(R.string.ai_ledger_error_missing_page_date),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     fontWeight = FontWeight.Medium,

@@ -524,7 +524,7 @@ class LedgerReviewTest {
             model = extracting,
             sessionId = "sess-1",
             businessId = "biz-1",
-            operations = listOf(LedgerOperation(1, ProposedLedgerKind.SALE, "Juan", "100")),
+            operations = listOf(LedgerOperation(1, ProposedLedgerKind.SALE, "Juan", "100", date = SafeDateCandidate(2026, 9, 1))),
             generation = extracting.generation,
         )
         assertTrue(reviewing.isVoiceDisabled)
@@ -729,6 +729,115 @@ class LedgerReviewTest {
             amountCents = "100",
         )
         assertFalse("Interleaved BOM and whitespace must be rejected", isRegisterableLedgerOperation(op))
+    }
+
+    @Test
+    fun batch_with_missing_dates_and_no_page_date_cannot_be_confirmed() {
+        val opWithoutDate = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Juan",
+            amountCents = "1000",
+            date = null,
+        )
+        val initial = AiDebugLabModel()
+        val extracting = AiDebugLabMachine.onStartLedgerExtraction(initial, "sess-1", "biz-1")
+        val reviewing = AiDebugLabMachine.onLedgerExtractionResult(
+            model = extracting,
+            sessionId = "sess-1",
+            businessId = "biz-1",
+            operations = listOf(opWithoutDate),
+            generation = extracting.generation,
+        )
+        val state = reviewing.state as AiDebugLabState.LedgerReviewing
+        assertTrue(state.review.summary.hasMissingDates)
+        assertFalse(state.review.summary.canConfirm)
+
+        val outcome = AiDebugLabMachine.onConfirmLedger(reviewing, "sess-1", "biz-1")
+        assertSame(AiLedgerConfirmOutcome.Ignored, outcome)
+    }
+
+    @Test
+    fun setting_valid_page_date_enables_confirmation() {
+        val opWithoutDate = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Juan",
+            amountCents = "1000",
+            date = null,
+        )
+        val initial = AiDebugLabModel()
+        val extracting = AiDebugLabMachine.onStartLedgerExtraction(initial, "sess-1", "biz-1")
+        val reviewing = AiDebugLabMachine.onLedgerExtractionResult(
+            model = extracting,
+            sessionId = "sess-1",
+            businessId = "biz-1",
+            operations = listOf(opWithoutDate),
+            generation = extracting.generation,
+        )
+        val validPageDate = java.time.LocalDate.of(2026, 8, 15).toEpochDay()
+        val updatedModel = AiDebugLabMachine.onUpdateLedgerPageDate(
+            model = reviewing,
+            sessionId = "sess-1",
+            pageDateEpochDay = validPageDate,
+            todayEpochDay = java.time.LocalDate.of(2026, 9, 1).toEpochDay(),
+        )
+
+        val state = updatedModel.state as AiDebugLabState.LedgerReviewing
+        assertFalse(state.review.summary.hasMissingDates)
+        assertTrue(state.review.summary.canConfirm)
+        assertEquals(validPageDate, state.review.pageDateEpochDay)
+
+        val outcome = AiDebugLabMachine.onConfirmLedger(updatedModel, "sess-1", "biz-1")
+        assertTrue(outcome is AiLedgerConfirmOutcome.Started)
+        val started = outcome as AiLedgerConfirmOutcome.Started
+        assertEquals(validPageDate, started.review.pageDateEpochDay)
+    }
+
+    @Test
+    fun editing_a_row_does_not_unblock_a_future_page_date() {
+        val opWithoutDate = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Juan",
+            amountCents = "1000",
+            date = null,
+        )
+        val initial = AiDebugLabModel()
+        val extracting = AiDebugLabMachine.onStartLedgerExtraction(initial, "sess-1", "biz-1")
+        val today = java.time.LocalDate.of(2026, 9, 1).toEpochDay()
+        val futurePageDate = java.time.LocalDate.of(2026, 9, 2).toEpochDay()
+
+        val reviewing = AiDebugLabMachine.onLedgerExtractionResult(
+            model = extracting,
+            sessionId = "sess-1",
+            businessId = "biz-1",
+            operations = listOf(opWithoutDate),
+            generation = extracting.generation,
+            todayEpochDay = today,
+        )
+
+        val modelWithFutureDate = AiDebugLabMachine.onUpdateLedgerPageDate(
+            model = reviewing,
+            sessionId = "sess-1",
+            pageDateEpochDay = futurePageDate,
+            todayEpochDay = today,
+        )
+
+        val futureState = modelWithFutureDate.state as AiDebugLabState.LedgerReviewing
+        assertTrue(futureState.review.summary.hasMissingDates)
+        assertFalse(futureState.review.summary.canConfirm)
+
+        val modelAfterRowEdit = AiDebugLabMachine.onUpdateLedgerOperations(
+            model = modelWithFutureDate,
+            sessionId = "sess-1",
+        ) { ops ->
+            LedgerReviewEdits.applyAmount(ops, 1, "2000")
+        }
+
+        val stateAfterEdit = modelAfterRowEdit.state as AiDebugLabState.LedgerReviewing
+        assertTrue(stateAfterEdit.review.summary.hasMissingDates)
+        assertFalse(stateAfterEdit.review.summary.canConfirm)
     }
 }
 

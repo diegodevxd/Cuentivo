@@ -224,6 +224,7 @@ data class LedgerReview(
     val pageIncomplete: Boolean,
     val summary: LedgerReviewSummary,
     val pageDateEpochDay: Long? = null,
+    val todayEpochDay: Long? = null,
 )
 
 /**
@@ -245,6 +246,7 @@ object LedgerReviewEngine {
         pageIncomplete: Boolean = false,
         existingCustomerBalances: Map<String, Long> = emptyMap(),
         pageDateEpochDay: Long? = null,
+        todayEpochDay: Long? = null,
     ): LedgerReview {
         // Defensive copy: isolate snapshot from any caller modifications
         val frozenOps: List<LedgerOperation> = Collections.unmodifiableList(
@@ -390,7 +392,8 @@ object LedgerReviewEngine {
         val newCustomersCount = customerGroups.count { it.willBeCreatedAsCustomer }
 
         val allExecutableOps = customerGroups.flatMap { it.executableOperations }
-        val hasMissingDates = allExecutableOps.any { it.date == null } && pageDateEpochDay == null
+        val isValidPageDate = pageDateEpochDay != null && pageDateEpochDay > 0 && (todayEpochDay == null || pageDateEpochDay <= todayEpochDay)
+        val hasMissingDates = allExecutableOps.any { it.date == null } && !isValidPageDate
 
         val summary = LedgerReviewSummary(
             newCustomersCount = newCustomersCount,
@@ -415,6 +418,7 @@ object LedgerReviewEngine {
             pageIncomplete = pageIncomplete,
             summary = summary,
             pageDateEpochDay = pageDateEpochDay,
+            todayEpochDay = todayEpochDay,
         )
     }
 

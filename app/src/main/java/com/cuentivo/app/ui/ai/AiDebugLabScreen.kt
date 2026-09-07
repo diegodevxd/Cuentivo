@@ -166,7 +166,7 @@ fun AiDebugLabScreen(
     voiceRecognizer: VoiceRecognizer? = null,
     extractLedgerPage: (suspend (requestId: String, imageBase64: String, imageMimeType: String) -> LedgerExtractionCallResult)? = null,
     ledgerBalancesResolver: (suspend (businessId: String) -> Map<String, Long>)? = null,
-    confirmLedgerBatch: (suspend (businessId: String, operations: List<LedgerOperation>) -> Int?)? = null,
+    confirmLedgerBatch: (suspend (businessId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     var voiceModel by remember { mutableStateOf(VoiceCaptureModel()) }
@@ -567,6 +567,13 @@ fun AiDebugLabScreen(
                         )
                     }
                 },
+                onUpdatePageDate = { pageDateEpochDay ->
+                    model = AiDebugLabMachine.onUpdateLedgerPageDate(
+                        model = model,
+                        sessionId = ledgerReviewing.sessionId,
+                        pageDateEpochDay = pageDateEpochDay,
+                    )
+                },
                 onRemoveRow = { lineIndex ->
                     model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
                         LedgerReviewEdits.removeRow(operations, lineIndex)
@@ -581,10 +588,11 @@ fun AiDebugLabScreen(
                         val sessionId = ledgerReviewing.sessionId
                         val businessId = ledgerReviewing.businessId
                         val operations = ledgerReviewing.review.operations
+                        val pageDateEpochDay = ledgerReviewing.review.pageDateEpochDay
                         val skipped = operations.count { !isRegisterableLedgerOperation(it) }
                         scope.launch {
                             val recorded = withContext(Dispatchers.IO) {
-                                runCatching { write(businessId, operations) }.getOrNull()
+                                runCatching { write(businessId, operations, pageDateEpochDay) }.getOrNull()
                             }
                             model = AiDebugLabMachine.onLedgerBatchResult(
                                 model = model,
