@@ -93,6 +93,7 @@ import com.cuentivo.app.ai.capture.AiCapturePolicy
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
 import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
+import com.cuentivo.app.ai.ledger.LedgerImagePreparer
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.ai.capture.AiCaptureStore
@@ -383,8 +384,19 @@ fun AiDebugLabScreen(
                         else -> {
                             // A page that could not be read leaves nothing behind: no half review,
                             // and no photo waiting on disk for an import that is not happening.
+                            // But it does say why: silently returning to the chat is how this
+                            // looked like the button did nothing at all.
                             discardLedgerCapture()
-                            model = AiDebugLabMachine.onCancelLedger(model)
+                            val reason = when (outcome) {
+                                is LedgerExtractionCallResult.QuotaExhausted -> AiChatMessage.AssistantQuotaExhausted
+                                is LedgerExtractionCallResult.RateLimited -> AiChatMessage.AssistantRateLimited
+                                is LedgerExtractionCallResult.Disabled -> AiChatMessage.AssistantDisabled
+                                is LedgerExtractionCallResult.EntitlementRequired -> AiChatMessage.AssistantEntitlementRequired
+                                else -> AiChatMessage.AssistantLedgerFailed
+                            }
+                            model = AiDebugLabMachine.onCancelLedger(model).let { cancelled ->
+                                cancelled.copy(messages = cancelled.messages + reason)
+                            }
                         }
                     }
                 }
@@ -403,12 +415,18 @@ fun AiDebugLabScreen(
             return@rememberLauncherForActivityResult
         }
         val file = cameraStore.fileFor(uri)
-        if (!AiLedgerImagePolicy.isWithinCallableCap(file.length())) {
-            cameraStore.delete(uri)
-            discardLedgerCapture()
-            return@rememberLauncherForActivityResult
+        scope.launch {
+            // A camera photo at full resolution does not fit, and refusing it would make the main
+            // way of using this feature useless. It is scaled and rotated instead.
+            val mimeType = withContext(Dispatchers.IO) { LedgerImagePreparer.prepareInPlace(file) }
+            if (mimeType == null) {
+                cameraStore.delete(uri)
+                discardLedgerCapture()
+                model = model.copy(messages = model.messages + AiChatMessage.AssistantLedgerFailed)
+            } else {
+                runLedgerExtraction(file, mimeType)
+            }
         }
-        runLedgerExtraction(file, "image/jpeg")
     }
 
     val ledgerPickLauncher = rememberLauncherForActivityResult(
@@ -427,11 +445,12 @@ fun AiDebugLabScreen(
                     context.contentResolver.openInputStream(uri)?.use { input ->
                         target.outputStream().use { output -> input.copyTo(output) }
                     } ?: return@runCatching null
-                    if (!AiLedgerImagePolicy.isWithinCallableCap(target.length())) {
+                    val preparedMime = LedgerImagePreparer.prepareInPlace(target)
+                    if (preparedMime == null) {
                         target.delete()
                         null
                     } else {
-                        target to mimeType
+                        target to preparedMime
                     }
                 }.getOrNull()
             }
@@ -529,6 +548,39 @@ fun AiDebugLabScreen(
 
     // Reviewing a photographed ledger page takes over the whole surface: it is a different task
     // from the chat, and mixing them would let a stray dictation edit a page under review.
+    // Reading a page takes seconds against the network. Showing nothing at all is
+    // indistinguishable from the feature doing nothing, which is exactly how it looked.
+    val ledgerExtracting = model.state as? AiDebugLabState.LedgerExtracting
+    if (ledgerExtracting != null) {
+        Dialog(
+            onDismissRequest = { },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = stringResource(R.string.ai_ledger_extracting_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.ai_ledger_extracting_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        return
+    }
+
     val ledgerReviewing = model.state as? AiDebugLabState.LedgerReviewing
     if (ledgerReviewing != null) {
         val cancelLedger = {

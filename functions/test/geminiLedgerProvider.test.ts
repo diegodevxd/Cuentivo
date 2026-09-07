@@ -112,8 +112,13 @@ describe("GeminiLedgerProvider", () => {
       expect(itemProps.unreadableFields.items.enum).toEqual(["AMOUNT", "CUSTOMER", "DATE", "KIND"]);
       expect(itemProps.region.properties).toHaveProperty("x");
       expect(itemProps.region.properties).toHaveProperty("y");
-      expect(itemProps.region.properties.width.exclusiveMinimum).toBe(0);
-      expect(itemProps.region.properties.height.exclusiveMinimum).toBe(0);
+      // Gemini's schema subset does not accept exclusiveMinimum, and sending it made the API
+      // reject the whole request with a 400. A zero width or height is refused by the parser,
+      // which is where that guarantee belongs anyway.
+      expect(itemProps.region.properties.width.exclusiveMinimum).toBeUndefined();
+      expect(itemProps.region.properties.height.exclusiveMinimum).toBeUndefined();
+      expect(itemProps.region.properties.width.minimum).toBe(0);
+      expect(itemProps.region.properties.height.minimum).toBe(0);
     });
   });
 
@@ -189,7 +194,9 @@ describe("GeminiLedgerProvider", () => {
       // Config check: MAX_LEDGER_OUTPUT_TOKENS, not 512!
       expect(capturedParams.config).toMatchObject({
         responseMimeType: "application/json",
-        responseJsonSchema: LEDGER_EXTRACTION_JSON_SCHEMA,
+        // El schema NO viaja en la peticion: la API lo rechaza entero con INVALID_ARGUMENT y no
+        // dice por cual palabra clave. La forma de la respuesta se le pide en la instruccion, y la
+        // garantia real sigue siendo parseLedgerExtraction, que ya rechaza todo lo que no cuadre.
         temperature: 0,
         maxOutputTokens: MAX_LEDGER_OUTPUT_TOKENS,
       });
