@@ -92,10 +92,19 @@ después.
 La suite instrumentada completa aborta en `ProductPhotoSourceTest`, y **ese aborto no cuenta como
 verde**. Las clases que tocan dinero se corren una por una:
 
+**`-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true` no es opcional en el telefono de
+Diego.** Sin esa propiedad Gradle **desinstala la app al terminar**, y eso borra su base local de
+Room y el token de App Check. Ya paso una vez, con perdida de datos reales.
+
 ```powershell
-.gradlew.bat connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.ai.AiSaleExecutionIsolationTest'
-.gradlew.bat connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.ai.LedgerBatchIsolationTest'
+.gradlew.bat connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true '-Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.ai.AiSaleExecutionIsolationTest'
+.gradlew.bat connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true '-Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.ai.LedgerBatchIsolationTest'
+.gradlew.bat connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true '-Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.ui.LedgerGuidedReviewTest'
+.gradlew.bat connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true '-Pandroid.testInstrumentationRunnerArguments.class=com.cuentivo.app.data.local.SyncOperationReopenTest'
 ```
+
+Los resultados se cuentan de los XML de `app/build/outputs/androidTest-results/connected/`, no del
+texto de Gradle.
 
 ## 3. Firma y llave
 

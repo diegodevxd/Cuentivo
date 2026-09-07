@@ -11,9 +11,47 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-09-06 (tarde). **Fase B: 5 de 6 pasos commiteados.**
-Lo que queda para producción ya no es código: cohorte limpia de métricas y la observabilidad que el
-incidente del 4 de septiembre dejó al descubierto.
+**Última actualización:** 2026-09-07 (tarde). **Fase B completa y en prueba cerrada.**
+El AAB `v37` / `1.19.0` está subido a la pista cerrada de Play, firmado con la misma llave que el
+v36 (SHA1 `25:05:8A:9C:...:1D:BF`, comprobado con `keytool -printcert -jarfile` antes de subirlo).
+Es la primera vez que la importación de libreta por foto sale en un bundle. La política de
+privacidad de la web ya está actualizada.
+
+## 2026-09-07 — Fase B cerrada: la libreta de papel se lee, se revisa y se registra
+
+Lo que faltaba no era el planificador ni la transacción, que ya estaban. Era todo lo que rodea a la
+foto, y cada defecto tenía la misma forma: **algo que fallaba sin decirlo**.
+
+- **Gemini rechazaba la petición entera con `INVALID_ARGUMENT`** por `responseJsonSchema`. Se probó
+  el esquema completo y el reducido al subconjunto documentado: los dos, 400. Ya **no se envía
+  ninguno**. La forma se pide en la instrucción con un ejemplo literal y la garantía sigue siendo
+  `parseLedgerExtraction`. **No lo reintroduzcas sin probarlo contra la API real**: el gate local no
+  lo caza, porque el rechazo es del proveedor.
+- **La importación de libreta no existía en release.** Su botón estaba anidado dentro de
+  `if (ocrEngine != null)` y `debugAiOcrEngine` devuelve `null` en la variante release. Lo encontró
+  Codex mirando el código, no una prueba. De paso se quitó el botón de OCR viejo: eran dos botones
+  pegados y la gente se confundía.
+- **El monto se preguntaba en centavos crudos.** Un `$999` mal leído como 99.90 le llegaba a la
+  persona como `9990`, casi idéntico al `999` del papel, en el diálogo cuya única razón de existir
+  es comparar los dos. Diego lo confirmó sin verlo. Ahora se pregunta en **pesos**
+  (`LedgerAmountInput`), y la instrucción prohíbe partir un entero en pesos y centavos.
+- **La clave del lote se podía falsificar con texto libre.** Pegaba renglones con `|` y campos con
+  `:`. Un renglón cuya descripción cargue el resto de la cadena produce los mismos bytes que dos
+  renglones, y el segundo cobro no se registra nunca, en silencio. Ahora va con prefijo de longitud.
+- **El saldo de apertura se sumaba con `sumOf`**, que envuelve. Ahora `Math.addExact` y rechazo.
+- **117 filas del outbox estaban aparcadas con `PERMISSION_DENIED`** y no había datos perdidos:
+  eran documentos **ya publicados**. `set()` sobre algo que existe es un *update*, y lo financiero
+  es create-only. Ahora se pregunta al servidor y se compara el contenido: idéntico se da por
+  cumplido, distinto se aparca **diciendo que difiere**, y no poder preguntar es transitorio.
+- **Con la instrucción endurecida, Gemini marca casi todo dudoso** — correcto: un valor heredado de
+  unas comillas no es un valor leído. Pero un renglón dudoso no es registrable hasta que una persona
+  lo confirme, así que la pantalla se quedaba con el botón muerto y "registrar 0 movimientos"
+  escrito encima. Ahora el aviso dice cuántos hay, un botón abre el primero y guardar **avanza solo**
+  al siguiente.
+
+**La lección que más vale de esta sesión:** el 400 de Gemini se diagnosticó deduciendo del código
+fuente durante dos rondas equivocadas, y sólo se resolvió al **imprimir el objeto que de verdad
+viaja** y bisecar quitando el schema. Inspecciona lo que se envía, no lo que crees que se envía.
 
 ## 2026-09-04 — CuentivoAI se cayó en producción: tres bugs apilados, resueltos
 
@@ -213,10 +251,10 @@ condiciones están abajo.
 
 ## Dónde estamos
 
-**Cuentivo base.** `versionCode 32` / `versionName 1.17.0` **subido a Play y en producción con
-lanzamiento gradual al 20%** desde el 2026-08-26. La baseline anterior era `31 / 1.16.6`. Room, sync,
-Billing, Auth y roles operan en datos reales. El siguiente AAB es el que **cierra el núcleo de
-CuentivoAI**, y esa es la pista de trabajo activa mientras la v32 acumula cohorte.
+**Cuentivo base.** `versionCode 37` / `versionName 1.19.0` **subido a la pista cerrada** el
+2026-09-07, firmado con la misma llave que el v36. Antes: `36 / 1.18.0` y, en producción con
+lanzamiento gradual, `32 / 1.17.0` desde el 2026-08-26. Room, sync, Billing, Auth y roles operan en
+datos reales.
 
 **CuentivoAI.** Rama aislada `diegodevxd/feature-cuentivo-ai`. El gateway server-side existe: la
 key de Gemini vive en Secret Manager, la facturación Blaze está configurada y únicamente
@@ -330,22 +368,33 @@ general continúan cerradas.
 
 ## Último gate verificado
 
-Fase B pasos 1–5 (`b30a408`, `b3f21f2`, `aadbb5c`, `903d12e`, `90593ed`, `d8a5891`), todo
-reejecutado por Claude, nunca tomado del reporte del implementador:
+Cierre de la Fase B (`caf6e71`, `5dd42e2`, `4bdea0d`, `4d9ee13`, `eb65916`, `8688351`, `79b40c9`,
+`608b57c`). Todo reejecutado por Claude, nunca tomado del reporte de un implementador:
 
-- **Functions 436/436** en 18 archivos, con `lint` y `build` en 0.
-- **Android JVM 1037/1037** con `--rerun-tasks`, contadas desde los XML, y `assembleDebug`.
-- **Room, instrumentadas:** `AiSaleExecutionIsolationTest` 29/29, `LedgerReviewScreenTest` 4/4 y
-  `LedgerBatchIsolationTest` **9/9**, esta última **en el teléfono físico A059P**, no en emulador.
-- Paridad de claves **609 = 609** y puerta del idioma limpia (sólo las 4 etiquetas de animación).
+- **Functions:** `release:check` **completo** — `npm ci`, lint, **436 pruebas**, **gate del emulador
+  de Firestore 9/9**, y compilar desde `lib/` limpio.
+- **Android JVM 1063/1063**, contadas desde los XML de `app/build/test-results/`.
+- **Instrumentadas en el A059P físico:** `SyncOperationReopenTest` 5/5,
+  `LedgerGuidedReviewTest` 5/5, `LedgerImagePreparerTest` 6/6.
+- **Verificación por mutación**, porque en este proyecto una prueba en verde ya mintió cinco veces:
+  se rompió producción a propósito en cada arreglo y se comprobó que la prueba cae. Una de ellas
+  **pasaba con el código roto** — el ejemplo de colisión de claves no colisionaba de verdad — y se
+  reconstruyó hasta que falló.
+- Paridad de claves **611 = 611** y puerta del idioma limpia (sólo las etiquetas de animación).
+- `assembleDebug`, `assembleRelease` y `bundleRelease` en verde.
+
+**Deuda de proceso, anotada porque pasó:** `extractLedgerPage` se desplegó dos veces el 2026-09-07
+corriendo sólo `lint` y `npm test`, **sin** `release:check`. El gate se corrió después y pasó, así
+que lo desplegado es correcto, pero el orden fue el inverso al que manda `CLAUDE.md`.
 
 **Cómo se corre ahora:** el A059P de Diego está conectado en depuración y **sustituye al emulador**.
-La app instalada es la debug (`DEBUGGABLE`), así que `installDebug` actualiza encima **sin
-desinstalar**: desinstalar borraría la base local y el token de App Check ya registrado.
+`installDebug` actualiza encima **sin desinstalar**. Para correr instrumentadas hay que pasar
+`-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`: sin eso Gradle desinstala al
+terminar y **se borra la base local de Diego**. Ya pasó una vez.
 
 **Avisos sobre esta evidencia.** La corrida instrumentada *completa* aborta en
-`ProductPhotoSourceTest`: eso **no cuenta como verde**, por eso las clases financieras se verifican
-por separado. Y `adb devices` puede decir `device` con el sistema a medias; el chequeo bueno es
+`ProductPhotoSourceTest`: eso **no cuenta como verde**, por eso cada clase se corre por su nombre.
+Y `adb devices` puede decir `device` con el sistema a medias; el chequeo bueno es
 `dumpsys user | grep RUNNING_UNLOCKED`.
 
 ## Orquestamiento
@@ -398,11 +447,32 @@ frase de texto, y no cuesta lo mismo. Compartir cuota no es equivalencia de gast
 
 ## Blockers y pendientes vigentes
 
-**Play, al 2026-09-06:** Diego **ya envió a revisión** la declaración de Seguridad de los datos con
-Audio y Fotos. Falta que su web de política de privacidad mencione el micrófono y la foto; el prompt
-para esa edición se le entregó en la sesión. La frase correcta sobre la foto es **"sin archivo
-permanente de fotos en Cuentivo"**, nunca "no se guarda en ningún lado": existe el temporal local y
-el proveedor retiene registros para supervisión de abuso.
+**Play, al 2026-09-07:** la declaracion de Seguridad de los datos con Audio y Fotos esta enviada a
+revision, la web de politica de privacidad **ya esta actualizada**, y el AAB `v37` / `1.19.0` esta
+**subido a la pista cerrada**. La frase correcta sobre la foto sigue siendo **"sin archivo
+permanente de fotos en Cuentivo"**, nunca "no se guarda en ningun lado": existe el temporal local y
+el proveedor retiene registros para supervision de abuso.
+
+**Pendientes de la Fase B, ninguno bloqueante para la prueba cerrada:**
+
+- **La rotacion EXIF no cubre orientaciones espejadas** (`FLIP_HORIZONTAL`, `TRANSPOSE`). Un
+  telefono que las escriba manda la pagina al reves.
+- **`LedgerImagePreparer.prepareInPlace` sobrescribe el original**, asi que no se puede reintentar
+  la lectura con mas detalle: ampliar una imagen ya reducida no recupera trazos.
+- **La prueba de rotacion usa una imagen uniforme**, asi que 270 grados pasaria como 90.
+- **`OwnerMembershipBootstrap.ensure` llama a `reopenParkedOperations()` a secas**, que desaparca
+  *todas* las filas permanentes y no solo las que la membresia explica. Se queda mas ancho de lo
+  debido, aunque solo dispare una vez. Lo acoto Codex el 2026-09-07.
+- **La maquina de estados de la revision no sobrevive a recrear la Activity.** Girar el telefono a
+  media revision pierde el borrador; la foto si sobrevive (`rememberSaveable`).
+- **Paso 6 de la Fase B: la prueba fisica de Diego con libretas reales.** Lo que se mide es
+  *cliente equivocado sin marca*, *monto equivocado sin marca* y *renglones inventados u omitidos*
+  — no el porcentaje de JSON aceptado.
+
+**Decision de producto escrita en una prueba, por si alguien la cuestiona luego:** dejar la revision
+a medias **no bloquea** la pagina. Se registra lo confirmado y lo dudoso no se importa. Bloquear
+significaria que un renglon que nadie puede leer deja toda la hoja sin registrar. Lo que no puede
+pasar es que sea callado: el boton cuenta solo lo que va a escribir y el aviso dice cuantos quedaron.
 
 
 - **El control plane live personal está cerrado, pero no el entitlement comercial.** Cuota,

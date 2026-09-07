@@ -1036,3 +1036,25 @@ Texto completo de entradas que dejaron de estar vigentes en `PROJECT_MEMORY.md` 
   Google, no a la versión.
 - **Actualizar de versión no borra datos.** Verificado por Diego al pasar de 1.5 a 1.6: clientes,
   ventas e importación de Excel intactos. Room migró sin incidentes.
+
+## 2026-09-07 — Fase B cerrada y `v37` a prueba cerrada
+
+Sesion larga de cierre de la importacion de libreta por foto. El detalle vigente vive en
+`PROJECT_MEMORY.md`; lo que queda aqui es lo que no debe repetirse.
+
+**Tres rondas perdidas diagnosticando un 400 de Gemini deduciendo del codigo fuente.** Se probo
+quitar `exclusiveMinimum` (no era), luego `uniqueItems` (tampoco), y solo se resolvio **imprimiendo
+el objeto que de verdad viaja** y bisecando: el problema era enviar `responseJsonSchema`, en
+cualquier forma. Codex habia propuesto un subconjunto seguro (`type, properties, required, items,
+enum, additionalProperties, minimum, maximum, maxItems`) y **ese subconjunto tambien da 400**.
+
+**Una prueba pasaba con el codigo roto.** La primera version del test de colision de claves de lote
+usaba un ejemplo que no colisionaba de verdad, asi que pasaba tanto con el digest arreglado como con
+el roto. Se detecto al mutar produccion a proposito. Van seis veces en este proyecto.
+
+**Se desplego `extractLedgerPage` dos veces sin `release:check`**, corriendo solo lint y `npm test`.
+El gate se corrio despues y paso, pero el orden fue el inverso al que manda `CLAUDE.md`.
+
+**Codex corrigio dos veces un arreglo mio del outbox**, las dos con razon: que una lectura fallida
+por red no puede aparcarse como permanente, y que un documento que existe no es necesariamente el
+mismo que se queria publicar.
