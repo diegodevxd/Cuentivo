@@ -208,8 +208,10 @@ class AiDebugLabGuardsTest {
     @Test
     fun `camera capture uses existing store and take picture contract without permissions or network`() {
         val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        // The ledger camera is the only camera in this screen now: the old OCR capture was the
+        // second button people confused with it, and it is gone.
         val cameraBlock = source.substring(
-            source.indexOf("val cameraLauncher"),
+            source.indexOf("val ledgerCameraLauncher"),
             source.indexOf("Dialog("),
         )
         assertTrue("must use the existing CameraCaptureStore", source.contains("CameraCaptureStore"))
@@ -256,12 +258,11 @@ class AiDebugLabGuardsTest {
         assertTrue("must use rememberSaveable for the pending URI", source.contains("rememberSaveable"))
         assertTrue("must define a URI saver", source.contains("Saver<Uri?, String>"))
         assertTrue("must bind the saver via stateSaver", source.contains("stateSaver"))
-        // The sweep must spare BOTH pending captures: the chat photo and the ledger page are
-        // written to the same directory, and sparing only one of them deleted the other one out
-        // from under the camera.
+        // The sweep must spare the page being photographed right now. It writes to the same
+        // directory it cleans, so forgetting it deletes the photo out from under the camera.
         assertTrue(
-            "must sweep stale captures on entry sparing both pending captures",
-            source.contains("deleteStaleExcept(listOf(pendingCaptureUri, pendingLedgerUri))"),
+            "must sweep stale captures on entry sparing the pending ledger capture",
+            source.contains("deleteStaleExcept(listOf(pendingLedgerUri))"),
         )
     }
 

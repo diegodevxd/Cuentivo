@@ -174,7 +174,6 @@ fun AiDebugLabScreen(
     var isHydrated by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    var showSourceSelector by remember { mutableStateOf(false) }
     var showLedgerSourceSelector by remember { mutableStateOf(false) }
     var cameraUnavailable by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -183,7 +182,6 @@ fun AiDebugLabScreen(
         com.cuentivo.app.ai.capture.AiCaptureStore(java.io.File(context.cacheDir, "ai-capture"))
     }
     val cameraStore = remember(context) { AiCameraCaptureStore(context) }
-    var pendingCaptureUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
     // The photographed page stays on disk for as long as the review needs it: the crop beside each
     // row is the only way to check what the model read against what the notebook says. Deleted when
     // the import ends, whichever way it ends.
@@ -194,7 +192,6 @@ fun AiDebugLabScreen(
     // way back would let a page taken for one business land on another.
     var ledgerBusinessId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingLedgerUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
-    val ocrEngine = remember(context) { debugAiOcrEngine(context) }
 
     DisposableEffect(effectiveVoiceRecognizer) {
         onDispose {
@@ -236,7 +233,7 @@ fun AiDebugLabScreen(
     // leaving composition can mean the Activity was destroyed while the camera app was still
     // writing to that very file, and deleting it there threw away the photo the user just took.
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { cameraStore.deleteStaleExcept(listOf(pendingCaptureUri, pendingLedgerUri)) }
+        withContext(Dispatchers.IO) { cameraStore.deleteStaleExcept(listOf(pendingLedgerUri)) }
     }
 
     // One close action: cancel the in-flight request (generation bump) BEFORE closing, so a late
@@ -246,8 +243,6 @@ fun AiDebugLabScreen(
         voiceModel = VoiceCaptureMachine.onCancel(voiceModel)
         model = AiDebugLabMachine.onCancel(model)
         captureStore.cleanupAll()
-        pendingCaptureUri?.let(cameraStore::delete)
-        pendingCaptureUri = null
         cameraStore.deleteStale(except = null)
         onClose()
     }
@@ -455,8 +450,11 @@ fun AiDebugLabScreen(
                 }.getOrNull()
             }
             if (prepared == null) {
-                // A copy that failed halfway still left a file behind.
+                // A copy that failed halfway still left a file behind. And say so: the camera path
+                // already did, and a gallery pick that ends in silence is indistinguishable from
+                // the button doing nothing.
                 discardLedgerCapture()
+                model = model.copy(messages = model.messages + AiChatMessage.AssistantLedgerFailed)
             } else {
                 runLedgerExtraction(prepared.first, prepared.second)
             }
@@ -464,87 +462,6 @@ fun AiDebugLabScreen(
     }
 
     BackHandler(onBack = closeLab)
-
-    val pickImageLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val token = model.generation
-            val recognizedText = withContext(Dispatchers.IO) {
-                // MIME from the actual content, not assumed: a provider can label anything.
-                val mimeType = context.contentResolver.getType(uri)
-                if (!AiCapturePolicy.isAllowedMime(mimeType)) {
-                    return@withContext null
-                }
-                val captureFile = captureStore.createCaptureFile(mimeType!!)
-                if (captureFile == null) {
-                    return@withContext null
-                }
-                try {
-                    val input = context.contentResolver.openInputStream(uri)
-                    if (input == null) {
-                        return@withContext null
-                    }
-                    input.use { stream ->
-                        captureFile.outputStream().use { output -> stream.copyTo(output) }
-                    }
-                    if (!AiCapturePolicy.isWithinByteCap(captureFile.length())) {
-                        return@withContext null
-                    }
-                    // Dimension bounds check without loading the full bitmap into memory.
-                    val bounds = android.graphics.BitmapFactory.Options().apply {
-                        inJustDecodeBounds = true
-                    }
-                    android.graphics.BitmapFactory.decodeFile(captureFile.absolutePath, bounds)
-                    if (!AiCapturePolicy.isWithinDimensions(bounds.outWidth, bounds.outHeight)) {
-                        return@withContext null
-                    }
-                    ocrEngine?.recognize(captureFile)
-                } catch (_: Exception) {
-                    null
-                } finally {
-                    captureStore.deleteCapture(captureFile)
-                }
-            }
-            model = AiDebugLabMachine.onOcrResult(model, recognizedText, token)
-        }
-    }
-
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicture(),
-    ) { success ->
-        val uri = pendingCaptureUri ?: return@rememberLauncherForActivityResult
-        pendingCaptureUri = null
-        if (!success) {
-            cameraStore.delete(uri)
-            return@rememberLauncherForActivityResult
-        }
-        scope.launch {
-            val token = model.generation
-            val recognizedText = withContext(Dispatchers.IO) {
-                val file = cameraStore.fileFor(uri)
-                try {
-                    if (!AiCapturePolicy.isWithinByteCap(file.length())) {
-                        return@withContext null
-                    }
-                    val bounds = android.graphics.BitmapFactory.Options().apply {
-                        inJustDecodeBounds = true
-                    }
-                    android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
-                    if (!AiCapturePolicy.isWithinDimensions(bounds.outWidth, bounds.outHeight)) {
-                        return@withContext null
-                    }
-                    ocrEngine?.recognize(file)
-                } catch (_: Exception) {
-                    null
-                } finally {
-                    cameraStore.delete(uri)
-                }
-            }
-            model = AiDebugLabMachine.onOcrResult(model, recognizedText, token)
-        }
-    }
 
     // Reviewing a photographed ledger page takes over the whole surface: it is a different task
     // from the chat, and mixing them would let a stray dictation edit a page under review.
@@ -1109,32 +1026,26 @@ fun AiDebugLabScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (ocrEngine != null) {
+                // One way in, and it does not depend on the OCR engine. It used to sit inside
+                // "if (ocrEngine != null)", and debugAiOcrEngine returns null in the release
+                // variant, so the whole ledger import was invisible in the published build. Its
+                // condition is its own: the callable and a business to write to.
+                if (extractLedgerPage != null && activeBusinessId?.isNotBlank() == true) {
                     TextButton(
-                        enabled = isHydrated && model.state != AiDebugLabState.Sending,
-                        onClick = { showSourceSelector = true },
+                        enabled = isHydrated && !model.isVoiceDisabled,
+                        onClick = {
+                            // The import session is named before the camera opens, so a result
+                            // that arrives late, or from a photo taken for a different page,
+                            // cannot land on the review the person is looking at.
+                            ledgerSessionId = java.util.UUID.randomUUID().toString()
+                            ledgerBusinessId = activeBusinessId
+                            showLedgerSourceSelector = true
+                        },
                     ) {
-                        Text(stringResource(R.string.ai_debug_lab_capture))
+                        Text(stringResource(R.string.ai_ledger_import_entry))
                     }
-                    if (extractLedgerPage != null && activeBusinessId?.isNotBlank() == true) {
-                        TextButton(
-                            enabled = isHydrated && !model.isVoiceDisabled,
-                            onClick = {
-                                // The import session is named before the camera opens, so a result
-                                // that arrives late, or from a photo taken for a different page,
-                                // cannot land on the review the person is looking at.
-                                ledgerSessionId = java.util.UUID.randomUUID().toString()
-                                ledgerBusinessId = activeBusinessId
-                                showLedgerSourceSelector = true
-                            },
-                        ) {
-                            Text(stringResource(R.string.ai_ledger_import_entry))
-                        }
-                    }
-                    Spacer(Modifier.weight(1f))
-                } else {
-                    Spacer(Modifier.weight(1f))
                 }
+                Spacer(Modifier.weight(1f))
                 TextButton(
                     enabled = isHydrated && model.state != AiDebugLabState.Sending,
                     onClick = { showClearDialog = true },
@@ -1161,7 +1072,7 @@ fun AiDebugLabScreen(
                         onClick = {
                             showLedgerSourceSelector = false
                             cameraUnavailable = false
-                            cameraStore.deleteStaleExcept(listOf(pendingCaptureUri, pendingLedgerUri))
+                            cameraStore.deleteStaleExcept(listOf(pendingLedgerUri))
                             val attempt = runCatching {
                                 val uri = cameraStore.createCaptureUri()
                                 pendingLedgerUri = uri
@@ -1195,45 +1106,6 @@ fun AiDebugLabScreen(
                 }
             }
         }
-        if (showSourceSelector) {
-            ModalBottomSheet(onDismissRequest = { showSourceSelector = false }) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
-                ) {
-                    TextButton(
-                        onClick = {
-                            showSourceSelector = false
-                            cameraUnavailable = false
-                            cameraStore.deleteStaleExcept(listOf(pendingCaptureUri, pendingLedgerUri))
-                            val attempt = runCatching {
-                                val uri = cameraStore.createCaptureUri()
-                                pendingCaptureUri = uri
-                                cameraLauncher.launch(uri)
-                            }
-                            if (attempt.isFailure) {
-                                pendingCaptureUri?.let(cameraStore::delete)
-                                pendingCaptureUri = null
-                                cameraUnavailable = true
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.ai_debug_chat_camera)) }
-                    TextButton(
-                        onClick = {
-                            showSourceSelector = false
-                            pickImageLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.ai_debug_chat_gallery)) }
-                    TextButton(
-                        onClick = { showSourceSelector = false },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.ai_debug_lab_close)) }
-                }
-            }
-        }
         if (showClearDialog) {
             AlertDialog(
                 onDismissRequest = { showClearDialog = false },
@@ -1243,8 +1115,6 @@ fun AiDebugLabScreen(
                     TextButton(
                         onClick = {
                             showClearDialog = false
-                            pendingCaptureUri?.let(cameraStore::delete)
-                            pendingCaptureUri = null
                             cameraStore.deleteStale(except = null)
                             scope.launch {
                                 val cleared = withContext(Dispatchers.IO) {

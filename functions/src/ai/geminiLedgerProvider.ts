@@ -311,16 +311,13 @@ class GeminiLedgerProvider implements LedgerExtractionProvider {
         config: {
           systemInstruction,
           responseMimeType: "application/json",
-          // Reduced on purpose. Gemini takes only a subset of JSON Schema, and one keyword outside
-          // it (uniqueItems, exclusiveMinimum, pattern, minLength) makes the API refuse the whole
-          // request with INVALID_ARGUMENT without saying which. Uniqueness, the canonical money
-          // format, string lengths, real calendar days and a non-zero region stay in
-          // parseLedgerExtraction, which is where the guarantee always lived.
-          // NO se envia. Se probo dos veces contra la API real: con el schema completo y con uno
-          // reducido al subconjunto documentado, y las dos veces respondio INVALID_ARGUMENT sin
-          // decir que campo. La forma se le pide al modelo en la instruccion, con un ejemplo, y la
-          // garantia sigue siendo parseLedgerExtraction. No lo reintroduzcas sin probarlo contra la
-          // API primero: el gate local no lo detecta, porque el rechazo es del proveedor.
+          // NO se envia responseJsonSchema. Se probo dos veces contra la API real: con el schema
+          // completo y con uno reducido al subconjunto documentado, y las dos veces respondio
+          // INVALID_ARGUMENT sin decir que palabra sobraba. La forma se le pide al modelo en la
+          // instruccion, con un ejemplo literal, y la garantia de verdad sigue siendo
+          // parseLedgerExtraction: unicidad, formato canonico de centavos, dias de calendario
+          // reales y region no vacia. No lo reintroduzcas sin probarlo contra la API: el gate local
+          // no lo detecta, porque el rechazo es del proveedor.
           // responseJsonSchema: LEDGER_EXTRACTION_JSON_SCHEMA,
           temperature: 0,
           maxOutputTokens: MAX_LEDGER_OUTPUT_TOKENS,
