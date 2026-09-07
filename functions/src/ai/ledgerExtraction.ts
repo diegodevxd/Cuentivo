@@ -1,8 +1,15 @@
 import type {
   LedgerDiscardDiagnostic,
   LedgerExtractionResult,
+  LedgerItem,
   LedgerOperation,
+  LedgerOperationV4,
+  LedgerPageDate,
   LedgerRegion,
+  LedgerSource,
+  LedgerSources,
+  LedgerConfidence,
+  LedgerWarning,
   ProposedLedgerKind,
   SafeDateCandidate,
   UncertainLedgerField,
@@ -32,10 +39,29 @@ const UNREADABLE_FIELDS: readonly UnreadableLedgerField[] = [
   "KIND",
 ];
 
+const ALLOWED_WARNINGS: readonly LedgerWarning[] = [
+  "ITEMS_TOTAL_MISMATCH",
+  "INHERITED_CUSTOMER",
+  "LOW_CONFIDENCE_CUSTOMER",
+  "LOW_CONFIDENCE_CONCEPT",
+  "LOW_CONFIDENCE_AMOUNT",
+  "AMBIGUOUS_KIND",
+  "AMBIGUOUS_SEPARATOR",
+  "MULTIPLE_MOVEMENTS_IN_ROW",
+  "NOT_A_MOVEMENT",
+];
+
+const ALLOWED_SOURCES: readonly LedgerSource[] = [
+  "EXPLICIT",
+  "INHERITED_PREVIOUS_ROW",
+  "PAGE_DATE",
+  "INFERRED",
+];
+
 /** Canonical non-negative decimal centavo string: no signs, decimals, exponents or leading zeros (up to 18 digits). */
 const CANONICAL_CENTS_RE = /^(0|[1-9][0-9]{0,17})$/;
 
-const ROOT_KEYS = ["operations", "pageIncomplete"] as const;
+const ROOT_KEYS = ["operations", "pageIncomplete", "pageDate"] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (
@@ -187,6 +213,100 @@ function parseFieldList<T extends string>(
   return Object.freeze(result);
 }
 
+function parseConfidence(value: unknown): LedgerConfidence | null | false {
+  if (value === undefined) return null;
+  if (!isPlainObject(value)) return false;
+  const allowed = ["customer", "concept", "amount", "date", "kind"];
+  if (!hasOnlyKeys(value, allowed)) return false;
+
+  const res: Record<string, number> = {};
+  for (const k of allowed) {
+    if (k in value && value[k] !== undefined) {
+      const v = value[k];
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) {
+        return false;
+      }
+      res[k] = v;
+    }
+  }
+  return Object.freeze(res as LedgerConfidence);
+}
+
+function parseSources(value: unknown): LedgerSources | null | false {
+  if (value === undefined) return null;
+  if (!isPlainObject(value)) return false;
+  const allowed = ["customer", "date"];
+  if (!hasOnlyKeys(value, allowed)) return false;
+
+  const res: Record<string, LedgerSource> = {};
+  for (const k of allowed) {
+    if (k in value && value[k] !== undefined) {
+      const v = value[k];
+      if (typeof v !== "string" || !(ALLOWED_SOURCES as readonly string[]).includes(v)) {
+        return false;
+      }
+      res[k] = v as LedgerSource;
+    }
+  }
+  return Object.freeze(res as LedgerSources);
+}
+
+function parseRawText(value: unknown): string | null | false {
+  if (value === undefined) return null;
+  if (typeof value !== "string" || value.length === 0 || value.length > 200 || value.trim().length === 0) {
+    return false;
+  }
+  return value;
+}
+
+function parseItems(
+  value: unknown,
+): { ok: true; items: readonly LedgerItem[] | null } | { ok: false; reason: "INVALID_MONEY" | "MALFORMED" } {
+  if (value === undefined) return { ok: true, items: null };
+  if (!Array.isArray(value)) return { ok: false, reason: "MALFORMED" };
+
+  const parsedItems: LedgerItem[] = [];
+  for (const item of value) {
+    if (!isPlainObject(item)) return { ok: false, reason: "MALFORMED" };
+    if (!hasOnlyKeys(item, ["description", "quantity", "subtotalCents"])) {
+      return { ok: false, reason: "MALFORMED" };
+    }
+    const rawDesc = item["description"];
+    if (!isNonblankBounded(rawDesc, MAX_DISPLAY_NAME_LENGTH)) {
+      return { ok: false, reason: "MALFORMED" };
+    }
+    let quantity: number | undefined;
+    if ("quantity" in item && item["quantity"] !== undefined) {
+      const rawQ = item["quantity"];
+      if (typeof rawQ !== "number" || !Number.isSafeInteger(rawQ) || rawQ <= 0) {
+        return { ok: false, reason: "MALFORMED" };
+      }
+      quantity = rawQ;
+    }
+    let subtotalCents: string | undefined;
+    if ("subtotalCents" in item && item["subtotalCents"] !== undefined) {
+      const rawSub = item["subtotalCents"];
+      if (typeof rawSub !== "string" || !CANONICAL_CENTS_RE.test(rawSub)) {
+        return { ok: false, reason: "INVALID_MONEY" };
+      }
+      subtotalCents = rawSub;
+    }
+    parsedItems.push({
+      description: rawDesc,
+      ...(quantity !== undefined ? { quantity } : {}),
+      ...(subtotalCents !== undefined ? { subtotalCents } : {}),
+    });
+  }
+  return { ok: true, items: Object.freeze(parsedItems) };
+}
+
+function parseWarnings(value: unknown): readonly LedgerWarning[] | null | false {
+  if (value === undefined) return null;
+  const parsed = parseFieldList(value, ALLOWED_WARNINGS);
+  if (parsed === null) return false;
+  return parsed;
+}
+
 const OPERATION_ALLOWED_KEYS = [
   "lineIndex",
   "proposedKind",
@@ -197,10 +317,15 @@ const OPERATION_ALLOWED_KEYS = [
   "uncertainFields",
   "unreadableFields",
   "region",
+  "confidence",
+  "sources",
+  "rawText",
+  "items",
+  "warnings",
 ] as const;
 
 type SingleOpParseResult =
-  | { ok: true; op: LedgerOperation }
+  | { ok: true; op: LedgerOperationV4 }
   | { ok: false; lineIndex?: number; reason: LedgerDiscardDiagnostic["reason"] };
 
 function parseSingleOperation(value: unknown): SingleOpParseResult {
@@ -308,12 +433,74 @@ function parseSingleOperation(value: unknown): SingleOpParseResult {
     if ("region" in value && value["region"] !== undefined) {
       try {
         const parsedRegion = parseRegion(value["region"]);
-        // Spec: if region is malformed, discard the region, NOT the operation.
+        // Spec: if region is malformed, discard the region, NOT the operation. The region is the
+        // crop shown beside the row; losing it costs a convenience, losing the row costs money.
         if (parsedRegion) {
           region = parsedRegion;
         }
       } catch {
         // Discard only the region if its getters throw
+      }
+    }
+
+    // Parse v4 fields
+    const confidence = parseConfidence(value["confidence"]);
+    if (confidence === false) {
+      return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+    }
+
+    const sources = parseSources(value["sources"]);
+    if (sources === false) {
+      return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+    }
+
+    const rawText = parseRawText(value["rawText"]);
+    if (rawText === false) {
+      return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+    }
+
+    const itemsResult = parseItems(value["items"]);
+    if (!itemsResult.ok) {
+      return { ok: false, lineIndex: candidateLineIndex, reason: itemsResult.reason };
+    }
+    const items = itemsResult.items;
+
+    const parsedWarnings = parseWarnings(value["warnings"]);
+    if (parsedWarnings === false) {
+      return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+    }
+
+    let finalUncertainFields = [...parsedUncertainFields];
+    let finalUnreadableFields = [...parsedUnreadableFields];
+    let finalWarnings = parsedWarnings ? [...parsedWarnings] : [];
+
+    // Items that do not add up to the amount are NOT reconciled by arithmetic. Picking a winner
+    // here would be inventing a number nobody wrote: either the model misread a line or it misread
+    // the total, and only the person holding the notebook knows which. So it is declared and the
+    // amount is sent back for review.
+    if (items && items.length > 0 && amountCents !== undefined) {
+      const itemsWithSubtotal = items.filter((i) => i.subtotalCents !== undefined);
+      if (itemsWithSubtotal.length === items.length) {
+        let sum = 0n;
+        for (const i of itemsWithSubtotal) {
+          sum += BigInt(i.subtotalCents!);
+        }
+        if (sum.toString() !== amountCents) {
+          if (!finalWarnings.includes("ITEMS_TOTAL_MISMATCH")) {
+            finalWarnings.push("ITEMS_TOTAL_MISMATCH");
+          }
+          // The amount goes back for review -- but only if the model had not already said it could
+          // not read it. Turning "I could not read this" into "I read it with doubt" would be the
+          // parser quietly making a weaker claim than the model made, and the two lists are the
+          // record of what the model actually said. A field may never sit in both, so when AMOUNT is
+          // already unreadable the warning alone carries the mismatch and the lists stay untouched.
+          if (
+            !finalUnreadableFields.includes("AMOUNT") &&
+            !finalUncertainFields.includes("AMOUNT")
+          ) {
+            finalUncertainFields.push("AMOUNT");
+          }
+        }
       }
     }
 
@@ -326,9 +513,14 @@ function parseSingleOperation(value: unknown): SingleOpParseResult {
         ...(amountCents !== undefined ? { amountCents } : {}),
         ...(description !== undefined ? { description } : {}),
         ...(date !== undefined ? { date } : {}),
-        uncertainFields: parsedUncertainFields,
-        unreadableFields: parsedUnreadableFields,
+        uncertainFields: Object.freeze(finalUncertainFields as UncertainLedgerField[]),
+        unreadableFields: Object.freeze(finalUnreadableFields as UnreadableLedgerField[]),
         ...(region !== undefined ? { region } : {}),
+        ...(confidence !== null ? { confidence } : {}),
+        ...(sources !== null ? { sources } : {}),
+        ...(rawText !== null ? { rawText } : {}),
+        ...(items !== null ? { items } : {}),
+        ...(finalWarnings.length > 0 ? { warnings: Object.freeze(finalWarnings) } : {}),
       },
     };
   } catch {
@@ -340,7 +532,7 @@ function parseSingleOperation(value: unknown): SingleOpParseResult {
  * Parses raw JSON returned by the model for an extract_ledger_page action.
  *
  * Requirements:
- * - Root must be a plain object with keys "operations" and "pageIncomplete".
+ * - Root must be a plain object with keys "operations" and "pageIncomplete", optional "pageDate".
  * - operations must be an array of length <= MAX_LEDGER_OPERATIONS (25). If longer, rejected (returns null).
  * - lineIndex must be unique and in strictly ascending order.
  * - Malformed operations within the array are discarded with safe diagnostics (inputIndex, lineIndex, reason).
@@ -355,11 +547,7 @@ export function parseLedgerExtraction(value: unknown): LedgerExtractionResult | 
     if (!isPlainObject(value)) {
       return null;
     }
-    const ownNames = Object.getOwnPropertyNames(value);
-    if (
-      ownNames.length !== ROOT_KEYS.length ||
-      !ROOT_KEYS.every((k) => Object.prototype.hasOwnProperty.call(value, k))
-    ) {
+    if (!hasOnlyKeys(value, ROOT_KEYS)) {
       return null;
     }
 
@@ -377,7 +565,21 @@ export function parseLedgerExtraction(value: unknown): LedgerExtractionResult | 
       return null;
     }
 
-    const parsedOperations: LedgerOperation[] = [];
+    let pageDate: LedgerPageDate | undefined;
+    if ("pageDate" in value && value["pageDate"] !== undefined) {
+      const rawPageDate = value["pageDate"];
+      if (isPlainObject(rawPageDate)) {
+        if (hasOnlyKeys(rawPageDate, ["date", "confidence"])) {
+          const parsedDate = parseStructuredDate(rawPageDate["date"]);
+          const conf = rawPageDate["confidence"];
+          if (parsedDate && typeof conf === "number" && Number.isFinite(conf) && conf >= 0 && conf <= 1) {
+            pageDate = { date: parsedDate, confidence: conf };
+          }
+        }
+      }
+    }
+
+    const parsedOperations: LedgerOperationV4[] = [];
     const discards: LedgerDiscardDiagnostic[] = [];
     let lastLineIndex = -1;
 
@@ -394,7 +596,9 @@ export function parseLedgerExtraction(value: unknown): LedgerExtractionResult | 
       }
 
       const op = parsed.op;
-      // lineIndex must be strictly ascending (which guarantees uniqueness and ordering)
+      // lineIndex must be strictly ascending, which guarantees uniqueness and ordering at once.
+      // The review screen edits and deletes rows by that identity, so two rows sharing one would
+      // let a correction land on the wrong movement.
       if (op.lineIndex === lastLineIndex) {
         discards.push({
           inputIndex,
@@ -417,6 +621,8 @@ export function parseLedgerExtraction(value: unknown): LedgerExtractionResult | 
     }
 
     // Spec rule: reaching MAX_LEDGER_OPERATIONS (25) almost always means more text was left unread.
+    // A page that stopped exactly at the cap is a page that was probably cut off, not one that
+    // happened to have exactly 25 rows.
     const reachedCapacity = rawOperations.length === MAX_LEDGER_OPERATIONS;
     const unreadTextRemaining = rawPageIncomplete || reachedCapacity;
     const effectivePageIncomplete = unreadTextRemaining || discards.length > 0;
@@ -426,6 +632,7 @@ export function parseLedgerExtraction(value: unknown): LedgerExtractionResult | 
       discards: Object.freeze(discards),
       unreadTextRemaining,
       pageIncomplete: effectivePageIncomplete,
+      ...(pageDate !== undefined ? { pageDate } : {}),
     };
   } catch {
     return null;

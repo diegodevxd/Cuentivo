@@ -628,4 +628,134 @@ describe("parseLedgerExtraction", () => {
       });
     });
   });
+
+  describe("contract v4 parsing (confidence, sources, items, warnings, pageDate)", () => {
+    test("parses full v4 operation with valid confidence, sources, items, rawText, warnings and root pageDate", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "3800",
+        uncertainFields: [],
+        unreadableFields: [],
+        confidence: { customer: 0.95, concept: 0.9, amount: 0.98, date: 0.9, kind: 0.95 },
+        sources: { customer: "EXPLICIT", date: "PAGE_DATE" },
+        rawText: "Rosa 2 cocas 38",
+        items: [{ description: "coca", quantity: 2, subtotalCents: "3800" }],
+        warnings: [],
+      };
+
+      const res = parseLedgerExtraction({
+        pageDate: { date: { year: 2026, month: 6, day: 15 }, confidence: 0.9 },
+        operations: [op],
+        pageIncomplete: false,
+      });
+
+      expect(res).not.toBeNull();
+      expect(res?.pageDate).toEqual({ date: { year: 2026, month: 6, day: 15 }, confidence: 0.9 });
+      expect(res?.operations).toHaveLength(1);
+      expect(res?.operations[0].confidence?.customer).toBe(0.95);
+      expect(res?.operations[0].sources?.customer).toBe("EXPLICIT");
+      expect(res?.operations[0].rawText).toBe("Rosa 2 cocas 38");
+      expect(res?.operations[0].items).toEqual([{ description: "coca", quantity: 2, subtotalCents: "3800" }]);
+    });
+
+    test.each([
+      ["out of range 1.5", 1.5],
+      ["negative -0.1", -0.1],
+      ["string '0.9'", "0.9"],
+      ["NaN", NaN],
+      ["Infinity", Infinity],
+    ])("discards operation when confidence value is invalid (%s)", (_desc, badConf) => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "3800",
+        uncertainFields: [],
+        unreadableFields: [],
+        confidence: { customer: badConf },
+      };
+
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(0);
+      expect(res?.discards).toEqual([{ inputIndex: 0, lineIndex: 0, reason: "MALFORMED" }]);
+    });
+
+    test("discards operation when item subtotalCents is a JSON number", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "3800",
+        uncertainFields: [],
+        unreadableFields: [],
+        items: [{ description: "coca", quantity: 2, subtotalCents: 3800 }],
+      };
+
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(0);
+      expect(res?.discards).toEqual([{ inputIndex: 0, lineIndex: 0, reason: "INVALID_MONEY" }]);
+    });
+
+    test("item total mismatch adds ITEMS_TOTAL_MISMATCH warning and AMOUNT to uncertainFields without recalculating total", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "5000", // 50 pesos
+        uncertainFields: [],
+        unreadableFields: [],
+        items: [{ description: "coca", quantity: 1, subtotalCents: "2000" }], // 20 pesos
+        warnings: [],
+      };
+
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      expect(res?.operations).toHaveLength(1);
+      const parsedOp = res?.operations[0];
+      expect(parsedOp?.amountCents).toBe("5000"); // Preserves original amountCents, does NOT recalculate!
+      expect(parsedOp?.uncertainFields).toContain("AMOUNT");
+      expect(parsedOp?.warnings).toContain("ITEMS_TOTAL_MISMATCH");
+    });
+
+    test("a mismatch never downgrades an amount the model said it could not read", () => {
+      // The two lists are the record of what the model actually claimed. Moving AMOUNT from
+      // unreadable to uncertain would be the parser making a weaker claim than the model made, and
+      // hiding that it could not read the number at all. The warning carries the mismatch instead.
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "5000",
+        uncertainFields: [],
+        unreadableFields: ["AMOUNT"],
+        items: [{ description: "coca", quantity: 1, subtotalCents: "2000" }],
+        warnings: [],
+      };
+
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      const parsedOp = res?.operations[0];
+      expect(parsedOp?.unreadableFields).toContain("AMOUNT");
+      expect(parsedOp?.uncertainFields).not.toContain("AMOUNT");
+      expect(parsedOp?.warnings).toContain("ITEMS_TOTAL_MISMATCH");
+    });
+
+    test("the mismatch warning is not repeated when the model already declared it", () => {
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "5000",
+        uncertainFields: ["AMOUNT"],
+        unreadableFields: [],
+        items: [{ description: "coca", subtotalCents: "2000" }],
+        warnings: ["ITEMS_TOTAL_MISMATCH"],
+      };
+
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+      const parsedOp = res?.operations[0];
+      expect(parsedOp?.warnings?.filter((w) => w === "ITEMS_TOTAL_MISMATCH")).toHaveLength(1);
+      expect(parsedOp?.uncertainFields?.filter((f) => f === "AMOUNT")).toHaveLength(1);
+    });
+  });
 });

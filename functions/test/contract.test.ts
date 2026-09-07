@@ -468,3 +468,58 @@ describe("contract isRegisterableLedgerOperation invariant", () => {
     }
   });
 });
+
+describe("validateExtractLedgerPageRequest", () => {
+  const VALID_LEDGER_REQ_V3 = {
+    contractVersion: 3,
+    requestId: "123e4567-e89b-12d3-a456-426614174000",
+    action: "extract_ledger_page",
+    imageBase64: "aGVsbG8=",
+    imageMimeType: "image/jpeg",
+  } as const;
+
+  const VALID_LEDGER_REQ_V4 = {
+    contractVersion: 4,
+    requestId: "123e4567-e89b-12d3-a456-426614174000",
+    action: "extract_ledger_page",
+    imageBase64: "aGVsbG8=",
+    imageMimeType: "image/png",
+  } as const;
+
+  test("accepts contractVersion 3", () => {
+    const res = validateExtractLedgerPageRequest(VALID_LEDGER_REQ_V3);
+    expect(res).toEqual({ ok: true, value: VALID_LEDGER_REQ_V3 });
+  });
+
+  test("accepts contractVersion 4", () => {
+    const res = validateExtractLedgerPageRequest(VALID_LEDGER_REQ_V4);
+    expect(res).toEqual({ ok: true, value: VALID_LEDGER_REQ_V4 });
+  });
+
+  test.each([
+    ["version 2", 2],
+    ["version 5", 5],
+    ["version 0", 0],
+    ["negative version", -3],
+    ["float version 3.5", 3.5],
+    ["string version '3'", "3"],
+    ["null version", null],
+    ["undefined version", undefined],
+  ])("rejects invalid contractVersion (%s)", (_desc, badVersion) => {
+    const res = validateExtractLedgerPageRequest({ ...VALID_LEDGER_REQ_V3, contractVersion: badVersion });
+    expect(res).toEqual({ ok: false, reason: "invalid-request" });
+  });
+
+  test.each([
+    ["extra property", { ...VALID_LEDGER_REQ_V4, extraKey: true }],
+    ["missing imageBase64", { contractVersion: 4, requestId: VALID_LEDGER_REQ_V4.requestId, action: "extract_ledger_page", imageMimeType: "image/png" }],
+    ["invalid action", { ...VALID_LEDGER_REQ_V4, action: "interpret_text_proposal" }],
+    ["invalid mimeType", { ...VALID_LEDGER_REQ_V4, imageMimeType: "image/gif" }],
+    ["invalid requestId UUID", { ...VALID_LEDGER_REQ_V4, requestId: "not-a-uuid" }],
+    ["empty imageBase64", { ...VALID_LEDGER_REQ_V4, imageBase64: "" }],
+    ["malformed base64", { ...VALID_LEDGER_REQ_V4, imageBase64: "!!!notbase64!!!" }],
+  ])("rejects invalid request structure (%s)", (_desc, badReq) => {
+    const res = validateExtractLedgerPageRequest(badReq);
+    expect(res).toEqual({ ok: false, reason: "invalid-request" });
+  });
+});

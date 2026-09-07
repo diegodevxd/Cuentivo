@@ -335,6 +335,31 @@ class LedgerReviewTest {
     }
 
     @Test
+    fun confidence_does_not_affect_isRegisterableLedgerOperation_boundary_rules() {
+        // Rule: isRegisterableLedgerOperation never reads confidence.
+        // Boundary case 1: low confidence (e.g. 0.10) with empty uncertain/unreadable lists IS registerable.
+        val lowConfidenceRegisterableOp = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa",
+            amountCents = "3800",
+            uncertainFields = emptyList(),
+            unreadableFields = emptyList(),
+        )
+        assertTrue(isRegisterableLedgerOperation(lowConfidenceRegisterableOp))
+
+        // Boundary case 2: high confidence (e.g. 0.99) with unreadableFields non-empty is NOT registerable.
+        val highConfidenceUnreadableOp = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa",
+            amountCents = "3800",
+            unreadableFields = listOf(UnreadableLedgerField.AMOUNT),
+        )
+        assertFalse(isRegisterableLedgerOperation(highConfidenceUnreadableOp))
+    }
+
+    @Test
     fun changing_operation_kind_updates_customer_group_and_resulting_debt() {
         val op = LedgerOperation(
             lineIndex = 1,

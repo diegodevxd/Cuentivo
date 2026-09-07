@@ -145,11 +145,30 @@ class LedgerExtractionGatewayTest {
             setOf("contractVersion", "requestId", "action", "imageBase64", "imageMimeType"),
             payload.keys,
         )
-        assertEquals(3, payload["contractVersion"])
+        assertEquals(4, payload["contractVersion"])
         assertEquals("extract_ledger_page", payload["action"])
     }
 
-    @Test fun `a fractional contract version is not version three`() {
+    @Test fun `a v4 page with v4 operation keys and pageDate is parsed`() {
+        val v4Sale = sale("25000") + mapOf(
+            "confidence" to mapOf("customer" to 0.95),
+            "sources" to mapOf("customer" to "EXPLICIT"),
+            "rawText" to "Rosa 250",
+            "items" to listOf(mapOf("description" to "coca", "subtotalCents" to "25000")),
+            "warnings" to emptyList<String>(),
+        )
+        val v4Response = response(listOf(v4Sale), contractVersion = 4) + mapOf(
+            "pageDate" to mapOf("date" to mapOf("year" to 2026, "month" to 6, "day" to 15), "confidence" to 0.9),
+        )
+
+        val result = parseLedgerExtractionResponse(v4Response, REQUEST_ID)
+        assertTrue(result is LedgerExtractionCallResult.Extracted)
+        val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+        assertEquals(1, payload.operations.size)
+        assertEquals("25000", payload.operations[0].amountCents)
+    }
+
+    @Test fun `a fractional contract version is not version three or four`() {
         assertEquals(
             LedgerExtractionCallResult.Unavailable,
             parseLedgerExtractionResponse(response(listOf(sale("100")), contractVersion = 3.9), REQUEST_ID),

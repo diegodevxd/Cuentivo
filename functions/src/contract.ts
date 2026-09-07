@@ -255,7 +255,7 @@ export function validateAuthorizeAiActionRequest(input: unknown): AuthorizeAiAct
 export type ExtractLedgerPageImageMimeType = "image/jpeg" | "image/png" | "image/webp";
 
 export type ExtractLedgerPageRequest = Readonly<{
-  contractVersion: 3;
+  contractVersion: 3 | 4;
   requestId: string;
   action: "extract_ledger_page";
   imageBase64: string;
@@ -275,15 +275,39 @@ export type LedgerRegion = Readonly<{
   height: number;
 }>;
 
-/**
- * A candidate ledger operation parsed from raw model output.
- *
- * Invariant:
- * An operation with ANY unreadable fields (unreadableFields.length > 0) or missing customerName,
- * amountCents or proposedKind CANNOT be registered directly. It requires manual user completion
- * in the review UI before it can be submitted for atomic ledger booking in Step 5.
- */
-export type LedgerOperation = Readonly<{
+export type LedgerSource = "EXPLICIT" | "INHERITED_PREVIOUS_ROW" | "PAGE_DATE" | "INFERRED";
+
+export type LedgerWarning =
+  | "ITEMS_TOTAL_MISMATCH"
+  | "INHERITED_CUSTOMER"
+  | "LOW_CONFIDENCE_CUSTOMER"
+  | "LOW_CONFIDENCE_CONCEPT"
+  | "LOW_CONFIDENCE_AMOUNT"
+  | "AMBIGUOUS_KIND"
+  | "AMBIGUOUS_SEPARATOR"
+  | "MULTIPLE_MOVEMENTS_IN_ROW"
+  | "NOT_A_MOVEMENT";
+
+export type LedgerConfidence = Readonly<{
+  customer?: number;
+  concept?: number;
+  amount?: number;
+  date?: number;
+  kind?: number;
+}>;
+
+export type LedgerSources = Readonly<{
+  customer?: LedgerSource;
+  date?: LedgerSource;
+}>;
+
+export type LedgerItem = Readonly<{
+  description: string;
+  quantity?: number;
+  subtotalCents?: string;
+}>;
+
+export type LedgerOperationV3 = Readonly<{
   lineIndex: number;
   proposedKind?: ProposedLedgerKind;
   customerName?: string;
@@ -294,6 +318,24 @@ export type LedgerOperation = Readonly<{
   unreadableFields: readonly UnreadableLedgerField[];
   region?: LedgerRegion;
 }>;
+
+export type LedgerOperationV4 = LedgerOperationV3 & Readonly<{
+  confidence?: LedgerConfidence;
+  sources?: LedgerSources;
+  rawText?: string;
+  items?: readonly LedgerItem[];
+  warnings?: readonly LedgerWarning[];
+}>;
+
+/**
+ * A candidate ledger operation parsed from raw model output.
+ *
+ * Invariant:
+ * An operation with ANY unreadable fields (unreadableFields.length > 0) or missing customerName,
+ * amountCents or proposedKind CANNOT be registered directly. It requires manual user completion
+ * in the review UI before it can be submitted for atomic ledger booking in Step 5.
+ */
+export type LedgerOperation = LedgerOperationV4;
 
 export const CANONICAL_LEDGER_CENTS_RE = /^(0|[1-9][0-9]{0,17})$/;
 export const MAX_LEDGER_CUSTOMER_NAME_LENGTH = 80;
@@ -369,22 +411,41 @@ export type LedgerDiscardDiagnostic = Readonly<{
   reason: LedgerDiscardReason;
 }>;
 
+export type LedgerPageDate = Readonly<{
+  date: SafeDateCandidate;
+  confidence: number;
+}>;
+
 export type LedgerExtractionResult = Readonly<{
-  operations: readonly LedgerOperation[];
+  operations: readonly LedgerOperationV4[];
+  discards: readonly LedgerDiscardDiagnostic[];
+  unreadTextRemaining: boolean;
+  pageIncomplete: boolean;
+  pageDate?: LedgerPageDate;
+}>;
+
+export type ExtractLedgerPageResponseV3 = Readonly<{
+  contractVersion: 3;
+  requestId: string;
+  status: InterpretAiStatus;
+  operations: readonly LedgerOperationV3[] | null;
   discards: readonly LedgerDiscardDiagnostic[];
   unreadTextRemaining: boolean;
   pageIncomplete: boolean;
 }>;
 
-export type ExtractLedgerPageResponse = Readonly<{
-  contractVersion: 3;
+export type ExtractLedgerPageResponseV4 = Readonly<{
+  contractVersion: 4;
   requestId: string;
   status: InterpretAiStatus;
-  operations: readonly LedgerOperation[] | null;
+  operations: readonly LedgerOperationV4[] | null;
   discards: readonly LedgerDiscardDiagnostic[];
   unreadTextRemaining: boolean;
   pageIncomplete: boolean;
+  pageDate?: LedgerPageDate;
 }>;
+
+export type ExtractLedgerPageResponse = ExtractLedgerPageResponseV3 | ExtractLedgerPageResponseV4;
 
 export type ExtractLedgerPageValidation =
   | Readonly<{ ok: true; value: ExtractLedgerPageRequest }>
@@ -427,8 +488,8 @@ const ALLOWED_IMAGE_MIME_TYPES: readonly ExtractLedgerPageImageMimeType[] = [
 ];
 
 /**
- * Accepts exactly the v3 extract_ledger_page allow-list: a plain non-null object whose only keys
- * are contractVersion, requestId, action, imageBase64 and imageMimeType, with contractVersion 3,
+ * Accepts contract v3 or v4 extract_ledger_page allow-list: a plain non-null object whose only keys
+ * are contractVersion, requestId, action, imageBase64 and imageMimeType, with contractVersion 3 or 4,
  * action "extract_ledger_page", a 36-character UUID, non-empty well-formed base64 image data of at
  * most MAX_LEDGER_IMAGE_BASE64_LENGTH code units, and an allowed mime type.
  *
@@ -460,7 +521,8 @@ export function validateExtractLedgerPageRequest(input: unknown): ExtractLedgerP
     ) {
       return { ok: false, reason: "invalid-request" };
     }
-    if (record["contractVersion"] !== 3 || record["action"] !== EXTRACT_LEDGER_ACTION) {
+    const version = record["contractVersion"];
+    if ((version !== 3 && version !== 4) || record["action"] !== EXTRACT_LEDGER_ACTION) {
       return { ok: false, reason: "invalid-request" };
     }
     const requestId = record["requestId"];
@@ -490,7 +552,7 @@ export function validateExtractLedgerPageRequest(input: unknown): ExtractLedgerP
     return {
       ok: true,
       value: {
-        contractVersion: 3,
+        contractVersion: version as 3 | 4,
         requestId,
         action: EXTRACT_LEDGER_ACTION,
         imageBase64,

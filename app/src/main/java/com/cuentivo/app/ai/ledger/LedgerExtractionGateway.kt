@@ -7,12 +7,12 @@ import kotlinx.coroutines.withContext
 
 private const val CALLABLE_NAME = "extractLedgerPage"
 private const val REGION = "us-south1"
-private const val CONTRACT_VERSION_FIELD = 3
+private const val CONTRACT_VERSION_FIELD = 4
 private const val ACTION_VALUE = "extract_ledger_page"
 private const val MAX_LEDGER_OPERATIONS_WIRE = 25
 
 /** Exactly the keys contract v3 defines for an operation; anything else means we are not talking to it. */
-private val OPERATION_ALLOWED_KEYS = setOf(
+private val OPERATION_ALLOWED_KEYS_V3 = setOf(
     "lineIndex",
     "proposedKind",
     "customerName",
@@ -22,6 +22,15 @@ private val OPERATION_ALLOWED_KEYS = setOf(
     "uncertainFields",
     "unreadableFields",
     "region",
+)
+
+/** Keys contract v4 defines for an operation. */
+private val OPERATION_ALLOWED_KEYS_V4 = OPERATION_ALLOWED_KEYS_V3 + setOf(
+    "confidence",
+    "sources",
+    "rawText",
+    "items",
+    "warnings",
 )
 
 /** What the client is allowed to conclude from a page extraction attempt. */
@@ -43,8 +52,10 @@ data class LedgerExtractionPayload(
 )
 
 /**
- * Exact v3 payload. The image travels base64 encoded in the request body and is never written
- * anywhere by this class.
+ * The request. Asks for v4 — the version this build understands in full — while the parser below
+ * still accepts v3, so rolling the server back leaves the installed app reading pages instead of
+ * mute. The image travels base64 encoded in the request body and is never written anywhere by this
+ * class.
  */
 internal fun buildLedgerCallablePayload(
     requestId: String,
@@ -59,17 +70,30 @@ internal fun buildLedgerCallablePayload(
 )
 
 /**
- * Strict v3 response parsing, in the same spirit as the v2 proposal parser: exact root keys, a
- * matching request id, and money read only as a string. Anything unexpected collapses to
- * [LedgerExtractionCallResult.Unavailable] instead of being half understood, because a page read
- * wrong is worse than a page not read.
+ * Strict v3 and v4 response parsing, in the same spirit as the v2 proposal parser: a known version,
+ * a bounded key set, a matching request id, and money read only as a string. Anything unexpected
+ * collapses to [LedgerExtractionCallResult.Unavailable] instead of being half understood, because a
+ * page read wrong is worse than a page not read.
+ *
+ * v3 is still accepted on purpose. This build asks for v4, but a server rolled back to v3 must leave
+ * the app working rather than silent.
  */
 fun parseLedgerExtractionResponse(
     data: Any?,
     expectedRequestId: String,
 ): LedgerExtractionCallResult {
     val root = data as? Map<*, *> ?: return LedgerExtractionCallResult.Unavailable
-    val expectedKeys = setOf(
+    val versionNumber = root["contractVersion"] as? Number ?: return LedgerExtractionCallResult.Unavailable
+    // toLong() alone would let 3.9 through as 3: the version has to be a whole number.
+    if (versionNumber.toDouble() != versionNumber.toLong().toDouble()) {
+        return LedgerExtractionCallResult.Unavailable
+    }
+    val version = versionNumber.toInt()
+    if (version != 3 && version != 4) {
+        return LedgerExtractionCallResult.Unavailable
+    }
+
+    val baseKeys = setOf(
         "contractVersion",
         "requestId",
         "status",
@@ -78,14 +102,16 @@ fun parseLedgerExtractionResponse(
         "unreadTextRemaining",
         "pageIncomplete",
     )
-    if (root.keys.map { it.toString() }.toSet() != expectedKeys) {
-        return LedgerExtractionCallResult.Unavailable
+    val rootKeys = root.keys.map { it.toString() }.toSet()
+    if (version == 3) {
+        if (rootKeys != baseKeys) return LedgerExtractionCallResult.Unavailable
+    } else {
+        val allowedV4Keys = baseKeys + "pageDate"
+        if (!allowedV4Keys.containsAll(rootKeys) || !rootKeys.containsAll(baseKeys)) {
+            return LedgerExtractionCallResult.Unavailable
+        }
     }
-    // toLong() alone would let 3.9 through as 3: the version has to be the whole number 3.
-    val version = root["contractVersion"] as? Number ?: return LedgerExtractionCallResult.Unavailable
-    if (version.toDouble() != 3.0 || version.toLong() != 3L) {
-        return LedgerExtractionCallResult.Unavailable
-    }
+
     if (root["requestId"] != expectedRequestId) {
         return LedgerExtractionCallResult.Unavailable
     }
@@ -101,7 +127,7 @@ fun parseLedgerExtractionResponse(
         "AI_ENTITLEMENT_REQUIRED" ->
             if (operationsValue == null) LedgerExtractionCallResult.EntitlementRequired else LedgerExtractionCallResult.Unavailable
         "AI_PROPOSAL" -> {
-            val operations = parseLedgerOperationsWire(operationsValue)
+            val operations = parseLedgerOperationsWire(operationsValue, version)
                 ?: return LedgerExtractionCallResult.Unavailable
             val discards = parseLedgerDiscardsWire(root["discards"])
                 ?: return LedgerExtractionCallResult.Unavailable
@@ -122,14 +148,15 @@ fun parseLedgerExtractionResponse(
     }
 }
 
-private fun parseLedgerOperationsWire(value: Any?): List<LedgerOperation>? {
+private fun parseLedgerOperationsWire(value: Any?, contractVersion: Int): List<LedgerOperation>? {
     val list = value as? List<*> ?: return null
     if (list.size > MAX_LEDGER_OPERATIONS_WIRE) return null
     val parsed = ArrayList<LedgerOperation>(list.size)
+    val allowedKeys = if (contractVersion == 3) OPERATION_ALLOWED_KEYS_V3 else OPERATION_ALLOWED_KEYS_V4
     var lastLineIndex = -1
     for (item in list) {
         val map = item as? Map<*, *> ?: return null
-        if (map.keys.any { it.toString() !in OPERATION_ALLOWED_KEYS }) return null
+        if (map.keys.any { it.toString() !in allowedKeys }) return null
         val rawLineIndex = map["lineIndex"] as? Number ?: return null
         // Truncating here would merge two rows into one identity, and the review edits and deletes
         // rows by that identity.
