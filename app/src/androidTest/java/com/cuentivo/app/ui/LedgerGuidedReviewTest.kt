@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
@@ -20,6 +21,7 @@ import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.UncertainLedgerField
 import com.cuentivo.app.ui.ai.LedgerReviewContent
 import java.time.LocalDate
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
@@ -115,5 +117,51 @@ class LedgerGuidedReviewTest {
         // The row left behind is still announced, not swallowed.
         composeRule.onNodeWithTag("ledger-financial-error-banner").assertIsDisplayed()
         composeRule.onNodeWithTag("ledger-start-review-button").assertIsDisplayed()
+    }
+
+    @Test fun the_amount_is_asked_in_the_units_the_notebook_is_written_in() {
+        // The trap that let a misread price through: the field used to show raw cents, so a page
+        // saying "$999" read as 99.90 arrived as "9990" -- close enough to the paper to wave past.
+        // Diego waved it past. It has to say 99.90, so it looks as wrong as it is.
+        composeRule.setContent {
+            host(
+                listOf(
+                    doubtfulSale(0, "Rosa").copy(amountCents = "9990"),
+                ),
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-start-review-button").performClick()
+
+        composeRule.onNodeWithTag("ledger-edit-amount-field").assertTextContains("99.90")
+    }
+
+    @Test fun a_price_typed_in_pesos_is_saved_as_cents() {
+        var savedCents: String? = null
+        composeRule.setContent {
+            var operations by remember { mutableStateOf(listOf(doubtfulSale(0, "Rosa").copy(amountCents = "9990"))) }
+            LedgerReviewContent(
+                review = LedgerReviewEngine.build(operations = operations, todayEpochDay = today),
+                captureFile = null,
+                onUpdateAmount = { line, cents ->
+                    savedCents = cents
+                    operations = LedgerReviewEdits.applyAmount(operations, line, cents)
+                },
+                onUpdateCustomer = { line, name -> operations = LedgerReviewEdits.applyCustomer(operations, line, name) },
+                onUpdateKind = { line, kind -> operations = LedgerReviewEdits.applyKind(operations, line, kind) },
+                onUpdateDate = { line, date -> operations = LedgerReviewEdits.applyDate(operations, line, date, today) },
+                onUpdatePageDate = { },
+                onRemoveRow = { },
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-start-review-button").performClick()
+        composeRule.onNodeWithTag("ledger-edit-amount-field").performTextReplacement("999")
+        composeRule.onNodeWithTag("ledger-edit-save-button").performClick()
+
+        // 999 pesos, not 999 cents. Off by a hundred is the whole bug.
+        composeRule.runOnIdle { assertEquals("99900", savedCents) }
     }
 }

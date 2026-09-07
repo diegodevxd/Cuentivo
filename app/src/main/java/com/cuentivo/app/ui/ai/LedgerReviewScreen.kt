@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.cuentivo.app.R
 import com.cuentivo.app.ai.ledger.CustomerReviewGroup
 import com.cuentivo.app.ai.ledger.FinancialRejectionReason
+import com.cuentivo.app.ai.ledger.LedgerAmountInput
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReview
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
@@ -710,7 +711,12 @@ private fun EditLedgerOperationDialog(
     onSave: (customerName: String, amountCents: String, kind: ProposedLedgerKind, date: SafeDateCandidate?) -> Unit,
 ) {
     var name by remember { mutableStateOf(operation.customerName ?: "") }
-    var amount by remember { mutableStateOf(operation.amountCents ?: "") }
+    // In pesos, because that is what the notebook says and what this dialog exists to compare
+    // against. Showing raw cents turned a misread "$999" into a field reading 9990, which is close
+    // enough to the paper to be waved through.
+    var amount by remember { mutableStateOf(LedgerAmountInput.toPesosText(operation.amountCents)) }
+    val amountCents = LedgerAmountInput.toCents(amount)
+    val amountIsWrong = amount.isNotBlank() && amountCents == null
     // Deliberately nullable: an operation whose kind Gemini could not read must be chosen by the
     // person, not defaulted to SALE. Defaulting would let a name correction silently classify a
     // line as a sale nobody picked.
@@ -757,8 +763,14 @@ private fun EditLedgerOperationDialog(
                     onValueChange = { amount = it },
                     label = { Text(stringResource(R.string.ai_ledger_field_amount)) },
                     placeholder = { Text(stringResource(R.string.ai_ledger_field_amount_placeholder)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = amountIsWrong,
+                    supportingText = if (amountIsWrong) {
+                        { Text(stringResource(R.string.ai_ledger_field_amount_invalid)) }
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("ledger-edit-amount-field"),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
 
@@ -805,8 +817,12 @@ private fun EditLedgerOperationDialog(
         confirmButton = {
             val chosenKind = kind
             TextButton(
-                onClick = { if (chosenKind != null && !dateIsWrong) onSave(name, amount, chosenKind, parsedDate) },
-                enabled = chosenKind != null && !dateIsWrong,
+                onClick = {
+                    if (chosenKind != null && !dateIsWrong && amountCents != null) {
+                        onSave(name, amountCents, chosenKind, parsedDate)
+                    }
+                },
+                enabled = chosenKind != null && !dateIsWrong && amountCents != null,
                 modifier = Modifier.testTag("ledger-edit-save-button"),
             ) {
                 Text(stringResource(R.string.ai_ledger_action_save))
