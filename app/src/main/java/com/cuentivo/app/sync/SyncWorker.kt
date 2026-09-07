@@ -54,6 +54,11 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
      */
     private suspend fun push(database: CuentivoDatabase, gateway: SyncRemoteGateway): Boolean {
         val dao = database.syncOperationDao()
+        // Before draining, give a second look to the rows parked on PERMISSION_DENIED that name a
+        // document nobody may rewrite. Under the old behaviour those were the outbox failing to tell
+        // "already published" from "rejected", and they were shut out of pending() for good. The cap
+        // is the same one parkExhausted enforces, so a row that really is denied parks itself again.
+        dao.reopenSettledPermissionDenials(MAX_ATTEMPTS)
         val coordinator = SyncCoordinator(gateway)
         return SyncDrainer(
             batchSize = BATCH_SIZE,

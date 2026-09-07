@@ -155,9 +155,41 @@ class FirestoreSyncGateway(
             Tasks.await(firestore.document(path).set(operation.payload.asFirestoreMap()))
             SyncUploadResult.Success
         } catch (exception: Exception) {
-            SyncUploadResult.Failure(classify(exception))
+            val failure = classify(exception)
+            val worthChecking = SyncRemoteImmutability.shouldCheckWhetherAlreadyPublished(
+                entityType = operation.entityType,
+                payload = operation.payload,
+                isPermissionDenied = isPermissionDenied(exception),
+            )
+            if (worthChecking && remoteDocumentExists(path)) {
+                // The document is already there and the rules forbid touching it again, which is
+                // exactly what they should do. The row has nothing left to accomplish, so it is
+                // finished rather than parked as a failure that can never clear.
+                SyncUploadResult.Success
+            } else {
+                SyncUploadResult.Failure(failure)
+            }
         }
     }
+
+    /**
+     * Asked of the server, never the cache: on the phone that showed this, the cache is precisely
+     * what could not be trusted. Only reached after a denial, so it costs nothing in the normal path.
+     *
+     * A read that itself fails answers false, and the original denial stands. Claiming a row is done
+     * because we could not check would delete evidence of a write that never landed.
+     */
+    private fun remoteDocumentExists(path: String): Boolean = try {
+        Tasks.await(firestore.document(path).get(Source.SERVER)).exists()
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun isPermissionDenied(exception: Exception): Boolean =
+        generateSequence(exception as Throwable?) { it.cause }
+            .filterIsInstance<FirebaseFirestoreException>()
+            .firstOrNull()
+            ?.code == FirebaseFirestoreException.Code.PERMISSION_DENIED
 
     override fun download(businessId: String, sinceEpochMillis: Long): SyncDownloadResult = try {
         val root = firestore.collection("businesses").document(businessId)

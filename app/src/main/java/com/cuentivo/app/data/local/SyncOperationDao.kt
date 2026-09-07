@@ -28,6 +28,29 @@ interface SyncOperationDao {
     suspend fun reopenParkedOperations()
 
     /**
+     * Puts back in flight the rows parked on PERMISSION_DENIED that name a document nobody may
+     * rewrite -- a sale, an item, a payment, an allocation, a movement, or the owner membership.
+     *
+     * They were parked by an outbox that could not tell "already published" apart from "rejected":
+     * uploading with set() over a document that already exists is an update, and every one of those
+     * collections is create-only, so re-sending a sale Firestore already holds is denied by design.
+     * The gateway now resolves that case by asking whether the document is there, but a phone that
+     * accumulated the rows under the old behaviour has them excluded from [pending] forever, and
+     * nothing would ever look at them again.
+     *
+     * Bounded on purpose by [maxAttempts], the same budget [parkExhausted] enforces: a row that is
+     * genuinely denied burns one attempt per pass and parks itself again for good. This cannot turn
+     * into the retry loop it exists to end.
+     */
+    @Query(
+        "UPDATE sync_operations SET lastError = NULL " +
+            "WHERE lastError LIKE 'PERMANENT:PERMISSION_DENIED%' AND attemptCount < :maxAttempts " +
+            "AND (entityType IN ('SALE', 'SALE_ITEM', 'PAYMENT', 'PAYMENT_ALLOCATION', 'MOVEMENT') " +
+            "OR (entityType = 'MEMBER' AND payload LIKE '%\"role\":\"OWNER\"%'))"
+    )
+    suspend fun reopenSettledPermissionDenials(maxAttempts: Int)
+
+    /**
      * Parks rows that have burned through [maxAttempts] retries.
      *
      * Without a cap a row classified as transient retries on every network change for the life of
