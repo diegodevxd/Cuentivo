@@ -1058,3 +1058,28 @@ El gate se corrio despues y paso, pero el orden fue el inverso al que manda `CLA
 **Codex corrigio dos veces un arreglo mio del outbox**, las dos con razon: que una lectura fallida
 por red no puede aparcarse como permanente, y que un documento que existe no es necesariamente el
 mismo que se queria publicar.
+
+## 2026-09-08 — v39 fases 1 y 2, y dos diagnósticos equivocados
+
+El detalle vigente vive en `PROJECT_MEMORY.md`. Aquí queda lo que no debe repetirse.
+
+**Claude dio un diagnóstico falso dos veces.** Afirmó que girar el teléfono perdía el borrador de la
+revisión y costaba otra llamada a Gemini. `MainActivity` absorbe la rotación con `configChanges`, así
+que no la recrea. Lo descubrió el implementador al necesitar un host de depuración sin ese atributo.
+El arreglo valía igual, pero el motivo que se le dio a Diego era inventado a partir de leer una línea
+de código sin comprobar el manifiesto.
+
+**Un diseño "sin PII" que señalaba a la gente.** Las métricas de importación no guardaban ningún dato
+personal, pero guardaban el instante exacto — y eso permite cruzarlas contra las ventas creadas en ese
+momento, en la misma base, y recuperar persona y monto. Lo encontró Sol revisando el plan, antes de
+que existiera una línea de código. Que la lista de campos parezca inocente no basta: hay que
+preguntarse contra qué se puede unir.
+
+**Una prueba en verde que no puede ver el defecto.** El espejo del borrador corría en un
+`LaunchedEffect`, y la ventana entre la composición y el despacho de la corrutina es invisible para
+cualquier prueba que espere a que Compose quede idle. La encontró un lector, no un test.
+
+**Cambio de implementador.** AGY (Gemini 3.6 Flash) se sustituyó por OpenCode (GLM-5.3) tras tres
+entregas seguidas en las que construía el motor puro y se saltaba el cableado, dejando objetos bien
+probados que no llamaba nadie. La primera entrega de OpenCode fue mejor: cableó, comentó el porqué y
+cuestionó una premisa falsa del encargo.

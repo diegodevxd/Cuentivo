@@ -11,11 +11,83 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-09-07 (tarde). **Fase B completa y en prueba cerrada.**
-El AAB `v37` / `1.19.0` está subido a la pista cerrada de Play, firmado con la misma llave que el
-v36 (SHA1 `25:05:8A:9C:...:1D:BF`, comprobado con `keytool -printcert -jarfile` antes de subirlo).
-Es la primera vez que la importación de libreta por foto sale en un bundle. La política de
-privacidad de la web ya está actualizada.
+**Última actualización:** 2026-09-08. **Trabajo de v39 en curso: fases 1 y 2 cerradas.**
+
+**Dónde está cada cosa ahora mismo:**
+
+- **Play.** `v37` / `1.19.0` en pista **cerrada**. `v38` / `1.20.0` en pista **interna** — y ése lleva
+  la tarjeta de revisión que ocupaba una pantalla por renglón, arreglada después.
+- **`versionCode` 38 y 39 están gastados.** El 39 (`1.20.1`, commit `a2c810e`) es el bundle con el
+  layout arreglado y **no se subió**. **El próximo bundle va como `versionCode 40`**, confirmado con
+  Diego.
+- **Functions:** contrato **v4 desplegado** en `extractLedgerPage(us-south1)`. Acepta v3 y v4 y
+  responde en la versión que le piden, así que el `v37` publicado no se entera de nada.
+- **Etiqueta de comparación:** `baseline-cuentivoai-v39-1.20.1` → `a2c810e`. La comparativa v38/v39
+  se mide contra ahí, **no** contra `1.20.0`: ése salió con el defecto de layout y compararlo mediría
+  el defecto en vez del pipeline.
+- La política de privacidad de la web está actualizada.
+
+**Reparto de agentes, cambiado el 2026-09-07:** Claude orquesta y verifica, **OpenCode (GLM-5.3)
+implementa** —sustituye a AGY—, y Sol (Codex, `gpt-5.6-sol` a esfuerzo bajo) revisa. La revisión de
+Sol se hace **dos veces por fase**: sobre el plan antes de escribir código, y sobre el diff después.
+La del plan ha encontrado algo real **seis de seis veces**, incluido un fallo de privacidad que
+Claude no vio.
+
+## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
+
+**Fase 1 (`0bba4dc`, `82df2c0`).** El estado de la revisión vivía en `remember`: al recrearse la
+Activity se perdía la lectura entera y las correcciones, y como la foto sobrevive en disco la única
+salida era volver a leerla — **otra llamada a Gemini, que se paga**. Ahora va en `rememberSaveable`
+con un `Saver` propio, y **al restaurar no se llama al callable ni una vez**. Se guarda sólo lo
+irrepetible; los candidatos, los 552 productos y los saldos se recargan de Room porque un `Bundle`
+no los aguanta.
+
+Además, la fecha de hoja que el servidor detecta ya no se tira: **se ofrece, nunca se aplica sola**,
+ni con confianza alta.
+
+**Dos correcciones que importan más que el arreglo:**
+
+- **El diagnóstico de Claude estaba mal.** Dijo dos veces que esto pasaba al *girar el teléfono*.
+  `MainActivity` declara `configChanges="orientation|screenSize"`, así que **rotar no la recrea**. Lo
+  encontró OpenCode al necesitar un host de depuración sin ese atributo para poder probar el camino.
+  Lo que sí recrea: que el sistema mate el proceso, y los cambios de configuración que ese atributo
+  no absorbe (idioma, tema, densidad, tamaño de fuente, pantalla partida).
+- **Sol encontró que el espejo del borrador estaba en un `LaunchedEffect`**, que es una corrutina y se
+  despacha *después* de la composición: una recreación en esa ventana guardaba la instantánea
+  anterior. Ahora es `SideEffect`. **Ninguna prueba que espere a que Compose quede idle ve esa
+  ventana** — hizo falta que alguien leyera el código.
+
+**Fase 2 (`4fd46ae`).** Tabla `ai_ledger_import_metrics`, **una fila por importación** (nunca por
+renglón: eso sería la libreta reconstruible). 23 columnas, de las que **sólo `importId` y `status`
+son TEXT** — verificado contra el `createSql` del esquema exportado, no contra la clase. No aparece
+en `sync`: no sale del teléfono. Retención de 90 días.
+
+**El fallo de privacidad que Sol encontró en el plan, y que Claude no vio:** una marca de tiempo
+exacta **es una clave de unión**. Guardar el instante al milisegundo permite cruzar la fila contra
+las ventas creadas en ese momento —que están en la misma base— y sacar de ahí la persona y el monto.
+El diseño no guardaba datos de nadie: **los señalaba**. La hora se guarda redondeada, y la confianza
+va como histograma agregado, nunca por renglón ni con `lineIndex`, porque un par por renglón en orden
+es una huella de la página aunque no lleve un nombre.
+
+La métrica se escribe **en dos tiempos** con id estable (SHA-256 de la sesión): una fila *en curso* al
+llegar la extracción y una actualización idempotente al terminar. Así una importación que muere a
+medias deja rastro de que existió, y ninguna se cuenta dos veces. La escritura final va en
+`GlobalScope` a propósito: lanzarla desde el scope de Compose y cerrar la pantalla la cancelaría.
+
+## Qué sigue en v39, y una decisión pendiente de Diego
+
+El plan original ponía la infraestructura de segunda pasada como fase 3. **Claude propuso invertir el
+orden** y está sin decidir:
+
+**La tabla de métricas está vacía y seguirá vacía hasta que Diego use un bundle que las incluya.** El
+criterio de éxito de v39 que él mismo fijó es *"menos correcciones humanas que v38 sin aumentar
+errores de dinero"*, así que construir la segunda pasada ahora es construir a ciegas: cuando esté
+lista no habrá con qué comparar. La propuesta es sacar el `versionCode 40` con las fases 1 y 2
+dentro, usarlo unos días con libretas reales, y mientras avanzar con lo que no depende de medir —
+matching mejorado y preprocesado prudente.
+
+**Pendiente también:** Sol estaba revisando el diff de la Fase 2 cuando se cerró la sesión. Su
+veredicto no se llegó a leer.
 
 ## 2026-09-07 — Fase B cerrada: la libreta de papel se lee, se revisa y se registra
 
