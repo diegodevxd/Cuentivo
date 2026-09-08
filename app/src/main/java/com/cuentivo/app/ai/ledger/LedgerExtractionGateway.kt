@@ -57,6 +57,8 @@ data class LedgerExtractionPayload(
     val pageIncomplete: Boolean,
     /** Present only in v4 answers that carried a readable page date; null in v3 and in pages without one. */
     val detectedPageDate: LedgerDetectedPageDate? = null,
+    /** Which contract version the server answered with, for the local import metrics. */
+    val contractVersion: Int = 0,
 )
 
 /**
@@ -156,6 +158,7 @@ fun parseLedgerExtractionResponse(
                     unreadTextRemaining = unread,
                     pageIncomplete = incomplete,
                     detectedPageDate = detectedPageDate,
+                    contractVersion = version,
                 ),
             )
         }

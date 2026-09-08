@@ -83,6 +83,12 @@ sealed interface AiDebugLabState {
         val sessionId: String,
         val businessId: String,
         val review: LedgerReview,
+        /**
+         * The reading exactly as the callable delivered it, frozen: corrections are counted by
+         * comparing this against [review.operations], and it must survive edits and Activity
+         * recreations unchanged or the counts lie.
+         */
+        val originalOperations: List<LedgerOperation> = emptyList(),
         val existingCustomerBalances: Map<String, Long> = emptyMap(),
         /**
          * The customers this business already has, loaded once when the page arrived.
@@ -1025,6 +1031,7 @@ object AiDebugLabMachine {
                 sessionId = sessionId,
                 businessId = businessId,
                 review = review,
+                originalOperations = java.util.Collections.unmodifiableList(ArrayList(operations)),
                 existingCustomerBalances = frozenBalances,
                 customerCandidates = java.util.Collections.unmodifiableList(ArrayList(customerCandidates)),
                 productCandidates = java.util.Collections.unmodifiableList(ArrayList(productCandidates)),
@@ -1079,6 +1086,7 @@ object AiDebugLabMachine {
                 sessionId = sessionId,
                 businessId = businessId,
                 review = review,
+                originalOperations = java.util.Collections.unmodifiableList(ArrayList(saved.originalOperations)),
                 existingCustomerBalances = frozenBalances,
                 customerCandidates = Collections.unmodifiableList(ArrayList(customerCandidates)),
                 productCandidates = Collections.unmodifiableList(ArrayList(productCandidates)),

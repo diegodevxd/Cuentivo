@@ -37,6 +37,7 @@ internal object LedgerReviewSaver {
     private const val KEY_SESSION_ID = "sessionId"
     private const val KEY_BUSINESS_ID = "businessId"
     private const val KEY_OPERATIONS = "operations"
+    private const val KEY_ORIGINAL_OPERATIONS = "originalOperations"
     private const val KEY_DISCARDS = "discards"
     private const val KEY_UNREAD = "unreadTextRemaining"
     private const val KEY_INCOMPLETE = "pageIncomplete"
@@ -69,11 +70,17 @@ internal object LedgerReviewSaver {
      * The part of a review that cannot be recomputed: what the model read, what the person edited,
      * and the session it belongs to. Balances, candidates and registered rows are deliberately
      * absent — they are reloaded from Room when the review is rebuilt.
+     *
+     * [originalOperations] is the reading as it arrived from the callable, frozen and never
+     * edited: the corrections a person made are counted by comparing this against [operations],
+     * and without it a recreation would carry only the edited version and count them wrong — or
+     * not at all.
      */
     data class SavedLedgerReview(
         val sessionId: String,
         val businessId: String,
         val operations: List<LedgerOperation>,
+        val originalOperations: List<LedgerOperation>,
         val discards: List<LedgerDiscardDiagnostic>,
         val unreadTextRemaining: Boolean,
         val pageIncomplete: Boolean,
@@ -87,6 +94,7 @@ internal object LedgerReviewSaver {
         bundle.putString(KEY_SESSION_ID, saved.sessionId)
         bundle.putString(KEY_BUSINESS_ID, saved.businessId)
         bundle.putParcelableArray(KEY_OPERATIONS, saved.operations.map(::operationToBundle).toTypedArray())
+        bundle.putParcelableArray(KEY_ORIGINAL_OPERATIONS, saved.originalOperations.map(::operationToBundle).toTypedArray())
         bundle.putParcelableArray(KEY_DISCARDS, saved.discards.map(::discardToBundle).toTypedArray())
         bundle.putBoolean(KEY_UNREAD, saved.unreadTextRemaining)
         bundle.putBoolean(KEY_INCOMPLETE, saved.pageIncomplete)
@@ -119,6 +127,19 @@ internal object LedgerReviewSaver {
         // longer understands. Returning a partial review would let a person confirm a page that is
         // missing rows they already corrected, so the whole restore is refused instead.
         if (operations.size != operationBundles.size) return null
+        // The original reading is saved by builds that have it. A save from an older shape has
+        // none: rather than refusing the whole restore, the original falls back to the edited
+        // operations, which counts zero corrections — the honest count for a page whose
+        // before-state was never recorded.
+        val originalBundles = bundle.getParcelableArray(KEY_ORIGINAL_OPERATIONS)
+        val originalOperations = if (originalBundles == null) {
+            operations
+        } else {
+            val parsed = originalBundles.mapNotNull { raw ->
+                (raw as? Bundle)?.let(::operationFromBundle)
+            }
+            if (parsed.size != originalBundles.size) operations else parsed
+        }
         val discardBundles = bundle.getParcelableArray(KEY_DISCARDS) ?: return null
         val discards = discardBundles.mapNotNull { raw ->
             (raw as? Bundle)?.let(::discardFromBundle)
@@ -139,6 +160,7 @@ internal object LedgerReviewSaver {
             sessionId = sessionId,
             businessId = businessId,
             operations = operations,
+            originalOperations = originalOperations,
             discards = discards,
             unreadTextRemaining = bundle.getBoolean(KEY_UNREAD),
             pageIncomplete = bundle.getBoolean(KEY_INCOMPLETE),

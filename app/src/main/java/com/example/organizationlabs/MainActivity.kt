@@ -1625,6 +1625,9 @@ class MainActivity : ComponentActivity() {
                     extractLedgerPage = { requestId, imageBase64, imageMimeType ->
                         ledgerExtractionGateway.extractPage(requestId, imageBase64, imageMimeType)
                     },
+                    // Local import metrics: counts only, never synced, never a reason for the
+                    // import itself to fail. See AiLedgerImportMetricEntity for what is NOT here.
+                    ledgerImportMetricDao = database.aiLedgerImportMetricDao(),
                     confirmSale = { request ->
                         val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
                         if (activeBusinessId == null || activeBusinessId != request.businessId || currentUserId.isBlank()) {

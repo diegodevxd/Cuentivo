@@ -32,7 +32,11 @@ class LedgerReviewSaverTest {
         uncertainFields = if (edited) emptyList() else listOf(UncertainLedgerField.CUSTOMER),
     )
 
-    private fun savedReview(operations: List<LedgerOperation>) = LedgerReviewSaver.SavedLedgerReview(
+    private fun savedReview(
+        operations: List<LedgerOperation>,
+        // El baseline por defecto es la lectura sin editar, que es lo que el modelo devolvio.
+        originalOperations: List<LedgerOperation> = listOf(reviewedOperation(0, edited = false)),
+    ) = LedgerReviewSaver.SavedLedgerReview(
         sessionId = "session-1",
         businessId = "business-1",
         operations = operations,
@@ -42,6 +46,7 @@ class LedgerReviewSaverTest {
         pageDateEpochDay = 20634L,
         todayEpochDay = 20700L,
         detectedPageDate = LedgerDetectedPageDate(SafeDateCandidate(2026, 7, 30), 0.95),
+        originalOperations = originalOperations,
     )
 
     @Test

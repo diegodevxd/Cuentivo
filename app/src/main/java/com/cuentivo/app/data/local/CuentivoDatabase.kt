@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OperationEntity::class, CustomerEntity::class, ProductEntity::class, SaleEntity::class, SaleItemEntity::class, PaymentEntity::class, PaymentAllocationEntity::class, AccountMovementEntity::class, BusinessEntity::class, BusinessMemberEntity::class, AuditLogEntity::class, SyncOperationEntity::class, SyncStateEntity::class, AiDailyMessageEntity::class], version = 6, exportSchema = true)
+@Database(entities = [OperationEntity::class, CustomerEntity::class, ProductEntity::class, SaleEntity::class, SaleItemEntity::class, PaymentEntity::class, PaymentAllocationEntity::class, AccountMovementEntity::class, BusinessEntity::class, BusinessMemberEntity::class, AuditLogEntity::class, SyncOperationEntity::class, SyncStateEntity::class, AiDailyMessageEntity::class, AiLedgerImportMetricEntity::class], version = 7, exportSchema = true)
 abstract class CuentivoDatabase : RoomDatabase() {
     abstract fun operationDao(): OperationDao
     abstract fun financialDao(): FinancialDao
@@ -16,6 +16,7 @@ abstract class CuentivoDatabase : RoomDatabase() {
     abstract fun syncOperationDao(): SyncOperationDao
     abstract fun syncStateDao(): SyncStateDao
     abstract fun aiDailyMessageDao(): AiDailyMessageDao
+    abstract fun aiLedgerImportMetricDao(): AiLedgerImportMetricDao
 }
 
 /**
@@ -76,4 +77,43 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
-val CUENTIVO_MIGRATIONS = arrayOf(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+/**
+ * Adds the local AI ledger import metrics table.
+ *
+ * Additive only: no existing table is touched, so no financial row can be lost by running it.
+ * The table holds counts per import — never names, amounts, ids or free text — and is never
+ * synced: it stays on the phone it was written on.
+ */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `ai_ledger_import_metrics` (" +
+                "`importId` TEXT NOT NULL, " +
+                "`finishedAtEpochHour` INTEGER NOT NULL, " +
+                "`status` TEXT NOT NULL, " +
+                "`detectedCount` INTEGER NOT NULL, " +
+                "`readyUntouchedCount` INTEGER NOT NULL, " +
+                "`correctedCount` INTEGER NOT NULL, " +
+                "`discardedCount` INTEGER NOT NULL, " +
+                "`unreadableCount` INTEGER NOT NULL, " +
+                "`duplicateSuggestedCount` INTEGER NOT NULL, " +
+                "`customerCorrections` INTEGER NOT NULL, " +
+                "`productCorrections` INTEGER NOT NULL, " +
+                "`amountCorrections` INTEGER NOT NULL, " +
+                "`dateCorrections` INTEGER NOT NULL, " +
+                "`kindCorrections` INTEGER NOT NULL, " +
+                "`geminiCalls` INTEGER NOT NULL, " +
+                "`geminiDurationMillis` INTEGER NOT NULL, " +
+                "`contractVersion` INTEGER NOT NULL, " +
+                "`highConfidenceFields` INTEGER NOT NULL, " +
+                "`highConfidenceCorrected` INTEGER NOT NULL, " +
+                "`midConfidenceFields` INTEGER NOT NULL, " +
+                "`midConfidenceCorrected` INTEGER NOT NULL, " +
+                "`lowConfidenceFields` INTEGER NOT NULL, " +
+                "`lowConfidenceCorrected` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`importId`))"
+        )
+    }
+}
+
+val CUENTIVO_MIGRATIONS = arrayOf(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)

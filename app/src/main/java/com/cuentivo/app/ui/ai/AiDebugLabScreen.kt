@@ -206,6 +206,11 @@ fun AiDebugLabScreen(
     /** What is already registered around this page's dates, so a second scan of the same sheet says so. */
     ledgerRegisteredResolver: (suspend (businessId: String, minEpochDay: Long, maxEpochDay: Long) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)? = null,
     confirmLedgerBatch: (suspend (businessId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
+    /**
+     * Where the local import metrics are written. Null in tests and anywhere Room is not wired:
+     * metrics are diagnostics, and their absence must never be a reason the import fails.
+     */
+    ledgerImportMetricDao: com.cuentivo.app.data.local.AiLedgerImportMetricDao? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     var voiceModel by remember { mutableStateOf(VoiceCaptureModel()) }
@@ -304,6 +309,7 @@ fun AiDebugLabScreen(
                 sessionId = reviewing.sessionId,
                 businessId = reviewing.businessId,
                 operations = reviewing.review.operations,
+                originalOperations = reviewing.originalOperations,
                 discards = reviewing.review.discards,
                 unreadTextRemaining = reviewing.review.unreadTextRemaining,
                 pageIncomplete = reviewing.review.pageIncomplete,
@@ -393,9 +399,43 @@ fun AiDebugLabScreen(
         withContext(Dispatchers.IO) { cameraStore.deleteStaleExcept(listOf(pendingLedgerUri)) }
     }
 
+    /**
+     * Stage 2 of the import metric: the import ended, as registered or as abandoned.
+     *
+     * Launched on the GlobalScope on purpose: this write must survive the screen that produced
+     * it. Launching it from the Compose scope and closing the lab right after CANCELS the write
+     * — the exact failure the two-stage design exists to prevent. The recorder is idempotent and
+     * wrapped in runCatching, so a failure costs the metric, never the import.
+     */
+    val recordImportEnded: (Boolean, AiDebugLabState.LedgerReviewing) -> Unit = { registered, reviewing ->
+        val metricDao = ledgerImportMetricDao
+        if (metricDao != null) {
+            val sessionId = reviewing.sessionId
+            val original = reviewing.originalOperations
+            val review = reviewing.review
+            @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+            kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                com.cuentivo.app.domain.LedgerImportMetricRecorder.onImportEnded(
+                    dao = metricDao,
+                    sessionId = sessionId,
+                    registered = registered,
+                    originalOperations = original,
+                    finalReview = review,
+                    nowEpochMillis = System.currentTimeMillis(),
+                )
+            }
+        }
+    }
+
     // One close action: cancel the in-flight request (generation bump) BEFORE closing, so a late
     // transport result is always invalidated. Also sweeps all capture temp files and releases recognizer.
     val closeLab = {
+        // Closing the lab with a review open ends that import as abandoned: the person walked
+        // away from the page. The metric is written before the state is torn down.
+        val reviewingAtClose = model.state as? AiDebugLabState.LedgerReviewing
+        if (reviewingAtClose != null) {
+            recordImportEnded(false, reviewingAtClose)
+        }
         effectiveVoiceRecognizer.destroy()
         voiceModel = VoiceCaptureMachine.onCancel(voiceModel)
         model = AiDebugLabMachine.onCancel(model)
@@ -527,6 +567,8 @@ fun AiDebugLabScreen(
                 } else {
                     emptyList()
                 }
+                // One photo, one paid call: the clock around it is the cost metric of this import.
+                val startedAt = System.currentTimeMillis()
                 val outcome = withContext(Dispatchers.IO) {
                     val bytes = runCatching { file.readBytes() }.getOrNull()
                     if (bytes == null) {
@@ -536,11 +578,31 @@ fun AiDebugLabScreen(
                         call(java.util.UUID.randomUUID().toString(), encoded, mimeType)
                     }
                 }
+                val callDurationMillis = System.currentTimeMillis() - startedAt
                 // The failure path checks the token too. Without it a slow extraction that failed
                 // could cancel the review of a later photo and delete its file underneath it.
                 if (token == model.generation) {
                     when (outcome) {
                         is LedgerExtractionCallResult.Extracted -> {
+                            // Stage 1 of the metric: the page was read, the review is about to
+                            // open. Written now — not at the end — so an import that dies halfway
+                            // still left its trace, with the counts that are already final.
+                            val metricDao = ledgerImportMetricDao
+                            if (metricDao != null) {
+                                withContext(Dispatchers.IO) {
+                                    com.cuentivo.app.domain.LedgerImportMetricRecorder.onExtractionArrived(
+                                        dao = metricDao,
+                                        sessionId = sessionId,
+                                        detectedCount = outcome.extraction.operations.size,
+                                        unreadableCount = outcome.extraction.operations.count { it.unreadableFields.isNotEmpty() },
+                                        duplicateSuggestedCount = 0,
+                                        geminiCalls = 1,
+                                        geminiDurationMillis = callDurationMillis,
+                                        contractVersion = outcome.extraction.contractVersion,
+                                        nowEpochMillis = System.currentTimeMillis(),
+                                    )
+                                }
+                            }
                             model = AiDebugLabMachine.onLedgerExtractionResult(
                                 model = model,
                                 sessionId = sessionId,
@@ -692,6 +754,9 @@ fun AiDebugLabScreen(
     val ledgerReviewing = model.state as? AiDebugLabState.LedgerReviewing
     if (ledgerReviewing != null) {
         val cancelLedger = {
+            // Stage 2 of the metric: the person discarded this page, so the import ended
+            // abandoned. Written before the review is torn down, with it still in hand.
+            recordImportEnded(false, ledgerReviewing)
             discardLedgerCapture()
             model = AiDebugLabMachine.onCancelLedger(model)
         }
@@ -789,6 +854,9 @@ fun AiDebugLabScreen(
                             // the way in would leave a failed import without the evidence the
                             // person needs to correct it.
                             if (recorded != null) {
+                                // Stage 2 of the metric: this import ended registered. Written
+                                // before the capture is discarded, with the review still in hand.
+                                recordImportEnded(true, ledgerReviewing)
                                 discardLedgerCapture()
                             }
                         }

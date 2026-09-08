@@ -69,6 +69,9 @@ class LedgerReviewSaverBundleTest {
         pageDateEpochDay = 20634L,
         todayEpochDay = 20700L,
         detectedPageDate = LedgerDetectedPageDate(SafeDateCandidate(2026, 7, 30), 0.95),
+        // El baseline tambien viaja en el Bundle: si se perdiera, las correcciones se contarian
+        // contra la version ya editada y saldrian siempre en cero.
+        originalOperations = operations.map { it.copy(customerId = null, amountCents = "25000") },
     )
 
     @Test

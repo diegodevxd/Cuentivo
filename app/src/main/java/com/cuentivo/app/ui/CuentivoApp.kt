@@ -289,6 +289,8 @@ fun CuentivoApp(
     ledgerProductsResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.ProductCandidate>)? = null,
     ledgerRegisteredResolver: (suspend (businessId: String, minEpochDay: Long, maxEpochDay: Long) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)? = null,
     confirmLedgerBatch: (suspend (businessId: String, operations: List<com.cuentivo.app.ai.ledger.LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
+    /** Local import metrics DAO; null keeps the lab working without metrics, e.g. in previews. */
+    ledgerImportMetricDao: com.cuentivo.app.data.local.AiLedgerImportMetricDao? = null,
     businessQueryResolver: (suspend (businessId: String, proposal: com.cuentivo.app.ai.BusinessQueryProposal, choice: com.cuentivo.app.ai.AiEntityChoice?) -> com.cuentivo.app.ai.AiBusinessQueryResult)? = null,
     message: String? = null,
     onMessageShown: () -> Unit = {},
@@ -565,6 +567,7 @@ fun CuentivoApp(
                     ledgerProductsResolver = ledgerProductsResolver,
                     ledgerRegisteredResolver = ledgerRegisteredResolver,
                     confirmLedgerBatch = confirmLedgerBatch,
+                    ledgerImportMetricDao = ledgerImportMetricDao,
                     onClose = { showAiDebugLab = false },
                     onOpenPaywall = {
                         showAiDebugLab = false

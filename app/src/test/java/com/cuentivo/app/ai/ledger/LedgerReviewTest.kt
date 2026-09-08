@@ -983,6 +983,7 @@ class LedgerReviewTest {
             pageDateEpochDay = java.time.LocalDate.of(2026, 7, 30).toEpochDay(),
             todayEpochDay = java.time.LocalDate.of(2026, 9, 1).toEpochDay(),
             detectedPageDate = null,
+            originalOperations = listOf(corrected, doubtful),
         )
 
         val restored = AiDebugLabMachine.onRestoreLedgerReview(
@@ -1036,6 +1037,8 @@ class LedgerReviewTest {
             pageDateEpochDay = null,
             todayEpochDay = java.time.LocalDate.of(2026, 9, 1).toEpochDay(),
             detectedPageDate = null,
+            // La lectura original: lo que dio el modelo antes de que nadie tocara el monto.
+            originalOperations = listOf(op),
         )
 
         val restored = AiDebugLabMachine.onRestoreLedgerReview(
