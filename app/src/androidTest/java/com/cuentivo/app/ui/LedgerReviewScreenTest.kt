@@ -199,6 +199,118 @@ class LedgerReviewScreenTest {
         composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsNotEnabled()
     }
 
+    @Test fun a_detected_page_date_is_offered_but_never_applied_until_tapped() {
+        // The server read "2026-07-30" off the sheet. The card must say so and do nothing else:
+        // a wrong date sends ten movements to the day that is not theirs, and in an append-only
+        // ledger that is undone with ten compensating movements. The tap is the acceptance.
+        val undatedSale = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa",
+            amountCents = "25000",
+            date = null,
+        )
+        val today = java.time.LocalDate.now().toEpochDay()
+        val detected = java.time.LocalDate.of(2026, 7, 30)
+        var appliedPageDate: Long? = null
+
+        composeRule.setContent {
+            var currentReview by remember {
+                mutableStateOf(
+                    LedgerReviewEngine.build(
+                        operations = listOf(undatedSale),
+                        todayEpochDay = today,
+                        detectedPageDate = com.cuentivo.app.ai.ledger.LedgerDetectedPageDate(
+                            com.cuentivo.app.ai.ledger.SafeDateCandidate(2026, 7, 30),
+                            0.95,
+                        ),
+                    ),
+                )
+            }
+            LedgerReviewContent(
+                review = currentReview,
+                captureFile = null,
+                onUpdateAmount = { _, _ -> },
+                onUpdateCustomer = { _, _ -> },
+                onUpdateKind = { _, _ -> },
+                onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { newPageDate ->
+                    appliedPageDate = newPageDate
+                    currentReview = LedgerReviewEngine.build(
+                        operations = currentReview.operations,
+                        discards = currentReview.discards,
+                        unreadTextRemaining = currentReview.unreadTextRemaining,
+                        pageIncomplete = currentReview.pageIncomplete,
+                        pageDateEpochDay = newPageDate,
+                        todayEpochDay = currentReview.todayEpochDay,
+                        detectedPageDate = currentReview.detectedPageDate,
+                    )
+                },
+                onRemoveRow = { },
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        // Offered, with the date it read, and nothing applied yet.
+        val offer = composeRule.onNodeWithTag("ledger-page-date-detected-offer")
+        offer.assertIsDisplayed()
+        composeRule.runOnIdle { org.junit.Assert.assertNull("offering is not applying", appliedPageDate) }
+
+        // The tap is the acceptance.
+        offer.performClick()
+
+        composeRule.runOnIdle {
+            org.junit.Assert.assertEquals(
+                "tapping the offer applies the detected date",
+                detected.toEpochDay(),
+                appliedPageDate,
+            )
+        }
+        composeRule.onNodeWithTag("ledger-page-date-field").assertTextContains("2026-07-30")
+    }
+
+    @Test fun a_detected_page_date_in_the_future_is_not_offered_at_all() {
+        // A date that has not happened yet is not a date from a notebook. The offer must not
+        // exist, no matter how confident the model claimed to be.
+        val undatedSale = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa",
+            amountCents = "25000",
+            date = null,
+        )
+        val today = java.time.LocalDate.now().toEpochDay()
+        val tomorrow = java.time.LocalDate.now().plusDays(1)
+
+        composeRule.setContent {
+            val review = remember {
+                LedgerReviewEngine.build(
+                    operations = listOf(undatedSale),
+                    todayEpochDay = today,
+                    detectedPageDate = com.cuentivo.app.ai.ledger.LedgerDetectedPageDate(
+                        com.cuentivo.app.ai.ledger.SafeDateCandidate(tomorrow.year, tomorrow.monthValue, tomorrow.dayOfMonth),
+                        0.99,
+                    ),
+                )
+            }
+            LedgerReviewContent(
+                review = review,
+                captureFile = null,
+                onUpdateAmount = { _, _ -> },
+                onUpdateCustomer = { _, _ -> },
+                onUpdateKind = { _, _ -> },
+                onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
+                onRemoveRow = { },
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-page-date-detected-offer").assertDoesNotExist()
+    }
+
     @Test fun product_proposal_action_button_offers_product_name_without_changing_amount() {
         var acceptedProductCandidateName: String? = null
         val op = LedgerOperation(

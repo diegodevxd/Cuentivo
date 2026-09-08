@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -313,7 +314,11 @@ fun CuentivoApp(
     // Transport for AI lab: release builds resolve to null until T6, where AiEntryPolicy routes
     // paying subscribers to an unavailable notice and non-subscribers to the paywall.
     val debugAiLabTransport = remember { debugAiTransport() }
-    var showAiDebugLab by remember { mutableStateOf(false) }
+    // Saveable on purpose: a review of a photographed page can be open when the Activity is
+    // recreated (the system reclaiming the process, a uiMode change, the camera app in front).
+    // A plain remember here closed the whole lab on the way back, and the review state saved
+    // inside it never got the chance to restore.
+    var showAiDebugLab by rememberSaveable { mutableStateOf(false) }
     var showAiPaywall by remember { mutableStateOf(false) }
     val coordinator = remember(aiAvailabilityGateway) {
         aiAvailabilityGateway?.let { AiAvailabilityCoordinator(it) }

@@ -277,6 +277,11 @@ data class LedgerReview(
     val summary: LedgerReviewSummary,
     val pageDateEpochDay: Long? = null,
     val todayEpochDay: Long? = null,
+    /**
+     * The page date the server detected on the sheet, if it sent one that is a real, non-future
+     * calendar day. Carried so the date card can offer it; never applied without a tap.
+     */
+    val detectedPageDate: LedgerDetectedPageDate? = null,
 )
 
 /**
@@ -299,6 +304,7 @@ object LedgerReviewEngine {
         existingCustomerBalances: Map<String, Long> = emptyMap(),
         pageDateEpochDay: Long? = null,
         todayEpochDay: Long? = null,
+        detectedPageDate: LedgerDetectedPageDate? = null,
     ): LedgerReview {
         // Defensive copy: isolate snapshot from any caller modifications
         val frozenOps: List<LedgerOperation> = Collections.unmodifiableList(
@@ -475,6 +481,7 @@ object LedgerReviewEngine {
             summary = summary,
             pageDateEpochDay = pageDateEpochDay,
             todayEpochDay = todayEpochDay,
+            detectedPageDate = detectedPageDate,
         )
     }
 

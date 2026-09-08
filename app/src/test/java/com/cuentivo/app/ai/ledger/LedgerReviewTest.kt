@@ -1,6 +1,7 @@
 package com.cuentivo.app.ai.ledger
 
 import com.cuentivo.app.domain.CustomerNameNormalizer
+import com.cuentivo.app.domain.AiLedgerBatchPlanner
 import com.cuentivo.app.ui.ai.AiDebugLabMachine
 import com.cuentivo.app.ui.ai.AiDebugLabModel
 import com.cuentivo.app.ui.ai.AiDebugLabState
@@ -863,6 +864,195 @@ class LedgerReviewTest {
         val stateAfterEdit = modelAfterRowEdit.state as AiDebugLabState.LedgerReviewing
         assertTrue(stateAfterEdit.review.summary.hasMissingDates)
         assertFalse(stateAfterEdit.review.summary.canConfirm)
+    }
+
+    @Test
+    fun a_row_with_its_own_date_keeps_it_when_the_page_date_is_set() {
+        // The rule the whole feature rests on: touching the page date can only ever fill the rows
+        // the notebook did not date. A row with its own date is the paper saying when it happened,
+        // and the page date is not allowed to overrule the paper.
+        val ownDate = SafeDateCandidate(2026, 7, 2)
+        val opWithOwnDate = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Juan",
+            amountCents = "1000",
+            date = ownDate,
+        )
+        val opWithoutDate = LedgerOperation(
+            lineIndex = 2,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Ana",
+            amountCents = "2000",
+            date = null,
+        )
+        val today = java.time.LocalDate.of(2026, 9, 1).toEpochDay()
+        val pageDate = java.time.LocalDate.of(2026, 7, 30).toEpochDay()
+
+        val resolved = AiLedgerBatchPlanner.resolvedDatesFor(
+            operations = listOf(opWithOwnDate, opWithoutDate),
+            pageDateEpochDay = pageDate,
+            todayEpochDay = today,
+        )
+
+        assertEquals(java.time.LocalDate.of(2026, 7, 2).toEpochDay(), resolved[1])
+        assertEquals(pageDate, resolved[2])
+    }
+
+    @Test
+    fun the_detected_page_date_travels_to_the_review_and_survives_edits() {
+        // The offer cannot exist if the date does not survive the trip from the callable to the
+        // card that offers it — including across the edits that rebuild the review.
+        val op = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Juan",
+            amountCents = "1000",
+            date = null,
+        )
+        val detected = com.cuentivo.app.ai.ledger.LedgerDetectedPageDate(
+            SafeDateCandidate(2026, 7, 30),
+            0.95,
+        )
+        val initial = AiDebugLabModel()
+        val extracting = AiDebugLabMachine.onStartLedgerExtraction(initial, "sess-1", "biz-1")
+        val reviewing = AiDebugLabMachine.onLedgerExtractionResult(
+            model = extracting,
+            sessionId = "sess-1",
+            businessId = "biz-1",
+            operations = listOf(op),
+            generation = extracting.generation,
+            detectedPageDate = detected,
+        )
+
+        val state = reviewing.state as AiDebugLabState.LedgerReviewing
+        assertEquals(detected, state.review.detectedPageDate)
+
+        // An edit rebuilds the review from scratch; the detected date is not a row, so it has to
+        // be carried explicitly or the offer silently disappears after the first correction.
+        val afterEdit = AiDebugLabMachine.onUpdateLedgerOperations(
+            model = reviewing,
+            sessionId = "sess-1",
+        ) { ops ->
+            LedgerReviewEdits.applyAmount(ops, 1, "2000")
+        }
+        val editedState = afterEdit.state as AiDebugLabState.LedgerReviewing
+        assertEquals(detected, editedState.review.detectedPageDate)
+
+        // And the same for a page date the person typed: the offer stays available until the
+        // field stops being empty, which is the moment the person's reading replaces the model's.
+        val afterPageDate = AiDebugLabMachine.onUpdateLedgerPageDate(
+            model = afterEdit,
+            sessionId = "sess-1",
+            pageDateEpochDay = java.time.LocalDate.of(2026, 7, 30).toEpochDay(),
+        )
+        val pageDateState = afterPageDate.state as AiDebugLabState.LedgerReviewing
+        assertEquals(detected, pageDateState.review.detectedPageDate)
+    }
+
+    @Test
+    fun a_restored_review_rebuilds_with_the_persons_corrections_and_no_callable() {
+        // The restore path: the saved half comes back from the Saver, the derivable half is
+        // reloaded from Room, and the review that comes out is the one the person left — with the
+        // row they corrected still corrected, and the doubt they did not touch still a doubt.
+        // There is no callable in this function's signature on purpose: if restoring ever needs
+        // the network, the defect this phase exists to remove is back.
+        val corrected = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa Martinez",
+            customerId = "cust-rosa",
+            amountCents = "38000",
+            date = null,
+        )
+        val doubtful = LedgerOperation(
+            lineIndex = 2,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa Martnez",
+            amountCents = "25000",
+            date = null,
+            uncertainFields = listOf(UncertainLedgerField.CUSTOMER),
+        )
+        val saved = com.cuentivo.app.ui.ai.LedgerReviewSaver.SavedLedgerReview(
+            sessionId = "sess-1",
+            businessId = "biz-1",
+            operations = listOf(corrected, doubtful),
+            discards = emptyList(),
+            unreadTextRemaining = false,
+            pageIncomplete = false,
+            pageDateEpochDay = java.time.LocalDate.of(2026, 7, 30).toEpochDay(),
+            todayEpochDay = java.time.LocalDate.of(2026, 9, 1).toEpochDay(),
+            detectedPageDate = null,
+        )
+
+        val restored = AiDebugLabMachine.onRestoreLedgerReview(
+            model = AiDebugLabModel(),
+            sessionId = "sess-1",
+            businessId = "biz-1",
+            saved = saved,
+            existingCustomerBalances = mapOf("rosa martinez" to 5000L),
+            customerCandidates = emptyList(),
+            productCandidates = emptyList(),
+            registeredOperations = emptyList(),
+        )
+
+        val state = restored.state as AiDebugLabState.LedgerReviewing
+        assertEquals("cust-rosa", state.review.operations[0].customerId)
+        assertEquals("38000", state.review.operations[0].amountCents)
+        assertEquals(listOf(UncertainLedgerField.CUSTOMER), state.review.operations[1].uncertainFields)
+        assertEquals(saved.pageDateEpochDay, state.review.pageDateEpochDay)
+        // The restored review is confirmable exactly as the live one was: the corrected row can
+        // go in, the doubtful one cannot, and the page date resolves the rows without their own.
+        assertTrue(state.review.summary.canConfirm)
+    }
+
+    @Test
+    fun a_restore_never_lands_on_top_of_a_live_review() {
+        // A restore arriving while a review is already on screen would overwrite fresher
+        // corrections with the snapshot taken before them. The machine must refuse.
+        val op = LedgerOperation(
+            lineIndex = 1,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Juan",
+            amountCents = "1000",
+            date = SafeDateCandidate(2026, 7, 2),
+        )
+        val initial = AiDebugLabModel()
+        val extracting = AiDebugLabMachine.onStartLedgerExtraction(initial, "sess-1", "biz-1")
+        val reviewing = AiDebugLabMachine.onLedgerExtractionResult(
+            model = extracting,
+            sessionId = "sess-1",
+            businessId = "biz-1",
+            operations = listOf(op),
+            generation = extracting.generation,
+        )
+        val saved = com.cuentivo.app.ui.ai.LedgerReviewSaver.SavedLedgerReview(
+            sessionId = "sess-1",
+            businessId = "biz-1",
+            operations = listOf(op.copy(amountCents = "99999")),
+            discards = emptyList(),
+            unreadTextRemaining = false,
+            pageIncomplete = false,
+            pageDateEpochDay = null,
+            todayEpochDay = java.time.LocalDate.of(2026, 9, 1).toEpochDay(),
+            detectedPageDate = null,
+        )
+
+        val restored = AiDebugLabMachine.onRestoreLedgerReview(
+            model = reviewing,
+            sessionId = "sess-1",
+            businessId = "biz-1",
+            saved = saved,
+            existingCustomerBalances = emptyMap(),
+            customerCandidates = emptyList(),
+            productCandidates = emptyList(),
+            registeredOperations = emptyList(),
+        )
+
+        // The live review wins; the stale snapshot is not applied.
+        assertSame(reviewing, restored)
+        val state = restored.state as AiDebugLabState.LedgerReviewing
+        assertEquals("1000", state.review.operations[0].amountCents)
     }
 }
 

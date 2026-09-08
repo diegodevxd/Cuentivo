@@ -672,6 +672,8 @@
     <string name="ai_ledger_error_missing_page_date">Hay renglones sin fecha: ingresa una fecha para la página antes de registrar.</string>
     <string name="ai_ledger_field_page_date">Fecha de la página (AAAA-MM-DD)</string>
     <string name="ai_ledger_field_page_date_invalid">La fecha de la página no existe o es futura</string>
+    <string name="ai_ledger_page_date_detected">CuentivoAI leyó %1$s en la hoja. Tócala para usarla</string>
+    <string name="ai_ledger_page_date_detected_low_confidence">CuentivoAI leyó %1$s en la hoja, pero con dudas. Tócala solo si coincide con tu libreta</string>
     <string name="ai_ledger_product_match_action">¿Es %1$s? Tócalo para usar ese nombre</string>
     <string name="ai_ledger_summary_status_format">%1$s · %2$s</string>
     <string name="ai_ledger_action_register_disabled">Sin movimientos para registrar</string>

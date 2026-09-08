@@ -447,6 +447,11 @@ object AiDebugLabMachine {
     /**
      * Hydrates the transcript from persisted daily chat history. Maps only the allow-listed
      * stored kinds and never manufactures Pending, Proposal, or Clarification states.
+     *
+     * A ledger flow in progress is left standing: hydration runs on every composition of the
+     * screen, including the one right after an Activity recreation restored a review. Paving
+     * over it with TextEditing here would throw away the restored review the moment the chat
+     * history finished loading — the transcript is loaded, the review is not chat history.
      */
     fun onHistoryLoaded(
         model: AiDebugLabModel,
@@ -464,10 +469,17 @@ object AiDebugLabMachine {
                 AiDailyMessageKind.ASSISTANT_ENTITLEMENT_REQUIRED -> AiChatMessage.AssistantEntitlementRequired
             }
         }
-        return model.copy(
-            state = AiDebugLabState.TextEditing,
-            messages = mappedMessages,
-        )
+        return when (model.state) {
+            is AiDebugLabState.LedgerExtracting,
+            is AiDebugLabState.LedgerReviewing,
+            is AiDebugLabState.LedgerConfirming ->
+                model.copy(messages = mappedMessages)
+            else ->
+                model.copy(
+                    state = AiDebugLabState.TextEditing,
+                    messages = mappedMessages,
+                )
+        }
     }
 
     /**
@@ -988,6 +1000,7 @@ object AiDebugLabMachine {
         registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection> = emptyList(),
         generation: Long,
         todayEpochDay: Long = java.time.LocalDate.now().toEpochDay(),
+        detectedPageDate: com.cuentivo.app.ai.ledger.LedgerDetectedPageDate? = null,
     ): AiDebugLabModel {
         if (generation != model.generation) return model
         val state = model.state as? AiDebugLabState.LedgerExtracting ?: return model
@@ -1004,6 +1017,7 @@ object AiDebugLabMachine {
             pageIncomplete = pageIncomplete,
             existingCustomerBalances = frozenBalances,
             todayEpochDay = todayEpochDay,
+            detectedPageDate = detectedPageDate,
         )
 
         return model.copy(
@@ -1016,6 +1030,63 @@ object AiDebugLabMachine {
                 productCandidates = java.util.Collections.unmodifiableList(ArrayList(productCandidates)),
                 registeredOperations = java.util.Collections.unmodifiableList(ArrayList(registeredOperations)),
             ),
+        )
+    }
+
+    /**
+     * Restores a review that survived Activity recreation.
+     *
+     * Only valid when there is no ledger flow already live: a restore landing on top of a live
+     * review would overwrite fresher corrections with the snapshot taken before them. The saved
+     * operations are the person's work and are rebuilt verbatim; the balances, candidates and
+     * registered rows arrive reloaded from Room, because they are derivable and were never saved.
+     * Nothing here calls the callable — the extraction result is inside [saved].
+     */
+    internal fun onRestoreLedgerReview(
+        model: AiDebugLabModel,
+        sessionId: String,
+        businessId: String,
+        saved: com.cuentivo.app.ui.ai.LedgerReviewSaver.SavedLedgerReview,
+        existingCustomerBalances: Map<String, Long>,
+        customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate>,
+        productCandidates: List<com.cuentivo.app.domain.ProductCandidate>,
+        registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection>,
+    ): AiDebugLabModel {
+        if (sessionId.isBlank() || businessId.isBlank()) return model
+        if (model.state is AiDebugLabState.LedgerExtracting ||
+            model.state is AiDebugLabState.LedgerReviewing ||
+            model.state is AiDebugLabState.LedgerConfirming
+        ) {
+            return model
+        }
+        if (saved.sessionId != sessionId || saved.businessId != businessId) return model
+
+        val frozenBalances: Map<String, Long> = Collections.unmodifiableMap(
+            LinkedHashMap(existingCustomerBalances)
+        )
+        val review = LedgerReviewEngine.build(
+            operations = saved.operations,
+            discards = saved.discards,
+            unreadTextRemaining = saved.unreadTextRemaining,
+            pageIncomplete = saved.pageIncomplete,
+            existingCustomerBalances = frozenBalances,
+            pageDateEpochDay = saved.pageDateEpochDay,
+            todayEpochDay = saved.todayEpochDay,
+            detectedPageDate = saved.detectedPageDate,
+        )
+        return model.copy(
+            state = AiDebugLabState.LedgerReviewing(
+                sessionId = sessionId,
+                businessId = businessId,
+                review = review,
+                existingCustomerBalances = frozenBalances,
+                customerCandidates = Collections.unmodifiableList(ArrayList(customerCandidates)),
+                productCandidates = Collections.unmodifiableList(ArrayList(productCandidates)),
+                registeredOperations = Collections.unmodifiableList(ArrayList(registeredOperations)),
+            ),
+            // A restored review is a new generation: any in-flight result from before the
+            // recreation must not land on it.
+            generation = model.generation + 1,
         )
     }
 
@@ -1041,6 +1112,7 @@ object AiDebugLabMachine {
             existingCustomerBalances = state.existingCustomerBalances,
             pageDateEpochDay = pageDateEpochDay,
             todayEpochDay = effectiveTodayEpochDay,
+            detectedPageDate = state.review.detectedPageDate,
         )
 
         return model.copy(
@@ -1077,6 +1149,7 @@ object AiDebugLabMachine {
             existingCustomerBalances = balancesToUse,
             pageDateEpochDay = state.review.pageDateEpochDay,
             todayEpochDay = effectiveTodayEpochDay,
+            detectedPageDate = state.review.detectedPageDate,
         )
 
         return model.copy(

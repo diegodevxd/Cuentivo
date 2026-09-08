@@ -25,9 +25,16 @@ Y dos cosas más:
 
 `AiDebugLabScreen.kt:179` — `var model by remember { mutableStateOf(AiDebugLabModel()) }`.
 
-`remember`, no `rememberSaveable`. Al girar el teléfono la Activity se recrea, el modelo vuelve a
+`remember`, no `rememberSaveable`. Cuando la Activity se recrea, el modelo vuelve a
 `AiDebugLabModel()` y **se pierde la lectura entera de la página y todas las correcciones que la
-persona llevara hechas**. La foto sí sobrevive (`ledgerCaptureFilePath` es `rememberSaveable`), así
+persona llevara hechas**.
+
+**Corrección a la primera versión de este encargo, que decía que esto pasaba al girar el teléfono:
+no pasa.** `MainActivity` declara `configChanges="orientation|screenSize"`, así que rotar no la
+recrea. Lo encontró OpenCode al implementarlo, y por eso hizo falta un host de depuración sin ese
+atributo para poder probar el camino. Lo que sí recrea de verdad: que el sistema mate el proceso con
+la app en segundo plano, y los cambios de configuración que ese atributo no absorbe — idioma, tema
+claro/oscuro, tamaño de fuente, densidad, y la pantalla partida o un plegable. La foto sí sobrevive (`ledgerCaptureFilePath` es `rememberSaveable`), así
 que la única salida es volver a leerla: **otra llamada a Gemini, que se paga**.
 
 ### Cómo hacerlo, y por qué así

@@ -43,12 +43,20 @@ sealed interface LedgerExtractionCallResult {
     data object EntitlementRequired : LedgerExtractionCallResult
 }
 
+/** The page date the server read off the sheet, with how sure it was. Never applied on its own. */
+data class LedgerDetectedPageDate(
+    val date: SafeDateCandidate,
+    val confidence: Double,
+)
+
 /** The operations the server read from the page, plus whether the page fitted. */
 data class LedgerExtractionPayload(
     val operations: List<LedgerOperation>,
     val discards: List<LedgerDiscardDiagnostic>,
     val unreadTextRemaining: Boolean,
     val pageIncomplete: Boolean,
+    /** Present only in v4 answers that carried a readable page date; null in v3 and in pages without one. */
+    val detectedPageDate: LedgerDetectedPageDate? = null,
 )
 
 /**
@@ -135,12 +143,19 @@ fun parseLedgerExtractionResponse(
                 ?: return LedgerExtractionCallResult.Unavailable
             val unread = root["unreadTextRemaining"] as? Boolean
                 ?: return LedgerExtractionCallResult.Unavailable
+            // The page date is read leniently on purpose, like confidence: a malformed one is
+            // dropped, not fatal. The server already validated the shape before sending it, and
+            // the client never applies this date on its own — the worst a bad value can do is not
+            // be offered. Refusing the whole page over it would trade twenty-four readable rows
+            // for an advisory field.
+            val detectedPageDate = if (version == 4) parseDetectedPageDateWire(root["pageDate"]) else null
             LedgerExtractionCallResult.Extracted(
                 LedgerExtractionPayload(
                     operations = operations,
                     discards = discards,
                     unreadTextRemaining = unread,
                     pageIncomplete = incomplete,
+                    detectedPageDate = detectedPageDate,
                 ),
             )
         }
@@ -221,6 +236,26 @@ private fun parseDateWire(value: Any?): SafeDateCandidate? {
     val month = (map["month"] as? Number)?.toInt() ?: return null
     val day = (map["day"] as? Number)?.toInt() ?: return null
     return SafeDateCandidate(year, month, day)
+}
+
+/**
+ * Reads the v4 root `pageDate`: `{ date: {year, month, day}, confidence }`.
+ *
+ * Strict about the shape (exactly those two keys, a real calendar day, a finite confidence in
+ * 0..1) but lenient about presence: anything wrong here yields null, never a refused page. The
+ * caller only ever offers this date for a person to accept, so a missing or malformed one simply
+ * means there is nothing to offer.
+ */
+private fun parseDetectedPageDateWire(value: Any?): LedgerDetectedPageDate? {
+    val map = value as? Map<*, *> ?: return null
+    if (map.keys.map { it.toString() }.toSet() != setOf("date", "confidence")) return null
+    val date = parseDateWire(map["date"]) ?: return null
+    // A day that does not exist on any calendar is not a date somebody wrote in a notebook.
+    val real = runCatching { java.time.LocalDate.of(date.year, date.month, date.day) }.getOrNull()
+        ?: return null
+    val confidence = (map["confidence"] as? Number)?.toDouble() ?: return null
+    if (!confidence.isFinite() || confidence < 0.0 || confidence > 1.0) return null
+    return LedgerDetectedPageDate(date = date, confidence = confidence)
 }
 
 private fun parseRegionWire(value: Any?): LedgerRegion? {

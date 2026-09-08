@@ -168,6 +168,69 @@ class LedgerExtractionGatewayTest {
         assertEquals("25000", payload.operations[0].amountCents)
     }
 
+    @Test fun `the detected page date arrives parsed from a v4 answer`() {
+        val v4Response = response(listOf(sale("25000")), contractVersion = 4) + mapOf(
+            "pageDate" to mapOf("date" to mapOf("year" to 2026, "month" to 7, "day" to 30), "confidence" to 0.95),
+        )
+
+        val result = parseLedgerExtractionResponse(v4Response, REQUEST_ID)
+
+        val detected = (result as LedgerExtractionCallResult.Extracted).extraction.detectedPageDate
+        assertEquals(SafeDateCandidate(2026, 7, 30), detected?.date)
+        assertEquals(0.95, detected?.confidence)
+    }
+
+    @Test fun `a v3 answer carries no page date and still parses`() {
+        // The published v37 speaks v3, and v3 has no pageDate key. A server rolled back to v3 must
+        // leave the app reading pages, not refusing them.
+        val result = parseLedgerExtractionResponse(response(listOf(sale("25000"))), REQUEST_ID)
+
+        val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+        assertEquals(null, payload.detectedPageDate)
+    }
+
+    @Test fun `a v4 answer without pageDate carries no detected date`() {
+        val v4Response = response(listOf(sale("25000")), contractVersion = 4)
+
+        val result = parseLedgerExtractionResponse(v4Response, REQUEST_ID)
+
+        val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+        assertEquals(null, payload.detectedPageDate)
+    }
+
+    @Test fun `a detected page date that is not a real calendar day is not offered`() {
+        // June 31st does not exist. A date like that cannot be offered for a tap, because the tap
+        // would send ten movements to a day that never happened.
+        val v4Response = response(listOf(sale("25000")), contractVersion = 4) + mapOf(
+            "pageDate" to mapOf("date" to mapOf("year" to 2026, "month" to 6, "day" to 31), "confidence" to 0.99),
+        )
+
+        val result = parseLedgerExtractionResponse(v4Response, REQUEST_ID)
+
+        val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+        assertEquals(null, payload.detectedPageDate)
+    }
+
+    @Test fun `a detected page date with a malformed shape is dropped, not fatal`() {
+        // The page date is advisory: a malformed one must not cost the twenty readable rows that
+        // came with it. The page parses; the offer simply does not exist.
+        val wrongShape = response(listOf(sale("25000")), contractVersion = 4) + mapOf(
+            "pageDate" to mapOf("date" to mapOf("year" to 2026, "month" to 7), "confidence" to 0.9),
+        )
+        val outOfRange = response(listOf(sale("25000")), contractVersion = 4) + mapOf(
+            "pageDate" to mapOf("date" to mapOf("year" to 2026, "month" to 7, "day" to 30), "confidence" to 1.5),
+        )
+        val extraKey = response(listOf(sale("25000")), contractVersion = 4) + mapOf(
+            "pageDate" to mapOf("date" to mapOf("year" to 2026, "month" to 7, "day" to 30), "confidence" to 0.9, "note" to "x"),
+        )
+
+        for (response in listOf(wrongShape, outOfRange, extraKey)) {
+            val result = parseLedgerExtractionResponse(response, REQUEST_ID)
+            assertTrue(result is LedgerExtractionCallResult.Extracted)
+            assertEquals(null, (result as LedgerExtractionCallResult.Extracted).extraction.detectedPageDate)
+        }
+    }
+
     @Test fun `a fractional contract version is not version three or four`() {
         assertEquals(
             LedgerExtractionCallResult.Unavailable,

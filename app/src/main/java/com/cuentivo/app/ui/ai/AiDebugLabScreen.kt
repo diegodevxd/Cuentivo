@@ -3,6 +3,7 @@ package com.cuentivo.app.ui.ai
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -52,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -142,6 +144,34 @@ private val CaptureUriSaver = Saver<Uri?, String>(
 )
 
 /**
+ * Saves and restores the review under way across Activity recreation.
+ *
+ * The saved value is always a Bundle, never null: a null save would make the state itself vanish
+ * from the registry, and the screen needs the slot to exist so an ended import writes "empty"
+ * over a previously saved one. An empty Bundle restores as null — no review to bring back.
+ *
+ * The heavy, derivable half of the review — balances, candidates, registered rows — is
+ * deliberately not here: it is reloaded from Room by the restore effect, and a Bundle big
+ * enough to hold it would exceed the transaction limit and kill the app.
+ */
+private val LedgerReviewStateSaver = Saver<com.cuentivo.app.ui.ai.LedgerReviewSaver.SavedLedgerReview?, Bundle>(
+    save = { it?.let(LedgerReviewSaver::toBundle) ?: Bundle() },
+    restore = { bundle -> if (bundle.isEmpty) null else LedgerReviewSaver.fromBundle(bundle) },
+)
+
+/**
+ * The Room-loaded context a review needs: what each known customer already owes, the candidates a
+ * misread name can be matched against, the catalogue, and what is already registered around the
+ * page's dates. All of it derivable, none of it saved — it is reloaded after every restore.
+ */
+internal data class LedgerReviewContext(
+    val existingCustomerBalances: Map<String, Long>,
+    val customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate>,
+    val productCandidates: List<com.cuentivo.app.domain.ProductCandidate>,
+    val registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection>,
+)
+
+/**
  * AI debug text lab with optional explicit payment and sale confirmation. Edits text, sends ONE request
  * through the injected transport and shows the safe result: unavailable, clarification, proposal,
  * or a typed preview.
@@ -200,6 +230,22 @@ fun AiDebugLabScreen(
     var ledgerBusinessId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingLedgerUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
 
+    // The review under way survives the Activity being recreated (the system killing the process
+    // in the background, a uiMode change, the camera app taking the front). Only the irrepeatable
+    // half is saved — the reading of the page plus the corrections on top of it — because a Bundle
+    // cannot hold the 552 products and blowing the transaction limit kills the app. The derivable
+    // half (balances, candidates, registered rows) is reloaded from Room on the way back, and the
+    // callable is never called again: the extraction result is right here.
+    var savedLedgerReview by rememberSaveable(stateSaver = LedgerReviewStateSaver) {
+        mutableStateOf<com.cuentivo.app.ui.ai.LedgerReviewSaver.SavedLedgerReview?>(null)
+    }
+    // The Room-loaded context of the review, kept out of the saved state on purpose. It is
+    // reloaded after every restore, and while the review is live it is the same data the
+    // LedgerReviewing state already froze.
+    var ledgerReviewContext by remember {
+        mutableStateOf<com.cuentivo.app.ui.ai.LedgerReviewContext?>(null)
+    }
+
     DisposableEffect(effectiveVoiceRecognizer) {
         onDispose {
             effectiveVoiceRecognizer.destroy()
@@ -236,6 +282,103 @@ fun AiDebugLabScreen(
         isHydrated = true
     }
 
+    // While a review is live, its irrepeatable half is mirrored into the saved state on every
+    // edit, so whatever the person has corrected is what comes back after a recreation.
+    //
+    // This effect only ever writes a review, never a null: a model that is still empty because
+    // the restore has not run yet must not erase the saved state underneath it. The saved state
+    // is cleared at the exact points where the import ends — cancel, close, or a successful
+    // write — because those are the only moments "there is no review" is a fact rather than a
+    // race.
+    LaunchedEffect(model.state) {
+        val reviewing = model.state as? AiDebugLabState.LedgerReviewing
+        if (reviewing != null) {
+            savedLedgerReview = LedgerReviewSaver.SavedLedgerReview(
+                sessionId = reviewing.sessionId,
+                businessId = reviewing.businessId,
+                operations = reviewing.review.operations,
+                discards = reviewing.review.discards,
+                unreadTextRemaining = reviewing.review.unreadTextRemaining,
+                pageIncomplete = reviewing.review.pageIncomplete,
+                pageDateEpochDay = reviewing.review.pageDateEpochDay,
+                todayEpochDay = reviewing.review.todayEpochDay,
+                detectedPageDate = reviewing.review.detectedPageDate,
+            )
+        }
+    }
+
+    // Restores a review after Activity recreation. This is the path that used to lose the whole
+    // draft: the model came back empty, the photo survived on disk, and the only way forward was
+    // reading the page again — another call to the callable, which is paid. Here the extraction
+    // result comes back from the saved state and only the derivable context is reloaded from
+    // Room. The callable is not called, not even once: this effect is the reason the defect
+    // existed, and re-extracting "just in case" would reintroduce it wearing another hat.
+    //
+    // It waits for the chat history to hydrate first, so the two effects cannot race: hydration
+    // runs on every composition, and a restore landing before it would be paved over by the
+    // transcript load the moment it finished.
+    LaunchedEffect(savedLedgerReview, isHydrated) {
+        val saved = savedLedgerReview ?: return@LaunchedEffect
+        if (!isHydrated) return@LaunchedEffect
+        // A review already in the model means this is not a restore but a normal recomposition
+        // (the mirror effect above just wrote the same review back). Restoring on top would
+        // overwrite fresher edits with the snapshot taken before them.
+        if (model.state is AiDebugLabState.LedgerReviewing ||
+            model.state is AiDebugLabState.LedgerConfirming ||
+            model.state is AiDebugLabState.LedgerExtracting
+        ) {
+            return@LaunchedEffect
+        }
+        val businessId = saved.businessId
+        val sessionId = saved.sessionId
+        if (businessId.isBlank() || sessionId.isBlank()) {
+            savedLedgerReview = null
+            return@LaunchedEffect
+        }
+        val balances = if (ledgerBalancesResolver != null) {
+            withContext(Dispatchers.IO) {
+                runCatching { ledgerBalancesResolver(businessId) }.getOrDefault(emptyMap())
+            }
+        } else {
+            emptyMap()
+        }
+        val customerCandidates = if (ledgerCustomersResolver != null) {
+            withContext(Dispatchers.IO) {
+                runCatching { ledgerCustomersResolver(businessId) }.getOrDefault(emptyList())
+            }
+        } else {
+            emptyList()
+        }
+        val productCandidates = if (ledgerProductsResolver != null) {
+            withContext(Dispatchers.IO) {
+                runCatching { ledgerProductsResolver(businessId) }.getOrDefault(emptyList())
+            }
+        } else {
+            emptyList()
+        }
+        val registeredOperations = loadRegisteredAround(
+            resolver = ledgerRegisteredResolver,
+            businessId = businessId,
+            operations = saved.operations,
+        )
+        ledgerReviewContext = LedgerReviewContext(
+            existingCustomerBalances = balances,
+            customerCandidates = customerCandidates,
+            productCandidates = productCandidates,
+            registeredOperations = registeredOperations,
+        )
+        model = AiDebugLabMachine.onRestoreLedgerReview(
+            model = model,
+            sessionId = sessionId,
+            businessId = businessId,
+            saved = saved,
+            existingCustomerBalances = balances,
+            customerCandidates = customerCandidates,
+            productCandidates = productCandidates,
+            registeredOperations = registeredOperations,
+        )
+    }
+
     // Sweeps captures orphaned by an earlier dialog when this one opens, not in onDispose:
     // leaving composition can mean the Activity was destroyed while the camera app was still
     // writing to that very file, and deleting it there threw away the photo the user just took.
@@ -251,6 +394,9 @@ fun AiDebugLabScreen(
         model = AiDebugLabMachine.onCancel(model)
         captureStore.cleanupAll()
         cameraStore.deleteStale(except = null)
+        // Closing the lab ends any import that was under way, review included: a page abandoned
+        // this way must not resurrect on the next recreation.
+        savedLedgerReview = null
         onClose()
     }
 
@@ -336,6 +482,9 @@ fun AiDebugLabScreen(
         ledgerCaptureFilePath = null
         ledgerSessionId = null
         ledgerBusinessId = null
+        // The import is over: the saved review must not outlive it, or a cancelled page would
+        // resurrect on the next recreation.
+        savedLedgerReview = null
     }
 
     val runLedgerExtraction: (java.io.File, String) -> Unit = { file, mimeType ->
@@ -406,6 +555,9 @@ fun AiDebugLabScreen(
                                     operations = outcome.extraction.operations,
                                 ),
                                 generation = token,
+                                // The date the server read off the sheet, offered — never
+                                // applied — by the page date card.
+                                detectedPageDate = outcome.extraction.detectedPageDate,
                             )
                         }
                         else -> {
@@ -1088,6 +1240,7 @@ fun AiDebugLabScreen(
                 if (extractLedgerPage != null && activeBusinessId?.isNotBlank() == true) {
                     TextButton(
                         enabled = isHydrated && !model.isVoiceDisabled,
+                        modifier = Modifier.testTag("ai-ledger-import-entry"),
                         onClick = {
                             // The import session is named before the camera opens, so a result
                             // that arrives late, or from a photo taken for a different page,
@@ -1149,7 +1302,7 @@ fun AiDebugLabScreen(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                             )
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("ai-ledger-source-gallery"),
                     ) { Text(stringResource(R.string.ai_debug_chat_gallery)) }
                     TextButton(
                         onClick = {

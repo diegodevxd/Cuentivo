@@ -145,6 +145,7 @@ fun LedgerReviewContent(
         if (hasRowsWithoutDate) {
             PageDateCard(
                 pageDateEpochDay = review.pageDateEpochDay,
+                detectedPageDate = review.detectedPageDate,
                 onUpdatePageDate = onUpdatePageDate,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -350,6 +351,7 @@ private fun LedgerSummaryCard(
 @Composable
 private fun PageDateCard(
     pageDateEpochDay: Long?,
+    detectedPageDate: com.cuentivo.app.ai.ledger.LedgerDetectedPageDate?,
     onUpdatePageDate: (Long?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -366,6 +368,19 @@ private fun PageDateCard(
     val todayEpochDay = remember { java.time.LocalDate.now().toEpochDay() }
     val isValidDate = parsedDate != null && LedgerReviewEdits.isAcceptableDate(parsedDate, todayEpochDay)
     val dateIsWrong = !dateIsBlank && !isValidDate
+
+    // The date the server read off the sheet, offered for a tap. Never applied on its own, not
+    // even at confidence 0.99: a wrong date sends ten movements to a day that is not theirs, and
+    // in an append-only ledger that is undone with ten compensating movements. Offering it is
+    // help; writing it alone is guessing. Only a real, non-future calendar day is offered at all,
+    // and only while the field is empty — once the person has typed something, their reading of
+    // the paper outranks the model's.
+    val offerableDetectedDate = detectedPageDate?.takeIf { dateIsBlank }?.let { detected ->
+        val asCalendarDay = runCatching {
+            java.time.LocalDate.of(detected.date.year, detected.date.month, detected.date.day)
+        }.getOrNull()
+        asCalendarDay?.takeIf { it.toEpochDay() <= todayEpochDay }?.let { detected }
+    }
 
     Card(
         modifier = modifier,
@@ -404,9 +419,41 @@ private fun PageDateCard(
                 modifier = Modifier.fillMaxWidth().testTag("ledger-page-date-field"),
                 singleLine = true,
             )
+            if (offerableDetectedDate != null) {
+                val detectedCalendarDay = java.time.LocalDate.of(
+                    offerableDetectedDate.date.year,
+                    offerableDetectedDate.date.month,
+                    offerableDetectedDate.date.day,
+                )
+                val detectedText = detectedCalendarDay.toString()
+                // Low certainty is said in the offer itself, so whoever taps it knows they are
+                // confirming something the model was unsure about rather than something settled.
+                val offerText = if (offerableDetectedDate.confidence < LOW_PAGE_DATE_CONFIDENCE) {
+                    stringResource(R.string.ai_ledger_page_date_detected_low_confidence, detectedText)
+                } else {
+                    stringResource(R.string.ai_ledger_page_date_detected, detectedText)
+                }
+                TextButton(
+                    onClick = {
+                        // The tap is the acceptance. Until it happens, the detected date has
+                        // changed nothing: not the field, not the review, not a single row.
+                        dateText = detectedText
+                        onUpdatePageDate(detectedCalendarDay.toEpochDay())
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("ledger-page-date-detected-offer"),
+                ) {
+                    Text(
+                        text = offerText,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
         }
     }
 }
+
+/** Below this, a detected page date says so in its own offer text. */
+private const val LOW_PAGE_DATE_CONFIDENCE = 0.5
 
 @Composable
 private fun FinancialErrorBanner(

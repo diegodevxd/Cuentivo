@@ -672,6 +672,8 @@
     <string name="ai_ledger_error_missing_page_date">Some rows have no date: provide a page date before registering.</string>
     <string name="ai_ledger_field_page_date">Page date (YYYY-MM-DD)</string>
     <string name="ai_ledger_field_page_date_invalid">That page date does not exist or is in the future</string>
+    <string name="ai_ledger_page_date_detected">CuentivoAI read %1$s on the sheet. Tap to use it</string>
+    <string name="ai_ledger_page_date_detected_low_confidence">CuentivoAI read %1$s on the sheet, but it was unsure. Tap only if it matches your notebook</string>
     <string name="ai_ledger_product_match_action">Is it %1$s? Tap to use that name</string>
     <string name="ai_ledger_summary_status_format">%1$s · %2$s</string>
     <string name="ai_ledger_action_register_disabled">No transactions to register</string>
