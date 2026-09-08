@@ -79,6 +79,14 @@ data class LedgerOperation(
     val rawText: String? = null,
     /** The products the model separated out of the line, when it managed to. */
     val items: List<LedgerLineItem> = emptyList(),
+    /**
+     * Why the model was uneasy about this line, in its own words.
+     *
+     * Advice, not a brake: the server already turns every warning that means "somebody has to look"
+     * into an entry in [uncertainFields], where the registrability rule reads it. These are kept so
+     * the screen can eventually say why a row is marked without asking the server again.
+     */
+    val warnings: List<String> = emptyList(),
 ) {
     /**
      * Defensive copy to guarantee snapshot immutability regardless of caller list modifications.
@@ -87,6 +95,7 @@ data class LedgerOperation(
         uncertainFields = Collections.unmodifiableList(uncertainFields.toList()),
         unreadableFields = Collections.unmodifiableList(unreadableFields.toList()),
         items = Collections.unmodifiableList(items.toList()),
+        warnings = Collections.unmodifiableList(warnings.toList()),
     )
 }
 

@@ -718,6 +718,75 @@ describe("parseLedgerExtraction", () => {
       expect(parsedOp?.warnings).toContain("ITEMS_TOTAL_MISMATCH");
     });
 
+    test("a warning that means somebody must look also blocks the row, not just describes it", () => {
+      // A warning that only travels as text is a warning a client can drop, and one already did.
+      // The list is the brake; the text is only advice about why.
+      const ambiguous = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Pedro",
+        amountCents: "3400",
+        uncertainFields: [],
+        unreadableFields: [],
+        warnings: ["AMBIGUOUS_SEPARATOR"],
+      };
+
+      const op = parseLedgerExtraction({ operations: [ambiguous], pageIncomplete: false })?.operations[0];
+
+      expect(op?.uncertainFields).toContain("AMOUNT");
+      expect(op?.warnings).toContain("AMBIGUOUS_SEPARATOR");
+    });
+
+    test("an inherited customer is never left looking certain", () => {
+      const inherited = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "3400",
+        uncertainFields: [],
+        unreadableFields: [],
+        sources: { customer: "INHERITED_PREVIOUS_ROW" },
+        warnings: ["INHERITED_CUSTOMER"],
+      };
+
+      const op = parseLedgerExtraction({ operations: [inherited], pageIncomplete: false })?.operations[0];
+
+      expect(op?.uncertainFields).toContain("CUSTOMER");
+    });
+
+    test("a row the model itself calls a note is discarded, not offered for review", () => {
+      // Offering it invites somebody to confirm a debt that was never written.
+      const note = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "recordatorio",
+        amountCents: "100",
+        uncertainFields: [],
+        unreadableFields: [],
+        warnings: ["NOT_A_MOVEMENT"],
+      };
+
+      const res = parseLedgerExtraction({ operations: [note], pageIncomplete: false });
+
+      expect(res?.operations).toHaveLength(0);
+    });
+
+    test("a warning about a field the model could not read does not soften it to a doubt", () => {
+      const unreadable = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        uncertainFields: [],
+        unreadableFields: ["AMOUNT"],
+        warnings: ["LOW_CONFIDENCE_AMOUNT"],
+      };
+
+      const op = parseLedgerExtraction({ operations: [unreadable], pageIncomplete: false })?.operations[0];
+
+      expect(op?.unreadableFields).toContain("AMOUNT");
+      expect(op?.uncertainFields).not.toContain("AMOUNT");
+    });
+
     test("a note that is not a movement is not turned into one", () => {
       // A shopping reminder written in the margin has no customer and no money. The model is told
       // to leave it out entirely, and if it ever sends one anyway the parser must not let a row

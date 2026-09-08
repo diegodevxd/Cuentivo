@@ -173,7 +173,7 @@ fun AiDebugLabScreen(
     /** The catalogue, so an abbreviated product can be offered its full name. */
     ledgerProductsResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.ProductCandidate>)? = null,
     /** What is already registered around this page's dates, so a second scan of the same sheet says so. */
-    ledgerRegisteredResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)? = null,
+    ledgerRegisteredResolver: (suspend (businessId: String, minEpochDay: Long, maxEpochDay: Long) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)? = null,
     confirmLedgerBatch: (suspend (businessId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
@@ -371,13 +371,6 @@ fun AiDebugLabScreen(
                 } else {
                     emptyList()
                 }
-                val registeredOperations = if (ledgerRegisteredResolver != null) {
-                    withContext(Dispatchers.IO) {
-                        runCatching { ledgerRegisteredResolver(businessId) }.getOrDefault(emptyList())
-                    }
-                } else {
-                    emptyList()
-                }
                 val outcome = withContext(Dispatchers.IO) {
                     val bytes = runCatching { file.readBytes() }.getOrNull()
                     if (bytes == null) {
@@ -403,7 +396,15 @@ fun AiDebugLabScreen(
                                 existingCustomerBalances = balances,
                                 customerCandidates = customerCandidates,
                                 productCandidates = productCandidates,
-                                registeredOperations = registeredOperations,
+                                // Asked only once the page is read, and around the dates the page
+                                // itself carries. Querying beforehand meant guessing the range from
+                                // today, so a notebook photographed months after it was written was
+                                // compared against days none of its rows could fall in.
+                                registeredOperations = loadRegisteredAround(
+                                    resolver = ledgerRegisteredResolver,
+                                    businessId = businessId,
+                                    operations = outcome.extraction.operations,
+                                ),
                                 generation = token,
                             )
                         }
@@ -1838,3 +1839,29 @@ private fun VoiceWaveformBars(
         }
     }
 }
+
+/**
+ * What is already registered around the days this page talks about.
+ *
+ * The range is taken from the rows themselves, widened by a couple of weeks on each side so a sheet
+ * re-photographed after a correction still lines up. A page with no dated row falls back to today,
+ * which is the only date anybody knows in that case.
+ */
+private suspend fun loadRegisteredAround(
+    resolver: (suspend (businessId: String, minEpochDay: Long, maxEpochDay: Long) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)?,
+    businessId: String,
+    operations: List<com.cuentivo.app.ai.ledger.LedgerOperation>,
+): List<com.cuentivo.app.domain.RegisteredOperationProjection> {
+    if (resolver == null) return emptyList()
+    val days = operations.mapNotNull { op ->
+        op.date?.let { date ->
+            runCatching { java.time.LocalDate.of(date.year, date.month, date.day).toEpochDay() }.getOrNull()
+        }
+    }
+    val today = java.time.LocalDate.now().toEpochDay()
+    val min = (days.minOrNull() ?: today) - DUPLICATE_WINDOW_DAYS
+    val max = (days.maxOrNull() ?: today) + DUPLICATE_WINDOW_DAYS
+    return runCatching { resolver(businessId, min, max) }.getOrDefault(emptyList())
+}
+
+private const val DUPLICATE_WINDOW_DAYS = 14L

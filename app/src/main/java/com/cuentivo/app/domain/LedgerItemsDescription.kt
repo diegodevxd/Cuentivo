@@ -24,13 +24,15 @@ object LedgerItemsDescription {
     const val MAX_LENGTH = 80
 
     /**
-     * A readable summary of [items], or null when there is nothing worth saying.
+     * A readable summary of [items], or null when there is nothing to say.
      *
-     * Null for zero or one item on purpose: a single product is already what the description would
-     * have said, and wrapping it in a format only makes it longer and less like the notebook.
+     * A single item counts. It used to return null here on the reasoning that one product is what
+     * the description would already say -- but the model may legitimately send items with no
+     * description at all, and then the product was dropped and the line became "Venta en libreta".
+     * Which caller prefers the summary over the description is the caller's decision, not this one's.
      */
     fun summarize(items: List<LedgerLineItem>): String? {
-        if (items.size < 2) return null
+        if (items.isEmpty()) return null
         val parts = items.mapNotNull { item ->
             val name = item.description.trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             val quantity = item.quantity?.takeIf { it > 1 }
@@ -50,7 +52,7 @@ object LedgerItemsDescription {
                 }
             }
         }
-        if (parts.size < 2) return null
+        if (parts.isEmpty()) return null
         return truncate(parts.joinToString(separator = " + "))
     }
 

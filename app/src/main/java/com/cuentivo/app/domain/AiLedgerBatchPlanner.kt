@@ -374,12 +374,19 @@ object AiLedgerBatchPlanner {
                     val saleId = SaleOperationIds.sale(opKey)
                     val chargeId = SaleOperationIds.chargeMovement(opKey)
                     val itemId = SaleOperationIds.uncatalogedSaleItem(opKey, 0)
-                    // The products the model separated out win over a single description, because
-                    // they say what the person took and the description usually does not. They are
-                    // words only: the amount comes from the notebook and is untouched.
-                    val lineDescription = LedgerItemsDescription.summarize(op.items)
-                        ?: op.description?.trim().takeUnless { it.isNullOrBlank() }
-                        ?: LINE_NAME_SALE
+                    // Several products say more than any single description could, so they win.
+                    // One product does not, so a description the model wrote is preferred and the
+                    // item only steps in when there is no description at all -- which is a shape the
+                    // contract allows and where the product used to be dropped on the floor.
+                    // Words only: the amount comes from the notebook and is never touched here.
+                    val itemsSummary = LedgerItemsDescription.summarize(op.items)
+                    val writtenDescription = op.description?.trim().takeUnless { it.isNullOrBlank() }
+                    val lineDescription = when {
+                        op.items.size >= 2 && itemsSummary != null -> itemsSummary
+                        writtenDescription != null -> writtenDescription
+                        itemsSummary != null -> itemsSummary
+                        else -> LINE_NAME_SALE
+                    }
 
                     val uncataloged = UncatalogedSaleBuilder.build(
                         saleId = saleId,
@@ -409,12 +416,19 @@ object AiLedgerBatchPlanner {
                     val saleId = SaleOperationIds.sale(opKey)
                     val chargeId = SaleOperationIds.chargeMovement(opKey)
                     val itemId = SaleOperationIds.uncatalogedSaleItem(opKey, 0)
-                    // The products the model separated out win over a single description, because
-                    // they say what the person took and the description usually does not. They are
-                    // words only: the amount comes from the notebook and is untouched.
-                    val lineDescription = LedgerItemsDescription.summarize(op.items)
-                        ?: op.description?.trim().takeUnless { it.isNullOrBlank() }
-                        ?: LINE_NAME_PRIOR_DEBT
+                    // Several products say more than any single description could, so they win.
+                    // One product does not, so a description the model wrote is preferred and the
+                    // item only steps in when there is no description at all -- which is a shape the
+                    // contract allows and where the product used to be dropped on the floor.
+                    // Words only: the amount comes from the notebook and is never touched here.
+                    val itemsSummary = LedgerItemsDescription.summarize(op.items)
+                    val writtenDescription = op.description?.trim().takeUnless { it.isNullOrBlank() }
+                    val lineDescription = when {
+                        op.items.size >= 2 && itemsSummary != null -> itemsSummary
+                        writtenDescription != null -> writtenDescription
+                        itemsSummary != null -> itemsSummary
+                        else -> LINE_NAME_PRIOR_DEBT
+                    }
 
                     val uncataloged = UncatalogedSaleBuilder.build(
                         saleId = saleId,

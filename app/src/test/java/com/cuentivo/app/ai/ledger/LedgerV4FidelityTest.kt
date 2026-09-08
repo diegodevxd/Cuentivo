@@ -160,8 +160,12 @@ class LedgerV4FidelityTest {
     }
 
     @Test
-    fun `a single product says nothing extra, because there is nothing to summarize`() {
-        assertNull(LedgerItemsDescription.summarize(listOf(LedgerLineItem("Coca", subtotalCents = "3800"))))
+    fun `a single product is still summarized, because it may be all there is`() {
+        // This used to return null on the reasoning that one product is what the description would
+        // already say. But the contract lets the model send items with no description at all, and
+        // then the product was dropped and the sale became "Venta en libreta". Which of the two the
+        // planner prefers is the planner's decision; losing the product is nobody's.
+        assertEquals("Coca ($38.00)", LedgerItemsDescription.summarize(listOf(LedgerLineItem("Coca", subtotalCents = "3800"))))
         assertNull(LedgerItemsDescription.summarize(emptyList()))
     }
 

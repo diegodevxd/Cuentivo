@@ -474,6 +474,36 @@ function parseSingleOperation(value: unknown): SingleOpParseResult {
     let finalUnreadableFields = [...parsedUnreadableFields];
     let finalWarnings = parsedWarnings ? [...parsedWarnings] : [];
 
+    // A warning that only travels as text is a warning a client can drop, and one client already
+    // did: Android accepted the key and never stored it, so a row the model flagged as ambiguous
+    // arrived looking clean and stayed registerable. So every warning that means "a person has to
+    // look at this" is also written into uncertainFields here, where both v3 and v4 clients read it
+    // and where the registrability rule already lives. The text is advice; the list is the brake.
+    const WARNING_BLOCKS: ReadonlyArray<readonly [LedgerWarning, UncertainLedgerField]> = [
+      ["AMBIGUOUS_SEPARATOR", "AMOUNT"],
+      ["MULTIPLE_MOVEMENTS_IN_ROW", "AMOUNT"],
+      ["LOW_CONFIDENCE_AMOUNT", "AMOUNT"],
+      ["AMBIGUOUS_KIND", "KIND"],
+      ["INHERITED_CUSTOMER", "CUSTOMER"],
+      ["LOW_CONFIDENCE_CUSTOMER", "CUSTOMER"],
+    ];
+    for (const [warning, field] of WARNING_BLOCKS) {
+      if (
+        finalWarnings.includes(warning) &&
+        !finalUnreadableFields.includes(field as UnreadableLedgerField) &&
+        !finalUncertainFields.includes(field)
+      ) {
+        finalUncertainFields.push(field);
+      }
+    }
+
+    // NOT_A_MOVEMENT is the model saying this line is a note, a reminder or a heading. It is not a
+    // doubtful movement to be reviewed: it is not a movement, and offering it for review invites
+    // somebody to confirm a debt that was never written.
+    if (finalWarnings.includes("NOT_A_MOVEMENT")) {
+      return { ok: false, lineIndex: candidateLineIndex, reason: "MALFORMED" };
+    }
+
     // Items that do not add up to the amount are NOT reconciled by arithmetic. Picking a winner
     // here would be inventing a number nobody wrote: either the model misread a line or it misread
     // the total, and only the person holding the notebook knows which. So it is declared and the

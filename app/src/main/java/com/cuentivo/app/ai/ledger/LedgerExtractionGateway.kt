@@ -209,6 +209,7 @@ private fun parseLedgerOperationsWire(value: Any?, contractVersion: Int): List<L
             sources = parseSourcesWire(map["sources"]),
             rawText = map["rawText"] as? String,
             items = items,
+            warnings = (map["warnings"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
         )
     }
     return parsed

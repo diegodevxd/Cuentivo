@@ -1567,15 +1567,14 @@ class MainActivity : ComponentActivity() {
                             row.customer.normalizedName to row.balanceCents
                         }
                     },
-                    ledgerRegisteredResolver = { businessId ->
+                    ledgerRegisteredResolver = { businessId, minEpochDay, maxEpochDay ->
                         // Bounded to the days around today: the sheet being re-photographed is a
                         // recent one, and scanning the whole history would neither find more real
                         // duplicates nor stay fast once a shop has years of sales. The rows come
                         // back already excluding anything cancelled, because a cancelled sale is
                         // not a debt any more and registering it again is legitimate.
-                        val today = java.time.LocalDate.now().toEpochDay()
                         database.financialDao()
-                            .getRegisteredOperationsInRange(businessId, today - 45L, today + 7L)
+                            .getRegisteredOperationsInRange(businessId, minEpochDay, maxEpochDay)
                             .mapNotNull { row ->
                                 val kind = when (row.kindName) {
                                     "SALE" -> com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE
