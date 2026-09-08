@@ -141,18 +141,31 @@ class LedgerEntityMatcherTest {
         assertFalse(isRegisterableLedgerOperation(opWithUnreadableCustomer))
     }
 
+    /**
+     * A smoke alarm for an algorithmic regression, not a benchmark.
+     *
+     * The bound is deliberately loose. A tight wall-clock assertion in a unit suite fails on a busy
+     * machine, and a test that fails at random gets ignored -- at which point it protects nothing.
+     * What it still catches is the failure that matters: somebody turning this into something
+     * quadratic, which at a real catalogue size would freeze the review screen rather than slow it.
+     *
+     * Fixed seed and a warm-up pass, so a cold JIT is not measured and two runs compare the same work.
+     */
     @Test
-    fun `performance test 552 products and 25 operations completes in under 100ms`() {
+    fun `matching a real sized catalogue does not blow up`() {
+        val random = kotlin.random.Random(seed = 7)
         val products = (1..552).map { i ->
             ProductCandidate(
                 id = "p_$i",
                 name = "Producto de Catalogo Numero $i Especial",
-                salePriceCents = (100L..5000L).random(),
+                salePriceCents = random.nextLong(100L, 5000L),
             )
         }
+        val queries = (1..25).map { i -> "Producto $i" to 1500L }
 
-        val queries = (1..25).map { i ->
-            "Producto $i" to 1500L
+        // Warm-up, discarded.
+        for ((query, amount) in queries) {
+            LedgerEntityMatcher.matchProduct(query, amount, products)
         }
 
         val elapsed = measureTimeMillis {
@@ -161,6 +174,9 @@ class LedgerEntityMatcherTest {
             }
         }
 
-        assertTrue("Matching 25 rows against 552 products took $elapsed ms (must be < 100ms)", elapsed < 100)
+        assertTrue(
+            "25 renglones contra 552 productos tardaron $elapsed ms: eso ya no es ruido de maquina",
+            elapsed < 2_000,
+        )
     }
 }

@@ -14,12 +14,29 @@ enum class FieldHealthColor {
     RED,     // Unreadable, missing/invalid, or financial error
 }
 
+/**
+ * Whether a field was read off this row or carried over from somewhere else.
+ *
+ * Kept apart from the colour because it answers a different question. A name inherited from a quote
+ * mark can be read perfectly -- high certainty, green by every other measure -- and still belong to
+ * the wrong person, because the quote mark is an assumption about the row above. The reviewer needs
+ * to check a different thing, so the screen has to say a different thing.
+ */
+enum class FieldOrigin {
+    READ_HERE,
+    INHERITED_FROM_ROW_ABOVE,
+    FROM_PAGE_DATE,
+    INFERRED,
+}
+
 data class OperationFieldHealth(
     val lineIndex: Int,
     val customerHealth: FieldHealthColor,
     val amountHealth: FieldHealthColor,
     val kindHealth: FieldHealthColor,
     val dateHealth: FieldHealthColor,
+    val customerOrigin: FieldOrigin = FieldOrigin.READ_HERE,
+    val dateOrigin: FieldOrigin = FieldOrigin.READ_HERE,
 ) {
     val isAllGreen: Boolean
         get() = customerHealth == FieldHealthColor.GREEN &&
@@ -28,8 +45,18 @@ data class OperationFieldHealth(
                 dateHealth == FieldHealthColor.GREEN
 
     val needsAttention: Boolean
-        get() = !isAllGreen
+        get() = !isAllGreen ||
+            customerOrigin != FieldOrigin.READ_HERE ||
+            dateOrigin != FieldOrigin.READ_HERE
 }
+
+/**
+ * Below this, a field the model says it read is still shown as worth a second look.
+ *
+ * The number is never shown to anybody: a shopkeeper does not need to be told 0.58. It only decides
+ * whether the chip asks for attention.
+ */
+const val LOW_CONFIDENCE_THRESHOLD = 0.70
 
 private val CANONICAL_CENTS_REGEX = Regex("^(0|[1-9][0-9]{0,17})$")
 private const val MAX_CUSTOMER_NAME_LEN = 80
@@ -105,12 +132,33 @@ object LedgerFieldHealth {
             }
         }
 
+        // Certainty can only ever make a field look WORSE, never better. It demotes a green to a
+        // yellow -- "the model read this but would not swear to it" -- and that is all. It cannot
+        // clear a doubt, cannot turn a red into anything, and cannot make a row registerable:
+        // isRegisterableLedgerOperation does not look at it and must not start. One authority for
+        // what gets written, a second opinion only for what gets looked at.
+        fun demote(color: FieldHealthColor, certainty: Double?): FieldHealthColor =
+            if (color == FieldHealthColor.GREEN && certainty != null && certainty < LOW_CONFIDENCE_THRESHOLD) {
+                FieldHealthColor.YELLOW
+            } else {
+                color
+            }
+
+        fun originOf(source: com.cuentivo.app.ai.ledger.LedgerFieldSource?): FieldOrigin = when (source) {
+            com.cuentivo.app.ai.ledger.LedgerFieldSource.INHERITED_PREVIOUS_ROW -> FieldOrigin.INHERITED_FROM_ROW_ABOVE
+            com.cuentivo.app.ai.ledger.LedgerFieldSource.PAGE_DATE -> FieldOrigin.FROM_PAGE_DATE
+            com.cuentivo.app.ai.ledger.LedgerFieldSource.INFERRED -> FieldOrigin.INFERRED
+            else -> FieldOrigin.READ_HERE
+        }
+
         return OperationFieldHealth(
             lineIndex = op.lineIndex,
-            customerHealth = customerHealth,
-            amountHealth = amountHealth,
-            kindHealth = kindHealth,
-            dateHealth = dateHealth,
+            customerHealth = demote(customerHealth, op.confidence?.customer),
+            amountHealth = demote(amountHealth, op.confidence?.amount),
+            kindHealth = demote(kindHealth, op.confidence?.kind),
+            dateHealth = demote(dateHealth, op.confidence?.date),
+            customerOrigin = originOf(op.sources?.customer),
+            dateOrigin = originOf(op.sources?.date),
         )
     }
 }

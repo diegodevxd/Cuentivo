@@ -648,6 +648,8 @@
     <string name="ai_ledger_dialog_edit_title">Editar renglón %1$d</string>
     <string name="ai_ledger_field_customer">Cliente</string>
     <string name="ai_ledger_field_short_customer">Cliente</string>
+    <string name="ai_ledger_field_short_customer_inherited">Cliente (del renglón de arriba)</string>
+    <string name="ai_ledger_field_short_date_from_page">Fecha (de la hoja)</string>
     <string name="ai_ledger_field_short_amount">Monto</string>
     <string name="ai_ledger_field_short_kind">Tipo</string>
     <string name="ai_ledger_field_short_date">Fecha</string>

@@ -71,6 +71,14 @@ data class LedgerOperation(
     val unreadableFields: List<UnreadableLedgerField> = emptyList(),
     val region: LedgerRegion? = null,
     val customerId: String? = null,
+    /** How sure the model was of each field, when it said. Never decides anything on its own. */
+    val confidence: LedgerFieldConfidence? = null,
+    /** Where each field came from: read on the row, inherited from the one above, or the page date. */
+    val sources: LedgerFieldSources? = null,
+    /** The line as the model read it, kept as evidence of what the paper actually said. */
+    val rawText: String? = null,
+    /** The products the model separated out of the line, when it managed to. */
+    val items: List<LedgerLineItem> = emptyList(),
 ) {
     /**
      * Defensive copy to guarantee snapshot immutability regardless of caller list modifications.
@@ -78,8 +86,44 @@ data class LedgerOperation(
     fun deepCopy(): LedgerOperation = copy(
         uncertainFields = Collections.unmodifiableList(uncertainFields.toList()),
         unreadableFields = Collections.unmodifiableList(unreadableFields.toList()),
+        items = Collections.unmodifiableList(items.toList()),
     )
 }
+
+/**
+ * Where a field came from, which is not the same question as how sure the model was of it.
+ *
+ * A name inherited from a quote mark can be read perfectly and still be the wrong person, because
+ * the mark is an assumption about the row above. Hiding that behind a confidence number would tell
+ * the reviewer the wrong thing to check.
+ */
+enum class LedgerFieldSource {
+    EXPLICIT,
+    INHERITED_PREVIOUS_ROW,
+    PAGE_DATE,
+    INFERRED,
+}
+
+data class LedgerFieldSources(
+    val customer: LedgerFieldSource? = null,
+    val date: LedgerFieldSource? = null,
+)
+
+/** Per-field certainty in 0..1, absent when the model did not say. Absent is not zero. */
+data class LedgerFieldConfidence(
+    val customer: Double? = null,
+    val concept: Double? = null,
+    val amount: Double? = null,
+    val date: Double? = null,
+    val kind: Double? = null,
+)
+
+/** One product the model separated out of a line: "2 cocas 38" is quantity 2, subtotal "3800". */
+data class LedgerLineItem(
+    val description: String,
+    val quantity: Int? = null,
+    val subtotalCents: String? = null,
+)
 
 private val CANONICAL_LEDGER_CENTS_RE = Regex("^(0|[1-9][0-9]{0,17})$")
 const val MAX_LEDGER_CUSTOMER_NAME_LENGTH = 80

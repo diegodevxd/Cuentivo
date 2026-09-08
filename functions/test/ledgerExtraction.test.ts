@@ -718,6 +718,52 @@ describe("parseLedgerExtraction", () => {
       expect(parsedOp?.warnings).toContain("ITEMS_TOTAL_MISMATCH");
     });
 
+    test("a note that is not a movement is not turned into one", () => {
+      // A shopping reminder written in the margin has no customer and no money. The model is told
+      // to leave it out entirely, and if it ever sends one anyway the parser must not let a row
+      // with no customer and no amount through as if it were debt somebody owes.
+      const note = {
+        lineIndex: 0,
+        description: "comprar bolsas el jueves",
+        uncertainFields: [],
+        unreadableFields: [],
+      };
+
+      const res = parseLedgerExtraction({ operations: [note], pageIncomplete: false });
+
+      expect(res?.operations).toHaveLength(0);
+      expect(res?.discards.length).toBeGreaterThan(0);
+    });
+
+    test("a row with more than one price is not resolved by picking one", () => {
+      // "Pedro 2 sabritas 34 + coca 18" has two prices and one total. Choosing 34, or 18, or
+      // quietly adding them, are all the model inventing a number nobody wrote. The row arrives
+      // with its items and a total, and when they disagree the amount goes back for review instead
+      // of being reconciled by arithmetic.
+      const twoPrices = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Pedro",
+        amountCents: "3400",
+        uncertainFields: [],
+        unreadableFields: [],
+        items: [
+          { description: "sabritas", quantity: 2, subtotalCents: "3400" },
+          { description: "coca", subtotalCents: "1800" },
+        ],
+        warnings: [],
+      };
+
+      const res = parseLedgerExtraction({ operations: [twoPrices], pageIncomplete: false });
+
+      const op = res?.operations[0];
+      expect(op?.amountCents).toBe("3400");
+      expect(op?.uncertainFields).toContain("AMOUNT");
+      expect(op?.warnings).toContain("ITEMS_TOTAL_MISMATCH");
+      // Both prices survive: the person decides which reading is right, with the paper in hand.
+      expect(op?.items).toHaveLength(2);
+    });
+
     test("a mismatch never downgrades an amount the model said it could not read", () => {
       // The two lists are the record of what the model actually claimed. Moving AMOUNT from
       // unreadable to uncertain would be the parser making a weaker claim than the model made, and

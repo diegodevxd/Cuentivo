@@ -651,10 +651,26 @@ private fun LedgerOperationRow(
                             .testTag("ledger-field-health-" + operation.lineIndex),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        FieldHealthChip(stringResource(R.string.ai_ledger_field_short_customer), health.customerHealth)
+                        FieldHealthChip(
+                            label = if (health.customerOrigin == com.cuentivo.app.domain.FieldOrigin.INHERITED_FROM_ROW_ABOVE) {
+                                stringResource(R.string.ai_ledger_field_short_customer_inherited)
+                            } else {
+                                stringResource(R.string.ai_ledger_field_short_customer)
+                            },
+                            color = health.customerHealth,
+                            inherited = health.customerOrigin == com.cuentivo.app.domain.FieldOrigin.INHERITED_FROM_ROW_ABOVE,
+                        )
                         FieldHealthChip(stringResource(R.string.ai_ledger_field_short_amount), health.amountHealth)
                         FieldHealthChip(stringResource(R.string.ai_ledger_field_short_kind), health.kindHealth)
-                        FieldHealthChip(stringResource(R.string.ai_ledger_field_short_date), health.dateHealth)
+                        FieldHealthChip(
+                            label = if (health.dateOrigin == com.cuentivo.app.domain.FieldOrigin.FROM_PAGE_DATE) {
+                                stringResource(R.string.ai_ledger_field_short_date_from_page)
+                            } else {
+                                stringResource(R.string.ai_ledger_field_short_date)
+                            },
+                            color = health.dateHealth,
+                            inherited = health.dateOrigin != com.cuentivo.app.domain.FieldOrigin.READ_HERE,
+                        )
                     }
                 }
 
@@ -1032,7 +1048,11 @@ internal fun parseLedgerDateInput(text: String): SafeDateCandidate? {
  * cannot distinguish them, and by somebody looking at a phone in the sun on a market stall.
  */
 @Composable
-private fun FieldHealthChip(label: String, color: com.cuentivo.app.domain.FieldHealthColor) {
+private fun FieldHealthChip(
+    label: String,
+    color: com.cuentivo.app.domain.FieldHealthColor,
+    inherited: Boolean = false,
+) {
     val background = when (color) {
         com.cuentivo.app.domain.FieldHealthColor.GREEN -> MaterialTheme.colorScheme.secondaryContainer
         com.cuentivo.app.domain.FieldHealthColor.YELLOW -> MaterialTheme.colorScheme.tertiaryContainer
@@ -1043,10 +1063,13 @@ private fun FieldHealthChip(label: String, color: com.cuentivo.app.domain.FieldH
         com.cuentivo.app.domain.FieldHealthColor.YELLOW -> MaterialTheme.colorScheme.onTertiaryContainer
         com.cuentivo.app.domain.FieldHealthColor.RED -> MaterialTheme.colorScheme.onErrorContainer
     }
-    val mark = when (color) {
-        com.cuentivo.app.domain.FieldHealthColor.GREEN -> "OK"
-        com.cuentivo.app.domain.FieldHealthColor.YELLOW -> "?"
-        com.cuentivo.app.domain.FieldHealthColor.RED -> "!"
+    val mark = when {
+        // An inherited value is green in every other sense and still worth confirming, so it gets a
+        // mark of its own rather than being folded into the same "?" as an unclear reading.
+        inherited -> "↑"
+        color == com.cuentivo.app.domain.FieldHealthColor.GREEN -> "OK"
+        color == com.cuentivo.app.domain.FieldHealthColor.YELLOW -> "?"
+        else -> "!"
     }
     Surface(color = background, shape = RoundedCornerShape(4.dp)) {
         Text(

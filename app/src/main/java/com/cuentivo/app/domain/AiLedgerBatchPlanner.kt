@@ -374,7 +374,12 @@ object AiLedgerBatchPlanner {
                     val saleId = SaleOperationIds.sale(opKey)
                     val chargeId = SaleOperationIds.chargeMovement(opKey)
                     val itemId = SaleOperationIds.uncatalogedSaleItem(opKey, 0)
-                    val lineDescription = op.description?.trim().takeUnless { it.isNullOrBlank() } ?: LINE_NAME_SALE
+                    // The products the model separated out win over a single description, because
+                    // they say what the person took and the description usually does not. They are
+                    // words only: the amount comes from the notebook and is untouched.
+                    val lineDescription = LedgerItemsDescription.summarize(op.items)
+                        ?: op.description?.trim().takeUnless { it.isNullOrBlank() }
+                        ?: LINE_NAME_SALE
 
                     val uncataloged = UncatalogedSaleBuilder.build(
                         saleId = saleId,
@@ -404,7 +409,12 @@ object AiLedgerBatchPlanner {
                     val saleId = SaleOperationIds.sale(opKey)
                     val chargeId = SaleOperationIds.chargeMovement(opKey)
                     val itemId = SaleOperationIds.uncatalogedSaleItem(opKey, 0)
-                    val lineDescription = op.description?.trim().takeUnless { it.isNullOrBlank() } ?: LINE_NAME_PRIOR_DEBT
+                    // The products the model separated out win over a single description, because
+                    // they say what the person took and the description usually does not. They are
+                    // words only: the amount comes from the notebook and is untouched.
+                    val lineDescription = LedgerItemsDescription.summarize(op.items)
+                        ?: op.description?.trim().takeUnless { it.isNullOrBlank() }
+                        ?: LINE_NAME_PRIOR_DEBT
 
                     val uncataloged = UncatalogedSaleBuilder.build(
                         saleId = saleId,

@@ -648,6 +648,8 @@
     <string name="ai_ledger_dialog_edit_title">Edit row %1$d</string>
     <string name="ai_ledger_field_customer">Customer</string>
     <string name="ai_ledger_field_short_customer">Customer</string>
+    <string name="ai_ledger_field_short_customer_inherited">Customer (from the row above)</string>
+    <string name="ai_ledger_field_short_date_from_page">Date (from the sheet)</string>
     <string name="ai_ledger_field_short_amount">Amount</string>
     <string name="ai_ledger_field_short_kind">Type</string>
     <string name="ai_ledger_field_short_date">Date</string>

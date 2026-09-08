@@ -190,6 +190,11 @@ private fun parseLedgerOperationsWire(value: Any?, contractVersion: Int): List<L
             }
             else -> return null
         }
+        // The v4 extras are kept, not dropped. They were arriving and being thrown away, so the
+        // screen could not tell a name read clearly from one inherited off a quote mark -- which is
+        // a different thing to check, and the one more likely to be the wrong person.
+        val items = parseItemsWire(map["items"]) ?: return null
+
         parsed += LedgerOperation(
             lineIndex = lineIndex,
             proposedKind = kind,
@@ -200,6 +205,10 @@ private fun parseLedgerOperationsWire(value: Any?, contractVersion: Int): List<L
             uncertainFields = uncertain,
             unreadableFields = unreadable,
             region = parseRegionWire(map["region"]),
+            confidence = parseConfidenceWire(map["confidence"]),
+            sources = parseSourcesWire(map["sources"]),
+            rawText = map["rawText"] as? String,
+            items = items,
         )
     }
     return parsed
@@ -262,3 +271,67 @@ class LedgerExtractionGateway(
         }
     }
 }
+
+/**
+ * Certainty is read leniently on purpose: a malformed number is dropped, not fatal.
+ *
+ * The server already rejects out-of-range confidence before it gets here, and nothing downstream is
+ * allowed to decide anything from these numbers. Refusing a whole page because one advisory field
+ * came back odd would trade a page of real work for a cosmetic detail.
+ */
+private fun parseConfidenceWire(value: Any?): LedgerFieldConfidence? {
+    val map = value as? Map<*, *> ?: return null
+    fun read(key: String): Double? =
+        (map[key] as? Number)?.toDouble()?.takeIf { it.isFinite() && it in 0.0..1.0 }
+    val confidence = LedgerFieldConfidence(
+        customer = read("customer"),
+        concept = read("concept"),
+        amount = read("amount"),
+        date = read("date"),
+        kind = read("kind"),
+    )
+    return confidence.takeIf {
+        it.customer != null || it.concept != null || it.amount != null ||
+            it.date != null || it.kind != null
+    }
+}
+
+private fun parseSourcesWire(value: Any?): LedgerFieldSources? {
+    val map = value as? Map<*, *> ?: return null
+    fun read(key: String): LedgerFieldSource? =
+        (map[key] as? String)?.let { name -> LedgerFieldSource.entries.firstOrNull { it.name == name } }
+    val sources = LedgerFieldSources(customer = read("customer"), date = read("date"))
+    return sources.takeIf { it.customer != null || it.date != null }
+}
+
+/**
+ * Items are read strictly, unlike confidence, because they carry money.
+ *
+ * Null means the whole page is refused. A subtotal that arrived as a JSON number, or as anything
+ * but a canonical centavo string, is the one shape through which fractional money could enter a
+ * ledger of whole centavos -- the same rule the amount itself already follows.
+ */
+private fun parseItemsWire(value: Any?): List<LedgerLineItem>? {
+    if (value == null) return emptyList()
+    val list = value as? List<*> ?: return null
+    val parsed = ArrayList<LedgerLineItem>(list.size)
+    for (raw in list) {
+        val map = raw as? Map<*, *> ?: return null
+        val description = map["description"] as? String ?: return null
+        if (description.isBlank()) return null
+        val quantity = when (val q = map["quantity"]) {
+            null -> null
+            is Number -> if (q.toDouble() != q.toLong().toDouble() || q.toLong() <= 0L) return null else q.toInt()
+            else -> return null
+        }
+        val subtotal = when (val sub = map["subtotalCents"]) {
+            null -> null
+            is String -> if (!CANONICAL_LEDGER_CENTS_WIRE_RE.matches(sub)) return null else sub
+            else -> return null
+        }
+        parsed += LedgerLineItem(description = description, quantity = quantity, subtotalCents = subtotal)
+    }
+    return parsed
+}
+
+private val CANONICAL_LEDGER_CENTS_WIRE_RE = Regex("""^(0|[1-9][0-9]{0,17})$""")
