@@ -10,7 +10,9 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import com.cuentivo.app.ai.ledger.LedgerOperation
@@ -272,5 +274,28 @@ class LedgerGuidedReviewTest {
             assertEquals("Protector Tapete", descriptionAfter)
             assertEquals("8500", amountAfter)
         }
+    }
+
+    @Test fun only_the_fields_that_need_something_spend_room_saying_so() {
+        // Diego photographed a catalogue sheet with sixteen movements and got one card per screen.
+        // Every field painted a chip whether it needed one or not, and a long label like
+        // "Cliente (del renglon de arriba)" ate the width, wrapped, and pushed the card to the
+        // height of the phone. Sixteen rows meant sixteen scrolls before registering anything.
+        //
+        // Height cannot be asserted on this Compose version, so the cause is asserted instead: only
+        // the amount is doubtful here, so only the amount earns a chip.
+        val onlyAmountDoubtful = doubtfulSale(0, "Rosa").copy(
+            uncertainFields = listOf(com.cuentivo.app.ai.ledger.UncertainLedgerField.AMOUNT),
+        )
+
+        composeRule.setContent { host(listOf(onlyAmountDoubtful)) }
+
+        composeRule.onNodeWithTag("ledger-field-health-0", useUnmergedTree = true).assertIsDisplayed()
+        // Doubtful, not unreadable: the mark is a question, not an alarm.
+        composeRule.onNodeWithText("? Monto", useUnmergedTree = true).assertIsDisplayed()
+        // The three that are fine say nothing at all.
+        composeRule.onNodeWithText("OK Cliente", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithText("OK Tipo", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithText("OK Fecha", useUnmergedTree = true).assertDoesNotExist()
     }
 }

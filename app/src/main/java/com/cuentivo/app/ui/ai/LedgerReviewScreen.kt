@@ -580,7 +580,7 @@ private fun LedgerOperationRow(
         color = if (isUnresolved) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
     ) {
         Row(
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -588,11 +588,14 @@ private fun LedgerOperationRow(
             RowCropThumbnail(
                 captureFile = captureFile,
                 operation = operation,
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(48.dp),
             )
 
             // Details
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val kindText = when (operation.proposedKind) {
                         ProposedLedgerKind.SALE -> stringResource(R.string.ai_ledger_kind_sale)
@@ -644,33 +647,26 @@ private fun LedgerOperationRow(
                 // every doubtful row looked equally broken and equally expensive to check. These
                 // say which field to look at, which is the difference between reading a row and
                 // glancing at it.
+                // Only the fields that need something. Painting all four turned a page of sixteen
+                // rows into sixteen screens: a long label like "Cliente (del renglon de arriba)" ate
+                // the width, wrapped, and pushed every card to the height of the phone. A chip that
+                // says "everything is fine" is also the one nobody reads, so it earns no space.
                 if (health != null && health.needsAttention) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("ledger-field-health-" + operation.lineIndex),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        FieldHealthChip(
-                            label = if (health.customerOrigin == com.cuentivo.app.domain.FieldOrigin.INHERITED_FROM_ROW_ABOVE) {
-                                stringResource(R.string.ai_ledger_field_short_customer_inherited)
-                            } else {
-                                stringResource(R.string.ai_ledger_field_short_customer)
-                            },
-                            color = health.customerHealth,
-                            inherited = health.customerOrigin == com.cuentivo.app.domain.FieldOrigin.INHERITED_FROM_ROW_ABOVE,
-                        )
-                        FieldHealthChip(stringResource(R.string.ai_ledger_field_short_amount), health.amountHealth)
-                        FieldHealthChip(stringResource(R.string.ai_ledger_field_short_kind), health.kindHealth)
-                        FieldHealthChip(
-                            label = if (health.dateOrigin == com.cuentivo.app.domain.FieldOrigin.FROM_PAGE_DATE) {
-                                stringResource(R.string.ai_ledger_field_short_date_from_page)
-                            } else {
-                                stringResource(R.string.ai_ledger_field_short_date)
-                            },
-                            color = health.dateHealth,
-                            inherited = health.dateOrigin != com.cuentivo.app.domain.FieldOrigin.READ_HERE,
-                        )
+                    val attention = listOfNotNull(
+                        chipFor(stringResource(R.string.ai_ledger_field_short_customer), health.customerHealth, health.customerOrigin),
+                        chipFor(stringResource(R.string.ai_ledger_field_short_amount), health.amountHealth, com.cuentivo.app.domain.FieldOrigin.READ_HERE),
+                        chipFor(stringResource(R.string.ai_ledger_field_short_kind), health.kindHealth, com.cuentivo.app.domain.FieldOrigin.READ_HERE),
+                        chipFor(stringResource(R.string.ai_ledger_field_short_date), health.dateHealth, health.dateOrigin),
+                    )
+                    if (attention.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.testTag("ledger-field-health-" + operation.lineIndex),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            attention.forEach { chip ->
+                                FieldHealthChip(chip.label, chip.color, chip.inherited)
+                            }
+                        }
                     }
                 }
 
@@ -680,11 +676,25 @@ private fun LedgerOperationRow(
                 } else {
                     operation.amountCents ?: stringResource(R.string.ai_slot_amount)
                 }
-                Text(
-                    text = amountText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                )
+                // Amount and customer on one line: they are what a person scans for, and the two of
+                // them stacked was half the height of a card that only ever holds one movement.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = amountText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    if (operation.customerName != null) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = operation.customerName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                    }
+                }
 
                 // The date the notebook carries, shown even when it is missing: importing a year of
                 // history as if it all happened today is exactly what this feature must not do.
@@ -700,15 +710,8 @@ private fun LedgerOperationRow(
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
                 )
-
-                if (operation.customerName != null) {
-                    Text(
-                        text = operation.customerName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
 
             // Row actions: quick kind toggle & delete
@@ -1079,4 +1082,27 @@ private fun FieldHealthChip(
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
         )
     }
+}
+
+private data class FieldChip(
+    val label: String,
+    val color: com.cuentivo.app.domain.FieldHealthColor,
+    val inherited: Boolean,
+)
+
+/**
+ * A chip only for a field that needs something, and null for one that does not.
+ *
+ * Green means "nothing to do here", and a badge that says nothing to do is a badge that teaches
+ * people to stop reading badges. It also costs width, which on a row of four is what pushed the
+ * card past the height of the screen.
+ */
+private fun chipFor(
+    label: String,
+    color: com.cuentivo.app.domain.FieldHealthColor,
+    origin: com.cuentivo.app.domain.FieldOrigin,
+): FieldChip? {
+    val inherited = origin != com.cuentivo.app.domain.FieldOrigin.READ_HERE
+    if (color == com.cuentivo.app.domain.FieldHealthColor.GREEN && !inherited) return null
+    return FieldChip(label = label, color = color, inherited = inherited)
 }

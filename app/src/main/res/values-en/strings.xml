@@ -664,7 +664,7 @@
     <string name="ai_ledger_unresolved_notice">Row with unresolved fields</string>
     <string name="ai_ledger_error_zero_operations">No operations ready to register. Resolve uncertain or unreadable fields.</string>
     <string name="ai_ledger_error_rows_need_review">Gemini read %1$d rows with doubts. Check them against the photo so they can be registered.</string>
-    <string name="ai_ledger_action_review_uncertain">Review the %1$d doubtful rows</string>
+    <string name="ai_ledger_action_review_uncertain">Review %1$d rows with doubts</string>
     <string name="ai_ledger_error_zero_amount">Row with zero amount: amount must be greater than zero cents.</string>
     <string name="ai_ledger_error_overflow">Row with numeric overflow: amount exceeds allowed limit.</string>
     <string name="ai_ledger_error_payment_without_debt">Payment without debt: customer has no outstanding balance.</string>
