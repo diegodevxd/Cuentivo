@@ -113,7 +113,7 @@ class LedgerGuidedReviewTest {
 
         composeRule.onNodeWithTag("ledger-review-confirm-button")
             .assertIsEnabled()
-            .assertTextContains("Crear 1 clientes y registrar 1 movimientos")
+            .assertTextContains("Registrar 1 movimiento")
         // The row left behind is still announced, not swallowed.
         composeRule.onNodeWithTag("ledger-financial-error-banner").assertIsDisplayed()
         composeRule.onNodeWithTag("ledger-start-review-button").assertIsDisplayed()
@@ -213,5 +213,64 @@ class LedgerGuidedReviewTest {
         composeRule.runOnIdle { assertEquals("cust-rosa", anchoredTo) }
         // Accepting is a human confirmation, so the row becomes registerable.
         composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsEnabled()
+    }
+
+    @Test fun a_doubtful_row_says_which_field_needs_looking_at() {
+        // One badge for the whole row said something was wrong without saying where, so every
+        // doubtful row cost the same to check: read all four fields against the crop. The chips
+        // turn that into a glance.
+        composeRule.setContent { host(listOf(doubtfulSale(0, "Rosa"))) }
+
+        // Unmerged: the whole row is clickable, so Compose folds its children into one node.
+        composeRule.onNodeWithTag("ledger-field-health-0", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test fun a_row_that_is_ready_does_not_shout_for_attention() {
+        val clean = doubtfulSale(0, "Rosa").copy(uncertainFields = emptyList())
+
+        composeRule.setContent { host(listOf(clean)) }
+
+        composeRule.onNodeWithTag("ledger-field-health-0", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsEnabled()
+    }
+
+    @Test fun accepting_a_catalogue_name_never_touches_the_amount() {
+        // The catalogue says 79.90 and the paper says 85. The paper wins, always: the price list is
+        // what the business charges in general, the notebook is what it charged this person.
+        val catalogue = com.cuentivo.app.domain.ProductCandidate("prod-1", "Protector Tapete", 7990L)
+        var amountAfter: String? = null
+        var descriptionAfter: String? = null
+
+        composeRule.setContent {
+            var operations by remember {
+                mutableStateOf(listOf(doubtfulSale(0, "Rosa").copy(amountCents = "8500", description = "Protect tap")))
+            }
+            amountAfter = operations[0].amountCents
+            descriptionAfter = operations[0].description
+            LedgerReviewContent(
+                review = LedgerReviewEngine.build(operations = operations, todayEpochDay = today),
+                captureFile = null,
+                productMatches = com.cuentivo.app.domain.LedgerProductMatching.matchesFor(operations, listOf(catalogue)),
+                onAcceptProductAnchor = { line, candidate ->
+                    operations = LedgerReviewEngine.setOperationDescription(operations, line, candidate.name)
+                },
+                onUpdateAmount = { line, amount -> operations = LedgerReviewEdits.applyAmount(operations, line, amount) },
+                onUpdateCustomer = { line, name -> operations = LedgerReviewEdits.applyCustomer(operations, line, name) },
+                onUpdateKind = { line, kind -> operations = LedgerReviewEdits.applyKind(operations, line, kind) },
+                onUpdateDate = { line, date -> operations = LedgerReviewEdits.applyDate(operations, line, date, today) },
+                onUpdatePageDate = { },
+                onRemoveRow = { },
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-start-review-button").performClick()
+        composeRule.onNodeWithTag("ledger-accept-product-match").performClick()
+
+        composeRule.runOnIdle {
+            assertEquals("Protector Tapete", descriptionAfter)
+            assertEquals("8500", amountAfter)
+        }
     }
 }

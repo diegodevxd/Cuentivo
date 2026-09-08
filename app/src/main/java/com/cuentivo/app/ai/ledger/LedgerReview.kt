@@ -500,6 +500,22 @@ object LedgerReviewEngine {
     }
 
     /**
+     * Writes the description a person picked from the catalogue, and nothing else.
+     *
+     * Deliberately narrow. The description is a label: it is not in either doubt list, it does not
+     * decide whose debt this is, and it must not touch the amount — the notebook is what the money
+     * comes from, and a catalogue price that disagrees with the paper is the catalogue being wrong
+     * about this sale, not the paper.
+     */
+    fun setOperationDescription(
+        currentOperations: List<LedgerOperation>,
+        lineIndex: Int,
+        description: String,
+    ): List<LedgerOperation> = updateOperation(currentOperations, lineIndex) { op ->
+        op.copy(description = description)
+    }
+
+    /**
      * Anchors a row to an existing customer, **and may only be called when a person accepted it**.
      *
      * The anchor is what decides whose debt this is, so a fuzzy match scoring 0.99 is not allowed to
@@ -672,6 +688,14 @@ object LedgerReviewEdits {
             uncertainFields = op.uncertainFields - UncertainLedgerField.KIND,
             unreadableFields = op.unreadableFields - UnreadableLedgerField.KIND,
         )
+    }
+
+    fun applyDescription(
+        operations: List<LedgerOperation>,
+        lineIndex: Int,
+        description: String?,
+    ): List<LedgerOperation> = replace(operations, lineIndex) { op ->
+        op.copy(description = description)
     }
 
     /**

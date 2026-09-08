@@ -198,4 +198,56 @@ class LedgerReviewScreenTest {
         field.assertTextContains("2026-06-")
         composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsNotEnabled()
     }
+
+    @Test fun product_proposal_action_button_offers_product_name_without_changing_amount() {
+        var acceptedProductCandidateName: String? = null
+        val op = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa",
+            amountCents = "8500",
+            description = "Protect tap",
+            date = com.cuentivo.app.ai.ledger.SafeDateCandidate(2026, 9, 1),
+        )
+        val review = LedgerReviewEngine.build(operations = listOf(op))
+        val productCandidate = com.cuentivo.app.domain.ProductCandidate(id = "prod-1", name = "Protector Tapete", salePriceCents = 7990L)
+        val productMatches = mapOf(
+            0 to com.cuentivo.app.domain.EntityMatchResult(
+                candidate = productCandidate,
+                score = 0.95,
+                decision = com.cuentivo.app.domain.MatchDecision.AUTOMATIC,
+            )
+        )
+
+        composeRule.setContent {
+            LedgerReviewContent(
+                review = review,
+                captureFile = null,
+                onUpdateAmount = { _, _ -> },
+                onUpdateCustomer = { _, _ -> },
+                onUpdateKind = { _, _ -> },
+                onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
+                onRemoveRow = { },
+                productMatches = productMatches,
+                onAcceptProductAnchor = { _, candidate -> acceptedProductCandidateName = candidate.name },
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        // Tap row 0 to open edit dialog
+        composeRule.onNodeWithTag("ledger-op-row-0").performClick()
+
+        // Verify product candidate proposal action button is displayed
+        val matchButton = composeRule.onNodeWithTag("ledger-accept-product-match")
+        matchButton.assertIsDisplayed()
+
+        // Tap product match proposal button
+        matchButton.performClick()
+
+        composeRule.runOnIdle {
+            org.junit.Assert.assertEquals("Protector Tapete", acceptedProductCandidateName)
+        }
+    }
 }

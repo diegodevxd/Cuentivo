@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -62,6 +63,10 @@ import com.cuentivo.app.ai.ledger.OperationFinancialDiagnostic
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
+import com.cuentivo.app.domain.FieldHealthColor
+import com.cuentivo.app.domain.LedgerFieldHealth
+import com.cuentivo.app.domain.LedgerImportSummaryCalculator
+import com.cuentivo.app.domain.ProductCandidate
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -84,6 +89,9 @@ fun LedgerReviewContent(
     /** Existing customers this page's rows resemble, keyed by lineIndex. Offers, never decisions. */
     customerMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>> = emptyMap(),
     onAcceptCustomerAnchor: (lineIndex: Int, candidate: com.cuentivo.app.domain.CustomerCandidate) -> Unit = { _, _ -> },
+    /** Catalog products this page's rows resemble, keyed by lineIndex. Offers product name for description, never changes amount. */
+    productMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<ProductCandidate>> = emptyMap(),
+    onAcceptProductAnchor: (lineIndex: Int, candidate: ProductCandidate) -> Unit = { _, _ -> },
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -180,10 +188,21 @@ fun LedgerReviewContent(
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // Computed once for the page, not per row: the evaluator is pure and the diagnostics
+            // it needs belong to the whole review.
+            val fieldHealth = review.operations.associate { op ->
+                op.lineIndex to LedgerFieldHealth.evaluate(
+                    op = op,
+                    financialDiagnostics = review.summary.financialDiagnostics,
+                    pageDateEpochDay = review.pageDateEpochDay,
+                    todayEpochDay = review.todayEpochDay,
+                )
+            }
             items(review.customerGroups) { group ->
                 CustomerGroupCard(
                     group = group,
                     captureFile = captureFile,
+                    fieldHealth = fieldHealth,
                     onEditOperation = { op -> editingOperation = op },
                     onUpdateKind = onUpdateKind,
                     onRemoveRow = onRemoveRow,
@@ -193,10 +212,10 @@ fun LedgerReviewContent(
         }
 
         // Single confirmation button at the bottom
-        val canConfirm = review.summary.canConfirm
+        val summaryResult = LedgerImportSummaryCalculator.calculate(review)
         Button(
             onClick = onConfirm,
-            enabled = canConfirm,
+            enabled = summaryResult.isConfirmButtonEnabled,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("ledger-review-confirm-button"),
@@ -205,12 +224,17 @@ fun LedgerReviewContent(
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ),
         ) {
+            val buttonText = if (summaryResult.isConfirmButtonEnabled) {
+                pluralStringResource(
+                    R.plurals.ai_ledger_action_register_count,
+                    summaryResult.readyCount,
+                    summaryResult.readyCount,
+                )
+            } else {
+                stringResource(R.string.ai_ledger_action_register_disabled)
+            }
             Text(
-                text = stringResource(
-                    R.string.ai_ledger_summary_action_format,
-                    review.summary.newCustomersCount,
-                    review.summary.executableOperationsCount,
-                ),
+                text = buttonText,
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -222,6 +246,7 @@ fun LedgerReviewContent(
             operation = op,
             captureFile = captureFile,
             customerMatch = customerMatches[op.lineIndex],
+            productMatch = productMatches[op.lineIndex],
             onAcceptCustomerAnchor = { candidate ->
                 onAcceptCustomerAnchor(op.lineIndex, candidate)
                 val nextLineIndex = pendingReviewQueue.firstOrNull()
@@ -229,6 +254,9 @@ fun LedgerReviewContent(
                 editingOperation = nextLineIndex?.let { next ->
                     review.operations.firstOrNull { it.lineIndex == next }
                 }
+            },
+            onAcceptProductAnchor = { candidate ->
+                onAcceptProductAnchor(op.lineIndex, candidate)
             },
             onDismiss = {
                 editingOperation = null
@@ -260,6 +288,8 @@ private fun LedgerSummaryCard(
     review: LedgerReview,
     modifier: Modifier = Modifier,
 ) {
+    val summaryResult = LedgerImportSummaryCalculator.calculate(review)
+
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
@@ -276,51 +306,38 @@ private fun LedgerSummaryCard(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+            val detectedText = pluralStringResource(
+                R.plurals.ai_ledger_summary_detected_count,
+                summaryResult.detectedCount,
+                summaryResult.detectedCount,
+            )
             Text(
-                text = stringResource(R.string.ai_ledger_review_summary_subtitle),
+                text = detectedText,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            val readyText = pluralStringResource(
+                R.plurals.ai_ledger_summary_ready_count,
+                summaryResult.readyCount,
+                summaryResult.readyCount,
+            )
+            val pendingText = pluralStringResource(
+                R.plurals.ai_ledger_summary_pending_count,
+                summaryResult.pendingReviewCount,
+                summaryResult.pendingReviewCount,
+            )
+            Text(
+                text = stringResource(R.string.ai_ledger_summary_status_format, readyText, pendingText),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
+            if (summaryResult.pageIncompleteNoticeRequired) {
                 Text(
-                    text = stringResource(R.string.ai_ledger_summary_sales_count, review.summary.salesCount),
+                    text = stringResource(R.string.ai_ledger_page_incomplete_notice),
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("ledger-summary-page-incomplete-notice"),
                 )
-                Text(
-                    text = stringResource(R.string.ai_ledger_summary_payments_count, review.summary.paymentsCount),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text(
-                    text = stringResource(R.string.ai_ledger_summary_prior_debts_count, review.summary.priorDebtsCount),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = stringResource(R.string.ai_ledger_summary_visible_customers_count, review.summary.visibleCustomersCount),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text(
-                    text = stringResource(R.string.ai_ledger_summary_new_customers_count, review.summary.newCustomersCount),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                if (review.summary.excludedRowsCount > 0) {
-                    Text(
-                        text = stringResource(R.string.ai_ledger_summary_excluded_count, review.summary.excludedRowsCount),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
             }
         }
     }
@@ -459,6 +476,7 @@ private fun FinancialErrorBanner(
 private fun CustomerGroupCard(
     group: CustomerReviewGroup,
     captureFile: File?,
+    fieldHealth: Map<Int, com.cuentivo.app.domain.OperationFieldHealth> = emptyMap(),
     onEditOperation: (LedgerOperation) -> Unit,
     onUpdateKind: (lineIndex: Int, kind: ProposedLedgerKind) -> Unit,
     onRemoveRow: (lineIndex: Int) -> Unit,
@@ -524,6 +542,7 @@ private fun CustomerGroupCard(
                 LedgerOperationRow(
                     operation = op,
                     captureFile = captureFile,
+                    health = fieldHealth[op.lineIndex],
                     onEdit = { onEditOperation(op) },
                     onUpdateKind = { kind -> onUpdateKind(op.lineIndex, kind) },
                     onRemove = { onRemoveRow(op.lineIndex) },
@@ -538,6 +557,7 @@ private fun CustomerGroupCard(
 private fun LedgerOperationRow(
     operation: LedgerOperation,
     captureFile: File?,
+    health: com.cuentivo.app.domain.OperationFieldHealth? = null,
     onEdit: () -> Unit,
     onUpdateKind: (ProposedLedgerKind) -> Unit,
     onRemove: () -> Unit,
@@ -595,6 +615,24 @@ private fun LedgerOperationRow(
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                             )
                         }
+                    }
+                }
+
+                // One badge for the whole row said something was wrong without saying where, so
+                // every doubtful row looked equally broken and equally expensive to check. These
+                // say which field to look at, which is the difference between reading a row and
+                // glancing at it.
+                if (health != null && health.needsAttention) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("ledger-field-health-" + operation.lineIndex),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        FieldHealthChip(stringResource(R.string.ai_ledger_field_short_customer), health.customerHealth)
+                        FieldHealthChip(stringResource(R.string.ai_ledger_field_short_amount), health.amountHealth)
+                        FieldHealthChip(stringResource(R.string.ai_ledger_field_short_kind), health.kindHealth)
+                        FieldHealthChip(stringResource(R.string.ai_ledger_field_short_date), health.dateHealth)
                     }
                 }
 
@@ -720,7 +758,9 @@ private fun EditLedgerOperationDialog(
     operation: LedgerOperation,
     captureFile: File?,
     customerMatch: com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>? = null,
+    productMatch: com.cuentivo.app.domain.EntityMatchResult<ProductCandidate>? = null,
     onAcceptCustomerAnchor: (com.cuentivo.app.domain.CustomerCandidate) -> Unit = {},
+    onAcceptProductAnchor: (ProductCandidate) -> Unit = {},
     onDismiss: () -> Unit,
     onSave: (customerName: String, amountCents: String, kind: ProposedLedgerKind, date: SafeDateCandidate?) -> Unit,
 ) {
@@ -783,6 +823,21 @@ private fun EditLedgerOperationDialog(
                     ) {
                         Text(
                             text = stringResource(R.string.ai_ledger_customer_match_action, candidate.name),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+
+                // Catalog product offer: offered, never forced. Accepting only updates description,
+                // leaving amount, price, productId, and inventory untouched.
+                val prodCandidate = productMatch?.candidate
+                if (prodCandidate != null) {
+                    TextButton(
+                        onClick = { onAcceptProductAnchor(prodCandidate) },
+                        modifier = Modifier.fillMaxWidth().testTag("ledger-accept-product-match"),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.ai_ledger_product_match_action, prodCandidate.name),
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }
@@ -911,4 +966,37 @@ internal fun parseLedgerDateInput(text: String): SafeDateCandidate? {
         java.time.LocalDate.of(year, month, day)
         SafeDateCandidate(year, month, day)
     }.getOrNull()
+}
+
+/**
+ * One field, one colour, one mark. The colour is decided by [LedgerFieldHealth]; this only draws it.
+ *
+ * The mark is not only colour: a green chip and a yellow one have to be told apart by somebody who
+ * cannot distinguish them, and by somebody looking at a phone in the sun on a market stall.
+ */
+@Composable
+private fun FieldHealthChip(label: String, color: com.cuentivo.app.domain.FieldHealthColor) {
+    val background = when (color) {
+        com.cuentivo.app.domain.FieldHealthColor.GREEN -> MaterialTheme.colorScheme.secondaryContainer
+        com.cuentivo.app.domain.FieldHealthColor.YELLOW -> MaterialTheme.colorScheme.tertiaryContainer
+        com.cuentivo.app.domain.FieldHealthColor.RED -> MaterialTheme.colorScheme.errorContainer
+    }
+    val foreground = when (color) {
+        com.cuentivo.app.domain.FieldHealthColor.GREEN -> MaterialTheme.colorScheme.onSecondaryContainer
+        com.cuentivo.app.domain.FieldHealthColor.YELLOW -> MaterialTheme.colorScheme.onTertiaryContainer
+        com.cuentivo.app.domain.FieldHealthColor.RED -> MaterialTheme.colorScheme.onErrorContainer
+    }
+    val mark = when (color) {
+        com.cuentivo.app.domain.FieldHealthColor.GREEN -> "OK"
+        com.cuentivo.app.domain.FieldHealthColor.YELLOW -> "?"
+        com.cuentivo.app.domain.FieldHealthColor.RED -> "!"
+    }
+    Surface(color = background, shape = RoundedCornerShape(4.dp)) {
+        Text(
+            text = mark + " " + label,
+            style = MaterialTheme.typography.labelSmall,
+            color = foreground,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
 }

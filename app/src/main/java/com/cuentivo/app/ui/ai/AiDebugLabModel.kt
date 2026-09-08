@@ -91,10 +91,15 @@ sealed interface AiDebugLabState {
          * between cannot change underneath them mid-review.
          */
         val customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate> = emptyList(),
+        /** The catalogue, for the same reason and with the same lifetime as the customers. */
+        val productCandidates: List<com.cuentivo.app.domain.ProductCandidate> = emptyList(),
     ) : AiDebugLabState {
         /** What the app may offer, recomputed from the rows as they are edited. */
         val customerMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>>
             get() = com.cuentivo.app.domain.LedgerCustomerMatching.matchesFor(review.operations, customerCandidates)
+
+        val productMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.ProductCandidate>>
+            get() = com.cuentivo.app.domain.LedgerProductMatching.matchesFor(review.operations, productCandidates)
     }
     data class LedgerConfirming(
         val sessionId: String,
@@ -969,6 +974,7 @@ object AiDebugLabMachine {
         pageIncomplete: Boolean = false,
         existingCustomerBalances: Map<String, Long> = emptyMap(),
         customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate> = emptyList(),
+        productCandidates: List<com.cuentivo.app.domain.ProductCandidate> = emptyList(),
         generation: Long,
         todayEpochDay: Long = java.time.LocalDate.now().toEpochDay(),
     ): AiDebugLabModel {
@@ -996,6 +1002,7 @@ object AiDebugLabMachine {
                 review = review,
                 existingCustomerBalances = frozenBalances,
                 customerCandidates = java.util.Collections.unmodifiableList(ArrayList(customerCandidates)),
+                productCandidates = java.util.Collections.unmodifiableList(ArrayList(productCandidates)),
             ),
         )
     }

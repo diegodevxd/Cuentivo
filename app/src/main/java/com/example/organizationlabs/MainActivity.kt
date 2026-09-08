@@ -1567,6 +1567,18 @@ class MainActivity : ComponentActivity() {
                             row.customer.normalizedName to row.balanceCents
                         }
                     },
+                    ledgerProductsResolver = { businessId ->
+                        // searchActive with empty queries is the existing way to say "all the
+                        // active ones": both LIKE clauses match everything. Archived and deleted
+                        // products stay out, same as everywhere else in the app.
+                        database.productDao().searchActive(businessId, "", "").map { product ->
+                            com.cuentivo.app.domain.ProductCandidate(
+                                id = product.id,
+                                name = product.name,
+                                salePriceCents = product.salePriceCents,
+                            )
+                        }
+                    },
                     ledgerCustomersResolver = { businessId ->
                         // Only active, undeleted customers: the same set the rest of the app treats
                         // as existing. An open balance stands in for "recently active" -- the query

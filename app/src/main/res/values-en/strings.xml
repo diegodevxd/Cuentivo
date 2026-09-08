@@ -647,6 +647,10 @@
     <string name="ai_ledger_action_cancel">Cancel</string>
     <string name="ai_ledger_dialog_edit_title">Edit row %1$d</string>
     <string name="ai_ledger_field_customer">Customer</string>
+    <string name="ai_ledger_field_short_customer">Customer</string>
+    <string name="ai_ledger_field_short_amount">Amount</string>
+    <string name="ai_ledger_field_short_kind">Type</string>
+    <string name="ai_ledger_field_short_date">Date</string>
     <string name="ai_ledger_field_customer_placeholder">Customer name</string>
     <string name="ai_ledger_field_amount">Amount in pesos</string>
     <string name="ai_ledger_field_amount_placeholder">999.00</string>
@@ -666,4 +670,24 @@
     <string name="ai_ledger_error_missing_page_date">Some rows have no date: provide a page date before registering.</string>
     <string name="ai_ledger_field_page_date">Page date (YYYY-MM-DD)</string>
     <string name="ai_ledger_field_page_date_invalid">That page date does not exist or is in the future</string>
+    <string name="ai_ledger_product_match_action">Is it %1$s? Tap to use that name</string>
+    <string name="ai_ledger_summary_status_format">%1$s · %2$s</string>
+    <string name="ai_ledger_action_register_disabled">No transactions to register</string>
+    <string name="ai_ledger_page_incomplete_notice">Unread content may remain on this page.</string>
+    <plurals name="ai_ledger_summary_detected_count">
+        <item quantity="one">%1$d transaction detected</item>
+        <item quantity="other">%1$d transactions detected</item>
+    </plurals>
+    <plurals name="ai_ledger_summary_ready_count">
+        <item quantity="one">%1$d ready to register</item>
+        <item quantity="other">%1$d ready to register</item>
+    </plurals>
+    <plurals name="ai_ledger_summary_pending_count">
+        <item quantity="one">%1$d to review</item>
+        <item quantity="other">%1$d to review</item>
+    </plurals>
+    <plurals name="ai_ledger_action_register_count">
+        <item quantity="one">Register %1$d transaction</item>
+        <item quantity="other">Register %1$d transactions</item>
+    </plurals>
 </resources>

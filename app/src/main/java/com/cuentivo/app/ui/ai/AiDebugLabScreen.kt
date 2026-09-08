@@ -170,6 +170,8 @@ fun AiDebugLabScreen(
     ledgerBalancesResolver: (suspend (businessId: String) -> Map<String, Long>)? = null,
     /** The customers this business already has, so a misread name can be matched against them. */
     ledgerCustomersResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.CustomerCandidate>)? = null,
+    /** The catalogue, so an abbreviated product can be offered its full name. */
+    ledgerProductsResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.ProductCandidate>)? = null,
     confirmLedgerBatch: (suspend (businessId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
@@ -360,6 +362,13 @@ fun AiDebugLabScreen(
                 } else {
                     emptyList()
                 }
+                val productCandidates = if (ledgerProductsResolver != null) {
+                    withContext(Dispatchers.IO) {
+                        runCatching { ledgerProductsResolver(businessId) }.getOrDefault(emptyList())
+                    }
+                } else {
+                    emptyList()
+                }
                 val outcome = withContext(Dispatchers.IO) {
                     val bytes = runCatching { file.readBytes() }.getOrNull()
                     if (bytes == null) {
@@ -384,6 +393,7 @@ fun AiDebugLabScreen(
                                 pageIncomplete = outcome.extraction.pageIncomplete,
                                 existingCustomerBalances = balances,
                                 customerCandidates = customerCandidates,
+                                productCandidates = productCandidates,
                                 generation = token,
                             )
                         }
@@ -523,6 +533,14 @@ fun AiDebugLabScreen(
                 review = ledgerReviewing.review,
                 captureFile = ledgerCaptureFile,
                 customerMatches = ledgerReviewing.customerMatches,
+                productMatches = ledgerReviewing.productMatches,
+                onAcceptProductAnchor = { lineIndex, candidate ->
+                    // Only the name. The plan still writes an uncatalogued line, so nothing here
+                    // moves stock or attaches a cost, and nothing here touches the amount.
+                    model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
+                        LedgerReviewEngine.setOperationDescription(operations, lineIndex, candidate.name)
+                    }
+                },
                 onAcceptCustomerAnchor = { lineIndex, candidate ->
                     // Only from an explicit tap. A score, however high, never calls this: showing a
                     // candidate is not the same as somebody confirming it, and a wrong anchor on a

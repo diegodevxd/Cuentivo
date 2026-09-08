@@ -285,6 +285,7 @@ fun CuentivoApp(
     extractLedgerPage: (suspend (requestId: String, imageBase64: String, imageMimeType: String) -> com.cuentivo.app.ai.ledger.LedgerExtractionCallResult)? = null,
     ledgerBalancesResolver: (suspend (businessId: String) -> Map<String, Long>)? = null,
     ledgerCustomersResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.CustomerCandidate>)? = null,
+    ledgerProductsResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.ProductCandidate>)? = null,
     confirmLedgerBatch: (suspend (businessId: String, operations: List<com.cuentivo.app.ai.ledger.LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
     businessQueryResolver: (suspend (businessId: String, proposal: com.cuentivo.app.ai.BusinessQueryProposal, choice: com.cuentivo.app.ai.AiEntityChoice?) -> com.cuentivo.app.ai.AiBusinessQueryResult)? = null,
     message: String? = null,
@@ -555,6 +556,7 @@ fun CuentivoApp(
                     extractLedgerPage = extractLedgerPage,
                     ledgerBalancesResolver = ledgerBalancesResolver,
                     ledgerCustomersResolver = ledgerCustomersResolver,
+                    ledgerProductsResolver = ledgerProductsResolver,
                     confirmLedgerBatch = confirmLedgerBatch,
                     onClose = { showAiDebugLab = false },
                     onOpenPaywall = {

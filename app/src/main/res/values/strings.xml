@@ -647,6 +647,10 @@
     <string name="ai_ledger_action_cancel">Cancelar</string>
     <string name="ai_ledger_dialog_edit_title">Editar renglón %1$d</string>
     <string name="ai_ledger_field_customer">Cliente</string>
+    <string name="ai_ledger_field_short_customer">Cliente</string>
+    <string name="ai_ledger_field_short_amount">Monto</string>
+    <string name="ai_ledger_field_short_kind">Tipo</string>
+    <string name="ai_ledger_field_short_date">Fecha</string>
     <string name="ai_ledger_field_customer_placeholder">Nombre del cliente</string>
     <string name="ai_ledger_field_amount">Monto en pesos</string>
     <string name="ai_ledger_field_amount_placeholder">999.00</string>
@@ -666,4 +670,24 @@
     <string name="ai_ledger_error_missing_page_date">Hay renglones sin fecha: ingresa una fecha para la página antes de registrar.</string>
     <string name="ai_ledger_field_page_date">Fecha de la página (AAAA-MM-DD)</string>
     <string name="ai_ledger_field_page_date_invalid">La fecha de la página no existe o es futura</string>
+    <string name="ai_ledger_product_match_action">¿Es %1$s? Tócalo para usar ese nombre</string>
+    <string name="ai_ledger_summary_status_format">%1$s · %2$s</string>
+    <string name="ai_ledger_action_register_disabled">Sin movimientos para registrar</string>
+    <string name="ai_ledger_page_incomplete_notice">Puede quedar contenido sin leer en esta página.</string>
+    <plurals name="ai_ledger_summary_detected_count">
+        <item quantity="one">%1$d movimiento detectado</item>
+        <item quantity="other">%1$d movimientos detectados</item>
+    </plurals>
+    <plurals name="ai_ledger_summary_ready_count">
+        <item quantity="one">%1$d listo para registrar</item>
+        <item quantity="other">%1$d listos para registrar</item>
+    </plurals>
+    <plurals name="ai_ledger_summary_pending_count">
+        <item quantity="one">%1$d por revisar</item>
+        <item quantity="other">%1$d por revisar</item>
+    </plurals>
+    <plurals name="ai_ledger_action_register_count">
+        <item quantity="one">Registrar %1$d movimiento</item>
+        <item quantity="other">Registrar %1$d movimientos</item>
+    </plurals>
 </resources>
