@@ -33,11 +33,6 @@ data class StoredLedgerBatchBundle(
     val paymentMovements: List<AccountMovementEntity>,
 )
 
-sealed interface ExpectedSaleResult {
-    data class Recorded(val saleId: String, val paymentId: String?) : ExpectedSaleResult
-    data object StaleData : ExpectedSaleResult
-}
-
 data class StoredPaymentBundle(
     val payment: PaymentEntity,
     val allocations: List<PaymentAllocationEntity>,
@@ -52,6 +47,21 @@ data class StoredSaleBundle(
     val createdCustomer: CustomerEntity? = null,
     val createdProducts: List<ProductEntity> = emptyList(),
 )
+
+data class RegisteredOperationEntityRow(
+    val id: String,
+    val customerId: String,
+    val customerName: String,
+    val amountCents: Long,
+    val effectiveDateEpochDay: Long,
+    val kindName: String,
+    val description: String?,
+)
+
+sealed interface ExpectedSaleResult {
+    data class Recorded(val saleId: String, val paymentId: String?) : ExpectedSaleResult
+    data object StaleData : ExpectedSaleResult
+}
 
 /**
  * A sale with money still owed on it. Mirrors domain.OutstandingSale, which PaymentAllocator takes;
@@ -445,6 +455,33 @@ interface FinancialDao {
             "GROUP BY sale.id HAVING outstandingCents > 0 ORDER BY sale.dueDateEpochDay"
     )
     suspend fun salesWithDueDate(businessId: String): List<DueSaleRow>
+
+    /**
+     * DEBT / TODO: Composite indices on (businessId, saleDateEpochDay) and (businessId, paymentDateEpochDay)
+     * do not exist yet in Room schema. For large datasets with thousands of sales, composite index migrations
+     * will be required before scaling.
+     */
+    @Query(
+        "SELECT s.id AS id, s.customerId AS customerId, c.name AS customerName, " +
+            "s.totalCents AS amountCents, s.saleDateEpochDay AS effectiveDateEpochDay, " +
+            "CASE WHEN s.notes = 'ALTA_CLIENTE_SALDO_ANTERIOR' THEN 'PRIOR_DEBT' ELSE 'SALE' END AS kindName, " +
+            "(SELECT si.productNameSnapshot FROM sale_items si WHERE si.saleId = s.id LIMIT 1) AS description " +
+            "FROM sales s " +
+            "INNER JOIN customers c ON c.id = s.customerId " +
+            "WHERE s.businessId = :businessId AND s.saleDateEpochDay >= :minEpochDay AND s.saleDateEpochDay <= :maxEpochDay AND s.isCanceled = 0 " +
+            "UNION ALL " +
+            "SELECT p.id AS id, p.customerId AS customerId, c.name AS customerName, " +
+            "p.amountCents AS amountCents, p.paymentDateEpochDay AS effectiveDateEpochDay, " +
+            "'PAYMENT' AS kindName, p.notes AS description " +
+            "FROM payments p " +
+            "INNER JOIN customers c ON c.id = p.customerId " +
+            "WHERE p.businessId = :businessId AND p.paymentDateEpochDay >= :minEpochDay AND p.paymentDateEpochDay <= :maxEpochDay AND p.canceledAtEpochMillis IS NULL"
+    )
+    suspend fun getRegisteredOperationsInRange(
+        businessId: String,
+        minEpochDay: Long,
+        maxEpochDay: Long,
+    ): List<RegisteredOperationEntityRow>
 
     /**
      * Every non-canceled sale of a business, with its settled amount and settlement date, for the

@@ -1567,6 +1567,37 @@ class MainActivity : ComponentActivity() {
                             row.customer.normalizedName to row.balanceCents
                         }
                     },
+                    ledgerRegisteredResolver = { businessId ->
+                        // Bounded to the days around today: the sheet being re-photographed is a
+                        // recent one, and scanning the whole history would neither find more real
+                        // duplicates nor stay fast once a shop has years of sales. The rows come
+                        // back already excluding anything cancelled, because a cancelled sale is
+                        // not a debt any more and registering it again is legitimate.
+                        val today = java.time.LocalDate.now().toEpochDay()
+                        database.financialDao()
+                            .getRegisteredOperationsInRange(businessId, today - 45L, today + 7L)
+                            .mapNotNull { row ->
+                                val kind = when (row.kindName) {
+                                    "SALE" -> com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE
+                                    "PAYMENT" -> com.cuentivo.app.ai.ledger.ProposedLedgerKind.PAYMENT
+                                    "PRIOR_DEBT" -> com.cuentivo.app.ai.ledger.ProposedLedgerKind.PRIOR_DEBT
+                                    // A kind this build does not know is dropped rather than
+                                    // guessed: a wrong kind here invents a duplicate that is not one.
+                                    else -> null
+                                }
+                                kind?.let {
+                                    com.cuentivo.app.domain.RegisteredOperationProjection(
+                                        id = row.id,
+                                        customerId = row.customerId,
+                                        customerName = row.customerName,
+                                        amountCents = row.amountCents,
+                                        effectiveDateEpochDay = row.effectiveDateEpochDay,
+                                        kind = it,
+                                        description = row.description,
+                                    )
+                                }
+                            }
+                    },
                     ledgerProductsResolver = { businessId ->
                         // searchActive with empty queries is the existing way to say "all the
                         // active ones": both LIKE clauses match everything. Archived and deleted

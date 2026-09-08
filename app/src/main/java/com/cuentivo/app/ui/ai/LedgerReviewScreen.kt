@@ -92,6 +92,8 @@ fun LedgerReviewContent(
     /** Catalog products this page's rows resemble, keyed by lineIndex. Offers product name for description, never changes amount. */
     productMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<ProductCandidate>> = emptyMap(),
     onAcceptProductAnchor: (lineIndex: Int, candidate: ProductCandidate) -> Unit = { _, _ -> },
+    /** Potential duplicate operations already in Room or elsewhere on this page, keyed by lineIndex. */
+    duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch> = emptyMap(),
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -203,6 +205,7 @@ fun LedgerReviewContent(
                     group = group,
                     captureFile = captureFile,
                     fieldHealth = fieldHealth,
+                    duplicateMatches = duplicateMatches,
                     onEditOperation = { op -> editingOperation = op },
                     onUpdateKind = onUpdateKind,
                     onRemoveRow = onRemoveRow,
@@ -247,6 +250,7 @@ fun LedgerReviewContent(
             captureFile = captureFile,
             customerMatch = customerMatches[op.lineIndex],
             productMatch = productMatches[op.lineIndex],
+            duplicateMatch = duplicateMatches[op.lineIndex],
             onAcceptCustomerAnchor = { candidate ->
                 onAcceptCustomerAnchor(op.lineIndex, candidate)
                 val nextLineIndex = pendingReviewQueue.firstOrNull()
@@ -477,6 +481,7 @@ private fun CustomerGroupCard(
     group: CustomerReviewGroup,
     captureFile: File?,
     fieldHealth: Map<Int, com.cuentivo.app.domain.OperationFieldHealth> = emptyMap(),
+    duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch> = emptyMap(),
     onEditOperation: (LedgerOperation) -> Unit,
     onUpdateKind: (lineIndex: Int, kind: ProposedLedgerKind) -> Unit,
     onRemoveRow: (lineIndex: Int) -> Unit,
@@ -543,6 +548,7 @@ private fun CustomerGroupCard(
                     operation = op,
                     captureFile = captureFile,
                     health = fieldHealth[op.lineIndex],
+                    duplicateMatch = duplicateMatches[op.lineIndex],
                     onEdit = { onEditOperation(op) },
                     onUpdateKind = { kind -> onUpdateKind(op.lineIndex, kind) },
                     onRemove = { onRemoveRow(op.lineIndex) },
@@ -558,6 +564,7 @@ private fun LedgerOperationRow(
     operation: LedgerOperation,
     captureFile: File?,
     health: com.cuentivo.app.domain.OperationFieldHealth? = null,
+    duplicateMatch: com.cuentivo.app.domain.LedgerDuplicateMatch? = null,
     onEdit: () -> Unit,
     onUpdateKind: (ProposedLedgerKind) -> Unit,
     onRemove: () -> Unit,
@@ -612,6 +619,21 @@ private fun LedgerOperationRow(
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onError,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                            )
+                        }
+                    }
+                    if (duplicateMatch != null) {
+                        Spacer(Modifier.width(4.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.testTag("ledger-op-duplicate-badge-" + operation.lineIndex),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.ai_ledger_duplicate_badge),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                             )
                         }
@@ -759,6 +781,7 @@ private fun EditLedgerOperationDialog(
     captureFile: File?,
     customerMatch: com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>? = null,
     productMatch: com.cuentivo.app.domain.EntityMatchResult<ProductCandidate>? = null,
+    duplicateMatch: com.cuentivo.app.domain.LedgerDuplicateMatch? = null,
     onAcceptCustomerAnchor: (com.cuentivo.app.domain.CustomerCandidate) -> Unit = {},
     onAcceptProductAnchor: (ProductCandidate) -> Unit = {},
     onDismiss: () -> Unit,
@@ -802,6 +825,40 @@ private fun EditLedgerOperationDialog(
                         .fillMaxWidth()
                         .height(80.dp),
                 )
+
+                if (duplicateMatch != null) {
+                    val dateStr = runCatching {
+                        java.time.LocalDate.ofEpochDay(duplicateMatch.effectiveDateEpochDay).toString()
+                    }.getOrDefault("")
+                    val descSuffix = if (!duplicateMatch.description.isNullOrBlank()) ": ${duplicateMatch.description}" else ""
+                    val kindStr = when (duplicateMatch.kind) {
+                        ProposedLedgerKind.SALE -> stringResource(R.string.ai_ledger_kind_sale)
+                        ProposedLedgerKind.PAYMENT -> stringResource(R.string.ai_ledger_kind_payment)
+                        ProposedLedgerKind.PRIOR_DEBT -> stringResource(R.string.ai_ledger_kind_prior_debt)
+                    }
+                    val detailText = stringResource(
+                        R.string.ai_ledger_duplicate_detail_format,
+                        kindStr.lowercase(),
+                        duplicateMatch.customerName,
+                        formatCents(duplicateMatch.amountCents),
+                        dateStr,
+                        descSuffix,
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("ledger-edit-duplicate-warning"),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.ai_ledger_duplicate_warning, detailText),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(8.dp),
+                        )
+                    }
+                }
 
                 OutlinedTextField(
                     value = name,

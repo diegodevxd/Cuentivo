@@ -690,4 +690,7 @@
         <item quantity="one">Registrar %1$d movimiento</item>
         <item quantity="other">Registrar %1$d movimientos</item>
     </plurals>
+    <string name="ai_ledger_duplicate_badge">Posible duplicado</string>
+    <string name="ai_ledger_duplicate_warning">Ya hay un movimiento registrado igual o muy similar: %1$s</string>
+    <string name="ai_ledger_duplicate_detail_format">Ya hay una %1$s de %2$s por %3$s el %4$s%5$s</string>
 </resources>

@@ -93,6 +93,8 @@ sealed interface AiDebugLabState {
         val customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate> = emptyList(),
         /** The catalogue, for the same reason and with the same lifetime as the customers. */
         val productCandidates: List<com.cuentivo.app.domain.ProductCandidate> = emptyList(),
+        /** Existing registered operations in Room within date window for duplicate detection. */
+        val registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection> = emptyList(),
     ) : AiDebugLabState {
         /** What the app may offer, recomputed from the rows as they are edited. */
         val customerMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>>
@@ -100,6 +102,14 @@ sealed interface AiDebugLabState {
 
         val productMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.ProductCandidate>>
             get() = com.cuentivo.app.domain.LedgerProductMatching.matchesFor(review.operations, productCandidates)
+
+        val duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch>
+            get() = com.cuentivo.app.domain.LedgerDuplicateDetector.evaluate(
+                operations = review.operations,
+                existingRegistered = registeredOperations,
+                pageDateEpochDay = review.pageDateEpochDay,
+                todayEpochDay = review.todayEpochDay,
+            )
     }
     data class LedgerConfirming(
         val sessionId: String,
@@ -975,6 +985,7 @@ object AiDebugLabMachine {
         existingCustomerBalances: Map<String, Long> = emptyMap(),
         customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate> = emptyList(),
         productCandidates: List<com.cuentivo.app.domain.ProductCandidate> = emptyList(),
+        registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection> = emptyList(),
         generation: Long,
         todayEpochDay: Long = java.time.LocalDate.now().toEpochDay(),
     ): AiDebugLabModel {
@@ -1003,6 +1014,7 @@ object AiDebugLabMachine {
                 existingCustomerBalances = frozenBalances,
                 customerCandidates = java.util.Collections.unmodifiableList(ArrayList(customerCandidates)),
                 productCandidates = java.util.Collections.unmodifiableList(ArrayList(productCandidates)),
+                registeredOperations = java.util.Collections.unmodifiableList(ArrayList(registeredOperations)),
             ),
         )
     }

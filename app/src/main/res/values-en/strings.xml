@@ -690,4 +690,7 @@
         <item quantity="one">Register %1$d transaction</item>
         <item quantity="other">Register %1$d transactions</item>
     </plurals>
+    <string name="ai_ledger_duplicate_badge">Possible duplicate</string>
+    <string name="ai_ledger_duplicate_warning">There is already a similar transaction recorded: %1$s</string>
+    <string name="ai_ledger_duplicate_detail_format">There is already a %1$s for %2$s of %3$s on %4$s%5$s</string>
 </resources>

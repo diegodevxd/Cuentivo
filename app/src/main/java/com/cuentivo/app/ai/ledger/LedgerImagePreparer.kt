@@ -28,12 +28,31 @@ object LedgerImagePreparer {
     /** JPEG quality for the re-encoded page. High enough that thin pen strokes survive. */
     const val JPEG_QUALITY = 85
 
+    fun getExifMatrix(orientation: Int): Matrix {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            else -> {}
+        }
+        return matrix
+    }
+
     /**
-     * Rewrites [source] in place, scaled and rotated, and reports the mime type to send.
-     * Returns null when the file cannot be decoded at all, so the caller can say so instead of
-     * uploading something the server will reject.
+     * Prepares [source] and writes the scaled/EXIF-transformed JPEG to [target].
      */
-    fun prepareInPlace(source: File): String? {
+    fun prepareToTarget(source: File, target: File): String? {
         if (!source.exists() || !source.canRead()) return null
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -42,17 +61,14 @@ object LedgerImagePreparer {
         val height = bounds.outHeight
         if (width <= 0 || height <= 0) return null
 
-        val rotation = runCatching {
-            when (ExifInterface(source.absolutePath).getAttributeInt(
+        val orientation = runCatching {
+            ExifInterface(source.absolutePath).getAttributeInt(
                 ExifInterface.TAG_ORIENTATION,
                 ExifInterface.ORIENTATION_NORMAL,
-            )) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-                ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-                ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-                else -> 0f
-            }
-        }.getOrDefault(0f)
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+        val matrix = getExifMatrix(orientation)
 
         val options = BitmapFactory.Options().apply {
             inSampleSize = sampleSizeFor(width, height)
@@ -61,15 +77,12 @@ object LedgerImagePreparer {
         val decoded = runCatching { BitmapFactory.decodeFile(source.absolutePath, options) }.getOrNull()
             ?: return null
 
-        // Sampling only halves, so a 4801 px page would land near 1200 when 2400 is allowed —
-        // and the first thing to disappear at that size are the small raised centavos. Decode
-        // conservatively, then scale exactly to the limit.
         val longestEdge = maxOf(decoded.width, decoded.height)
         val scaled = if (longestEdge <= MAX_EDGE_PIXELS) {
             decoded
         } else {
             val ratio = MAX_EDGE_PIXELS.toDouble() / longestEdge
-            val target = runCatching {
+            val targetBmp = runCatching {
                 Bitmap.createScaledBitmap(
                     decoded,
                     (decoded.width * ratio).toInt().coerceAtLeast(1),
@@ -77,11 +90,11 @@ object LedgerImagePreparer {
                     true,
                 )
             }.getOrNull() ?: return null
-            if (target !== decoded) decoded.recycle()
-            target
+            if (targetBmp !== decoded) decoded.recycle()
+            targetBmp
         }
 
-        val rotated = if (rotation == 0f) {
+        val rotated = if (matrix.isIdentity) {
             scaled
         } else {
             runCatching {
@@ -91,18 +104,19 @@ object LedgerImagePreparer {
                     0,
                     scaled.width,
                     scaled.height,
-                    Matrix().apply { postRotate(rotation) },
+                    matrix,
                     true,
                 )
             }.getOrNull().also { if (it !== scaled) scaled.recycle() } ?: return null
         }
 
         return try {
-            source.outputStream().use { out ->
+            target.outputStream().use { out ->
                 rotated.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
             }
-            if (AiLedgerImagePolicy.isWithinCallableCap(source.length())) "image/jpeg" else null
+            if (AiLedgerImagePolicy.isWithinCallableCap(target.length())) "image/jpeg" else null
         } catch (_: Exception) {
+            target.delete()
             null
         } finally {
             rotated.recycle()
@@ -110,11 +124,37 @@ object LedgerImagePreparer {
     }
 
     /**
+     * Rewrites [source] scaled and rotated.
+     */
+    fun prepareInPlace(source: File): String? {
+        val tempFile = try {
+            File.createTempFile("prepared_", ".jpg", source.parentFile)
+        } catch (_: Exception) {
+            return null
+        }
+        val mimeType = prepareToTarget(source, tempFile)
+        if (mimeType != null) {
+            try {
+                tempFile.copyTo(source, overwrite = true)
+                tempFile.delete()
+                return mimeType
+            } catch (_: Exception) {
+                tempFile.delete()
+                return null
+            }
+        } else {
+            tempFile.delete()
+            return null
+        }
+    }
+
+
+    /**
      * Largest power of two that still leaves both edges at or above [MAX_EDGE_PIXELS], so the decode
      * is cheap without throwing away detail the final scaling still needs. Returns 1 for a photo
      * that is already small: nothing is ever upscaled.
      *
-     * takeWhile before lastOrNull on purpose: the sequence is infinite, and  over it never
+     * takeWhile before lastOrNull on purpose: the sequence is infinite, and last over it never
      * returns.
      */
     fun sampleSizeFor(width: Int, height: Int): Int =

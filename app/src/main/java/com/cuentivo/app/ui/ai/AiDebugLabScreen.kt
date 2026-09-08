@@ -172,6 +172,8 @@ fun AiDebugLabScreen(
     ledgerCustomersResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.CustomerCandidate>)? = null,
     /** The catalogue, so an abbreviated product can be offered its full name. */
     ledgerProductsResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.ProductCandidate>)? = null,
+    /** What is already registered around this page's dates, so a second scan of the same sheet says so. */
+    ledgerRegisteredResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)? = null,
     confirmLedgerBatch: (suspend (businessId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
@@ -369,6 +371,13 @@ fun AiDebugLabScreen(
                 } else {
                     emptyList()
                 }
+                val registeredOperations = if (ledgerRegisteredResolver != null) {
+                    withContext(Dispatchers.IO) {
+                        runCatching { ledgerRegisteredResolver(businessId) }.getOrDefault(emptyList())
+                    }
+                } else {
+                    emptyList()
+                }
                 val outcome = withContext(Dispatchers.IO) {
                     val bytes = runCatching { file.readBytes() }.getOrNull()
                     if (bytes == null) {
@@ -394,6 +403,7 @@ fun AiDebugLabScreen(
                                 existingCustomerBalances = balances,
                                 customerCandidates = customerCandidates,
                                 productCandidates = productCandidates,
+                                registeredOperations = registeredOperations,
                                 generation = token,
                             )
                         }
@@ -534,6 +544,7 @@ fun AiDebugLabScreen(
                 captureFile = ledgerCaptureFile,
                 customerMatches = ledgerReviewing.customerMatches,
                 productMatches = ledgerReviewing.productMatches,
+                duplicateMatches = ledgerReviewing.duplicateMatches,
                 onAcceptProductAnchor = { lineIndex, candidate ->
                     // Only the name. The plan still writes an uncatalogued line, so nothing here
                     // moves stock or attaches a cost, and nothing here touches the amount.

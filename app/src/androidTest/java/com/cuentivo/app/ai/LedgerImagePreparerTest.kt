@@ -9,6 +9,7 @@ import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
 import com.cuentivo.app.ai.ledger.LedgerImagePreparer
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -23,6 +24,9 @@ import org.junit.runner.RunWith
 class LedgerImagePreparerTest {
 
     private lateinit var dir: File
+
+    /** Small enough to keep the test quick, big enough to survive the scaling untouched. */
+    private val SIDE = 400
 
     @Before
     fun setUp() {
@@ -65,6 +69,82 @@ class LedgerImagePreparerTest {
         LedgerImagePreparer.prepareInPlace(file)
 
         assertEquals(1200 to 900, sizeOf(file))
+    }
+
+    /**
+     * A square image with exactly one corner marked, so every orientation lands somewhere different.
+     *
+     * The old test used a blank image and compared width against height, which cannot tell 90 from
+     * 270 — they have the same dimensions — nor spot a mirrored page at all. A notebook read
+     * mirrored is a notebook read wrong, silently.
+     */
+    private fun writeCornerMarkedJpeg(name: String): File {
+        val file = File(dir, name)
+        val bitmap = Bitmap.createBitmap(SIDE, SIDE, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.WHITE)
+        for (x in 0 until SIDE / 4) {
+            for (y in 0 until SIDE / 4) {
+                bitmap.setPixel(x, y, android.graphics.Color.BLACK)
+            }
+        }
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 100, it) }
+        bitmap.recycle()
+        return file
+    }
+
+    /** Which quadrant the dark corner ended up in: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right. */
+    private fun darkQuadrant(file: File): Int {
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+        val q = bitmap.width / 8
+        val samples = listOf(
+            android.graphics.Color.red(bitmap.getPixel(q, q)),
+            android.graphics.Color.red(bitmap.getPixel(bitmap.width - q, q)),
+            android.graphics.Color.red(bitmap.getPixel(q, bitmap.height - q)),
+            android.graphics.Color.red(bitmap.getPixel(bitmap.width - q, bitmap.height - q)),
+        )
+        bitmap.recycle()
+        return samples.indexOf(samples.min())
+    }
+
+    @Test
+    fun every_exif_orientation_moves_the_page_somewhere_different() {
+        // Eight orientations, compared by pixels and not by dimensions: on a square page the four
+        // rotations all measure the same, and a mirrored one measures the same as the original.
+        val orientations = listOf(
+            ExifInterface.ORIENTATION_NORMAL,
+            ExifInterface.ORIENTATION_ROTATE_90,
+            ExifInterface.ORIENTATION_ROTATE_180,
+            ExifInterface.ORIENTATION_ROTATE_270,
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL,
+            ExifInterface.ORIENTATION_FLIP_VERTICAL,
+            ExifInterface.ORIENTATION_TRANSPOSE,
+            ExifInterface.ORIENTATION_TRANSVERSE,
+        )
+
+        val landedIn = orientations.map { orientation ->
+            val file = writeCornerMarkedJpeg("orient-" + orientation + ".jpg")
+            ExifInterface(file.absolutePath).apply {
+                setAttribute(ExifInterface.TAG_ORIENTATION, orientation.toString())
+                saveAttributes()
+            }
+            LedgerImagePreparer.prepareInPlace(file)
+            orientation to darkQuadrant(file)
+        }
+
+        // Untouched, the mark stays where it was drawn.
+        assertEquals(0, landedIn.first { it.first == ExifInterface.ORIENTATION_NORMAL }.second)
+        // A quarter turn clockwise carries the top-left corner to the top-right.
+        assertEquals(1, landedIn.first { it.first == ExifInterface.ORIENTATION_ROTATE_90 }.second)
+        assertEquals(3, landedIn.first { it.first == ExifInterface.ORIENTATION_ROTATE_180 }.second)
+        assertEquals(2, landedIn.first { it.first == ExifInterface.ORIENTATION_ROTATE_270 }.second)
+        // Mirrored pages: these used to be ignored entirely, so the page travelled backwards.
+        assertEquals(1, landedIn.first { it.first == ExifInterface.ORIENTATION_FLIP_HORIZONTAL }.second)
+        assertEquals(2, landedIn.first { it.first == ExifInterface.ORIENTATION_FLIP_VERTICAL }.second)
+        // And 90 must not be mistaken for 270, which is exactly what comparing sizes could not see.
+        assertNotEquals(
+            landedIn.first { it.first == ExifInterface.ORIENTATION_ROTATE_90 }.second,
+            landedIn.first { it.first == ExifInterface.ORIENTATION_ROTATE_270 }.second,
+        )
     }
 
     @Test
