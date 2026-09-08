@@ -270,4 +270,51 @@ class LedgerExtractionGatewayTest {
     private companion object {
         const val REQUEST_ID = "123e4567-e89b-12d3-a456-426614174000"
     }
+
+    @Test
+    fun `an unbounded rawText is refused, because it ends up in a Bundle`() {
+        // The server caps this at 200. The client is what decides how much lands in the saved state,
+        // and a Bundle past the transaction limit does not degrade -- it kills the app. Refused and
+        // not trimmed: a shortened rawText is evidence that no longer matches the paper.
+        val response = v4ResponseWith(mapOf("rawText" to "x".repeat(201)))
+
+        assertTrue(parseLedgerExtractionResponse(response, REQUEST_ID) is LedgerExtractionCallResult.Unavailable)
+    }
+
+    @Test
+    fun `a rawText right at the cap is still accepted`() {
+        val response = v4ResponseWith(mapOf("rawText" to "x".repeat(200)))
+
+        assertTrue(parseLedgerExtractionResponse(response, REQUEST_ID) is LedgerExtractionCallResult.Extracted)
+    }
+
+    @Test
+    fun `an absurd list of items or warnings is refused`() {
+        val manyItems = v4ResponseWith(
+            mapOf("items" to (1..26).map { mapOf("description" to "Producto $it") }),
+        )
+        assertTrue(parseLedgerExtractionResponse(manyItems, REQUEST_ID) is LedgerExtractionCallResult.Unavailable)
+
+        val manyWarnings = v4ResponseWith(mapOf("warnings" to (1..17).map { "AMBIGUOUS_KIND" }))
+        assertTrue(parseLedgerExtractionResponse(manyWarnings, REQUEST_ID) is LedgerExtractionCallResult.Unavailable)
+    }
+
+    private fun v4ResponseWith(extra: Map<String, Any?>): Map<String, Any?> = mapOf(
+        "contractVersion" to 4,
+        "requestId" to REQUEST_ID,
+        "status" to "AI_PROPOSAL",
+        "operations" to listOf(
+            mapOf(
+                "lineIndex" to 0,
+                "proposedKind" to "SALE",
+                "customerName" to "Rosa",
+                "amountCents" to "25000",
+                "uncertainFields" to emptyList<String>(),
+                "unreadableFields" to emptyList<String>(),
+            ) + extra,
+        ),
+        "discards" to emptyList<Any?>(),
+        "unreadTextRemaining" to false,
+        "pageIncomplete" to false,
+    )
 }

@@ -43,6 +43,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -290,7 +291,13 @@ fun AiDebugLabScreen(
     // is cleared at the exact points where the import ends — cancel, close, or a successful
     // write — because those are the only moments "there is no review" is a fact rather than a
     // race.
-    LaunchedEffect(model.state) {
+    // SideEffect and not LaunchedEffect, and the difference is the whole point (Sol caught this).
+    // A LaunchedEffect body is a coroutine: it is dispatched after the composition, so a recreation
+    // landing in that window saves the PREVIOUS snapshot and the last correction the person made --
+    // or a page that had just finished being read -- comes back missing. SideEffect runs as part of
+    // applying the composition, before anything else can ask for the saved state, which closes the
+    // window. A test that waits for Compose to go idle never sees it, which is why it took a reader.
+    SideEffect {
         val reviewing = model.state as? AiDebugLabState.LedgerReviewing
         if (reviewing != null) {
             savedLedgerReview = LedgerReviewSaver.SavedLedgerReview(

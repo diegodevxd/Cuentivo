@@ -222,9 +222,14 @@ private fun parseLedgerOperationsWire(value: Any?, contractVersion: Int): List<L
             region = parseRegionWire(map["region"]),
             confidence = parseConfidenceWire(map["confidence"]),
             sources = parseSourcesWire(map["sources"]),
-            rawText = map["rawText"] as? String,
+            // Bounded exactly like the server bounds them. The server is the authority, but this
+            // parser is what decides how much ends up in a Bundle at save time, and a Bundle that
+            // grows past the transaction limit does not degrade -- it kills the app. Anything over
+            // the cap is refused rather than trimmed: a silently shortened rawText is evidence that
+            // no longer matches the paper it came from.
+            rawText = (map["rawText"] as? String)?.also { if (it.length > MAX_RAW_TEXT_WIRE) return null },
             items = items,
-            warnings = (map["warnings"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+            warnings = parseWarningsWire(map["warnings"]) ?: return null,
         )
     }
     return parsed
@@ -350,11 +355,12 @@ private fun parseSourcesWire(value: Any?): LedgerFieldSources? {
 private fun parseItemsWire(value: Any?): List<LedgerLineItem>? {
     if (value == null) return emptyList()
     val list = value as? List<*> ?: return null
+    if (list.size > MAX_ITEMS_WIRE) return null
     val parsed = ArrayList<LedgerLineItem>(list.size)
     for (raw in list) {
         val map = raw as? Map<*, *> ?: return null
         val description = map["description"] as? String ?: return null
-        if (description.isBlank()) return null
+        if (description.isBlank() || description.length > MAX_LEDGER_CUSTOMER_NAME_LENGTH) return null
         val quantity = when (val q = map["quantity"]) {
             null -> null
             is Number -> if (q.toDouble() != q.toLong().toDouble() || q.toLong() <= 0L) return null else q.toInt()
@@ -371,3 +377,26 @@ private fun parseItemsWire(value: Any?): List<LedgerLineItem>? {
 }
 
 private val CANONICAL_LEDGER_CENTS_WIRE_RE = Regex("""^(0|[1-9][0-9]{0,17})$""")
+
+/** Same ceiling the server applies to the transcribed line. */
+private const val MAX_RAW_TEXT_WIRE = 200
+
+/** A line with more products than this is not a line any more; the server never sends one. */
+private const val MAX_ITEMS_WIRE = 25
+
+/** The closed enum has nine values, so a longer list is not a list of warnings. */
+private const val MAX_WARNINGS_WIRE = 16
+
+/** Warnings are advice, but an unbounded list of them still lands in the saved state. */
+private fun parseWarningsWire(value: Any?): List<String>? {
+    if (value == null) return emptyList()
+    val list = value as? List<*> ?: return null
+    if (list.size > MAX_WARNINGS_WIRE) return null
+    val parsed = ArrayList<String>(list.size)
+    for (raw in list) {
+        val text = raw as? String ?: return null
+        if (text.isEmpty() || text.length > 64) return null
+        parsed += text
+    }
+    return parsed
+}
