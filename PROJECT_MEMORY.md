@@ -86,8 +86,35 @@ lista no habrá con qué comparar. La propuesta es sacar el `versionCode 40` con
 dentro, usarlo unos días con libretas reales, y mientras avanzar con lo que no depende de medir —
 matching mejorado y preprocesado prudente.
 
-**Pendiente también:** Sol estaba revisando el diff de la Fase 2 cuando se cerró la sesión. Su
-veredicto no se llegó a leer.
+## LO PRIMERO DE LA PROXIMA SESION: tres bloqueantes de la Fase 2
+
+Sol revisó el diff de la Fase 2 y su veredicto fue **"no lo pasaría aún a la siguiente fase"**. Los
+tres están **commiteados en `4fd46ae`** y hay que arreglarlos **antes de generar ningún bundle**: si
+no, la línea base que Diego quiere medir se recoge con datos falsos, que es peor que no tenerla.
+
+Ninguno toca dinero ni el contrato — Sol lo comprobó explícitamente— pero los tres corrompen la
+medición:
+
+1. **Descartes y duplicados están cruzados.** `LedgerImportMetricRecorder.kt:150` cuenta como
+   descartados sólo los renglones eliminados a mano, y omite los descartes del parser. Y en `:152`
+   guarda `excludedRowsCount` —que viene de `review.discards`— **en la columna de duplicados**. El
+   detector real (`duplicateMatches`) nunca llega al recorder, y la etapa inicial fija duplicados a
+   cero en `AiDebugLabScreen.kt:598`. Dos columnas con datos que no son lo que dice su nombre.
+
+2. **Un intento de registro fallido destruye la lectura original.** `LedgerConfirming` no lleva
+   `originalOperations` (`AiDebugLabModel.kt:120`), y al volver a la revisión tras un fallo se
+   reconstruye `LedgerReviewing` sin ella (`:1237`), tomando el valor por defecto vacío. Si la
+   persona reintenta, detectados, correcciones, descartes e histograma salen en cero o incompletos.
+
+3. **`GlobalScope` no hace durable la escritura final.** `AiDebugLabScreen.kt:417`: Android puede
+   matar el proceso antes de que la corrutina ejecute o Room confirme, y la fila se queda
+   `IN_PROGRESS` para siempre. `GlobalScope` no da dueño, ni cancelación, ni reintento, y
+   `runCatching` sólo oculta el fallo. Hace falta un barrido que cierre las filas colgadas al
+   arrancar, o `WorkManager`.
+
+**Lo que Sol sí dio por bueno:** los tres constructores registran `CUENTIVO_MIGRATIONS`, el SQL
+coincide con `7.json`, no hay vía de sincronización ni de reidentificación, y las cuatro
+comparaciones del contador funcionan en el camino directo.
 
 ## 2026-09-07 — Fase B cerrada: la libreta de papel se lee, se revisa y se registra
 
