@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OperationEntity::class, CustomerEntity::class, ProductEntity::class, SaleEntity::class, SaleItemEntity::class, PaymentEntity::class, PaymentAllocationEntity::class, AccountMovementEntity::class, BusinessEntity::class, BusinessMemberEntity::class, AuditLogEntity::class, SyncOperationEntity::class, SyncStateEntity::class, AiDailyMessageEntity::class, AiLedgerImportMetricEntity::class], version = 7, exportSchema = true)
+@Database(entities = [OperationEntity::class, CustomerEntity::class, ProductEntity::class, SaleEntity::class, SaleItemEntity::class, PaymentEntity::class, PaymentAllocationEntity::class, AccountMovementEntity::class, BusinessEntity::class, BusinessMemberEntity::class, AuditLogEntity::class, SyncOperationEntity::class, SyncStateEntity::class, AiDailyMessageEntity::class, AiLedgerImportMetricEntity::class], version = 8, exportSchema = true)
 abstract class CuentivoDatabase : RoomDatabase() {
     abstract fun operationDao(): OperationDao
     abstract fun financialDao(): FinancialDao
@@ -116,4 +116,15 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
-val CUENTIVO_MIGRATIONS = arrayOf(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+/**
+ * Adds the [parserExcludedCount] column to the [AiLedgerImportMetricEntity] table.
+ *
+ * Additive only: adds a single integer column with DEFAULT 0, preserving existing rows and table integrity.
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `ai_ledger_import_metrics` ADD COLUMN `parserExcludedCount` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+val CUENTIVO_MIGRATIONS = arrayOf(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)

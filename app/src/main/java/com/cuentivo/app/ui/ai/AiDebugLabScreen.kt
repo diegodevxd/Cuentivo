@@ -310,6 +310,7 @@ fun AiDebugLabScreen(
                 businessId = reviewing.businessId,
                 operations = reviewing.review.operations,
                 originalOperations = reviewing.originalOperations,
+                initialDuplicateCount = reviewing.initialDuplicateCount,
                 discards = reviewing.review.discards,
                 unreadTextRemaining = reviewing.review.unreadTextRemaining,
                 pageIncomplete = reviewing.review.pageIncomplete,
@@ -410,18 +411,18 @@ fun AiDebugLabScreen(
     val recordImportEnded: (Boolean, AiDebugLabState.LedgerReviewing) -> Unit = { registered, reviewing ->
         val metricDao = ledgerImportMetricDao
         if (metricDao != null) {
-            val sessionId = reviewing.sessionId
-            val original = reviewing.originalOperations
-            val review = reviewing.review
+            val params = reviewing.toImportEndParams(registered)
             @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
             kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
                 com.cuentivo.app.domain.LedgerImportMetricRecorder.onImportEnded(
                     dao = metricDao,
-                    sessionId = sessionId,
-                    registered = registered,
-                    originalOperations = original,
-                    finalReview = review,
-                    nowEpochMillis = System.currentTimeMillis(),
+                    sessionId = params.sessionId,
+                    registered = params.registered,
+                    originalOperations = params.originalOperations,
+                    finalReview = params.finalReview,
+                    duplicateSuggestedCount = params.duplicateSuggestedCount,
+                    parserExcludedCount = params.parserExcludedCount,
+                    nowEpochMillis = params.nowEpochMillis,
                 )
             }
         }
@@ -589,13 +590,16 @@ fun AiDebugLabScreen(
                             // still left its trace, with the counts that are already final.
                             val metricDao = ledgerImportMetricDao
                             if (metricDao != null) {
+                                val detectedOperationsCount = outcome.extraction.operations.size
+                                val discardsCount = outcome.extraction.discards.size
                                 withContext(Dispatchers.IO) {
                                     com.cuentivo.app.domain.LedgerImportMetricRecorder.onExtractionArrived(
                                         dao = metricDao,
                                         sessionId = sessionId,
-                                        detectedCount = outcome.extraction.operations.size,
+                                        detectedCount = detectedOperationsCount,
                                         unreadableCount = outcome.extraction.operations.count { it.unreadableFields.isNotEmpty() },
                                         duplicateSuggestedCount = 0,
+                                        parserExcludedCount = discardsCount,
                                         geminiCalls = 1,
                                         geminiDurationMillis = callDurationMillis,
                                         contractVersion = outcome.extraction.contractVersion,

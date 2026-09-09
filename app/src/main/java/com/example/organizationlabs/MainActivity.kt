@@ -353,6 +353,13 @@ class MainActivity : ComponentActivity() {
         val database = Room.databaseBuilder(applicationContext, CuentivoDatabase::class.java, "cuentivo.db")
             .addMigrations(*CUENTIVO_MIGRATIONS)
             .build()
+        // Sweeps any IN_PROGRESS import metrics left unclosed if the process previously died.
+        lifecycleScope.launch(Dispatchers.IO) {
+            com.cuentivo.app.domain.LedgerImportMetricRecorder.sweepStaleInProgress(
+                dao = database.aiLedgerImportMetricDao(),
+                nowEpochMillis = System.currentTimeMillis(),
+            )
+        }
         // Built before the queue because the queue asks it, on every enqueue, whether this plan
         // includes the cloud at all. Nothing reaches the outbox on the free plan; OutboxBackfill
         // queues it all in one pass the moment Pro is confirmed.

@@ -1787,4 +1787,322 @@ class AiDebugLabMachineTest {
         assertEquals(emptyList<AiChatMessage>(), resetModel.messages)
         assertEquals("", resetModel.text)
     }
+
+    @Test
+    fun `onLedgerBatchResult failure recovers full LedgerReviewing state including original operations and candidates`() {
+        val originalOp = com.cuentivo.app.ai.ledger.LedgerOperation(
+            lineIndex = 0,
+            customerName = "Rosa",
+            amountCents = "25000",
+            proposedKind = com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE,
+            date = com.cuentivo.app.ai.ledger.SafeDateCandidate(2026, 6, 7),
+        )
+        val customerCandidate = com.cuentivo.app.domain.CustomerCandidate("c1", "Rosa Martinez", true)
+        val productCandidate = com.cuentivo.app.domain.ProductCandidate("p1", "Coca Cola", 2500L)
+        val registeredOp = com.cuentivo.app.domain.RegisteredOperationProjection(
+            id = "reg-1",
+            customerId = "c1",
+            customerName = "Rosa",
+            amountCents = 25000L,
+            effectiveDateEpochDay = 20612L,
+            kind = com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE,
+        )
+
+        val extractingModel = AiDebugLabMachine.onStartLedgerExtraction(
+            model = AiDebugLabModel(generation = 1L),
+            sessionId = "session-test",
+            businessId = "biz-1",
+        )
+
+        val initialModel = AiDebugLabMachine.onLedgerExtractionResult(
+            model = extractingModel,
+            sessionId = "session-test",
+            businessId = "biz-1",
+            operations = listOf(originalOp),
+            discards = emptyList(),
+            unreadTextRemaining = false,
+            pageIncomplete = false,
+            existingCustomerBalances = mapOf("Rosa" to 50000L),
+            customerCandidates = listOf(customerCandidate),
+            productCandidates = listOf(productCandidate),
+            registeredOperations = listOf(registeredOp),
+            generation = extractingModel.generation,
+        )
+
+        val reviewingState = initialModel.state as AiDebugLabState.LedgerReviewing
+        assertEquals(1, reviewingState.originalOperations.size)
+        assertEquals(1, reviewingState.customerCandidates.size)
+        assertEquals(1, reviewingState.productCandidates.size)
+        assertEquals(1, reviewingState.registeredOperations.size)
+        assertEquals(1, reviewingState.duplicateMatches.size)
+
+        // User edits amount from 25000 to 30000
+        val editedModel = AiDebugLabMachine.onUpdateLedgerOperations(initialModel, "session-test") { ops ->
+            ops.map { it.copy(amountCents = "30000") }
+        }
+
+        // Start confirmation
+        val confirmOutcome = AiDebugLabMachine.onConfirmLedger(editedModel, "session-test", "biz-1")
+        assertTrue(confirmOutcome is AiLedgerConfirmOutcome.Started)
+        val confirmingModel = (confirmOutcome as AiLedgerConfirmOutcome.Started).model
+        val confirmingState = confirmingModel.state as AiDebugLabState.LedgerConfirming
+        assertEquals(1, confirmingState.originalOperations.size)
+        assertEquals(1, confirmingState.customerCandidates.size)
+        assertEquals(1, confirmingState.productCandidates.size)
+        assertEquals(1, confirmingState.registeredOperations.size)
+
+        // Simulate write failure: recordedOperations == null
+        val failedModel = AiDebugLabMachine.onLedgerBatchResult(
+            model = confirmingModel,
+            sessionId = "session-test",
+            businessId = "biz-1",
+            generation = confirmingModel.generation,
+            recordedOperations = null,
+            skippedOperations = 0,
+        )
+
+        // Must recover LedgerReviewing with everything intact
+        assertTrue(failedModel.state is AiDebugLabState.LedgerReviewing)
+        val recoveredState = failedModel.state as AiDebugLabState.LedgerReviewing
+        assertEquals("session-test", recoveredState.sessionId)
+        assertEquals("biz-1", recoveredState.businessId)
+        assertEquals(1, recoveredState.originalOperations.size)
+        assertEquals("25000", recoveredState.originalOperations[0].amountCents)
+        assertEquals("30000", recoveredState.review.operations[0].amountCents)
+        assertEquals(1, recoveredState.customerCandidates.size)
+        assertEquals("Rosa Martinez", recoveredState.customerCandidates[0].name)
+        assertEquals(1, recoveredState.productCandidates.size)
+        assertEquals("Coca Cola", recoveredState.productCandidates[0].name)
+        assertEquals(1, recoveredState.registeredOperations.size)
+        assertEquals(50000L, recoveredState.existingCustomerBalances["Rosa"])
+    }
+
+    @Test
+    fun `toImportEndParams extracts duplicateSuggestedCount directly from LedgerReviewing initialDuplicateCount`() {
+        val op = com.cuentivo.app.ai.ledger.LedgerOperation(
+            lineIndex = 0,
+            customerName = "Rosa Martinez",
+            amountCents = "25000",
+            proposedKind = com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE,
+            date = com.cuentivo.app.ai.ledger.SafeDateCandidate(2026, 6, 7),
+        )
+        val registeredOp = com.cuentivo.app.domain.RegisteredOperationProjection(
+            id = "reg-1",
+            customerId = "c1",
+            customerName = "Rosa Martinez",
+            amountCents = 25000L,
+            effectiveDateEpochDay = 20612L,
+            kind = com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE,
+        )
+
+        val parserDiscards = listOf(
+            com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic(
+                inputIndex = 1,
+                lineIndex = 1,
+                reason = com.cuentivo.app.ai.ledger.LedgerDiscardReason.MALFORMED,
+            )
+        )
+
+        val reviewing = AiDebugLabState.LedgerReviewing(
+            sessionId = "session-dup-test",
+            businessId = "biz-1",
+            review = com.cuentivo.app.ai.ledger.LedgerReviewEngine.build(
+                operations = listOf(op),
+                discards = parserDiscards,
+                todayEpochDay = 20612L,
+            ),
+            originalOperations = listOf(op),
+            registeredOperations = listOf(registeredOp),
+        )
+
+        // Ensure duplicate was detected initially
+        assertEquals(1, reviewing.initialDuplicateCount)
+        assertEquals(1, reviewing.duplicateMatches.size)
+
+        // Extract import end params
+        val params = reviewing.toImportEndParams(registered = true, nowEpochMillis = 99999L)
+
+        assertEquals("session-dup-test", params.sessionId)
+        assertTrue(params.registered)
+        assertEquals(1, params.originalOperations.size)
+        assertEquals(reviewing.review, params.finalReview)
+        assertEquals(1, params.duplicateSuggestedCount)
+        assertEquals(1, params.parserExcludedCount)
+        assertEquals(reviewing.review.summary.excludedRowsCount, params.parserExcludedCount)
+        assertEquals(99999L, params.nowEpochMillis)
+    }
+
+    @Test
+    fun `changing page date or editing operations does not alter frozen initialDuplicateCount or duplicateSuggestedCount`() {
+        // Operation without its own date, resolving to pageDateEpochDay
+        val op = com.cuentivo.app.ai.ledger.LedgerOperation(
+            lineIndex = 0,
+            customerName = "Rosa Martinez",
+            amountCents = "25000",
+            proposedKind = com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE,
+            date = null,
+        )
+        val initialPageDate = 20612L // 2026-06-07
+        val registeredOp = com.cuentivo.app.domain.RegisteredOperationProjection(
+            id = "reg-1",
+            customerId = "c1",
+            customerName = "Rosa Martinez",
+            amountCents = 25000L,
+            effectiveDateEpochDay = initialPageDate,
+            kind = com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE,
+        )
+
+        val initialModel = AiDebugLabModel(
+            state = AiDebugLabState.LedgerReviewing(
+                sessionId = "session-frozen-test",
+                businessId = "biz-1",
+                review = com.cuentivo.app.ai.ledger.LedgerReviewEngine.build(
+                    operations = listOf(op),
+                    pageDateEpochDay = initialPageDate,
+                    todayEpochDay = initialPageDate,
+                ),
+                originalOperations = listOf(op),
+                registeredOperations = listOf(registeredOp),
+            ),
+        )
+
+        val initialState = initialModel.state as AiDebugLabState.LedgerReviewing
+        assertEquals("Initial state detects 1 duplicate", 1, initialState.initialDuplicateCount)
+        assertEquals("Live UI initially shows 1 duplicate", 1, initialState.duplicateMatches.size)
+
+        // 1. User changes page date to a different date where duplicate no longer matches (outside date window)
+        val newPageDate = initialPageDate + 60L
+        val modelAfterDateChange = AiDebugLabMachine.onUpdateLedgerPageDate(
+            model = initialModel,
+            sessionId = "session-frozen-test",
+            pageDateEpochDay = newPageDate,
+            todayEpochDay = initialPageDate,
+        )
+        val stateAfterDateChange = modelAfterDateChange.state as AiDebugLabState.LedgerReviewing
+
+        // Live duplicateMatches updates with the new date (no longer matches registeredOp)
+        assertTrue("Live duplicate matches must clear after date change", stateAfterDateChange.duplicateMatches.isEmpty())
+
+        // Frozen initialDuplicateCount and toImportEndParams MUST NOT CHANGE
+        assertEquals(
+            "initialDuplicateCount must remain frozen after page date edit",
+            1,
+            stateAfterDateChange.initialDuplicateCount,
+        )
+        val paramsAfterDateChange = stateAfterDateChange.toImportEndParams(registered = true)
+        assertEquals(
+            "duplicateSuggestedCount in params must remain 1 after page date edit",
+            1,
+            paramsAfterDateChange.duplicateSuggestedCount,
+        )
+
+        // 2. User edits operation customer name to "Maria Lopez"
+        val modelAfterRowEdit = AiDebugLabMachine.onUpdateLedgerOperations(
+            model = modelAfterDateChange,
+            sessionId = "session-frozen-test",
+        ) { ops ->
+            ops.map { it.copy(customerName = "Maria Lopez") }
+        }
+        val stateAfterRowEdit = modelAfterRowEdit.state as AiDebugLabState.LedgerReviewing
+
+        // Live duplicates remains empty, frozen initialDuplicateCount remains 1
+        assertTrue(stateAfterRowEdit.duplicateMatches.isEmpty())
+        assertEquals(1, stateAfterRowEdit.initialDuplicateCount)
+        val paramsAfterRowEdit = stateAfterRowEdit.toImportEndParams(registered = true)
+        assertEquals(1, paramsAfterRowEdit.duplicateSuggestedCount)
+    }
+
+    @Test
+    fun `restoring review across Activity recreation preserves initialDuplicateCount even after page date was edited`() {
+        val op = com.cuentivo.app.ai.ledger.LedgerOperation(
+            lineIndex = 0,
+            customerName = "Rosa Martinez",
+            amountCents = "25000",
+            proposedKind = com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE,
+            date = null,
+        )
+        val initialPageDate = 20612L
+        val registeredOp = com.cuentivo.app.domain.RegisteredOperationProjection(
+            id = "reg-1",
+            customerId = "c1",
+            customerName = "Rosa Martinez",
+            amountCents = 25000L,
+            effectiveDateEpochDay = initialPageDate,
+            kind = com.cuentivo.app.ai.ledger.ProposedLedgerKind.SALE,
+        )
+
+        // 1. Initial extraction arrival with 1 duplicate
+        val initialReview = com.cuentivo.app.ai.ledger.LedgerReviewEngine.build(
+            operations = listOf(op),
+            pageDateEpochDay = initialPageDate,
+            todayEpochDay = initialPageDate,
+        )
+        val initialModel = AiDebugLabModel(
+            state = AiDebugLabState.LedgerReviewing(
+                sessionId = "session-recreation-test",
+                businessId = "biz-1",
+                review = initialReview,
+                originalOperations = listOf(op),
+                registeredOperations = listOf(registeredOp),
+            ),
+        )
+        val initialState = initialModel.state as AiDebugLabState.LedgerReviewing
+        assertEquals(1, initialState.initialDuplicateCount)
+
+        // 2. User edits page date before process death/recreation
+        val editedPageDate = initialPageDate + 90L
+        val modelAfterEdit = AiDebugLabMachine.onUpdateLedgerPageDate(
+            model = initialModel,
+            sessionId = "session-recreation-test",
+            pageDateEpochDay = editedPageDate,
+            todayEpochDay = initialPageDate,
+        )
+        val stateBeforeRecreation = modelAfterEdit.state as AiDebugLabState.LedgerReviewing
+        assertEquals(1, stateBeforeRecreation.initialDuplicateCount)
+        assertTrue(stateBeforeRecreation.duplicateMatches.isEmpty())
+
+        // 3. Activity saves state to Bundle
+        val saved = com.cuentivo.app.ui.ai.LedgerReviewSaver.SavedLedgerReview(
+            sessionId = stateBeforeRecreation.sessionId,
+            businessId = stateBeforeRecreation.businessId,
+            operations = stateBeforeRecreation.review.operations,
+            originalOperations = stateBeforeRecreation.originalOperations,
+            initialDuplicateCount = stateBeforeRecreation.initialDuplicateCount,
+            discards = stateBeforeRecreation.review.discards,
+            unreadTextRemaining = stateBeforeRecreation.review.unreadTextRemaining,
+            pageIncomplete = stateBeforeRecreation.review.pageIncomplete,
+            pageDateEpochDay = stateBeforeRecreation.review.pageDateEpochDay,
+            todayEpochDay = stateBeforeRecreation.review.todayEpochDay,
+            detectedPageDate = stateBeforeRecreation.review.detectedPageDate,
+        )
+
+        // 4. Activity recreates and restores review (possibly with a new today date)
+        val freshModel = AiDebugLabModel()
+        val restoredModel = AiDebugLabMachine.onRestoreLedgerReview(
+            model = freshModel,
+            sessionId = "session-recreation-test",
+            businessId = "biz-1",
+            saved = saved,
+            existingCustomerBalances = emptyMap(),
+            customerCandidates = emptyList(),
+            productCandidates = emptyList(),
+            registeredOperations = listOf(registeredOp),
+        )
+
+        val restoredState = restoredModel.state as AiDebugLabState.LedgerReviewing
+        // Live matches are still empty (evaluated against edited page date)
+        assertTrue(restoredState.duplicateMatches.isEmpty())
+        // initialDuplicateCount MUST be 1 (restored from saved, not recalculated against edited page date)
+        assertEquals(
+            "initialDuplicateCount must survive process recreation unchanged",
+            1,
+            restoredState.initialDuplicateCount,
+        )
+        val params = restoredState.toImportEndParams(registered = true)
+        assertEquals(
+            "duplicateSuggestedCount must be 1 even after restore",
+            1,
+            params.duplicateSuggestedCount,
+        )
+    }
 }

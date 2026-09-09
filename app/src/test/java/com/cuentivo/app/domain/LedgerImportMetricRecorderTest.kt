@@ -6,6 +6,7 @@ import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.data.local.AiLedgerImportMetricEntity
 import com.cuentivo.app.data.local.AiLedgerImportStatus
+import com.cuentivo.app.ui.ai.toImportEndParams
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -42,6 +43,17 @@ class LedgerImportMetricRecorderTest {
         }
 
         override suspend fun countForId(importId: String): Int = if (rows.containsKey(importId)) 1 else 0
+
+        override suspend fun markStaleInProgress(cutoffEpochHour: Long, targetStatus: String): Int {
+            var updated = 0
+            rows.entries.forEach { (id, entity) ->
+                if (entity.status == AiLedgerImportStatus.IN_PROGRESS && entity.finishedAtEpochHour < cutoffEpochHour) {
+                    rows[id] = entity.copy(status = targetStatus)
+                    updated++
+                }
+            }
+            return updated
+        }
     }
 
     private fun row(lineIndex: Int = 0) = LedgerOperation(
@@ -94,6 +106,7 @@ class LedgerImportMetricRecorderTest {
             detectedCount = 2,
             unreadableCount = 0,
             duplicateSuggestedCount = 0,
+            parserExcludedCount = 0,
             geminiCalls = 1,
             geminiDurationMillis = 4200L,
             contractVersion = 4,
@@ -118,6 +131,8 @@ class LedgerImportMetricRecorderTest {
             registered = true,
             originalOperations = original,
             finalReview = finalReview,
+            duplicateSuggestedCount = 0,
+            parserExcludedCount = 0,
             nowEpochMillis = Instant.parse("2026-09-08T14:55:00Z").toEpochMilli(),
         )
 
@@ -143,6 +158,7 @@ class LedgerImportMetricRecorderTest {
             detectedCount = 1,
             unreadableCount = 0,
             duplicateSuggestedCount = 0,
+            parserExcludedCount = 0,
             geminiCalls = 1,
             geminiDurationMillis = 1000L,
             contractVersion = 4,
@@ -152,11 +168,11 @@ class LedgerImportMetricRecorderTest {
 
         LedgerImportMetricRecorder.onImportEnded(
             dao = dao, sessionId = "session-1", registered = true,
-            originalOperations = listOf(row(0)), finalReview = review, nowEpochMillis = 2000L,
+            originalOperations = listOf(row(0)), finalReview = review, duplicateSuggestedCount = 0, parserExcludedCount = 0, nowEpochMillis = 2000L,
         )
         LedgerImportMetricRecorder.onImportEnded(
             dao = dao, sessionId = "session-1", registered = true,
-            originalOperations = listOf(row(0)), finalReview = review, nowEpochMillis = 3000L,
+            originalOperations = listOf(row(0)), finalReview = review, duplicateSuggestedCount = 0, parserExcludedCount = 0, nowEpochMillis = 3000L,
         )
 
         assertEquals(1, dao.rows.size)
@@ -170,13 +186,15 @@ class LedgerImportMetricRecorderTest {
         // Neither stage may propagate: a metric that fails costs the metric, never the import.
         LedgerImportMetricRecorder.onExtractionArrived(
             dao = dao, sessionId = "session-1", detectedCount = 1, unreadableCount = 0,
-            duplicateSuggestedCount = 0, geminiCalls = 1, geminiDurationMillis = 1L,
+            duplicateSuggestedCount = 0, parserExcludedCount = 0, geminiCalls = 1, geminiDurationMillis = 1L,
             contractVersion = 4, nowEpochMillis = 1000L,
         )
         LedgerImportMetricRecorder.onImportEnded(
             dao = dao, sessionId = "session-1", registered = true,
             originalOperations = listOf(row(0)),
             finalReview = LedgerReviewEngine.build(operations = listOf(row(0)), todayEpochDay = 20700L),
+            duplicateSuggestedCount = 0,
+            parserExcludedCount = 0,
             nowEpochMillis = 2000L,
         )
 
@@ -190,13 +208,13 @@ class LedgerImportMetricRecorderTest {
         val recent = LedgerImportMetricRecorder.hourRounded(now)
         val old = recent - (LedgerImportMetricRecorder.RETENTION_DAYS + 1) * 24L * 3_600_000L
 
-        dao.upsert(AiLedgerImportMetricEntity(importId = "old", finishedAtEpochHour = old, status = AiLedgerImportStatus.REGISTERED, detectedCount = 0, readyUntouchedCount = 0, correctedCount = 0, discardedCount = 0, unreadableCount = 0, duplicateSuggestedCount = 0, customerCorrections = 0, productCorrections = 0, amountCorrections = 0, dateCorrections = 0, kindCorrections = 0, geminiCalls = 1, geminiDurationMillis = 0, contractVersion = 4, highConfidenceFields = 0, highConfidenceCorrected = 0, midConfidenceFields = 0, midConfidenceCorrected = 0, lowConfidenceFields = 0, lowConfidenceCorrected = 0))
-        dao.upsert(AiLedgerImportMetricEntity(importId = "recent", finishedAtEpochHour = recent, status = AiLedgerImportStatus.REGISTERED, detectedCount = 0, readyUntouchedCount = 0, correctedCount = 0, discardedCount = 0, unreadableCount = 0, duplicateSuggestedCount = 0, customerCorrections = 0, productCorrections = 0, amountCorrections = 0, dateCorrections = 0, kindCorrections = 0, geminiCalls = 1, geminiDurationMillis = 0, contractVersion = 4, highConfidenceFields = 0, highConfidenceCorrected = 0, midConfidenceFields = 0, midConfidenceCorrected = 0, lowConfidenceFields = 0, lowConfidenceCorrected = 0))
+        dao.upsert(AiLedgerImportMetricEntity(importId = "old", finishedAtEpochHour = old, status = AiLedgerImportStatus.REGISTERED, detectedCount = 0, readyUntouchedCount = 0, correctedCount = 0, discardedCount = 0, unreadableCount = 0, duplicateSuggestedCount = 0, parserExcludedCount = 0, customerCorrections = 0, productCorrections = 0, amountCorrections = 0, dateCorrections = 0, kindCorrections = 0, geminiCalls = 1, geminiDurationMillis = 0, contractVersion = 4, highConfidenceFields = 0, highConfidenceCorrected = 0, midConfidenceFields = 0, midConfidenceCorrected = 0, lowConfidenceFields = 0, lowConfidenceCorrected = 0))
+        dao.upsert(AiLedgerImportMetricEntity(importId = "recent", finishedAtEpochHour = recent, status = AiLedgerImportStatus.REGISTERED, detectedCount = 0, readyUntouchedCount = 0, correctedCount = 0, discardedCount = 0, unreadableCount = 0, duplicateSuggestedCount = 0, parserExcludedCount = 0, customerCorrections = 0, productCorrections = 0, amountCorrections = 0, dateCorrections = 0, kindCorrections = 0, geminiCalls = 1, geminiDurationMillis = 0, contractVersion = 4, highConfidenceFields = 0, highConfidenceCorrected = 0, midConfidenceFields = 0, midConfidenceCorrected = 0, lowConfidenceFields = 0, lowConfidenceCorrected = 0))
 
         // Any write applies retention; the extraction arrival is one.
         LedgerImportMetricRecorder.onExtractionArrived(
             dao = dao, sessionId = "session-new", detectedCount = 0, unreadableCount = 0,
-            duplicateSuggestedCount = 0, geminiCalls = 1, geminiDurationMillis = 0,
+            duplicateSuggestedCount = 0, parserExcludedCount = 0, geminiCalls = 1, geminiDurationMillis = 0,
             contractVersion = 4, nowEpochMillis = now,
         )
 
@@ -212,7 +230,7 @@ class LedgerImportMetricRecorderTest {
         val dao = FakeMetricDao()
         LedgerImportMetricRecorder.onExtractionArrived(
             dao = dao, sessionId = "session-1", detectedCount = 1, unreadableCount = 0,
-            duplicateSuggestedCount = 0, geminiCalls = 1, geminiDurationMillis = 1L,
+            duplicateSuggestedCount = 0, parserExcludedCount = 0, geminiCalls = 1, geminiDurationMillis = 1L,
             contractVersion = 4, nowEpochMillis = 1000L,
         )
         LedgerImportMetricRecorder.onImportEnded(
@@ -222,6 +240,8 @@ class LedgerImportMetricRecorderTest {
                 operations = listOf(row(0).copy(amountCents = "38000", rawText = "Rosa Martinez 380 coca")),
                 todayEpochDay = 20700L,
             ),
+            duplicateSuggestedCount = 0,
+            parserExcludedCount = 0,
             nowEpochMillis = 2000L,
         )
 
@@ -242,5 +262,208 @@ class LedgerImportMetricRecorderTest {
                 else -> throw AssertionError("field ${field.name} is of an unexpected type: ${value?.javaClass}")
             }
         }
+    }
+
+    @Test
+    fun `duplicates count comes from duplicate matches and discarded count matches user manual deletions`() = runBlocking {
+        val dao = FakeMetricDao()
+        val original = listOf(row(0), row(1), row(2))
+
+        val parserDiscards = listOf(
+            com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic(
+                inputIndex = 3,
+                lineIndex = 3,
+                reason = com.cuentivo.app.ai.ledger.LedgerDiscardReason.MALFORMED,
+            )
+        )
+
+        // User deletes row 2, leaving rows 0 and 1 in final review
+        val finalReview = LedgerReviewEngine.build(
+            operations = listOf(row(0), row(1)),
+            discards = parserDiscards,
+            todayEpochDay = 20700L,
+        )
+
+        // 2 duplicates were detected on this page
+        val duplicatesDetectedCount = 2
+
+        LedgerImportMetricRecorder.onImportEnded(
+            dao = dao,
+            sessionId = "session-dup-disc",
+            registered = true,
+            originalOperations = original,
+            finalReview = finalReview,
+            duplicateSuggestedCount = duplicatesDetectedCount,
+            parserExcludedCount = finalReview.summary.excludedRowsCount,
+            nowEpochMillis = 2000L,
+        )
+
+        val stored = dao.rows["session-dup-disc".let { LedgerImportMetricRecorder.importIdFor(it) }]
+        org.junit.Assert.assertNotNull(stored)
+        stored!!
+
+        // duplicateSuggestedCount must be the 2 detected duplicates
+        assertEquals(2, stored.duplicateSuggestedCount)
+
+        // discardedCount must be 1 (the 1 operation deleted by user during review)
+        assertEquals(1, stored.discardedCount)
+
+        // detectedCount must be 3 (the 3 original candidate operations presented on screen for review)
+        assertEquals(3, stored.detectedCount)
+
+        // parserExcludedCount must be 1 (the 1 malformed row excluded by parser)
+        assertEquals(1, stored.parserExcludedCount)
+    }
+
+    @Test
+    fun `toImportEndParams and onImportEnded propagate duplicateSuggestedCount and parserExcludedCount to persisted row`() = runBlocking {
+        val dao = FakeMetricDao()
+        val op = row(0).copy(
+            customerName = "Rosa Martinez",
+            amountCents = "25000",
+            proposedKind = ProposedLedgerKind.SALE,
+            date = SafeDateCandidate(2026, 6, 7),
+        )
+        val registeredOp = com.cuentivo.app.domain.RegisteredOperationProjection(
+            id = "reg-1",
+            customerId = "c1",
+            customerName = "Rosa Martinez",
+            amountCents = 25000L,
+            effectiveDateEpochDay = 20612L,
+            kind = ProposedLedgerKind.SALE,
+        )
+        val parserDiscards = listOf(
+            com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic(
+                inputIndex = 1,
+                lineIndex = 1,
+                reason = com.cuentivo.app.ai.ledger.LedgerDiscardReason.MALFORMED,
+            )
+        )
+
+        val reviewingState = com.cuentivo.app.ui.ai.AiDebugLabState.LedgerReviewing(
+            sessionId = "session-e2e-dup",
+            businessId = "biz-1",
+            review = LedgerReviewEngine.build(
+                operations = listOf(op),
+                discards = parserDiscards,
+                todayEpochDay = 20612L,
+            ),
+            originalOperations = listOf(op),
+            registeredOperations = listOf(registeredOp),
+        )
+
+        // 1. Verify model layer calculates initialDuplicateCount correctly
+        assertEquals(1, reviewingState.initialDuplicateCount)
+        assertEquals(1, reviewingState.review.summary.excludedRowsCount)
+
+        // 2. Extract params via production helper
+        val now = Instant.parse("2026-09-08T14:30:00Z").toEpochMilli()
+        val params = reviewingState.toImportEndParams(registered = true, nowEpochMillis = now)
+
+        // 3. Persist via production method
+        LedgerImportMetricRecorder.onImportEnded(
+            dao = dao,
+            sessionId = params.sessionId,
+            registered = params.registered,
+            originalOperations = params.originalOperations,
+            finalReview = params.finalReview,
+            duplicateSuggestedCount = params.duplicateSuggestedCount,
+            parserExcludedCount = params.parserExcludedCount,
+            nowEpochMillis = params.nowEpochMillis,
+        )
+
+        // 4. Assert full chain: DAO row contains the exact real calculated duplicate and parser discard counts
+        val stored = dao.forId(LedgerImportMetricRecorder.importIdFor("session-e2e-dup"))
+        org.junit.Assert.assertNotNull(stored)
+        stored!!
+
+        assertEquals(1, stored.duplicateSuggestedCount)
+        assertEquals(1, stored.parserExcludedCount)
+        assertEquals(1, stored.detectedCount)
+        assertEquals(0, stored.discardedCount)
+        assertEquals(AiLedgerImportStatus.REGISTERED, stored.status)
+    }
+
+    @Test
+    fun `sweep marks stale in-progress imports as STALE and leaves recent in-progress intact`() = runBlocking {
+        val dao = FakeMetricDao()
+        val now = Instant.parse("2026-09-08T14:00:00Z").toEpochMilli()
+        val recentTime = LedgerImportMetricRecorder.hourRounded(now)
+        val staleTime = recentTime - 3 * 3_600_000L // 3 hours ago (older than 2h threshold)
+
+        val oldId = LedgerImportMetricRecorder.importIdFor("session-old")
+        val recentId = LedgerImportMetricRecorder.importIdFor("session-recent")
+        val registeredId = LedgerImportMetricRecorder.importIdFor("session-registered")
+
+        dao.upsert(AiLedgerImportMetricEntity(importId = oldId, finishedAtEpochHour = staleTime, status = AiLedgerImportStatus.IN_PROGRESS, detectedCount = 2, readyUntouchedCount = 0, correctedCount = 0, discardedCount = 0, unreadableCount = 0, duplicateSuggestedCount = 0, parserExcludedCount = 0, customerCorrections = 0, productCorrections = 0, amountCorrections = 0, dateCorrections = 0, kindCorrections = 0, geminiCalls = 1, geminiDurationMillis = 0, contractVersion = 4, highConfidenceFields = 0, highConfidenceCorrected = 0, midConfidenceFields = 0, midConfidenceCorrected = 0, lowConfidenceFields = 0, lowConfidenceCorrected = 0))
+        dao.upsert(AiLedgerImportMetricEntity(importId = recentId, finishedAtEpochHour = recentTime, status = AiLedgerImportStatus.IN_PROGRESS, detectedCount = 2, readyUntouchedCount = 0, correctedCount = 0, discardedCount = 0, unreadableCount = 0, duplicateSuggestedCount = 0, parserExcludedCount = 0, customerCorrections = 0, productCorrections = 0, amountCorrections = 0, dateCorrections = 0, kindCorrections = 0, geminiCalls = 1, geminiDurationMillis = 0, contractVersion = 4, highConfidenceFields = 0, highConfidenceCorrected = 0, midConfidenceFields = 0, midConfidenceCorrected = 0, lowConfidenceFields = 0, lowConfidenceCorrected = 0))
+        dao.upsert(AiLedgerImportMetricEntity(importId = registeredId, finishedAtEpochHour = staleTime, status = AiLedgerImportStatus.REGISTERED, detectedCount = 2, readyUntouchedCount = 2, correctedCount = 0, discardedCount = 0, unreadableCount = 0, duplicateSuggestedCount = 0, parserExcludedCount = 0, customerCorrections = 0, productCorrections = 0, amountCorrections = 0, dateCorrections = 0, kindCorrections = 0, geminiCalls = 1, geminiDurationMillis = 0, contractVersion = 4, highConfidenceFields = 0, highConfidenceCorrected = 0, midConfidenceFields = 0, midConfidenceCorrected = 0, lowConfidenceFields = 0, lowConfidenceCorrected = 0))
+
+        val swept = LedgerImportMetricRecorder.sweepStaleInProgress(dao, now)
+        assertEquals(1, swept)
+
+        assertEquals(AiLedgerImportStatus.STALE, dao.rows[oldId]?.status)
+        assertEquals(AiLedgerImportStatus.IN_PROGRESS, dao.rows[recentId]?.status)
+        assertEquals(AiLedgerImportStatus.REGISTERED, dao.rows[registeredId]?.status)
+    }
+
+    @Test
+    fun `sweepStaleInProgress respects boundary and never marks rows stale before full nominal threshold has elapsed`() = runBlocking {
+        val dao = FakeMetricDao()
+        // Suppose an import started at 12:59:00 UTC -> finishedAtEpochHour is rounded down to 12:00:00 UTC
+        val importStartedAt = Instant.parse("2026-09-08T12:59:00Z").toEpochMilli()
+        val importHour = LedgerImportMetricRecorder.hourRounded(importStartedAt) // 12:00:00
+        val importId = LedgerImportMetricRecorder.importIdFor("session-boundary-test")
+
+        dao.upsert(
+            AiLedgerImportMetricEntity(
+                importId = importId,
+                finishedAtEpochHour = importHour,
+                status = AiLedgerImportStatus.IN_PROGRESS,
+                detectedCount = 2,
+                readyUntouchedCount = 0,
+                correctedCount = 0,
+                discardedCount = 0,
+                unreadableCount = 0,
+                duplicateSuggestedCount = 0,
+                parserExcludedCount = 0,
+                customerCorrections = 0,
+                productCorrections = 0,
+                amountCorrections = 0,
+                dateCorrections = 0,
+                kindCorrections = 0,
+                geminiCalls = 1,
+                geminiDurationMillis = 0,
+                contractVersion = 4,
+                highConfidenceFields = 0,
+                highConfidenceCorrected = 0,
+                midConfidenceFields = 0,
+                midConfidenceCorrected = 0,
+                lowConfidenceFields = 0,
+                lowConfidenceCorrected = 0,
+            )
+        )
+
+        // At 14:01:00 UTC (elapsed: 62 minutes, nominal threshold: 2 hours = 120 minutes):
+        // hourRounded(14:01) = 14:00, cutoff = 14:00 - 2h = 12:00.
+        // With strict < cutoff, 12:00 < 12:00 is FALSE -> MUST NOT BE SWEPT!
+        val at1401 = Instant.parse("2026-09-08T14:01:00Z").toEpochMilli()
+        val sweptAt1401 = LedgerImportMetricRecorder.sweepStaleInProgress(dao, at1401)
+        assertEquals(0, sweptAt1401)
+        assertEquals(AiLedgerImportStatus.IN_PROGRESS, dao.rows[importId]?.status)
+
+        // At 14:59:59 UTC (elapsed: 119m 59s < 120m):
+        // hourRounded(14:59) = 14:00, cutoff = 12:00 -> 12:00 < 12:00 is FALSE -> MUST NOT BE SWEPT!
+        val at1459 = Instant.parse("2026-09-08T14:59:59Z").toEpochMilli()
+        val sweptAt1459 = LedgerImportMetricRecorder.sweepStaleInProgress(dao, at1459)
+        assertEquals(0, sweptAt1459)
+        assertEquals(AiLedgerImportStatus.IN_PROGRESS, dao.rows[importId]?.status)
+
+        // At 15:00:00 UTC (elapsed: 121 minutes >= 120 minutes):
+        // hourRounded(15:00) = 15:00, cutoff = 15:00 - 2h = 13:00 -> 12:00 < 13:00 is TRUE -> SWEPT!
+        val at1500 = Instant.parse("2026-09-08T15:00:00Z").toEpochMilli()
+        val sweptAt1500 = LedgerImportMetricRecorder.sweepStaleInProgress(dao, at1500)
+        assertEquals(1, sweptAt1500)
+        assertEquals(AiLedgerImportStatus.STALE, dao.rows[importId]?.status)
     }
 }

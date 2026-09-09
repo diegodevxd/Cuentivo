@@ -45,6 +45,7 @@ internal object LedgerReviewSaver {
     private const val KEY_TODAY = "todayEpochDay"
     private const val KEY_DETECTED_PAGE_DATE = "detectedPageDate"
     private const val KEY_DETECTED_PAGE_DATE_CONFIDENCE = "detectedPageDateConfidence"
+    private const val KEY_INITIAL_DUPLICATE_COUNT = "initialDuplicateCount"
 
     // Operation keys. Flat strings, one per field, so a malformed row can be skipped without
     // dragging the whole page down — but see writeOperations: a row that fails to round-trip
@@ -87,6 +88,7 @@ internal object LedgerReviewSaver {
         val pageDateEpochDay: Long?,
         val todayEpochDay: Long?,
         val detectedPageDate: LedgerDetectedPageDate?,
+        val initialDuplicateCount: Int = 0,
     )
 
     fun toBundle(saved: SavedLedgerReview): Bundle {
@@ -98,6 +100,7 @@ internal object LedgerReviewSaver {
         bundle.putParcelableArray(KEY_DISCARDS, saved.discards.map(::discardToBundle).toTypedArray())
         bundle.putBoolean(KEY_UNREAD, saved.unreadTextRemaining)
         bundle.putBoolean(KEY_INCOMPLETE, saved.pageIncomplete)
+        bundle.putInt(KEY_INITIAL_DUPLICATE_COUNT, saved.initialDuplicateCount)
         saved.pageDateEpochDay?.let { bundle.putLong(KEY_PAGE_DATE, it) }
         saved.todayEpochDay?.let { bundle.putLong(KEY_TODAY, it) }
         saved.detectedPageDate?.let { detected ->
@@ -156,6 +159,7 @@ internal object LedgerReviewSaver {
                 confidence = detected.getDouble("c"),
             )
         }
+        val initialDuplicateCount = bundle.getInt(KEY_INITIAL_DUPLICATE_COUNT, 0)
         return SavedLedgerReview(
             sessionId = sessionId,
             businessId = businessId,
@@ -167,6 +171,7 @@ internal object LedgerReviewSaver {
             pageDateEpochDay = if (bundle.containsKey(KEY_PAGE_DATE)) bundle.getLong(KEY_PAGE_DATE) else null,
             todayEpochDay = if (bundle.containsKey(KEY_TODAY)) bundle.getLong(KEY_TODAY) else null,
             detectedPageDate = detectedPageDate,
+            initialDuplicateCount = initialDuplicateCount,
         )
     }
 

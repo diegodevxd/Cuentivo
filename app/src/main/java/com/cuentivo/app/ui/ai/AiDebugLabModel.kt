@@ -89,6 +89,17 @@ sealed interface AiDebugLabState {
          * recreations unchanged or the counts lie.
          */
         val originalOperations: List<LedgerOperation> = emptyList(),
+        /**
+         * Initial duplicate warnings suggested to the user upon page arrival, frozen at creation time.
+         * Persisted across Activity recreations so that subsequent edits or process recreations do not alter
+         * the initial warning metric.
+         */
+        val initialDuplicateCount: Int = com.cuentivo.app.domain.LedgerDuplicateDetector.evaluate(
+            operations = originalOperations,
+            existingRegistered = registeredOperations,
+            pageDateEpochDay = review.pageDateEpochDay,
+            todayEpochDay = review.todayEpochDay,
+        ).size,
         val existingCustomerBalances: Map<String, Long> = emptyMap(),
         /**
          * The customers this business already has, loaded once when the page arrived.
@@ -109,6 +120,9 @@ sealed interface AiDebugLabState {
         val productMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.ProductCandidate>>
             get() = com.cuentivo.app.domain.LedgerProductMatching.matchesFor(review.operations, productCandidates)
 
+        /**
+         * Live duplicate warnings evaluated against current (edited) review operations for UI display.
+         */
         val duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch>
             get() = com.cuentivo.app.domain.LedgerDuplicateDetector.evaluate(
                 operations = review.operations,
@@ -121,10 +135,43 @@ sealed interface AiDebugLabState {
         val sessionId: String,
         val businessId: String,
         val review: LedgerReview,
+        val originalOperations: List<LedgerOperation> = emptyList(),
+        val initialDuplicateCount: Int = 0,
         /** Carried through so a failed write can return to the review with the debts it showed. */
         val existingCustomerBalances: Map<String, Long> = emptyMap(),
+        val customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate> = emptyList(),
+        val productCandidates: List<com.cuentivo.app.domain.ProductCandidate> = emptyList(),
+        val registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection> = emptyList(),
     ) : AiDebugLabState
 }
+
+/**
+ * Parameters extracted from [AiDebugLabState.LedgerReviewing] when ending an import session.
+ * Encapsulates the extraction of [duplicateSuggestedCount] and [parserExcludedCount].
+ */
+data class LedgerImportEndParams(
+    val sessionId: String,
+    val registered: Boolean,
+    val originalOperations: List<LedgerOperation>,
+    val finalReview: LedgerReview,
+    val duplicateSuggestedCount: Int,
+    val parserExcludedCount: Int,
+    val nowEpochMillis: Long,
+)
+
+fun AiDebugLabState.LedgerReviewing.toImportEndParams(
+    registered: Boolean,
+    nowEpochMillis: Long = System.currentTimeMillis(),
+): LedgerImportEndParams = LedgerImportEndParams(
+    sessionId = sessionId,
+    registered = registered,
+    originalOperations = originalOperations,
+    finalReview = review,
+    duplicateSuggestedCount = initialDuplicateCount,
+    parserExcludedCount = review.summary.excludedRowsCount,
+    nowEpochMillis = nowEpochMillis,
+)
+
 
 sealed interface AiSaleChoiceOutcome {
     data class Selected(
@@ -1087,6 +1134,7 @@ object AiDebugLabMachine {
                 businessId = businessId,
                 review = review,
                 originalOperations = java.util.Collections.unmodifiableList(ArrayList(saved.originalOperations)),
+                initialDuplicateCount = saved.initialDuplicateCount,
                 existingCustomerBalances = frozenBalances,
                 customerCandidates = Collections.unmodifiableList(ArrayList(customerCandidates)),
                 productCandidates = Collections.unmodifiableList(ArrayList(productCandidates)),
@@ -1171,10 +1219,7 @@ object AiDebugLabMachine {
     /**
      * Transitions from LedgerReviewing to LedgerConfirming with incremented generation.
      *
-     * Financial & date gate:
-     * If there are blocking financial diagnostics (OVERFLOW, PAYMENT_WITHOUT_DEBT,
-     * PAYMENT_EXCEEDS_DEBT, ZERO_AMOUNT), zero executable operations, or missing dates,
-     * confirmation is strictly blocked (returns [AiLedgerConfirmOutcome.Ignored]).
+     * In-flight extraction or older confirmations are invalidated by the generation step.
      */
     fun onConfirmLedger(
         model: AiDebugLabModel,
@@ -1196,7 +1241,12 @@ object AiDebugLabMachine {
                 sessionId = sessionId,
                 businessId = businessId,
                 review = state.review,
+                originalOperations = state.originalOperations,
+                initialDuplicateCount = state.initialDuplicateCount,
                 existingCustomerBalances = state.existingCustomerBalances,
+                customerCandidates = state.customerCandidates,
+                productCandidates = state.productCandidates,
+                registeredOperations = state.registeredOperations,
             ),
             generation = nextGeneration,
         )
@@ -1238,7 +1288,12 @@ object AiDebugLabMachine {
                     sessionId = state.sessionId,
                     businessId = state.businessId,
                     review = state.review,
+                    originalOperations = state.originalOperations,
+                    initialDuplicateCount = state.initialDuplicateCount,
                     existingCustomerBalances = state.existingCustomerBalances,
+                    customerCandidates = state.customerCandidates,
+                    productCandidates = state.productCandidates,
+                    registeredOperations = state.registeredOperations,
                 ),
                 messages = model.messages + AiChatMessage.AssistantLedgerFailed,
                 generation = model.generation + 1,

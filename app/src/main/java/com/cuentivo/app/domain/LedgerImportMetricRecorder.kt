@@ -37,6 +37,12 @@ object LedgerImportMetricRecorder {
     const val RETENTION_DAYS = 90L
 
     /**
+     * Stale threshold: an IN_PROGRESS import row older than 2 hours is considered abandoned/unclosed
+     * by process death or abnormal termination.
+     */
+    const val STALE_THRESHOLD_HOURS = 2L
+
+    /**
      * The stable id of an import: SHA-256 of the session id. The session id is already a random
      * UUID per import, so this is opaque, stable across retries and recreations, and carries no
      * information about the page or the business.
@@ -58,6 +64,7 @@ object LedgerImportMetricRecorder {
         detectedCount: Int,
         unreadableCount: Int,
         duplicateSuggestedCount: Int,
+        parserExcludedCount: Int,
         geminiCalls: Int,
         geminiDurationMillis: Long,
         contractVersion: Int,
@@ -75,6 +82,7 @@ object LedgerImportMetricRecorder {
                     discardedCount = 0,
                     unreadableCount = unreadableCount,
                     duplicateSuggestedCount = duplicateSuggestedCount,
+                    parserExcludedCount = parserExcludedCount,
                     customerCorrections = 0,
                     productCorrections = 0,
                     amountCorrections = 0,
@@ -92,6 +100,7 @@ object LedgerImportMetricRecorder {
                 ),
             )
             applyRetention(dao, nowEpochMillis)
+            sweepStaleInProgress(dao, nowEpochMillis)
         }
     }
 
@@ -106,6 +115,9 @@ object LedgerImportMetricRecorder {
      * An Activity recreation is NOT an abandonment: the review survives it, and counting one
      * there would measure a defect that no longer exists. Only a person discarding the page or
      * closing the lab ends an import as ABANDONED.
+     *
+     * [duplicateSuggestedCount] and [parserExcludedCount] are mandatory (no default) to prevent callers
+     * from silently defaulting to 0 and losing critical quality/friction signals.
      */
     suspend fun onImportEnded(
         dao: com.cuentivo.app.data.local.AiLedgerImportMetricDao,
@@ -113,6 +125,8 @@ object LedgerImportMetricRecorder {
         registered: Boolean,
         originalOperations: List<LedgerOperation>,
         finalReview: LedgerReview,
+        duplicateSuggestedCount: Int,
+        parserExcludedCount: Int,
         nowEpochMillis: Long,
     ) {
         runCatching {
@@ -139,17 +153,28 @@ object LedgerImportMetricRecorder {
                     } == true
             }
 
+            // METRIC DEFINITIONS:
+            // - detectedCount represents the total candidate operations detected upon page arrival (originalOperations.size).
+            // - parserExcludedCount represents non-operations dropped during JSON/payload parsing (finalReview.summary.excludedRowsCount).
+            //   Preserving this aggregate ensures baseline metrics can distinguish "few rows in sheet" from "parser dropped rows".
+            // - discardedCount represents candidate operations manually deleted by the user during review (counting.rowsDeleted).
+            // Note: On screen, the review header initially shows detectedCount ("X detectadas"), but dynamically reflects
+            // current remaining operations (review.operations.size = detectedCount - discardedCount) if the user deletes rows.
+            val detectedCount = originalOperations.size
+            val discardedCount = counting.rowsDeleted
+
             dao.upsert(
                 AiLedgerImportMetricEntity(
                     importId = importIdFor(sessionId),
                     finishedAtEpochHour = hourRounded(nowEpochMillis),
                     status = if (registered) AiLedgerImportStatus.REGISTERED else AiLedgerImportStatus.ABANDONED,
-                    detectedCount = originalOperations.size,
+                    detectedCount = detectedCount,
                     readyUntouchedCount = readyUntouched,
                     correctedCount = counting.rowsCorrected,
-                    discardedCount = counting.rowsDeleted,
+                    discardedCount = discardedCount,
                     unreadableCount = finalOperations.count { it.unreadableFields.isNotEmpty() },
-                    duplicateSuggestedCount = finalReview.summary.excludedRowsCount,
+                    duplicateSuggestedCount = duplicateSuggestedCount,
+                    parserExcludedCount = parserExcludedCount,
                     customerCorrections = counting.corrections.customer,
                     productCorrections = counting.corrections.product,
                     amountCorrections = counting.corrections.amount,
@@ -167,6 +192,7 @@ object LedgerImportMetricRecorder {
                 ),
             )
             applyRetention(dao, nowEpochMillis)
+            sweepStaleInProgress(dao, nowEpochMillis)
         }
     }
 
@@ -189,5 +215,30 @@ object LedgerImportMetricRecorder {
     ) {
         val cutoff = hourRounded(nowEpochMillis) - RETENTION_DAYS * 24L * 3_600_000L
         dao.deleteOlderThan(cutoff)
+    }
+
+    /**
+     * Sweeps orphaned IN_PROGRESS rows older than [staleThresholdHours], marking them as STALE.
+     *
+     * Runs during normal metric writes and app startup so dead processes leave clean metrics.
+     *
+     * SEMANTICS:
+     * STALE means "outcome unknown / unclosed" (process death, background kill), NOT "failed".
+     *
+     * BOUNDARY GUARANTEE:
+     * Because `finishedAtEpochHour` is truncated DOWN to the hour, the DAO query uses strict `< :cutoffEpochHour`
+     * with `cutoff = hourRounded(now) - thresholdHours`. This ensures that an import started at the end of
+     * an hour (e.g. 12:59 -> 12:00) is NEVER swept when elapsed time is less than the nominal threshold
+     * (e.g. at 14:01 cutoff is 12:00, 12:00 < 12:00 is false, so it survives).
+     */
+    suspend fun sweepStaleInProgress(
+        dao: com.cuentivo.app.data.local.AiLedgerImportMetricDao,
+        nowEpochMillis: Long,
+        staleThresholdHours: Long = STALE_THRESHOLD_HOURS,
+    ): Int {
+        return runCatching {
+            val cutoff = hourRounded(nowEpochMillis) - staleThresholdHours * 3_600_000L
+            dao.markStaleInProgress(cutoff, AiLedgerImportStatus.STALE)
+        }.getOrDefault(0)
     }
 }

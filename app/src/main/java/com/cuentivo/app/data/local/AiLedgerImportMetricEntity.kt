@@ -40,6 +40,8 @@ data class AiLedgerImportMetricEntity(
     val discardedCount: Int,
     val unreadableCount: Int,
     val duplicateSuggestedCount: Int,
+    /** Non-operations dropped/excluded by the parser during initial payload parsing (e.g. malformed or invalid). */
+    val parserExcludedCount: Int,
     val customerCorrections: Int,
     val productCorrections: Int,
     val amountCorrections: Int,
@@ -59,11 +61,20 @@ data class AiLedgerImportMetricEntity(
     val lowConfidenceCorrected: Int,
 )
 
-/** How an import ended. The three values this table can hold. */
+/** How an import ended. The values this table can hold. */
 object AiLedgerImportStatus {
     const val IN_PROGRESS = "IN_PROGRESS"
     const val REGISTERED = "REGISTERED"
     const val ABANDONED = "ABANDONED"
+    /**
+     * Marked by sweep when an IN_PROGRESS row was left unclosed by process death, background kill,
+     * or crash.
+     *
+     * IMPORTANT: STALE means "outcome unknown / unclosed", NOT "failed".
+     * Baseline metric aggregations must exclude STALE rows when computing success vs abandonment
+     * ratios so that unknown outcomes do not distort REGISTERED vs ABANDONED rates.
+     */
+    const val STALE = "STALE"
 }
 
 @Dao
@@ -91,4 +102,16 @@ interface AiLedgerImportMetricDao {
 
     @Query("SELECT COUNT(*) FROM ai_ledger_import_metrics WHERE importId = :importId")
     suspend fun countForId(importId: String): Int
+
+    /**
+     * Sweeps orphaned IN_PROGRESS rows older than cutoff, marking them STALE so unclosed imports
+     * from dead processes do not remain IN_PROGRESS forever or contaminate baseline metrics.
+     *
+     * Uses strict `<` comparison because finishedAtEpochHour is rounded DOWN to the hour.
+     * With `< :cutoffEpochHour` where cutoff is `nowRounded - threshold`, an import started at
+     * the end of an hour (e.g. 12:59 -> 12:00) will never be swept with less than the nominal
+     * threshold of elapsed time (e.g. at 14:01 cutoff is 12:00, 12:00 < 12:00 is false, survives).
+     */
+    @Query("UPDATE ai_ledger_import_metrics SET status = :targetStatus WHERE status = 'IN_PROGRESS' AND finishedAtEpochHour < :cutoffEpochHour")
+    suspend fun markStaleInProgress(cutoffEpochHour: Long, targetStatus: String = AiLedgerImportStatus.STALE): Int
 }
