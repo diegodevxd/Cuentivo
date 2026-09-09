@@ -32,10 +32,18 @@ cableado** — es justo lo que Sol acaba de cazar en el bloque anterior.
 
 ---
 
-# BLOQUE 0 — los seis hallazgos de Sol (esto va primero y solo)
+# BLOQUE 0 — los seis hallazgos de Sol ✅ CERRADO
 
-**Esto es lo único que bloquea el `versionCode 40`, que es el bundle de medición.** Hasta que esté,
-no se empieza ningún otro bloque. Los cambios ya están en el árbol sin commitear; esto los corrige.
+**Cerrado el 2026-09-08 en cuatro rondas**, commiteado en `5636618`, `b3066b1` y `f60dde6`, y con
+el `versionCode 40` (`1.20.2`) generado y firmado. Se deja aquí escrito porque documenta por qué la
+tabla cuenta lo que cuenta; lo que cambió está resumido en `PROJECT_MEMORY.md`.
+
+**Orden del resto, decidido con Diego el 2026-09-08 y ya aplicado abajo:**
+1 matching → 2 preprocesado → **3 panel** → 4 segunda pasada **apagada** → 5 **puerta: medir y
+decidir** → 6 comparativa → 7 items → 8 hardening.
+
+El panel se adelantó a propósito: es el instrumento con el que se mira qué hizo la segunda pasada,
+y construirla antes es depurarla a ciegas.
 
 ## 0.1 — El barrido marca `STALE` importaciones vivas de poco más de una hora
 
@@ -150,9 +158,30 @@ Mide el efecto con la tabla de métricas, no de oídas.
 
 ---
 
-# BLOQUE 3 — segunda pasada de Gemini (sólo código, no se despliega)
+# BLOQUE 3 — panel de depuración interno
 
-**Esto es lo más caro y lo que más puede alucinar, y por eso va el último de los tres grandes.**
+**Cambió de sitio: va ANTES de la segunda pasada, no después.** El panel es el instrumento con el
+que se mira qué hizo la segunda pasada — primera lectura, confianza, candidatos, resultado y
+motivo. Construir la segunda pasada primero es depurarla a ciegas, y es justo el bloque con más
+riesgo de que el modelo **elija** un candidato en vez de **leerlo**.
+
+Para poder mirar lo que la tabla de métricas ya guarda sin sacar el teléfono de casa. Interno,
+sólo en la variante debug, **fuera de release** — y ojo con el defecto histórico contrario: la
+importación de libreta llegó a no existir en release porque su botón estaba anidado bajo
+`if (ocrEngine != null)`. Aquí es al revés y a propósito, pero compruébalo, no lo supongas.
+
+En la tabla de métricas muestra **agregados**. Nada por renglón, ni siquiera en debug.
+
+Lo de la **sesión en curso** es otra cosa y sí puede verse renglón a renglón: no está persistido,
+vive en memoria mientras dura la revisión, y es exactamente lo que hace falta para entender una
+lectura concreta. La línea que no se cruza es guardarlo.
+
+---
+
+# BLOQUE 4 — segunda pasada de Gemini (sólo código, apagada, no se despliega)
+
+**Esto es lo más caro y lo que más puede alucinar.** Se construye **con el flag apagado** y no se
+enciende hasta pasar la puerta del bloque 5.
 
 La idea: volver a preguntar **sólo por los renglones dudosos**, no por la página entera. Lo que
 tiene que quedar clarísimo en el diseño:
@@ -171,20 +200,51 @@ es lo que protege al `v37` que hay publicado.
 
 **Propón el diseño antes de escribir.** Este bloque no se empieza a ciegas.
 
+## El caso real que esta fase tiene que cazar
+
+Es el único dato duro que hay, de la prueba de Diego con su propia libreta:
+
+> Hoja del **03/06/26**, 9 renglones. Los 9 detectados, y las notas que no eran movimiento
+> correctamente excluidas. **Un fallo: un cargo de $139.90 inventado**, asignado a Caro Vera,
+> **sin marca de dudoso** — mientras los dos renglones que sí existían de esa misma clienta **sí**
+> salieron marcados.
+
+Léelo despacio, porque dice más de lo que parece: **la confianza del modelo no correlaciona con la
+verdad**. Lo que se invento llegó con más seguridad que lo que sí estaba escrito. Una segunda
+pasada que sólo pregunte por los renglones ya marcados como dudosos **no habría cazado éste**, que
+es el único que hacía daño. El diseño tiene que responder a eso explícitamente.
+
 ---
 
-# BLOQUE 4 — panel de depuración interno
+# BLOQUE 5 — PUERTA: medir contra la línea base y decidir
 
-Para poder mirar lo que la tabla de métricas ya guarda sin sacar el teléfono de casa. Interno,
-sólo en la variante debug, **fuera de release** — y ojo con el defecto histórico contrario: la
-importación de libreta llegó a no existir en release porque su botón estaba anidado bajo
-`if (ocrEngine != null)`. Aquí es al revés y a propósito, pero compruébalo, no lo supongas.
+**No es una fase de código. Es una decisión, y puede salir que no.**
 
-Muestra **agregados**. Nada por renglón, ni siquiera en debug.
+Con la línea base recogida por el `versionCode 40` y las métricas de la segunda pasada encendida en
+pruebas, se compara contra `baseline-cuentivoai-v39-1.20.1` y se responde: ¿hay **menos
+correcciones humanas sin más errores de dinero**? Ése es el criterio que fijó Diego y no hay otro.
+
+**Queda escrito, y no es una fórmula de cortesía: el flag de la segunda pasada puede quedarse
+apagado para siempre si los números no acompañan.** Construirla no obliga a encenderla. Cuesta
+dinero por foto y puede meter cifras que nadie escribió; si no demuestra que mejora, se queda
+apagada y el trabajo sirvió para saberlo.
+
+Lo que la comparativa no puede medir sola —*cliente equivocado sin marca*, *monto equivocado sin
+marca*, *inventados u omitidos*— sólo sale de que Diego use libretas reales. Eso no lo sustituye
+ninguna prueba.
 
 ---
 
-# BLOQUE 5 — items nativos en la venta
+# BLOQUE 6 — comparativa v38 contra v39
+
+Con los números de los dos lados, la comparativa formal contra
+`baseline-cuentivoai-v39-1.20.1` (`a2c810e`), **no** contra `1.20.0`: ése salió con la tarjeta de
+revisión que ocupaba una pantalla por renglón, y compararse con él mediría ese defecto en vez del
+pipeline.
+
+---
+
+# BLOQUE 7 — items nativos en la venta
 
 Lo que la libreta lee como productos debería poder registrarse como ítems de venta de verdad, no
 sólo como un total. Toca dinero, así que aquí la regla de oro: **`Long` en centavos, nunca
@@ -193,6 +253,22 @@ sólo como un total. Toca dinero, así que aquí la regla de oro: **`Long` en ce
 servidor lo rechaza.
 
 **Este bloque es el que más cerca pasa del núcleo financiero. No se empieza sin propuesta previa.**
+
+---
+
+# BLOQUE 8 — hardening
+
+Los huecos conocidos que llevan tiempo anotados y no son de ninguna fase en concreto:
+
+- `prepareInPlace` sobrescribe el original, así que impide reintentar con más detalle (si el
+  bloque 2 no lo arregló ya).
+- `OwnerMembershipBootstrap` llama a `reopenParkedOperations()` a secas y desaparca de más.
+- Faltan índices compuestos `(businessId, fecha)` para la consulta de duplicados, anotado como
+  deuda en el DAO.
+- El encolado del outbox no es atómico y **es deliberado**, pero si el proceso muere entre la
+  transacción y el `enqueue`, la venta existe en local y no se encola nunca. No hay reconciliación.
+- `FirestoreSyncGateway` hace `set()` individuales sin `WriteBatch`, así que una venta puede quedar
+  publicada a medias.
 
 ---
 
