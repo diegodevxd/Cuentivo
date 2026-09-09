@@ -74,47 +74,63 @@ llegar la extracción y una actualización idempotente al terminar. Así una imp
 medias deja rastro de que existió, y ninguna se cuenta dos veces. La escritura final va en
 `GlobalScope` a propósito: lanzarla desde el scope de Compose y cerrar la pantalla la cancelaría.
 
-## Qué sigue en v39, y una decisión pendiente de Diego
+## Qué sigue en v39: primero medir, después la CuentivoAI más lista
 
-El plan original ponía la infraestructura de segunda pasada como fase 3. **Claude propuso invertir el
-orden** y está sin decidir:
+**Decidido por Diego el 2026-09-08, y el orden ya no está en discusión:**
 
-**La tabla de métricas está vacía y seguirá vacía hasta que Diego use un bundle que las incluya.** El
-criterio de éxito de v39 que él mismo fijó es *"menos correcciones humanas que v38 sin aumentar
-errores de dinero"*, así que construir la segunda pasada ahora es construir a ciegas: cuando esté
-lista no habrá con qué comparar. La propuesta es sacar el `versionCode 40` con las fases 1 y 2
-dentro, usarlo unos días con libretas reales, y mientras avanzar con lo que no depende de medir —
-matching mejorado y preprocesado prudente.
+1. **El `versionCode 40` es el bundle de medición.** Sale con las fases 1 y 2 dentro —el borrador
+   que sobrevive y la tabla de métricas— y **con los tres bloqueantes arreglados**. Su único
+   trabajo es recoger la línea base.
+2. **Diego lo prueba con su libreta de papel.** Es la única forma de medir *cliente equivocado sin
+   marca*, *monto equivocado sin marca* e *inventados u omitidos*: nadie más puede hacerlo.
+3. **La "CuentivoAI más inteligente" es el bundle siguiente**, no éste. Ahí van la segunda pasada
+   de Gemini, el matching con más señales y el preprocesado de imagen.
 
-## LO PRIMERO DE LA PROXIMA SESION: tres bloqueantes de la Fase 2
+El motivo de ese orden: **la tabla de métricas está vacía y seguirá vacía hasta que Diego use un
+bundle que las incluya.** El criterio de éxito de v39 que él mismo fijó es *"menos correcciones
+humanas que v38 sin aumentar errores de dinero"*, así que construir la segunda pasada antes de
+medir es construir a ciegas: cuando estuviera lista no habría con qué comparar.
 
-Sol revisó el diff de la Fase 2 y su veredicto fue **"no lo pasaría aún a la siguiente fase"**. Los
-tres están **commiteados en `4fd46ae`** y hay que arreglarlos **antes de generar ningún bundle**: si
-no, la línea base que Diego quiere medir se recoge con datos falsos, que es peor que no tenerla.
+Mientras el 40 está en manos de Diego se puede avanzar con lo que no depende de medir: matching
+mejorado y preprocesado prudente de imagen. La comparativa se hace contra
+`baseline-cuentivoai-v39-1.20.1`.
 
-Ninguno toca dinero ni el contrato — Sol lo comprobó explícitamente— pero los tres corrompen la
-medición:
+## Bloque 0 cerrado y `versionCode 40` generado (2026-09-08)
 
-1. **Descartes y duplicados están cruzados.** `LedgerImportMetricRecorder.kt:150` cuenta como
-   descartados sólo los renglones eliminados a mano, y omite los descartes del parser. Y en `:152`
-   guarda `excludedRowsCount` —que viene de `review.discards`— **en la columna de duplicados**. El
-   detector real (`duplicateMatches`) nunca llega al recorder, y la etapa inicial fija duplicados a
-   cero en `AiDebugLabScreen.kt:598`. Dos columnas con datos que no son lo que dice su nombre.
+Los tres bloqueantes de la Fase 2 y los defectos que Sol fue encontrando en las revisiones
+sucesivas están **cerrados**, en cuatro rondas con AGY implementando, Claude ejecutando el gate y
+Sol revisando cada diff. **Sin commitear todavía.**
 
-2. **Un intento de registro fallido destruye la lectura original.** `LedgerConfirming` no lleva
-   `originalOperations` (`AiDebugLabModel.kt:120`), y al volver a la revisión tras un fallo se
-   reconstruye `LedgerReviewing` sin ella (`:1237`), tomando el valor por defecto vacío. Si la
-   persona reintenta, detectados, correcciones, descartes e histograma salen en cero o incompletos.
+Lo que cambió, y por qué importa para medir:
 
-3. **`GlobalScope` no hace durable la escritura final.** `AiDebugLabScreen.kt:417`: Android puede
-   matar el proceso antes de que la corrutina ejecute o Room confirme, y la fila se queda
-   `IN_PROGRESS` para siempre. `GlobalScope` no da dueño, ni cancelación, ni reintento, y
-   `runCatching` sólo oculta el fallo. Hace falta un barrido que cierre las filas colgadas al
-   arrancar, o `WorkManager`.
+- **Descartes y duplicados dejaron de estar cruzados.** `duplicateSuggestedCount` sale ahora de
+  `LedgerReviewing.initialDuplicateCount`, y los descartes del parser tienen **columna propia**,
+  `parserExcludedCount` — sin ella no se podría distinguir *"la hoja traía poco"* de *"el parser
+  perdió contenido"*. Eso trajo **base en versión 8**, `MIGRATION_7_8` aditiva, `8.json` exportado
+  y `Migration7To8Test` con `runMigrationsAndValidate`. Sol dio go explícito a la migración.
+- **Un registro fallido ya no destruye la lectura original.** `LedgerConfirming` lleva
+  `originalOperations`, candidatos y operaciones registradas, así que al volver de un fallo la
+  revisión reaparece entera, con sugerencias y duplicados.
+- **Las filas colgadas se cierran.** Estado `STALE`, que significa **"no sabemos cómo acabó"**, no
+  "fracasó", y por eso debe excluirse de las proporciones registrada/abandonada. El umbral usa `<`
+  estricto porque `hourRounded` trunca hacia abajo: con `<=`, una importación de 62 minutos se
+  marcaba como muerta.
+- **El conteo de duplicados se congela al crear la revisión** y se persiste en `LedgerReviewSaver`.
+  Antes se recalculaba, y como dependía de la fecha de hoja —que la persona edita— el número
+  "inicial" cambiaba al recrear la Activity, justo por el camino que construyó la Fase 1.
 
-**Lo que Sol sí dio por bueno:** los tres constructores registran `CUENTIVO_MIGRATIONS`, el SQL
-coincide con `7.json`, no hay vía de sincronización ni de reidentificación, y las cuatro
-comparaciones del contador funcionan en el camino directo.
+**Gate ejecutado, no reportado de oídas:** `testDebugUnitTest --rerun` **1164 pruebas, 0 fallos**;
+`connectedDebugAndroidTest` con 7 clases por nombre **44 pruebas, 0 fallos**; `assembleDebug`,
+`assembleRelease` y `bundleRelease` exit 0; puerta del idioma limpia; paridad **627 = 627**.
+
+**El bundle:** `dist/Cuentivo-v40-1.20.2.aab`, 29,359,868 bytes. `jarsigner -verify` → *jar
+verified*. Llave **SHA1 `25:05:8A:9C:F3:1F:D7:B4:1E:8E:B3:2D:9A:AB:8F:9F:7A:E8:1D:BF`**, idéntica
+a la del v38 y el v39, que es lo que Play exige y no perdona. `versionName` subió a **1.20.2** para
+no tener dos binarios distintos llamados 1.20.1, porque el otro es la etiqueta de comparación.
+
+**Lo siguiente:** subirlo, usarlo con libretas reales para recoger la línea base, y mientras
+avanzar con los bloques 1 a 5 de `docs/superpowers/encargos/2026-09-08-v39-fases-restantes.md`,
+uno a la vez y con revisión entre medias.
 
 ## 2026-09-07 — Fase B cerrada: la libreta de papel se lee, se revisa y se registra
 
