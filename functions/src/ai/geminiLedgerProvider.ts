@@ -5,7 +5,6 @@ import type {
 } from "../contract.js";
 import {
   adaptGoogleGenAiClient,
-  GEMINI_MODEL,
   type GeminiClientFactory,
   type GeminiClientSeam,
   type ProviderFailureCategory,
@@ -16,6 +15,17 @@ import {
   MAX_LEDGER_OPERATIONS,
   parseLedgerExtraction,
 } from "./ledgerExtraction.js";
+
+/**
+ * Model specifically dedicated to handwritten notebook page OCR and structured extraction.
+ * Uses gemini-3.5-flash (standard Flash, not Flash-Lite) to handle complex handwriting,
+ * rotated text, strikethroughs, multi-column layouts, and spatial anchoring.
+ *
+ * DO NOT combine with GEMINI_TEXT_MODEL ("gemini-3.5-flash-lite"): text and voice
+ * queries are simpler single-turn prompts that run cheaply on Flash-Lite, whereas
+ * notebook image transcription requires the higher vision and reasoning capacity of Flash.
+ */
+export const GEMINI_LEDGER_MODEL = "gemini-3.5-flash";
 
 /**
  * Exact JSON Schema for extract_ledger_page structured output.
@@ -314,7 +324,7 @@ class GeminiLedgerProvider implements LedgerExtractionProvider {
       const systemInstruction = buildLedgerSystemInstruction(input.referenceDate);
 
       const generatePromise = this.client.models.generateContent({
-        model: GEMINI_MODEL,
+        model: GEMINI_LEDGER_MODEL,
         contents: [
           {
             inlineData: {

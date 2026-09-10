@@ -178,7 +178,7 @@ describe("GeminiLedgerProvider", () => {
 
       expect(mockClient.models.generateContent).toHaveBeenCalledTimes(1);
       expect(capturedParams).toBeDefined();
-      expect(capturedParams.model).toBe("gemini-3.5-flash-lite");
+      expect(capturedParams.model).toBe("gemini-3.5-flash");
 
       // Verify multimodal contents array
       expect(Array.isArray(capturedParams.contents)).toBe(true);

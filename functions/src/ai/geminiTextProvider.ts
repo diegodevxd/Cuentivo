@@ -1,8 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import type { SafeAiProposal } from "../contract.js";
 import { parseSafeAiProposal } from "./interpretation.js";
-
-export const GEMINI_MODEL = "gemini-3.5-flash-lite";
+/**
+ * Model for operational text and voice prompt interpretation.
+ * Fast, lightweight, and low cost (gemini-3.5-flash-lite).
+ * Deliberately kept distinct from GEMINI_LEDGER_MODEL ("gemini-3.5-flash") used for notebook OCR.
+ */
+export const GEMINI_TEXT_MODEL = "gemini-3.5-flash-lite";
 
 /**
  * Exact JSON Schema for the typed proposal wire format: independent object schemas per kind (and
@@ -312,7 +316,7 @@ class GeminiTextProvider implements TextInterpretationProvider {
       const systemInstruction = buildSystemInstruction(input.referenceDate);
 
       const generatePromise = this.client.models.generateContent({
-        model: GEMINI_MODEL,
+        model: GEMINI_TEXT_MODEL,
         contents: input.text,
         config: {
           systemInstruction,
