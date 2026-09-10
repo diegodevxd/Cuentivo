@@ -118,6 +118,10 @@ instrumentada cubra el borde.
 
 # BLOQUE 1 — matching con más señales que el texto
 
+**Aquí empieza el `versionCode 41`.** El 40 ya está subido y es el bundle de medición; del 1 en
+adelante todo va al 41, que es "la CuentivoAI más lista". El 41 no sale hasta que haya línea base
+del 40 con libretas reales: es la mitad de la comparación.
+
 Hoy `LedgerEntityMatcher` decide por parecido de texto, y `LedgerCustomerMatching` /
 `LedgerProductMatching` deciden *cuándo* preguntarle. Léelos antes de tocar nada.
 

@@ -19,10 +19,24 @@ import androidx.room.Query
  * it is exactly the notebook. If that precision is ever needed, decide again with this comment
  * in front of you.
  *
- * `finishedAtEpochHour` is ROUNDED TO THE HOUR, not an exact instant: an exact timestamp is a
- * join key against the sales and movements created at that same moment — same database — and
- * from there the person and the amount are recoverable. Rounding to the hour is enough to tell
- * whether afternoon imports come out worse than morning ones, and useless for joining.
+ * IF THESE METRICS EVER LEAVE THE PHONE, the timestamp is dropped or bucketed AT THE EXPORT
+ * BOUNDARY, never at the storage boundary. Same class of warning as the one above: what is safe
+ * to keep on a device that already holds the ledger in the clear stops being safe the moment it
+ * travels. Today nothing exports this table — it is not in `sync`, and Firestore rules have no
+ * collection for it. That is a property to preserve, not an accident.
+ *
+ * `finishedAtEpochHour` is ROUNDED TO THE HOUR, not an exact instant. Be honest about what that
+ * buys, because it is less than it looks: on a single-user phone an hour bucket is often unique,
+ * so the row can still be associated with the sales and movements created in that same hour.
+ *
+ * The real guarantee is narrower, and it is this: THE ROW CARRIES NO PII, and the join grants no
+ * access to anything that whoever holds this database does not already have in the clear — the
+ * financial tables are right there, with names and amounts. What the join adds is the ability to
+ * LABEL METRICS WITH PEOPLE, and that is the harm the rounding reduces without eliminating.
+ *
+ * The timestamp is kept because it is the AXIS OF THE MEASUREMENT, not for retention — retention
+ * could be done by row count. Without knowing when a row was written there is no way to separate
+ * the before and after populations, and separating them is the whole reason this table exists.
  *
  * Confidence is stored as an AGGREGATED histogram, never as per-row pairs: a pair per row, in
  * order, is a fingerprint of the page even without a single name on it.
