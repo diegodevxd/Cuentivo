@@ -832,7 +832,9 @@ describe("parseLedgerExtraction", () => {
 
       const res = parseLedgerExtraction({ operations: [tooManyItems], pageIncomplete: false });
 
-      expect(res?.operations).toHaveLength(0);
+      expect(res?.operations).toHaveLength(1);
+      expect(res?.operations[0].items).toHaveLength(5);
+      expect(res?.operations[0].uncertainFields).toContain("AMOUNT");
     });
 
     test("an operation with exactly the cap of items still parses", () => {
@@ -957,6 +959,21 @@ describe("parseLedgerExtraction", () => {
       const parsedOp = res?.operations[0];
       expect(parsedOp?.warnings?.filter((w) => w === "ITEMS_TOTAL_MISMATCH")).toHaveLength(1);
       expect(parsedOp?.uncertainFields?.filter((f) => f === "AMOUNT")).toHaveLength(1);
+    });
+
+    test("v5 page totals reject invalid entries without rejecting the page", () => {
+      const result = parseLedgerExtraction({
+        operations: [VALID_OPERATION_SALE],
+        pageIncomplete: false,
+        pageType: "ACCOUNTS",
+        pageTotals: [
+          { label: "Saldo", amountCents: "1000", afterLineIndex: 1 },
+          { label: "Falso", amountCents: 1000, afterLineIndex: 1 },
+          { label: "Fuera", amountCents: "2000", afterLineIndex: 99 },
+        ],
+      });
+      expect(result?.pageType).toBe("ACCOUNTS");
+      expect(result?.pageTotals).toEqual([{ label: "Saldo", amountCents: "1000", afterLineIndex: 1 }]);
     });
   });
 });

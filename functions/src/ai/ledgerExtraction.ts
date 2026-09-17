@@ -1,10 +1,12 @@
-import type {
+import {
   LedgerDiscardDiagnostic,
   LedgerExtractionResult,
   LedgerItem,
   LedgerOperation,
   LedgerOperationV4,
   LedgerPageDate,
+  LedgerPageType,
+  LedgerPageTotal,
   LedgerRegion,
   LedgerSource,
   LedgerSources,
@@ -14,6 +16,9 @@ import type {
   SafeDateCandidate,
   UncertainLedgerField,
   UnreadableLedgerField,
+  MAX_LEDGER_MARGIN_NOTE_LENGTH,
+  MAX_LEDGER_PAGE_TOTAL_LABEL_LENGTH,
+  MAX_LEDGER_PAGE_TOTALS,
 } from "../contract.js";
 import { MAX_DISPLAY_NAME_LENGTH } from "./interpretation.js";
 
@@ -25,8 +30,8 @@ export const MAX_LEDGER_OPERATIONS = 25;
  * No existía, y eso dejaba el peor caso de la respuesta sin cota: el presupuesto de salida del
  * proveedor no se puede justificar sobre un campo que puede crecer sin límite. Un renglón de una
  * libreta detalla los productos de ESA línea —el ejemplo de la instrucción trae uno—, así que cinco
- * cubre de sobra lo legítimo. Pasarse descarta el renglón (MALFORMED), como cualquier otro límite
- * violado: es el lado seguro, porque el renglón se ve y se puede corregir a mano.
+ * cubre de sobra lo legítimo. Si se rebasa, se conserva el renglón y se marca AMOUNT para revisión:
+ * descartarlo haría desaparecer un movimiento financiero de la página registrada.
  */
 export const MAX_LEDGER_ITEMS_PER_OPERATION = 5;
 
@@ -72,7 +77,7 @@ const ALLOWED_SOURCES: readonly LedgerSource[] = [
 /** Canonical non-negative decimal centavo string: no signs, decimals, exponents or leading zeros (up to 18 digits). */
 const CANONICAL_CENTS_RE = /^(0|[1-9][0-9]{0,17})$/;
 
-const ROOT_KEYS = ["operations", "pageIncomplete", "pageDate"] as const;
+const ROOT_KEYS = ["operations", "pageIncomplete", "pageDate", "pageType", "pageTotals"] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (
@@ -272,13 +277,13 @@ function parseRawText(value: unknown): string | null | false {
 
 function parseItems(
   value: unknown,
-): { ok: true; items: readonly LedgerItem[] | null } | { ok: false; reason: "INVALID_MONEY" | "MALFORMED" } {
-  if (value === undefined) return { ok: true, items: null };
+): { ok: true; items: readonly LedgerItem[] | null; truncated: boolean } | { ok: false; reason: "INVALID_MONEY" | "MALFORMED" } {
+  if (value === undefined) return { ok: true, items: null, truncated: false };
   if (!Array.isArray(value)) return { ok: false, reason: "MALFORMED" };
-  if (value.length > MAX_LEDGER_ITEMS_PER_OPERATION) return { ok: false, reason: "MALFORMED" };
+  const truncated = value.length > MAX_LEDGER_ITEMS_PER_OPERATION;
 
   const parsedItems: LedgerItem[] = [];
-  for (const item of value) {
+  for (const item of value.slice(0, MAX_LEDGER_ITEMS_PER_OPERATION)) {
     if (!isPlainObject(item)) return { ok: false, reason: "MALFORMED" };
     if (!hasOnlyKeys(item, ["description", "quantity", "subtotalCents"])) {
       return { ok: false, reason: "MALFORMED" };
@@ -309,7 +314,7 @@ function parseItems(
       ...(subtotalCents !== undefined ? { subtotalCents } : {}),
     });
   }
-  return { ok: true, items: Object.freeze(parsedItems) };
+  return { ok: true, items: Object.freeze(parsedItems), truncated };
 }
 
 function parseWarnings(value: unknown): readonly LedgerWarning[] | null | false {
@@ -317,6 +322,32 @@ function parseWarnings(value: unknown): readonly LedgerWarning[] | null | false 
   const parsed = parseFieldList(value, ALLOWED_WARNINGS);
   if (parsed === null) return false;
   return parsed;
+}
+
+function parsePageType(value: unknown): LedgerPageType | undefined {
+  return value === "ACCOUNTS" || value === "COST_OR_PRICE_LIST" || value === "OTHER"
+    ? value
+    : undefined;
+}
+
+function parsePageTotals(value: unknown, lineIndexes: ReadonlySet<number>): readonly LedgerPageTotal[] | undefined {
+  if (!Array.isArray(value) || value.length > MAX_LEDGER_PAGE_TOTALS) return undefined;
+  const seen = new Set<number>();
+  const result: LedgerPageTotal[] = [];
+  for (const raw of value) {
+    if (!isPlainObject(raw) || !hasOnlyKeys(raw, ["label", "amountCents", "afterLineIndex"])) continue;
+    const label = raw["label"];
+    const amountCents = raw["amountCents"];
+    const afterLineIndex = raw["afterLineIndex"];
+    if (!isNonblankBounded(label, MAX_LEDGER_PAGE_TOTAL_LABEL_LENGTH) ||
+        typeof amountCents !== "string" || !CANONICAL_CENTS_RE.test(amountCents)) continue;
+    if (afterLineIndex !== undefined &&
+        (typeof afterLineIndex !== "number" || !Number.isSafeInteger(afterLineIndex) ||
+         afterLineIndex < 0 || !lineIndexes.has(afterLineIndex) || seen.has(afterLineIndex))) continue;
+    if (afterLineIndex !== undefined) seen.add(afterLineIndex);
+    result.push({ label, amountCents, ...(afterLineIndex !== undefined ? { afterLineIndex } : {}) });
+  }
+  return Object.freeze(result);
 }
 
 const OPERATION_ALLOWED_KEYS = [
@@ -334,6 +365,7 @@ const OPERATION_ALLOWED_KEYS = [
   "rawText",
   "items",
   "warnings",
+  "marginNote",
 ] as const;
 
 type SingleOpParseResult =
@@ -476,6 +508,9 @@ function parseSingleOperation(value: unknown): SingleOpParseResult {
       return { ok: false, lineIndex: candidateLineIndex, reason: itemsResult.reason };
     }
     const items = itemsResult.items;
+    const marginNote = isNonblankBounded(value["marginNote"], MAX_LEDGER_MARGIN_NOTE_LENGTH)
+      ? (value["marginNote"] as string)
+      : undefined;
 
     const parsedWarnings = parseWarnings(value["warnings"]);
     if (parsedWarnings === false) {
@@ -485,6 +520,16 @@ function parseSingleOperation(value: unknown): SingleOpParseResult {
     let finalUncertainFields = [...parsedUncertainFields];
     let finalUnreadableFields = [...parsedUnreadableFields];
     let finalWarnings = parsedWarnings ? [...parsedWarnings] : [];
+
+    // El detalle extra no debe hacer desaparecer el movimiento: el monto de la línea se conserva y
+    // se marca para revisión cuando la lista de productos excede su cota.
+    if (
+      itemsResult.truncated &&
+      !finalUnreadableFields.includes("AMOUNT") &&
+      !finalUncertainFields.includes("AMOUNT")
+    ) {
+      finalUncertainFields.push("AMOUNT");
+    }
 
     // A warning that only travels as text is a warning a client can drop, and one client already
     // did: Android accepted the key and never stored it, so a row the model flagged as ambiguous
@@ -563,6 +608,7 @@ function parseSingleOperation(value: unknown): SingleOpParseResult {
         ...(rawText !== null ? { rawText } : {}),
         ...(items !== null ? { items } : {}),
         ...(finalWarnings.length > 0 ? { warnings: Object.freeze(finalWarnings) } : {}),
+        ...(marginNote !== undefined ? { marginNote } : {}),
       },
     };
   } catch {
@@ -662,6 +708,10 @@ export function parseLedgerExtraction(value: unknown): LedgerExtractionResult | 
       parsedOperations.push(op);
     }
 
+    const lineIndexes = new Set(parsedOperations.map((op) => op.lineIndex));
+    const pageType = parsePageType(value["pageType"]);
+    const pageTotals = parsePageTotals(value["pageTotals"], lineIndexes);
+
     // Spec rule: reaching MAX_LEDGER_OPERATIONS (25) almost always means more text was left unread.
     // A page that stopped exactly at the cap is a page that was probably cut off, not one that
     // happened to have exactly 25 rows.
@@ -675,6 +725,8 @@ export function parseLedgerExtraction(value: unknown): LedgerExtractionResult | 
       unreadTextRemaining,
       pageIncomplete: effectivePageIncomplete,
       ...(pageDate !== undefined ? { pageDate } : {}),
+      ...(pageType !== undefined ? { pageType } : {}),
+      ...(pageTotals !== undefined ? { pageTotals } : {}),
     };
   } catch {
     return null;

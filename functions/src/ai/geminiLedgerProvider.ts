@@ -18,6 +18,7 @@ import {
   parseLedgerExtraction,
 } from "./ledgerExtraction.js";
 import { MAX_DISPLAY_NAME_LENGTH } from "./interpretation.js";
+import { MAX_LEDGER_MARGIN_NOTE_LENGTH, MAX_LEDGER_PAGE_TOTALS } from "../contract.js";
 
 /**
  * Model specifically dedicated to handwritten notebook page OCR and structured extraction.
@@ -162,10 +163,17 @@ export function buildWorstCaseLedgerDocument(): Record<string, unknown> {
         subtotalCents: "9".repeat(18),
       })),
       warnings: [...ALLOWED_WARNINGS],
+      marginNote: "N".repeat(MAX_LEDGER_MARGIN_NOTE_LENGTH),
     });
   }
   return {
     operations,
+    pageType: "COST_OR_PRICE_LIST",
+    pageTotals: Array.from({ length: MAX_LEDGER_PAGE_TOTALS }, (_, i) => ({
+      label: `Total de página ${i}`.padEnd(40, "x"),
+      amountCents: "9".repeat(18),
+      afterLineIndex: i,
+    })),
     pageIncomplete: true,
   };
 }
@@ -187,10 +195,11 @@ export function calculateWorstCaseLedgerCharLength(): { compact: number; pretty:
  * Derived from the MEASURED worst case, not from an estimate. `calculateWorstCaseLedgerCharLength()`
  * serializes a document with every v4 field at its parser maximum — 25 rows, 200-char rawText,
  * MAX_LEDGER_ITEMS_PER_OPERATION items per row, all 9 warnings, full confidence and sources,
- * 18-digit money strings, 80-char names — to ~48,900 characters compact and ~66,500 pretty.
+ * 18-digit money strings, 80-char names, 10 page totals and 40-char margin notes — measured at
+ * 51,395 characters compact and 69,583 pretty.
  *
  * At the ~2.5-3.5 characters per token that JSON syntax and Spanish text show, 66,500 characters is
- * roughly 19,000-26,600 tokens. 32768 is the next power of two above the worst end of that range, so
+ * roughly 20,000-27,834 tokens. 32768 is the next power of two above the measured worst end, so
  * a legitimate page cannot be cut for size. Before v4 fields were counted the same document was
  * ~17,600 characters and 8192 looked like a wide margin; it was not.
  *
@@ -206,7 +215,7 @@ export function calculateWorstCaseLedgerCharLength(): { compact: number; pretty:
  */
 export const MAX_LEDGER_OUTPUT_TOKENS = 32768;
 
-export function buildLedgerSystemInstruction(referenceDate: ReferenceDate): string {
+export function buildLedgerSystemInstruction(referenceDate: ReferenceDate, contractVersion: 3 | 4 | 5 = 4): string {
   return [
     `Eres el asistente especializado de Cuentivo para transcribir fotos de libretas de ventas, fiados y abonos de pequeños comercios.`,
     `Tu función es transcribir fielmente lo que se ve en la imagen al schema JSON estructurado (contrato v4), NO interpretar ni inventar.`,
@@ -235,6 +244,9 @@ export function buildLedgerSystemInstruction(referenceDate: ReferenceDate): stri
     `  ],`,
     `  "pageIncomplete": false`,
     `}`,
+    ...(contractVersion === 5 ? [
+      `Contrato v5: pageType es opcional y sólo puede ser "ACCOUNTS", "COST_OR_PRICE_LIST" u "OTHER". pageTotals es opcional y cada amountCents es un string de centavos, por ejemplo {"label":"Total","amountCents":"7990"}; marginNote es opcional y va sin paréntesis, por ejemplo "Agotado".`,
+    ] : []),
     ``,
     `- lineIndex empieza en 0 y sube de uno en uno, en el orden en que los renglones aparecen en la hoja.`,
     `- proposedKind sólo puede ser "PRIOR_DEBT", "SALE" o "PAYMENT"; si dudas, mira la regla 4.`,
@@ -250,6 +262,7 @@ export function buildLedgerSystemInstruction(referenceDate: ReferenceDate): stri
     `Como es una libreta de verdad (esto importa más que cualquier otra cosa):`,
     `- Estas hojas las escribe gente real, a mano, con prisa. Las columnas vienen en cualquier orden — la clienta puede estar a la derecha, en medio o al inicio — y todas estas formas son el mismo dato: "Juan coca 38", "Coca 38 Juan", "38 Juan coca", "Juan - coca - $38", "Juan coca....38". NUNCA asumas un orden fijo de columnas.`,
     `- Un número largo pegado al margen izquierdo suele ser un CÓDIGO de catálogo (ej. 24027), NO un monto. Pero si la columna de precios está ahí, no descartes un número sólo por estar a la izquierda.`,
+    ...(contractVersion === 5 ? [`- Los saldos corridos son subtotales que la hoja escribe, no movimientos: no los conviertas en operations.`] : []),
     `- La comilla 〃 (también ", '', "idem", "id.") significa "igual que el renglón de arriba" EN ESA COLUMNA, y nada más. NUNCA cambia de cliente: si el renglón de arriba es de "Rosa", el que trae 〃 sigue siendo de Rosa, no de quien aparezca escrito al margen.`,
     `- Lo que va ENTRE PARÉNTESIS es una nota, no parte del nombre: "Dana TS (Agotado)" es la clienta "Dana TS". Si la nota dice "agotado", "garantía", "cancelado" o parecido, puede que ese renglón no fuera una venta: transcríbelo igual y declara el campo de tipo ("KIND") en uncertainFields para que una persona lo confirme. Esas notas NO se descartan.`,
     `- La fecha escrita arriba (el encabezado de la página o de su sección) vale para todos los renglones de abajo hasta que aparezca otra fecha. Es una fecha legible de la hoja: úsala en esos renglones con sources.date = "PAGE_DATE". No dejes sin fecha un renglón que está debajo de una fecha escrita.`,
@@ -291,6 +304,7 @@ export interface LedgerExtractionProvider {
     imageBase64: string;
     imageMimeType: ExtractLedgerPageImageMimeType;
     referenceDate: ReferenceDate;
+    contractVersion?: 3 | 4 | 5;
   }>): Promise<LedgerExtractionResult | null>;
 }
 
@@ -347,6 +361,7 @@ class GeminiLedgerProvider implements LedgerExtractionProvider {
     imageBase64: string;
     imageMimeType: ExtractLedgerPageImageMimeType;
     referenceDate: ReferenceDate;
+    contractVersion?: 3 | 4 | 5;
   }>): Promise<LedgerExtractionResult | null> {
     let timerId: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -356,7 +371,7 @@ class GeminiLedgerProvider implements LedgerExtractionProvider {
         timerId = setTimeout(() => reject(new Error("provider-timeout")), this.timeoutMillis);
       });
 
-      const systemInstruction = buildLedgerSystemInstruction(input.referenceDate);
+      const systemInstruction = buildLedgerSystemInstruction(input.referenceDate, input.contractVersion ?? 4);
 
       const generatePromise = this.client.models.generateContent({
         model: GEMINI_LEDGER_MODEL,

@@ -147,6 +147,75 @@ describe("createExtractLedgerPageHandler", () => {
     expect(result.operations[0].items).toEqual([{ description: "Protector tapete", quantity: 1, subtotalCents: "25000" }]);
   });
 
+  /**
+   * Esta es la prueba que faltaba, y su ausencia dejó pasar un defecto real: la proyección de v4
+   * pasaba `extraction.operations` EN CRUDO. Como un V5 es asignable a un V4, compilaba — pero el
+   * objeto rico ya trae `marginNote`, así que la respuesta v4 habría llevado una llave que el v37 y
+   * el v40 no conocen, y su parser compara el juego de llaves exacto: habría rechazado la PÁGINA
+   * ENTERA. Se prueba con la extracción ENRIQUECIDA, que es justo lo que lo volvía invisible.
+   */
+  const V5_RICH_EXTRACTION: LedgerExtractionResult = {
+    operations: [
+      {
+        ...EXTRACTION_V4.operations[0],
+        marginNote: "Agotado",
+      },
+    ],
+    discards: [],
+    unreadTextRemaining: false,
+    pageIncomplete: false,
+    pageDate: { date: { year: 2026, month: 7, day: 2 }, confidence: 0.95 },
+    pageType: "COST_OR_PRICE_LIST",
+    pageTotals: [{ label: "saldo", amountCents: "20000", afterLineIndex: 0 }],
+  };
+
+  test("a v4 request drops every v5-only key even when the provider returns the rich v5 shape", async () => {
+    const result = (await createExtractLedgerPageHandler(
+      deps({ provider: providerReturning(V5_RICH_EXTRACTION) }),
+    )({
+      auth: AUTH_USER,
+      data: { ...VALID_DATA, contractVersion: 4 },
+    })) as any;
+
+    expect(result.contractVersion).toBe(4);
+    // La raíz de v4 no lleva ninguna llave de v5...
+    expect(result).not.toHaveProperty("pageType");
+    expect(result).not.toHaveProperty("pageTotals");
+    // ...y la operación tampoco, aunque el objeto rico la traiga.
+    expect(result.operations[0]).not.toHaveProperty("marginNote");
+    // Lo que sí es de v4 sigue llegando intacto.
+    expect(result.operations[0].rawText).toBe("Rosa protector tapete 250");
+    expect(result.operations[0].confidence).toEqual({ customer: 0.95, concept: 0.9, amount: 0.98, date: 0.9, kind: 0.95 });
+    expect(result.pageDate).toEqual({ date: { year: 2026, month: 7, day: 2 }, confidence: 0.95 });
+  });
+
+  test("a v3 request drops the v5 keys too, not only the v4 ones", async () => {
+    const result = (await createExtractLedgerPageHandler(
+      deps({ provider: providerReturning(V5_RICH_EXTRACTION) }),
+    )({
+      auth: AUTH_USER,
+      data: VALID_DATA,
+    })) as any;
+
+    expect(result.contractVersion).toBe(3);
+    expect(Object.keys(result).sort()).toEqual([...V3_ALLOWED_ROOT_KEYS].sort());
+    expect(result.operations[0]).not.toHaveProperty("marginNote");
+  });
+
+  test("a v5 request is the only one that carries pageType, pageTotals and marginNote", async () => {
+    const result = (await createExtractLedgerPageHandler(
+      deps({ provider: providerReturning(V5_RICH_EXTRACTION) }),
+    )({
+      auth: AUTH_USER,
+      data: { ...VALID_DATA, contractVersion: 5 },
+    })) as any;
+
+    expect(result.contractVersion).toBe(5);
+    expect(result.pageType).toBe("COST_OR_PRICE_LIST");
+    expect(result.pageTotals).toEqual([{ label: "saldo", amountCents: "20000", afterLineIndex: 0 }]);
+    expect(result.operations[0].marginNote).toBe("Agotado");
+  });
+
   test.each([
     ["AI_UNAVAILABLE", async () => ({} as any), deps({ provider: null })],
     ["AI_QUOTA_EXHAUSTED", async () => ({ decision: "AI_QUOTA_EXHAUSTED", provider: null, fallbackUsed: false }), deps({ authorize: async () => ({ decision: "AI_QUOTA_EXHAUSTED", provider: null, fallbackUsed: false }) })],
@@ -197,7 +266,7 @@ describe("createExtractLedgerPageHandler", () => {
   });
 
   test("a v2 or v5 contractVersion is rejected as invalid-argument", async () => {
-    for (const badVersion of [2, 5]) {
+    for (const badVersion of [2]) {
       const result = await createExtractLedgerPageHandler(deps())({
         auth: AUTH_USER,
         data: {

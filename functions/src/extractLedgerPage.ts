@@ -6,6 +6,8 @@ import {
   type InterpretAiStatus,
   type LedgerExtractionResult,
   type LedgerOperationV3,
+  type LedgerOperationV4,
+  type LedgerOperationV5,
 } from "./contract";
 import { computeReferenceDate } from "./ai/geminiTextProvider.js";
 import type { LedgerExtractionProvider } from "./ai/geminiLedgerProvider.js";
@@ -41,7 +43,7 @@ export type ExtractLedgerPageCallableDeps = Readonly<{
  * by hand somewhere else is the same leak with fewer eyes on it.
  */
 function buildExtractLedgerResponse(
-  contractVersion: 3 | 4,
+  contractVersion: 3 | 4 | 5,
   requestId: string,
   status: InterpretAiStatus,
   extraction: LedgerExtractionResult | null,
@@ -70,16 +72,73 @@ function buildExtractLedgerResponse(
       unreadTextRemaining: extraction ? extraction.unreadTextRemaining : false,
       pageIncomplete: extraction ? extraction.pageIncomplete : false,
     };
-  } else {
+  } else if (contractVersion === 4) {
+    // Se construye campo por campo, igual que v3, y NO se pasa `extraction.operations` en crudo.
+    // El objeto rico lleva `marginNote` desde que existe v5, y un V5 ES asignable a un V4, así que
+    // pasarlo en crudo compilaba y aun así filtraba una llave que el teléfono v37/v40 no conoce —y
+    // su parser compara el juego de llaves exacto, así que habría rechazado la PÁGINA ENTERA—.
+    // Es la misma trampa que el comentario de arriba describe: el spread es lo que vuelve invisible
+    // este defecto en revisión.
+    const opsV4: LedgerOperationV4[] | null = extraction?.operations
+      ? extraction.operations.map((op) => ({
+          lineIndex: op.lineIndex,
+          ...(op.proposedKind !== undefined ? { proposedKind: op.proposedKind } : {}),
+          ...(op.customerName !== undefined ? { customerName: op.customerName } : {}),
+          ...(op.amountCents !== undefined ? { amountCents: op.amountCents } : {}),
+          ...(op.description !== undefined ? { description: op.description } : {}),
+          ...(op.date !== undefined ? { date: op.date } : {}),
+          uncertainFields: op.uncertainFields,
+          unreadableFields: op.unreadableFields,
+          ...(op.region !== undefined ? { region: op.region } : {}),
+          ...(op.confidence !== undefined ? { confidence: op.confidence } : {}),
+          ...(op.sources !== undefined ? { sources: op.sources } : {}),
+          ...(op.rawText !== undefined ? { rawText: op.rawText } : {}),
+          ...(op.items !== undefined ? { items: op.items } : {}),
+          ...(op.warnings !== undefined ? { warnings: op.warnings } : {}),
+        }))
+      : null;
+
     return {
       contractVersion: 4,
       requestId,
       status,
-      operations: extraction ? extraction.operations : null,
+      operations: opsV4,
       discards: extraction ? extraction.discards : [],
       unreadTextRemaining: extraction ? extraction.unreadTextRemaining : false,
       pageIncomplete: extraction ? extraction.pageIncomplete : false,
       ...(extraction?.pageDate ? { pageDate: extraction.pageDate } : {}),
+    };
+  } else {
+    const opsV5: LedgerOperationV5[] | null = extraction?.operations
+      ? extraction.operations.map((op) => ({
+          lineIndex: op.lineIndex,
+          ...(op.proposedKind !== undefined ? { proposedKind: op.proposedKind } : {}),
+          ...(op.customerName !== undefined ? { customerName: op.customerName } : {}),
+          ...(op.amountCents !== undefined ? { amountCents: op.amountCents } : {}),
+          ...(op.description !== undefined ? { description: op.description } : {}),
+          ...(op.date !== undefined ? { date: op.date } : {}),
+          uncertainFields: op.uncertainFields,
+          unreadableFields: op.unreadableFields,
+          ...(op.region !== undefined ? { region: op.region } : {}),
+          ...(op.confidence !== undefined ? { confidence: op.confidence } : {}),
+          ...(op.sources !== undefined ? { sources: op.sources } : {}),
+          ...(op.rawText !== undefined ? { rawText: op.rawText } : {}),
+          ...(op.items !== undefined ? { items: op.items } : {}),
+          ...(op.warnings !== undefined ? { warnings: op.warnings } : {}),
+          ...(op.marginNote !== undefined ? { marginNote: op.marginNote } : {}),
+        }))
+      : null;
+    return {
+      contractVersion: 5,
+      requestId,
+      status,
+      operations: opsV5,
+      discards: extraction ? extraction.discards : [],
+      unreadTextRemaining: extraction ? extraction.unreadTextRemaining : false,
+      pageIncomplete: extraction ? extraction.pageIncomplete : false,
+      ...(extraction?.pageDate ? { pageDate: extraction.pageDate } : {}),
+      ...(extraction?.pageType ? { pageType: extraction.pageType } : {}),
+      ...(extraction?.pageTotals ? { pageTotals: extraction.pageTotals } : {}),
     };
   }
 }
@@ -173,6 +232,7 @@ export function createExtractLedgerPageHandler(
         imageBase64,
         imageMimeType,
         referenceDate,
+        contractVersion,
       });
       const durationMillis = Math.max(0, deps.now() - providerStartTime);
       deps.onProviderLatency?.(durationMillis);

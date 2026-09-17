@@ -255,7 +255,7 @@ export function validateAuthorizeAiActionRequest(input: unknown): AuthorizeAiAct
 export type ExtractLedgerPageImageMimeType = "image/jpeg" | "image/png" | "image/webp";
 
 export type ExtractLedgerPageRequest = Readonly<{
-  contractVersion: 3 | 4;
+  contractVersion: 3 | 4 | 5;
   requestId: string;
   action: "extract_ledger_page";
   imageBase64: string;
@@ -327,6 +327,14 @@ export type LedgerOperationV4 = LedgerOperationV3 & Readonly<{
   warnings?: readonly LedgerWarning[];
 }>;
 
+export type LedgerPageType = "ACCOUNTS" | "COST_OR_PRICE_LIST" | "OTHER";
+export type LedgerPageTotal = Readonly<{
+  label: string;
+  amountCents: string;
+  afterLineIndex?: number;
+}>;
+export type LedgerOperationV5 = LedgerOperationV4 & Readonly<{ marginNote?: string }>;
+
 /**
  * A candidate ledger operation parsed from raw model output.
  *
@@ -339,6 +347,9 @@ export type LedgerOperation = LedgerOperationV4;
 
 export const CANONICAL_LEDGER_CENTS_RE = /^(0|[1-9][0-9]{0,17})$/;
 export const MAX_LEDGER_CUSTOMER_NAME_LENGTH = 80;
+export const MAX_LEDGER_PAGE_TOTALS = 10;
+export const MAX_LEDGER_PAGE_TOTAL_LABEL_LENGTH = 40;
+export const MAX_LEDGER_MARGIN_NOTE_LENGTH = 40;
 
 /**
  * An operation that is fully resolved, complete, and ready for atomic batch registration.
@@ -417,11 +428,13 @@ export type LedgerPageDate = Readonly<{
 }>;
 
 export type LedgerExtractionResult = Readonly<{
-  operations: readonly LedgerOperationV4[];
+  operations: readonly LedgerOperationV5[];
   discards: readonly LedgerDiscardDiagnostic[];
   unreadTextRemaining: boolean;
   pageIncomplete: boolean;
   pageDate?: LedgerPageDate;
+  pageType?: LedgerPageType;
+  pageTotals?: readonly LedgerPageTotal[];
 }>;
 
 export type ExtractLedgerPageResponseV3 = Readonly<{
@@ -445,7 +458,14 @@ export type ExtractLedgerPageResponseV4 = Readonly<{
   pageDate?: LedgerPageDate;
 }>;
 
-export type ExtractLedgerPageResponse = ExtractLedgerPageResponseV3 | ExtractLedgerPageResponseV4;
+export type ExtractLedgerPageResponseV5 = Omit<ExtractLedgerPageResponseV4, "contractVersion" | "operations"> & Readonly<{
+  contractVersion: 5;
+  operations: readonly LedgerOperationV5[] | null;
+  pageType?: LedgerPageType;
+  pageTotals?: readonly LedgerPageTotal[];
+}>;
+
+export type ExtractLedgerPageResponse = ExtractLedgerPageResponseV3 | ExtractLedgerPageResponseV4 | ExtractLedgerPageResponseV5;
 
 export type ExtractLedgerPageValidation =
   | Readonly<{ ok: true; value: ExtractLedgerPageRequest }>
@@ -488,8 +508,8 @@ const ALLOWED_IMAGE_MIME_TYPES: readonly ExtractLedgerPageImageMimeType[] = [
 ];
 
 /**
- * Accepts contract v3 or v4 extract_ledger_page allow-list: a plain non-null object whose only keys
- * are contractVersion, requestId, action, imageBase64 and imageMimeType, with contractVersion 3 or 4,
+ * Accepts contract v3, v4 or v5 extract_ledger_page allow-list: a plain non-null object whose only keys
+ * are contractVersion, requestId, action, imageBase64 and imageMimeType, with contractVersion 3, 4 or 5,
  * action "extract_ledger_page", a 36-character UUID, non-empty well-formed base64 image data of at
  * most MAX_LEDGER_IMAGE_BASE64_LENGTH code units, and an allowed mime type.
  *
@@ -522,7 +542,7 @@ export function validateExtractLedgerPageRequest(input: unknown): ExtractLedgerP
       return { ok: false, reason: "invalid-request" };
     }
     const version = record["contractVersion"];
-    if ((version !== 3 && version !== 4) || record["action"] !== EXTRACT_LEDGER_ACTION) {
+    if ((version !== 3 && version !== 4 && version !== 5) || record["action"] !== EXTRACT_LEDGER_ACTION) {
       return { ok: false, reason: "invalid-request" };
     }
     const requestId = record["requestId"];
@@ -552,7 +572,7 @@ export function validateExtractLedgerPageRequest(input: unknown): ExtractLedgerP
     return {
       ok: true,
       value: {
-        contractVersion: version as 3 | 4,
+        contractVersion: version as 3 | 4 | 5,
         requestId,
         action: EXTRACT_LEDGER_ACTION,
         imageBase64,

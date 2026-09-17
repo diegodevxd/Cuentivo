@@ -496,9 +496,13 @@ describe("validateExtractLedgerPageRequest", () => {
     expect(res).toEqual({ ok: true, value: VALID_LEDGER_REQ_V4 });
   });
 
+  test("accepts contractVersion 5", () => {
+    const request = { ...VALID_LEDGER_REQ_V4, contractVersion: 5 as const };
+    expect(validateExtractLedgerPageRequest(request)).toEqual({ ok: true, value: request });
+  });
+
   test.each([
     ["version 2", 2],
-    ["version 5", 5],
     ["version 0", 0],
     ["negative version", -3],
     ["float version 3.5", 3.5],
