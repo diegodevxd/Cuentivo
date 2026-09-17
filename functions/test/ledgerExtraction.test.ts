@@ -814,11 +814,10 @@ describe("parseLedgerExtraction", () => {
       expect(res?.operations).toHaveLength(0);
     });
 
-    test("a pageTotals list longer than the cap drops the whole list, and the page survives", () => {
-      // Comportamiento REAL del parser: con más de MAX_LEDGER_PAGE_TOTALS entradas no descarta la
-      // página, ignora la lista completa. Queda anotado en el reporte como algo a revisar: perder
-      // TODAS las comprobaciones de subtotales es *menos* duda, no más, y recortar a las primeras 10
-      // sería más consistente con lo que se decidió para `items`. No se cambia aquí.
+    test("a pageTotals list longer than the cap keeps the first ten and marks the page unread", () => {
+      // Decisión de Diego: con más de MAX_LEDGER_PAGE_TOTALS NO se ignora la lista. Se conservan las
+      // primeras y la página queda marcada como "quedó algo sin comprobar", para que Android pida la
+      // confirmación de página —que ya existe— en vez de perder esas comprobaciones en silencio.
       const eleven = Array.from({ length: MAX_LEDGER_PAGE_TOTALS + 1 }, (_, i) => ({
         label: `saldo ${i}`,
         amountCents: "100",
@@ -841,11 +840,16 @@ describe("parseLedgerExtraction", () => {
 
       expect(res).not.toBeNull();
       expect(res?.operations).toHaveLength(1);
-      expect(res?.pageTotals).toBeUndefined();
+      expect(res?.pageTotals).toHaveLength(MAX_LEDGER_PAGE_TOTALS);
+      expect(res?.pageTotals?.[0]?.label).toBe("saldo 0");
+      expect(res?.pageTotals?.[MAX_LEDGER_PAGE_TOTALS - 1]?.label).toBe(`saldo ${MAX_LEDGER_PAGE_TOTALS - 1}`);
+      expect(res?.unreadTextRemaining).toBe(true);
+      expect(res?.pageIncomplete).toBe(true);
     });
 
-    test("a pageTotals list at exactly the cap is kept whole", () => {
-      // El borde bueno: el límite no puede estar tirando listas legítimas.
+    test("a pageTotals list at exactly the cap is kept whole and does not mark the page", () => {
+      // El borde bueno: el límite no puede estar tirando listas legítimas ni marcando páginas que
+      // estaban completas.
       const ten = Array.from({ length: MAX_LEDGER_PAGE_TOTALS }, (_, i) => ({
         label: `saldo ${i}`,
         amountCents: "100",
@@ -867,6 +871,8 @@ describe("parseLedgerExtraction", () => {
       });
 
       expect(res?.pageTotals).toHaveLength(MAX_LEDGER_PAGE_TOTALS);
+      expect(res?.unreadTextRemaining).toBe(false);
+      expect(res?.pageIncomplete).toBe(false);
     });
 
     test("an operation with more items than the cap is discarded, so the output stays bounded", () => {

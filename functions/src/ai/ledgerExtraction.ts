@@ -330,11 +330,19 @@ function parsePageType(value: unknown): LedgerPageType | undefined {
     : undefined;
 }
 
-function parsePageTotals(value: unknown, lineIndexes: ReadonlySet<number>): readonly LedgerPageTotal[] | undefined {
-  if (!Array.isArray(value) || value.length > MAX_LEDGER_PAGE_TOTALS) return undefined;
+function parsePageTotals(
+  value: unknown,
+  lineIndexes: ReadonlySet<number>,
+): { totals: readonly LedgerPageTotal[] | undefined; truncated: boolean } {
+  if (!Array.isArray(value)) return { totals: undefined, truncated: false };
+  // Con más de MAX_LEDGER_PAGE_TOTALS NO se ignora la lista: se conservan las primeras y la página
+  // queda marcada como "hay algo sin comprobar". Ignorarla entera era MENOS duda, no más —al revés de
+  // lo decidido para `items`—, y una hoja con once subtotales declarados perdía TODAS sus
+  // comprobaciones sin que nadie se enterara.
+  const truncated = value.length > MAX_LEDGER_PAGE_TOTALS;
   const seen = new Set<number>();
   const result: LedgerPageTotal[] = [];
-  for (const raw of value) {
+  for (const raw of value.slice(0, MAX_LEDGER_PAGE_TOTALS)) {
     if (!isPlainObject(raw) || !hasOnlyKeys(raw, ["label", "amountCents", "afterLineIndex"])) continue;
     const label = raw["label"];
     const amountCents = raw["amountCents"];
@@ -347,7 +355,7 @@ function parsePageTotals(value: unknown, lineIndexes: ReadonlySet<number>): read
     if (afterLineIndex !== undefined) seen.add(afterLineIndex);
     result.push({ label, amountCents, ...(afterLineIndex !== undefined ? { afterLineIndex } : {}) });
   }
-  return Object.freeze(result);
+  return { totals: Object.freeze(result), truncated };
 }
 
 const OPERATION_ALLOWED_KEYS = [
@@ -624,7 +632,8 @@ function parseSingleOperation(value: unknown): SingleOpParseResult {
  * - operations must be an array of length <= MAX_LEDGER_OPERATIONS (25). If longer, rejected (returns null).
  * - lineIndex must be unique and in strictly ascending order.
  * - Malformed operations within the array are discarded with safe diagnostics (inputIndex, lineIndex, reason).
- * - Distinguishes unreadTextRemaining (from model declaration or reaching MAX_LEDGER_OPERATIONS 25)
+ * - Distinguishes unreadTextRemaining (from model declaration, reaching MAX_LEDGER_OPERATIONS 25, o
+ *   haber recortado los subtotales declarados al tope)
  *   from discards (rows dropped during parsing).
  * - pageIncomplete is true if unreadTextRemaining is true OR any operations were discarded.
  * - Entire document rejected (null) if root is malformed, operations is not an array, or length > 25.
@@ -710,13 +719,15 @@ export function parseLedgerExtraction(value: unknown): LedgerExtractionResult | 
 
     const lineIndexes = new Set(parsedOperations.map((op) => op.lineIndex));
     const pageType = parsePageType(value["pageType"]);
-    const pageTotals = parsePageTotals(value["pageTotals"], lineIndexes);
+    const pageTotalsResult = parsePageTotals(value["pageTotals"], lineIndexes);
 
     // Spec rule: reaching MAX_LEDGER_OPERATIONS (25) almost always means more text was left unread.
     // A page that stopped exactly at the cap is a page that was probably cut off, not one that
     // happened to have exactly 25 rows.
     const reachedCapacity = rawOperations.length === MAX_LEDGER_OPERATIONS;
-    const unreadTextRemaining = rawPageIncomplete || reachedCapacity;
+    // Y si sobraron subtotales declarados, quedó algo sin comprobar: la página lo dice para que la
+    // persona lo confirme en Android, en vez de perder esas comprobaciones en silencio.
+    const unreadTextRemaining = rawPageIncomplete || reachedCapacity || pageTotalsResult.truncated;
     const effectivePageIncomplete = unreadTextRemaining || discards.length > 0;
 
     return {
@@ -726,7 +737,7 @@ export function parseLedgerExtraction(value: unknown): LedgerExtractionResult | 
       pageIncomplete: effectivePageIncomplete,
       ...(pageDate !== undefined ? { pageDate } : {}),
       ...(pageType !== undefined ? { pageType } : {}),
-      ...(pageTotals !== undefined ? { pageTotals } : {}),
+      ...(pageTotalsResult.totals !== undefined ? { pageTotals: pageTotalsResult.totals } : {}),
     };
   } catch {
     return null;
