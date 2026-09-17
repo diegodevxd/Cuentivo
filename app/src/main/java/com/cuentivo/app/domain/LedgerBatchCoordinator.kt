@@ -1,7 +1,6 @@
 package com.cuentivo.app.domain
 
 import com.cuentivo.app.ai.ledger.LedgerOperation
-import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ExpectedLedgerBatchResult
 
@@ -18,11 +17,15 @@ import com.cuentivo.app.data.local.ExpectedLedgerBatchResult
  */
 object LedgerBatchCoordinator {
 
-    /** How many operations were written, or null when nothing was. */
+    /** Confirma una página con una clave estable por negocio y sesión de importación. */
     suspend fun confirm(
         businessId: String,
         userId: String,
+        importSessionId: String,
         operations: List<LedgerOperation>,
+        blockedLineIndices: Set<Int>,
+        modelSaysTextMayBeMissing: Boolean,
+        isPageCompletenessConfirmed: Boolean,
         pageDateEpochDay: Long?,
         todayEpochDay: Long,
         nowEpochMillis: Long,
@@ -31,44 +34,39 @@ object LedgerBatchCoordinator {
         loadOutstandingByCustomerId: suspend () -> Map<String, List<OutstandingSale>>,
         write: suspend (PlannedLedgerBatch) -> ExpectedLedgerBatchResult,
         enqueue: suspend (PlannedLedgerBatch) -> Unit = {},
-    ): Int? {
-        if (businessId.isBlank() || userId.isBlank()) return null
-
-        val registrable = operations.filter { isRegisterableLedgerOperation(it) }
-        val resolvedDates = AiLedgerBatchPlanner.resolvedDatesFor(
-            operations = operations,
-            pageDateEpochDay = pageDateEpochDay,
-            todayEpochDay = todayEpochDay,
-        )
-        val batchKey = AiLedgerBatchPlanner.batchKeyFor(
-            businessId = businessId,
-            registrableOperations = registrable,
-            resolvedDatesByLineIndex = resolvedDates,
-        )
+    ): LedgerBatchConfirmation {
+        if (businessId.isBlank() || userId.isBlank() || importSessionId.isBlank()) return LedgerBatchConfirmation.Failed
+        if (!LedgerPageCompleteness.isRegistrable(modelSaysTextMayBeMissing, isPageCompletenessConfirmed)) return LedgerBatchConfirmation.Failed
+        val unresolved = LedgerPageResolution.unresolvedLineIndices(operations, blockedLineIndices)
+        if (unresolved.isNotEmpty()) return LedgerBatchConfirmation.Failed
+        val batchKey = AiLedgerBatchPlanner.batchKeyFor(businessId, importSessionId)
         if (alreadyRecorded(batchKey)) {
-            return registrable.size
+            return LedgerBatchConfirmation.AlreadyRecorded(operations.size)
         }
 
         val planned = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = importSessionId,
             operations = operations,
+            blockedLineIndices = blockedLineIndices,
             existingCustomerMap = loadCustomersByNormalizedName(),
             existingOutstandingSalesByCustomerId = loadOutstandingByCustomerId(),
             pageDateEpochDay = pageDateEpochDay,
             todayEpochDay = todayEpochDay,
             nowEpochMillis = nowEpochMillis,
         )
-        if (planned !is BatchPlanningResult.Success) return null
+        if (planned !is BatchPlanningResult.Success) return LedgerBatchConfirmation.Failed
 
         return when (val result = write(planned.plan)) {
             is ExpectedLedgerBatchResult.Recorded -> {
                 // After the money is committed, never before, and never allowed to turn a recorded
                 // page into a reported failure.
                 enqueue(planned.plan)
-                result.executableOperationsCount
+                LedgerBatchConfirmation.Recorded(result.executableOperationsCount)
             }
-            else -> null
+            is ExpectedLedgerBatchResult.AlreadyRecorded -> LedgerBatchConfirmation.AlreadyRecorded(result.executableOperationsCount)
+            else -> LedgerBatchConfirmation.Failed
         }
     }
 }

@@ -116,7 +116,13 @@ class LedgerV4FidelityTest {
             ),
         )
 
-        val health = LedgerFieldHealth.evaluate(op)
+        val health = LedgerFieldHealth.evaluate(
+            op = op,
+            financialDiagnostics = emptyList(),
+            pageDateEpochDay = null,
+            todayEpochDay = null,
+            objections = emptyList(),
+        )
 
         assertEquals(FieldHealthColor.GREEN, health.customerHealth)
         assertEquals(FieldOrigin.INHERITED_FROM_ROW_ABOVE, health.customerOrigin)
@@ -126,7 +132,16 @@ class LedgerV4FidelityTest {
     @Test
     fun `low certainty asks for a second look but never clears a doubt`() {
         val unsure = wire(baseOp(mapOf("confidence" to mapOf("customer" to 0.40))))
-        assertEquals(FieldHealthColor.YELLOW, LedgerFieldHealth.evaluate(unsure).customerHealth)
+        assertEquals(
+            FieldHealthColor.YELLOW,
+            LedgerFieldHealth.evaluate(
+                op = unsure,
+                financialDiagnostics = emptyList(),
+                pageDateEpochDay = null,
+                todayEpochDay = null,
+                objections = emptyList(),
+            ).customerHealth,
+        )
 
         // And the other direction, which is the one that would cost money: high certainty over a
         // field the model itself declared unreadable does NOT turn it green.
@@ -140,7 +155,16 @@ class LedgerV4FidelityTest {
                 "confidence" to mapOf("customer" to 0.99),
             ),
         )
-        assertEquals(FieldHealthColor.RED, LedgerFieldHealth.evaluate(declaredUnreadable).customerHealth)
+        assertEquals(
+            FieldHealthColor.RED,
+            LedgerFieldHealth.evaluate(
+                op = declaredUnreadable,
+                financialDiagnostics = emptyList(),
+                pageDateEpochDay = null,
+                todayEpochDay = null,
+                objections = emptyList(),
+            ).customerHealth,
+        )
         assertTrue(
             "la certeza no puede volver registrable un renglon",
             !isRegisterableLedgerOperation(declaredUnreadable),

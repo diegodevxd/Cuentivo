@@ -58,7 +58,7 @@ class LedgerImportSummaryCalculatorTest {
             todayEpochDay = 20620L,
         )
 
-        val result = LedgerImportSummaryCalculator.calculate(review)
+        val result = LedgerImportSummaryCalculator.calculate(review, emptyList())
 
         assertEquals(9, result.detectedCount)
         assertEquals(1, result.readyCount)
@@ -94,7 +94,7 @@ class LedgerImportSummaryCalculatorTest {
             summary = summary,
         )
 
-        val result = LedgerImportSummaryCalculator.calculate(review)
+        val result = LedgerImportSummaryCalculator.calculate(review, emptyList())
 
         assertEquals(0, result.readyCount)
         assertFalse(result.isConfirmButtonEnabled)
@@ -142,7 +142,7 @@ class LedgerImportSummaryCalculatorTest {
             todayEpochDay = 20620L,
         )
 
-        val result = LedgerImportSummaryCalculator.calculate(review)
+        val result = LedgerImportSummaryCalculator.calculate(review, emptyList())
 
         assertFalse(result.canConfirm)
         assertFalse(result.isConfirmButtonEnabled) // Disabled, promises no number!
@@ -183,7 +183,7 @@ class LedgerImportSummaryCalculatorTest {
             todayEpochDay = 20620L,
         )
 
-        val result = LedgerImportSummaryCalculator.calculate(review)
+        val result = LedgerImportSummaryCalculator.calculate(review, emptyList())
 
         assertEquals(1, result.detectedCount) // Discards do NOT count in detectedCount
     }
@@ -220,7 +220,7 @@ class LedgerImportSummaryCalculatorTest {
             todayEpochDay = 20620L,
         )
 
-        val result = LedgerImportSummaryCalculator.calculate(review)
+        val result = LedgerImportSummaryCalculator.calculate(review, emptyList())
 
         assertTrue(result.pageIncompleteNoticeRequired)
     }
@@ -260,9 +260,104 @@ class LedgerImportSummaryCalculatorTest {
             todayEpochDay = 20620L,
         )
 
-        val result = LedgerImportSummaryCalculator.calculate(review)
+        val result = LedgerImportSummaryCalculator.calculate(review, emptyList())
 
         assertEquals(0, result.readyCount)
         assertEquals(1, result.pendingReviewCount)
+    }
+
+    @Test
+    fun `deterministic objection blocks row from readyCount and adds to pendingReviewCount`() {
+        val op = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa",
+            amountCents = "44900", // Decimal shift suspect
+            date = SafeDateCandidate(2026, 6, 15),
+        )
+        val summary = LedgerReviewSummary(
+            newCustomersCount = 1,
+            visibleCustomersCount = 1,
+            registerableOperationsCount = 1,
+            executableOperationsCount = 1,
+            unregisterableOperationsCount = 0,
+            salesCount = 1,
+            paymentsCount = 0,
+            priorDebtsCount = 0,
+            excludedRowsCount = 0,
+            financialDiagnostics = emptyList(),
+        )
+        val review = LedgerReview(
+            customerGroups = emptyList(),
+            operations = listOf(op),
+            discards = emptyList(),
+            unreadTextRemaining = false,
+            pageIncomplete = false,
+            summary = summary,
+            pageDateEpochDay = 20620L,
+            todayEpochDay = 20620L,
+        )
+
+        val objections = listOf(
+            LedgerDeterministicObjection(
+                lineIndex = 0,
+                type = LedgerDeterministicObjectionType.SUSPECT_DECIMAL_SHIFT,
+            )
+        )
+
+        val result = LedgerImportSummaryCalculator.calculate(review, objections)
+
+        assertEquals(0, result.readyCount)
+        assertEquals(1, result.pendingReviewCount)
+        assertFalse(result.isConfirmButtonEnabled)
+    }
+
+    @Test
+    fun `rows inheriting valid page date are ready and not doubtful for date`() {
+        val opWithoutRowDate = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Carlos",
+            amountCents = "1500",
+            date = null, // Inherits page date
+        )
+        val summary = LedgerReviewSummary(
+            newCustomersCount = 1,
+            visibleCustomersCount = 1,
+            registerableOperationsCount = 1,
+            executableOperationsCount = 1,
+            unregisterableOperationsCount = 0,
+            salesCount = 1,
+            paymentsCount = 0,
+            priorDebtsCount = 0,
+            excludedRowsCount = 0,
+            financialDiagnostics = emptyList(),
+        )
+        val review = LedgerReview(
+            customerGroups = emptyList(),
+            operations = listOf(opWithoutRowDate),
+            discards = emptyList(),
+            unreadTextRemaining = false,
+            pageIncomplete = false,
+            summary = summary,
+            pageDateEpochDay = 20620L, // Valid page date
+            todayEpochDay = 20620L,
+        )
+
+        val result = LedgerImportSummaryCalculator.calculate(review, emptyList())
+
+        assertEquals(1, result.readyCount)
+        assertEquals(0, result.pendingReviewCount)
+        assertTrue(result.isConfirmButtonEnabled)
+
+        // Field health for row inheriting page date must also be GREEN
+        val health = LedgerFieldHealth.evaluate(
+            op = opWithoutRowDate,
+            financialDiagnostics = emptyList(),
+            pageDateEpochDay = 20620L,
+            todayEpochDay = 20620L,
+            objections = emptyList(),
+        )
+        assertEquals(FieldHealthColor.GREEN, health.dateHealth)
     }
 }

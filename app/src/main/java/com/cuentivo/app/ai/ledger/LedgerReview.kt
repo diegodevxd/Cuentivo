@@ -1,6 +1,7 @@
 package com.cuentivo.app.ai.ledger
 
 import com.cuentivo.app.domain.CustomerNameNormalizer
+import com.cuentivo.app.domain.LedgerObjectionConfirmation
 import java.util.Collections
 
 enum class ProposedLedgerKind {
@@ -87,6 +88,13 @@ data class LedgerOperation(
      * the screen can eventually say why a row is marked without asking the server again.
      */
     val warnings: List<String> = emptyList(),
+    /** Whether an active objection on this row was explicitly reviewed and confirmed by the human. */
+    val isObjectionConfirmed: Boolean = false,
+    /**
+     * Huella de los campos que se confirmaron. Si el renglón cambia después, la huella deja de
+     * coincidir y la confirmación caduca: nadie confirmó lo que ahora dice.
+     */
+    val objectionConfirmedFingerprint: String? = null,
 ) {
     /**
      * Defensive copy to guarantee snapshot immutability regardless of caller list modifications.
@@ -96,6 +104,8 @@ data class LedgerOperation(
         unreadableFields = Collections.unmodifiableList(unreadableFields.toList()),
         items = Collections.unmodifiableList(items.toList()),
         warnings = Collections.unmodifiableList(warnings.toList()),
+        isObjectionConfirmed = isObjectionConfirmed,
+        objectionConfirmedFingerprint = objectionConfirmedFingerprint,
     )
 }
 
@@ -757,6 +767,15 @@ object LedgerReviewEdits {
     ): List<LedgerOperation> = replace(operations, lineIndex) { op ->
         op.copy(description = description)
     }
+
+    /**
+     * Explicit human confirmation for a row with active deterministic objections ("Sí, es correcto").
+     * Clears the objection block so that the operation can become registerable and plannable.
+     */
+    fun confirmObjection(
+        operations: List<LedgerOperation>,
+        lineIndex: Int,
+    ): List<LedgerOperation> = replace(operations, lineIndex) { LedgerObjectionConfirmation.confirming(it) }
 
     /**
      * Drops a row the user does not want to import. Nothing financial is being deleted here: this

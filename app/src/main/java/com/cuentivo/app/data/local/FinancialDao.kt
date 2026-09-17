@@ -18,6 +18,7 @@ sealed interface ExpectedBalancePaymentResult {
 
 sealed interface ExpectedLedgerBatchResult {
     data class Recorded(val batchIdempotencyKey: String, val executableOperationsCount: Int) : ExpectedLedgerBatchResult
+    data class AlreadyRecorded(val batchIdempotencyKey: String, val executableOperationsCount: Int) : ExpectedLedgerBatchResult
     data object StaleData : ExpectedLedgerBatchResult
 }
 
@@ -1052,7 +1053,7 @@ interface FinancialDao {
             createdAtEpochMillis = nowEpochMillis,
         )
         if (reserveOperation(operation) == -1L) {
-            return ExpectedLedgerBatchResult.Recorded(batchIdempotencyKey, executableOperationsCount)
+            return ExpectedLedgerBatchResult.AlreadyRecorded(batchIdempotencyKey, executableOperationsCount)
         }
 
         // Everything is checked before the first insert. A `return` inside a Room transaction

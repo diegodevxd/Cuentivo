@@ -15,6 +15,7 @@ import com.cuentivo.app.ai.ledger.LedgerRegion
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.UncertainLedgerField
+import com.cuentivo.app.domain.LedgerReviewSchema
 import com.cuentivo.app.ui.ai.LedgerReviewSaver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -72,6 +73,10 @@ class LedgerReviewSaverBundleTest {
         // El baseline tambien viaja en el Bundle: si se perdiera, las correcciones se contarian
         // contra la version ya editada y saldrian siempre en cero.
         originalOperations = operations.map { it.copy(customerId = null, amountCents = "25000") },
+        reviewSchemaVersion = LedgerReviewSchema.CURRENT,
+        // La afirmación de la persona sobre la hoja también viaja: si se perdiera, al restaurar
+        // volvería a pedir una confirmación que ya dio.
+        isPageCompletenessConfirmed = true,
     )
 
     @Test
@@ -99,6 +104,31 @@ class LedgerReviewSaverBundleTest {
         bundle.remove("sessionId")
 
         assertNull(LedgerReviewSaver.fromBundle(bundle))
+    }
+
+    @Test
+    fun the_schema_version_mark_survives_the_bundle_round_trip() {
+        // Sin marca no se sabe si lo que hay en el libro es esta pagina, asi que una revision
+        // restaurada no se puede registrar. La marca tiene que llegar viva al otro lado.
+        val restored = LedgerReviewSaver.fromBundle(
+            LedgerReviewSaver.toBundle(savedReview(listOf(heavyOperation(0)))),
+        )
+
+        assertNotNull(restored)
+        assertEquals(LedgerReviewSchema.CURRENT, restored!!.reviewSchemaVersion)
+    }
+
+    @Test
+    fun a_bundle_written_before_the_mark_restores_without_one() {
+        // Un guardado de la version anterior no trae la clave. La restauracion tiene que devolver
+        // null en la marca, que es lo que despues bloquea el registro.
+        val bundle = LedgerReviewSaver.toBundle(savedReview(listOf(heavyOperation(0))))
+        bundle.remove("reviewSchemaVersion")
+
+        val restored = LedgerReviewSaver.fromBundle(bundle)
+
+        assertNotNull(restored)
+        assertNull("sin marca, la revision no se puede registrar", restored!!.reviewSchemaVersion)
     }
 
     @Test

@@ -1,7 +1,5 @@
 package com.cuentivo.app.domain
 
-import com.cuentivo.app.ai.ledger.LedgerOperation
-import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.data.local.CustomerEntity
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
@@ -10,11 +8,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Two guards on the same failure mode: money that disappears without an error.
+ * Guards on the page's identity key.
  *
- * A batch key collision means the second page is taken for a repeat of the first and never written,
- * silently. An overflowed opening balance means a legitimate payment is refused, or one larger than
- * the real debt is accepted. Neither shows up as a crash.
+ * The key is a pure function of `(businessId, importSessionId)`. Content is deliberately NOT part of
+ * it: amounts, customers, dates and descriptions are editable after a commit whose result was lost,
+ * and any one of them would produce a different key and write the same charge twice.
+ *
+ * Because of that, nothing in this file can assert anything *about content* — the function cannot see
+ * it, so such an assertion could never fail and would be a green that means nothing. The guard for
+ * the failure that actually matters (a lost commit being recognised on retry) lives where it can
+ * fail: `LedgerSessionKeyIdempotencyTest`, which drives the coordinator with the same session and
+ * edited content.
+ *
+ * The last test is the other money guard: an overflowed opening balance means a legitimate payment is
+ * refused, or one larger than the real debt is accepted. Neither shows up as a crash.
  */
 class AiLedgerBatchKeyTest {
 
@@ -24,57 +31,26 @@ class AiLedgerBatchKeyTest {
     private val nowEpochMillis = 1_757_184_000_000L
     private val date = LocalDate.of(2026, 9, 1).toEpochDay()
 
-    private fun op(
-        lineIndex: Int,
-        customerName: String,
-        description: String?,
-        amountCents: String = "1000",
-    ) = LedgerOperation(
-        lineIndex = lineIndex,
-        proposedKind = ProposedLedgerKind.SALE,
-        customerName = customerName,
-        amountCents = amountCents,
-        description = description,
-    )
-
-    private fun keyOf(vararg ops: LedgerOperation): String =
-        AiLedgerBatchPlanner.batchKeyFor(
-            businessId = businessId,
-            registrableOperations = ops.toList(),
-            resolvedDatesByLineIndex = ops.associate { it.lineIndex to date },
-        )
+    private fun keyOf(
+        businessId: String = this.businessId,
+        importSessionId: String = "session-test",
+    ): String = AiLedgerBatchPlanner.batchKeyFor(businessId, importSessionId)
 
     @Test
-    fun `free text cannot swallow a whole row and forge another page's key`() {
-        // The old digest glued rows with "|" and fields with ":", both of which a person can type.
-        // So a single row whose description carries the rest of the string encodes to exactly the
-        // same bytes as two rows. The two-row page would be taken for a repeat of the one-row page
-        // already written, and Beto's 1000 would never be registered -- no error, no crash, no trace.
-        val twoRows = keyOf(
-            op(0, customerName = "Ana", description = "jabon"),
-            op(1, customerName = "Beto", description = "crema"),
-        )
-        val oneRowWearingTheOther = keyOf(
-            op(0, customerName = "Ana", description = "jabon:$date|1:SALE:beto:1000:crema"),
-        )
-
-        assertNotEquals(twoRows, oneRowWearingTheOther)
+    fun `the same session and business produce the same key, or nothing would ever be idempotent`() {
+        assertEquals(keyOf(), keyOf())
     }
 
     @Test
-    fun `the same page still produces the same key, or nothing would ever be idempotent`() {
-        val first = keyOf(op(0, customerName = "Rosa", description = "protector"))
-        val again = keyOf(op(0, customerName = "Rosa", description = "protector"))
-
-        assertEquals(first, again)
+    fun `a different session produces a different key, so a second photo is its own page`() {
+        // Dos fotos de la misma libreta son dos páginas legítimas. Si compartieran clave, la segunda
+        // se tomaría por una repetición de la primera y nunca se escribiría, en silencio.
+        assertNotEquals(keyOf(importSessionId = "session-1"), keyOf(importSessionId = "session-2"))
     }
 
     @Test
-    fun `changing an amount still changes the key`() {
-        assertNotEquals(
-            keyOf(op(0, "Rosa", "protector", amountCents = "1000")),
-            keyOf(op(0, "Rosa", "protector", amountCents = "1001")),
-        )
+    fun `a different business produces a different key for the same session`() {
+        assertNotEquals(keyOf(businessId = "biz-1"), keyOf(businessId = "biz-2"))
     }
 
     @Test
@@ -104,14 +80,16 @@ class AiLedgerBatchKeyTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = listOf(
-                LedgerOperation(
+                com.cuentivo.app.ai.ledger.LedgerOperation(
                     lineIndex = 0,
-                    proposedKind = ProposedLedgerKind.PAYMENT,
+                    proposedKind = com.cuentivo.app.ai.ledger.ProposedLedgerKind.PAYMENT,
                     customerName = "Rosa",
                     amountCents = "5000",
                 ),
             ),
+            blockedLineIndices = emptySet(),
             existingCustomerMap = mapOf(customer.normalizedName to customer),
             existingOutstandingSalesByCustomerId = mapOf(customer.id to huge),
             pageDateEpochDay = date,

@@ -19,6 +19,7 @@ data class ProductCandidate(
     val id: String,
     val name: String,
     val salePriceCents: Long? = null,
+    val sku: String? = null,
 )
 
 data class EntityMatchResult<T>(
@@ -28,7 +29,7 @@ data class EntityMatchResult<T>(
 )
 
 /**
- * Pure entity matcher for notebook import candidates (Fase 2).
+ * Pure entity matcher for notebook import candidates (Fase 2 + v41 SKU & Price Objections).
  *
  * Rules:
  * - Matches notebook text candidates against existing Room customer and product lists.
@@ -91,11 +92,33 @@ object LedgerEntityMatcher {
         queryText: String?,
         operationAmountCents: Long?,
         candidates: List<ProductCandidate>,
+        rawText: String? = null,
     ): EntityMatchResult<ProductCandidate> {
-        if (queryText.isNullOrBlank() || candidates.isEmpty()) {
+        if ((queryText.isNullOrBlank() && rawText.isNullOrBlank()) || candidates.isEmpty()) {
             return EntityMatchResult(null, 0.0, MatchDecision.UNRESOLVED)
         }
-        val normQuery = CustomerNameNormalizer.key(queryText)
+
+        // 1. Check for exact SKU token match in rawText or queryText
+        val tokensToScan = buildList {
+            if (!queryText.isNullOrBlank()) addAll(queryText.split("\\s+".toRegex()))
+            if (!rawText.isNullOrBlank()) addAll(rawText.split("\\s+".toRegex()))
+        }.map { CustomerNameNormalizer.key(it) }.filter { it.isNotBlank() }.toSet()
+
+        for (candidate in candidates) {
+            val candSku = candidate.sku?.trim()
+            if (!candSku.isNullOrBlank()) {
+                val normSku = CustomerNameNormalizer.key(candSku)
+                if (normSku.isNotBlank() && normSku in tokensToScan) {
+                    return EntityMatchResult(
+                        candidate = candidate,
+                        score = 1.0,
+                        decision = MatchDecision.AUTOMATIC,
+                    )
+                }
+            }
+        }
+
+        val normQuery = if (!queryText.isNullOrBlank()) CustomerNameNormalizer.key(queryText) else ""
         if (normQuery.isBlank()) {
             return EntityMatchResult(null, 0.0, MatchDecision.UNRESOLVED)
         }

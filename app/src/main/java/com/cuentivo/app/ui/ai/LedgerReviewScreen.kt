@@ -86,14 +86,20 @@ fun LedgerReviewContent(
     onUpdateDate: (lineIndex: Int, date: SafeDateCandidate?) -> Unit,
     onUpdatePageDate: (pageDateEpochDay: Long?) -> Unit,
     onRemoveRow: (lineIndex: Int) -> Unit,
+    onConfirmObjection: (lineIndex: Int) -> Unit,
     /** Existing customers this page's rows resemble, keyed by lineIndex. Offers, never decisions. */
-    customerMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>> = emptyMap(),
+    customerMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>>,
     onAcceptCustomerAnchor: (lineIndex: Int, candidate: com.cuentivo.app.domain.CustomerCandidate) -> Unit = { _, _ -> },
     /** Catalog products this page's rows resemble, keyed by lineIndex. Offers product name for description, never changes amount. */
-    productMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<ProductCandidate>> = emptyMap(),
+    productMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<ProductCandidate>>,
     onAcceptProductAnchor: (lineIndex: Int, candidate: ProductCandidate) -> Unit = { _, _ -> },
     /** Potential duplicate operations already in Room or elsewhere on this page, keyed by lineIndex. */
-    duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch> = emptyMap(),
+    duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch>,
+    /** Objeciones ya calculadas con las listas completas de candidatos. */
+    objections: List<com.cuentivo.app.domain.LedgerDeterministicObjection>,
+    isRegistrationBlockedByLegacySave: Boolean,
+    isPageCompletenessConfirmed: Boolean,
+    onConfirmPageCompleteness: () -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -107,8 +113,12 @@ fun LedgerReviewContent(
     // looked at it is the whole thing this feature must never do, so they stay out of the count --
     // but leaving the person to discover, unaided, that every row needs a tap is how a working
     // import looked like a dead button.
-    val rowsNeedingReview = review.operations.filterNot { isRegisterableLedgerOperation(it) }
+    val objectionLineIndices = remember(objections) { objections.map { it.lineIndex }.toSet() }
+    val allRowsNeedingReview = remember(review.operations, objections) {
+        review.operations.filter { !isRegisterableLedgerOperation(it) || it.lineIndex in objectionLineIndices }
+    }
 
+    val summaryResult = LedgerImportSummaryCalculator.calculate(review, objections, isPageCompletenessConfirmed)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -138,6 +148,7 @@ fun LedgerReviewContent(
         // Summary Card
         LedgerSummaryCard(
             review = review,
+            objections = objections,
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -169,16 +180,16 @@ fun LedgerReviewContent(
         // Also when some rows are fine and others are not: a page that registers 8 of its 20 rows
         // and says nothing about the other 12 is the quiet half-import this screen exists to prevent.
         if (review.summary.hasFinancialErrors || review.summary.executableOperationsCount == 0 ||
-            review.summary.hasMissingDates || rowsNeedingReview.isNotEmpty()
+            review.summary.hasMissingDates || allRowsNeedingReview.isNotEmpty()
         ) {
             FinancialErrorBanner(
                 diagnostics = review.summary.financialDiagnostics,
                 hasZeroOps = review.summary.executableOperationsCount == 0,
                 hasMissingDates = review.summary.hasMissingDates,
-                rowsNeedingReviewCount = rowsNeedingReview.size,
+                rowsNeedingReviewCount = allRowsNeedingReview.size,
                 onStartReview = {
-                    pendingReviewQueue = rowsNeedingReview.map { it.lineIndex }.drop(1)
-                    editingOperation = rowsNeedingReview.firstOrNull()
+                    pendingReviewQueue = allRowsNeedingReview.map { it.lineIndex }.drop(1)
+                    editingOperation = allRowsNeedingReview.firstOrNull()
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -199,6 +210,7 @@ fun LedgerReviewContent(
                     financialDiagnostics = review.summary.financialDiagnostics,
                     pageDateEpochDay = review.pageDateEpochDay,
                     todayEpochDay = review.todayEpochDay,
+                    objections = objections,
                 )
             }
             items(review.customerGroups) { group ->
@@ -216,10 +228,9 @@ fun LedgerReviewContent(
         }
 
         // Single confirmation button at the bottom
-        val summaryResult = LedgerImportSummaryCalculator.calculate(review)
         Button(
             onClick = onConfirm,
-            enabled = summaryResult.isConfirmButtonEnabled,
+            enabled = summaryResult.isConfirmButtonEnabled && !isRegistrationBlockedByLegacySave,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("ledger-review-confirm-button"),
@@ -235,13 +246,34 @@ fun LedgerReviewContent(
                     summaryResult.readyCount,
                 )
             } else {
-                stringResource(R.string.ai_ledger_action_register_disabled)
+                if (summaryResult.unresolvedCount > 0) {
+                    pluralStringResource(R.plurals.ai_ledger_action_register_blocked_pending, summaryResult.unresolvedCount, summaryResult.unresolvedCount)
+                } else if (summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed) {
+                    stringResource(R.string.ai_ledger_action_register_blocked_incomplete)
+                } else stringResource(R.string.ai_ledger_action_register_disabled)
             }
             Text(
                 text = buttonText,
                 style = MaterialTheme.typography.labelLarge,
             )
         }
+    }
+
+    if (isRegistrationBlockedByLegacySave) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(stringResource(R.string.ai_ledger_legacy_save_blocked))
+                TextButton(onClick = onCancel) { Text(stringResource(R.string.ai_ledger_legacy_save_discard)) }
+            }
+        }
+    }
+
+    if (summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed) {
+        Button(onClick = onConfirmPageCompleteness, modifier = Modifier.testTag("ledger-confirm-page-complete-button")) {
+            Text(stringResource(R.string.ai_ledger_action_confirm_page_complete))
+        }
+    } else if (summaryResult.pageIncompleteNoticeRequired) {
+        Text(stringResource(R.string.ai_ledger_page_completeness_confirmed), modifier = Modifier.testTag("ledger-page-completeness-confirmed"))
     }
 
     // Edit modal dialog when a row or unresolved field is tapped
@@ -252,6 +284,15 @@ fun LedgerReviewContent(
             customerMatch = customerMatches[op.lineIndex],
             productMatch = productMatches[op.lineIndex],
             duplicateMatch = duplicateMatches[op.lineIndex],
+            objections = objections,
+            onConfirmObjection = {
+                onConfirmObjection(op.lineIndex)
+                val nextLineIndex = pendingReviewQueue.firstOrNull()
+                pendingReviewQueue = pendingReviewQueue.drop(1)
+                editingOperation = nextLineIndex?.let { next ->
+                    review.operations.firstOrNull { it.lineIndex == next }
+                }
+            },
             onAcceptCustomerAnchor = { candidate ->
                 onAcceptCustomerAnchor(op.lineIndex, candidate)
                 val nextLineIndex = pendingReviewQueue.firstOrNull()
@@ -291,9 +332,10 @@ fun LedgerReviewContent(
 @Composable
 private fun LedgerSummaryCard(
     review: LedgerReview,
+    objections: List<com.cuentivo.app.domain.LedgerDeterministicObjection>,
     modifier: Modifier = Modifier,
 ) {
-    val summaryResult = LedgerImportSummaryCalculator.calculate(review)
+    val summaryResult = LedgerImportSummaryCalculator.calculate(review, objections, false)
 
     Card(
         modifier = modifier,
@@ -527,8 +569,8 @@ private fun FinancialErrorBanner(
 private fun CustomerGroupCard(
     group: CustomerReviewGroup,
     captureFile: File?,
-    fieldHealth: Map<Int, com.cuentivo.app.domain.OperationFieldHealth> = emptyMap(),
-    duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch> = emptyMap(),
+    fieldHealth: Map<Int, com.cuentivo.app.domain.OperationFieldHealth>,
+    duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch>,
     onEditOperation: (LedgerOperation) -> Unit,
     onUpdateKind: (lineIndex: Int, kind: ProposedLedgerKind) -> Unit,
     onRemoveRow: (lineIndex: Int) -> Unit,
@@ -848,8 +890,10 @@ private fun EditLedgerOperationDialog(
     customerMatch: com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>? = null,
     productMatch: com.cuentivo.app.domain.EntityMatchResult<ProductCandidate>? = null,
     duplicateMatch: com.cuentivo.app.domain.LedgerDuplicateMatch? = null,
+    objections: List<com.cuentivo.app.domain.LedgerDeterministicObjection>,
     onAcceptCustomerAnchor: (com.cuentivo.app.domain.CustomerCandidate) -> Unit = {},
     onAcceptProductAnchor: (ProductCandidate) -> Unit = {},
+    onConfirmObjection: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (customerName: String, amountCents: String, kind: ProposedLedgerKind, date: SafeDateCandidate?) -> Unit,
 ) {
@@ -891,6 +935,53 @@ private fun EditLedgerOperationDialog(
                         .fillMaxWidth()
                         .height(80.dp),
                 )
+
+                // Deterministic objections banner
+                val rowObjections = objections.filter { it.lineIndex == operation.lineIndex }
+                for (objection in rowObjections) {
+                    val objectionMessage = when (objection.type) {
+                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.SUSPECT_DECIMAL_SHIFT ->
+                            stringResource(R.string.ai_ledger_objection_decimal_shift)
+                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.PRICE_MISMATCH_SUSPECT ->
+                            stringResource(R.string.ai_ledger_objection_price_mismatch)
+                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.UNUSUAL_CENTS ->
+                            stringResource(R.string.ai_ledger_objection_unusual_cents)
+                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.CUSTOMER_CONFIRMATION_REQUIRED ->
+                            stringResource(R.string.ai_ledger_objection_customer_confirmation)
+                    }
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("ledger-edit-objection-warning"),
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Text(
+                                text = objectionMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
+                        }
+                    }
+                }
+                if (rowObjections.isNotEmpty() && !com.cuentivo.app.domain.LedgerObjectionConfirmation.isConfirmed(operation)) {
+                    Button(
+                        onClick = onConfirmObjection,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("ledger-edit-confirm-objection-button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiary,
+                            contentColor = MaterialTheme.colorScheme.onTertiary,
+                        ),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.ai_ledger_action_confirm_objection),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
 
                 if (duplicateMatch != null) {
                     val dateStr = runCatching {

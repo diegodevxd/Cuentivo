@@ -1,6 +1,7 @@
 package com.cuentivo.app.ui.ai
 
 import android.os.Bundle
+import com.cuentivo.app.domain.LedgerReviewSchema
 import com.cuentivo.app.ai.ledger.LedgerDetectedPageDate
 import com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic
 import com.cuentivo.app.ai.ledger.LedgerDiscardReason
@@ -46,6 +47,8 @@ internal object LedgerReviewSaver {
     private const val KEY_DETECTED_PAGE_DATE = "detectedPageDate"
     private const val KEY_DETECTED_PAGE_DATE_CONFIDENCE = "detectedPageDateConfidence"
     private const val KEY_INITIAL_DUPLICATE_COUNT = "initialDuplicateCount"
+    private const val KEY_REVIEW_SCHEMA_VERSION = "reviewSchemaVersion"
+    private const val KEY_PAGE_COMPLETENESS_CONFIRMED = "pageCompletenessConfirmed"
 
     // Operation keys. Flat strings, one per field, so a malformed row can be skipped without
     // dragging the whole page down — but see writeOperations: a row that fails to round-trip
@@ -66,6 +69,8 @@ internal object LedgerReviewSaver {
     private const val OP_RAW_TEXT = "rawText"
     private const val OP_ITEMS = "items"
     private const val OP_WARNINGS = "warnings"
+    private const val OP_OBJECTION_CONFIRMED = "objectionConfirmed"
+    private const val OP_OBJECTION_FINGERPRINT = "objectionConfirmedFingerprint"
 
     /**
      * The part of a review that cannot be recomputed: what the model read, what the person edited,
@@ -89,10 +94,14 @@ internal object LedgerReviewSaver {
         val todayEpochDay: Long?,
         val detectedPageDate: LedgerDetectedPageDate?,
         val initialDuplicateCount: Int = 0,
+        val reviewSchemaVersion: Int? = null,
+        val isPageCompletenessConfirmed: Boolean = false,
     )
 
     fun toBundle(saved: SavedLedgerReview): Bundle {
         val bundle = Bundle()
+        bundle.putInt(KEY_REVIEW_SCHEMA_VERSION, LedgerReviewSchema.CURRENT)
+        bundle.putBoolean(KEY_PAGE_COMPLETENESS_CONFIRMED, saved.isPageCompletenessConfirmed)
         bundle.putString(KEY_SESSION_ID, saved.sessionId)
         bundle.putString(KEY_BUSINESS_ID, saved.businessId)
         bundle.putParcelableArray(KEY_OPERATIONS, saved.operations.map(::operationToBundle).toTypedArray())
@@ -172,6 +181,8 @@ internal object LedgerReviewSaver {
             todayEpochDay = if (bundle.containsKey(KEY_TODAY)) bundle.getLong(KEY_TODAY) else null,
             detectedPageDate = detectedPageDate,
             initialDuplicateCount = initialDuplicateCount,
+            reviewSchemaVersion = if (bundle.containsKey(KEY_REVIEW_SCHEMA_VERSION)) bundle.getInt(KEY_REVIEW_SCHEMA_VERSION) else null,
+            isPageCompletenessConfirmed = bundle.getBoolean(KEY_PAGE_COMPLETENESS_CONFIRMED, false),
         )
     }
 
@@ -233,6 +244,10 @@ internal object LedgerReviewSaver {
         if (op.warnings.isNotEmpty()) {
             bundle.putStringArray(OP_WARNINGS, op.warnings.toTypedArray())
         }
+        if (op.isObjectionConfirmed) {
+            bundle.putBoolean(OP_OBJECTION_CONFIRMED, true)
+        }
+        op.objectionConfirmedFingerprint?.let { bundle.putString(OP_OBJECTION_FINGERPRINT, it) }
         return bundle
     }
 
@@ -313,6 +328,8 @@ internal object LedgerReviewSaver {
             rawText = bundle.getString(OP_RAW_TEXT),
             items = items,
             warnings = bundle.getStringArray(OP_WARNINGS)?.toList() ?: emptyList(),
+            isObjectionConfirmed = bundle.getBoolean(OP_OBJECTION_CONFIRMED, false),
+            objectionConfirmedFingerprint = bundle.getString(OP_OBJECTION_FINGERPRINT),
         )
     }
 

@@ -1529,14 +1529,18 @@ class MainActivity : ComponentActivity() {
                     // Writing a photographed page: plan first with real debts, then one atomic
                     // transaction. Returns how many operations were recorded, or null if nothing
                     // was written, so the screen can tell the truth either way.
-                    confirmLedgerBatch = { businessId, operations, pageDateEpochDay ->
+                    confirmLedgerBatch = { businessId, importSessionId, operations, pageDateEpochDay, blockedLineIndices, modelSaysTextMayBeMissing, isPageCompletenessConfirmed ->
                         val dao = database.financialDao()
                         val repository = com.cuentivo.app.domain.SaleRepository(dao)
                         val today = java.time.LocalDate.now().toEpochDay()
                         com.cuentivo.app.domain.LedgerBatchCoordinator.confirm(
                             businessId = businessId,
                             userId = currentUserId,
+                            importSessionId = importSessionId,
                             operations = operations,
+                            blockedLineIndices = blockedLineIndices,
+                            modelSaysTextMayBeMissing = modelSaysTextMayBeMissing,
+                            isPageCompletenessConfirmed = isPageCompletenessConfirmed,
                             pageDateEpochDay = pageDateEpochDay,
                             todayEpochDay = today,
                             nowEpochMillis = System.currentTimeMillis(),
@@ -1613,6 +1617,7 @@ class MainActivity : ComponentActivity() {
                                 id = product.id,
                                 name = product.name,
                                 salePriceCents = product.salePriceCents,
+                                sku = product.sku,
                             )
                         }
                     },

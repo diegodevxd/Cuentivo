@@ -24,7 +24,13 @@ class LedgerFieldHealthTest {
             date = SafeDateCandidate(2026, 6, 15),
         )
 
-        val health = LedgerFieldHealth.evaluate(op)
+        val health = LedgerFieldHealth.evaluate(
+            op = op,
+            financialDiagnostics = emptyList(),
+            pageDateEpochDay = null,
+            todayEpochDay = null,
+            objections = emptyList(),
+        )
 
         assertEquals(FieldHealthColor.GREEN, health.customerHealth)
         assertEquals(FieldHealthColor.GREEN, health.amountHealth)
@@ -45,7 +51,13 @@ class LedgerFieldHealthTest {
             unreadableFields = listOf(UnreadableLedgerField.CUSTOMER),
         )
 
-        val health = LedgerFieldHealth.evaluate(op)
+        val health = LedgerFieldHealth.evaluate(
+            op = op,
+            financialDiagnostics = emptyList(),
+            pageDateEpochDay = null,
+            todayEpochDay = null,
+            objections = emptyList(),
+        )
 
         assertEquals(FieldHealthColor.RED, health.customerHealth)
         assertEquals(FieldHealthColor.YELLOW, health.amountHealth)
@@ -64,7 +76,13 @@ class LedgerFieldHealthTest {
             unreadableFields = emptyList(),
         )
 
-        val health = LedgerFieldHealth.evaluate(op)
+        val health = LedgerFieldHealth.evaluate(
+            op = op,
+            financialDiagnostics = emptyList(),
+            pageDateEpochDay = null,
+            todayEpochDay = null,
+            objections = emptyList(),
+        )
 
         // Empty lists are authoritative; confidence score does not override
         assertEquals(FieldHealthColor.GREEN, health.customerHealth)
@@ -83,7 +101,13 @@ class LedgerFieldHealthTest {
             date = SafeDateCandidate(2026, 6, 15),
         )
 
-        val health = LedgerFieldHealth.evaluate(op)
+        val health = LedgerFieldHealth.evaluate(
+            op = op,
+            financialDiagnostics = emptyList(),
+            pageDateEpochDay = null,
+            todayEpochDay = null,
+            objections = emptyList(),
+        )
 
         assertEquals(FieldHealthColor.RED, health.kindHealth)
         assertFalse(health.isAllGreen)
@@ -102,9 +126,73 @@ class LedgerFieldHealthTest {
             OperationFinancialDiagnostic(lineIndex = 0, reason = FinancialRejectionReason.PAYMENT_EXCEEDS_DEBT)
         )
 
-        val health = LedgerFieldHealth.evaluate(op, financialDiagnostics = diags)
+        val health = LedgerFieldHealth.evaluate(
+            op = op,
+            financialDiagnostics = diags,
+            pageDateEpochDay = null,
+            todayEpochDay = null,
+            objections = emptyList(),
+        )
 
         assertEquals(FieldHealthColor.RED, health.amountHealth)
         assertFalse(health.isAllGreen)
+    }
+
+    @Test
+    fun `customer confirmation objection demotes customerHealth to YELLOW and sets needsAttention`() {
+        val op = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Charly",
+            amountCents = "1000",
+            date = SafeDateCandidate(2026, 6, 15),
+        )
+        val objections = listOf(
+            LedgerDeterministicObjection(
+                lineIndex = 0,
+                type = LedgerDeterministicObjectionType.CUSTOMER_CONFIRMATION_REQUIRED,
+            )
+        )
+
+        val health = LedgerFieldHealth.evaluate(
+            op = op,
+            financialDiagnostics = emptyList(),
+            pageDateEpochDay = null,
+            todayEpochDay = null,
+            objections = objections,
+        )
+
+        assertEquals(FieldHealthColor.YELLOW, health.customerHealth)
+        assertFalse(health.isAllGreen)
+        assertTrue(health.needsAttention)
+    }
+
+    @Test
+    fun `price objection demotes amountHealth to YELLOW and sets needsAttention`() {
+        val op = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Maria",
+            amountCents = "44900",
+            date = SafeDateCandidate(2026, 6, 15),
+        )
+        val objections = listOf(
+            LedgerDeterministicObjection(
+                lineIndex = 0,
+                type = LedgerDeterministicObjectionType.SUSPECT_DECIMAL_SHIFT,
+            )
+        )
+
+        val health = LedgerFieldHealth.evaluate(
+            op = op,
+            financialDiagnostics = emptyList(),
+            pageDateEpochDay = null,
+            todayEpochDay = null,
+            objections = objections,
+        )
+
+        assertEquals(FieldHealthColor.YELLOW, health.amountHealth)
+        assertFalse(health.isAllGreen)
+        assertTrue(health.needsAttention)
     }
 }

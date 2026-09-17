@@ -1857,8 +1857,7 @@ class AiDebugLabMachineTest {
             sessionId = "session-test",
             businessId = "biz-1",
             generation = confirmingModel.generation,
-            recordedOperations = null,
-            skippedOperations = 0,
+            result = com.cuentivo.app.domain.LedgerBatchConfirmation.Failed,
         )
 
         // Must recover LedgerReviewing with everything intact

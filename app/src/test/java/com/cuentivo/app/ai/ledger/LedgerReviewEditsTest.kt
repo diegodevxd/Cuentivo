@@ -182,4 +182,23 @@ class LedgerReviewEditsTest {
         assertEquals(listOf(0, 2), after.map { it.lineIndex })
         assertEquals(3, original.size)
     }
+
+    @Test
+    fun `confirmObjection marks operation as confirmed`() {
+        val original = listOf(
+            LedgerOperation(
+                lineIndex = 0,
+                proposedKind = ProposedLedgerKind.SALE,
+                customerName = "Rosa",
+                amountCents = "1000",
+                isObjectionConfirmed = false,
+            )
+        )
+        assertFalse(original[0].isObjectionConfirmed)
+
+        val after = LedgerReviewEdits.confirmObjection(original, lineIndex = 0)
+
+        assertTrue(after[0].isObjectionConfirmed)
+        assertEquals(0, after[0].lineIndex)
+    }
 }

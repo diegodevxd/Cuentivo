@@ -113,7 +113,9 @@ class LedgerProductMatchingTest {
         val plannerResult = AiLedgerBatchPlanner.plan(
             businessId = "biz-1",
             userId = "user-1",
+            importSessionId = "session-test",
             operations = listOf(acceptedOp),
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = 20620L,
@@ -129,5 +131,26 @@ class LedgerProductMatchingTest {
         assertEquals("Protector Tapete", item.productNameSnapshot)
         assertEquals(8500L, item.unitPriceCents) // Amount intact
         assertEquals(1L, item.quantity)
+    }
+
+    @Test
+    fun `product candidate matched by SKU in rawText or description`() {
+        val opWithSkuInRaw = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Cliente Sintetico",
+            amountCents = "4490",
+            description = "Asientos",
+            rawText = "WC-01 44.90",
+        )
+        val products = listOf(
+            ProductCandidate(id = "p-sku-1", name = "Sani Asientos WC", salePriceCents = 4490L, sku = "WC-01")
+        )
+
+        val matches = LedgerProductMatching.matchesFor(listOf(opWithSkuInRaw), products)
+
+        assertNotNull(matches[0])
+        assertEquals("p-sku-1", matches[0]?.candidate?.id)
+        assertEquals("Sani Asientos WC", matches[0]?.candidate?.name)
     }
 }

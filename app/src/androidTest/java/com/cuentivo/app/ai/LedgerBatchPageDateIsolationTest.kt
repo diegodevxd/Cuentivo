@@ -75,6 +75,7 @@ class LedgerBatchPageDateIsolationTest {
             proposedKind = ProposedLedgerKind.SALE,
             customerName = "Marta",
             amountCents = "15000",
+            rawText = "Marta 150", // el nombre tiene que verse en la hoja, como en el papel
             date = null, // missing row date
         )
 
@@ -83,13 +84,18 @@ class LedgerBatchPageDateIsolationTest {
             proposedKind = ProposedLedgerKind.SALE,
             customerName = "Pedro",
             amountCents = "20000",
+            rawText = "Pedro 200",
             date = SafeDateCandidate(2026, 5, 20), // explicit row date
         )
 
         val recordedCount = com.cuentivo.app.domain.LedgerBatchCoordinator.confirm(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = listOf(undatedSale, datedSale),
+            blockedLineIndices = emptySet(),
+            modelSaysTextMayBeMissing = false,
+            isPageCompletenessConfirmed = false,
             pageDateEpochDay = chosenPageDate,
             todayEpochDay = todayEpochDay,
             nowEpochMillis = nowEpochMillis,
@@ -99,7 +105,11 @@ class LedgerBatchPageDateIsolationTest {
             write = { plan -> saleRepository.registerLedgerBatch(plan) },
         )
 
-        assertEquals(2, recordedCount)
+        assertEquals(
+            "la página entera se escribió: las dos ventas",
+            com.cuentivo.app.domain.LedgerBatchConfirmation.Recorded(2),
+            recordedCount,
+        )
 
         val martaCust = database.customerDao().activeWithBalances(businessId).first { it.customer.normalizedName == "marta" }
         val martaSales = database.financialDao().outstandingSalesForCustomer(businessId, martaCust.customer.id)

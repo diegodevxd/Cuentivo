@@ -112,6 +112,8 @@ sealed interface AiDebugLabState {
         val productCandidates: List<com.cuentivo.app.domain.ProductCandidate> = emptyList(),
         /** Existing registered operations in Room within date window for duplicate detection. */
         val registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection> = emptyList(),
+        val isLegacySaveWithoutSessionKey: Boolean = false,
+        val isPageCompletenessConfirmed: Boolean = false,
     ) : AiDebugLabState {
         /** What the app may offer, recomputed from the rows as they are edited. */
         val customerMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>>
@@ -142,6 +144,8 @@ sealed interface AiDebugLabState {
         val customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate> = emptyList(),
         val productCandidates: List<com.cuentivo.app.domain.ProductCandidate> = emptyList(),
         val registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection> = emptyList(),
+        val isLegacySaveWithoutSessionKey: Boolean = false,
+        val isPageCompletenessConfirmed: Boolean = false,
     ) : AiDebugLabState
 }
 
@@ -239,7 +243,8 @@ sealed interface AiChatMessage {
     data class UserText(val text: String) : AiChatMessage
     data object AssistantGreeting : AiChatMessage
     /** How a page import ended, so the chat says what happened instead of just closing. */
-    data class AssistantLedgerRecorded(val operationsCount: Int, val skippedCount: Int) : AiChatMessage
+    data class AssistantLedgerRecorded(val operationsCount: Int) : AiChatMessage
+    data class AssistantLedgerAlreadyRecorded(val operationsCount: Int) : AiChatMessage
     data object AssistantLedgerFailed : AiChatMessage
     data object AssistantOutOfScope : AiChatMessage
     data object AssistantPending : AiChatMessage
@@ -1139,6 +1144,7 @@ object AiDebugLabMachine {
                 customerCandidates = Collections.unmodifiableList(ArrayList(customerCandidates)),
                 productCandidates = Collections.unmodifiableList(ArrayList(productCandidates)),
                 registeredOperations = Collections.unmodifiableList(ArrayList(registeredOperations)),
+                isLegacySaveWithoutSessionKey = !com.cuentivo.app.domain.LedgerReviewSchema.canRegisterRestoredReview(saved.reviewSchemaVersion),
             ),
             // A restored review is a new generation: any in-flight result from before the
             // recreation must not land on it.
@@ -1229,6 +1235,17 @@ object AiDebugLabMachine {
         if (sessionId.isBlank() || businessId.isBlank()) return AiLedgerConfirmOutcome.Ignored
         val state = model.state as? AiDebugLabState.LedgerReviewing ?: return AiLedgerConfirmOutcome.Ignored
         if (state.sessionId != sessionId || state.businessId != businessId) return AiLedgerConfirmOutcome.Ignored
+        if (state.isLegacySaveWithoutSessionKey) return AiLedgerConfirmOutcome.Ignored
+
+        // El modelo dijo que puede faltar texto: registrar necesita la palabra de la persona a
+        // nivel de página. Sin ella sería un registro parcial de la hoja, en silencio.
+        if (!com.cuentivo.app.domain.LedgerPageCompleteness.isRegistrable(
+                com.cuentivo.app.domain.LedgerPageCompleteness.modelSaysTextMayBeMissing(state.review),
+                state.isPageCompletenessConfirmed,
+            )
+        ) {
+            return AiLedgerConfirmOutcome.Ignored
+        }
 
         // Financial & date gate: must be confirmable
         if (!state.review.summary.canConfirm) {
@@ -1247,6 +1264,8 @@ object AiDebugLabMachine {
                 customerCandidates = state.customerCandidates,
                 productCandidates = state.productCandidates,
                 registeredOperations = state.registeredOperations,
+                isLegacySaveWithoutSessionKey = state.isLegacySaveWithoutSessionKey,
+                isPageCompletenessConfirmed = state.isPageCompletenessConfirmed,
             ),
             generation = nextGeneration,
         )
@@ -1258,6 +1277,13 @@ object AiDebugLabMachine {
             review = state.review,
             generation = nextGeneration,
         )
+    }
+
+    /** Confirma la integridad de la hoja sin modificar ninguno de sus renglones. */
+    fun onConfirmLedgerPageCompleteness(model: AiDebugLabModel, sessionId: String, businessId: String): AiDebugLabModel {
+        val state = model.state as? AiDebugLabState.LedgerReviewing ?: return model
+        if (state.sessionId != sessionId || state.businessId != businessId) return model
+        return model.copy(state = state.copy(isPageCompletenessConfirmed = true))
     }
 
     /**
@@ -1276,13 +1302,23 @@ object AiDebugLabMachine {
         sessionId: String,
         businessId: String,
         generation: Long,
-        recordedOperations: Int?,
-        skippedOperations: Int,
+        result: com.cuentivo.app.domain.LedgerBatchConfirmation?,
     ): AiDebugLabModel {
         if (generation != model.generation) return model
         val state = model.state as? AiDebugLabState.LedgerConfirming ?: return model
         if (state.sessionId != sessionId || state.businessId != businessId) return model
-        return if (recordedOperations == null) {
+        return when (result) {
+            is com.cuentivo.app.domain.LedgerBatchConfirmation.Recorded -> model.copy(
+                state = AiDebugLabState.TextEditing,
+                messages = model.messages + AiChatMessage.AssistantLedgerRecorded(result.operationsCount),
+                generation = model.generation + 1,
+            )
+            is com.cuentivo.app.domain.LedgerBatchConfirmation.AlreadyRecorded -> model.copy(
+                state = AiDebugLabState.TextEditing,
+                messages = model.messages + AiChatMessage.AssistantLedgerAlreadyRecorded(result.operationsCount),
+                generation = model.generation + 1,
+            )
+            null, com.cuentivo.app.domain.LedgerBatchConfirmation.Failed -> {
             model.copy(
                 state = AiDebugLabState.LedgerReviewing(
                     sessionId = state.sessionId,
@@ -1294,19 +1330,12 @@ object AiDebugLabMachine {
                     customerCandidates = state.customerCandidates,
                     productCandidates = state.productCandidates,
                     registeredOperations = state.registeredOperations,
+                    isLegacySaveWithoutSessionKey = state.isLegacySaveWithoutSessionKey,
                 ),
                 messages = model.messages + AiChatMessage.AssistantLedgerFailed,
                 generation = model.generation + 1,
             )
-        } else {
-            model.copy(
-                state = AiDebugLabState.TextEditing,
-                messages = model.messages + AiChatMessage.AssistantLedgerRecorded(
-                    operationsCount = recordedOperations,
-                    skippedCount = skippedOperations,
-                ),
-                generation = model.generation + 1,
-            )
+            }
         }
     }
 

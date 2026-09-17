@@ -889,14 +889,8 @@ class LedgerReviewTest {
         val today = java.time.LocalDate.of(2026, 9, 1).toEpochDay()
         val pageDate = java.time.LocalDate.of(2026, 7, 30).toEpochDay()
 
-        val resolved = AiLedgerBatchPlanner.resolvedDatesFor(
-            operations = listOf(opWithOwnDate, opWithoutDate),
-            pageDateEpochDay = pageDate,
-            todayEpochDay = today,
-        )
-
-        assertEquals(java.time.LocalDate.of(2026, 7, 2).toEpochDay(), resolved[1])
-        assertEquals(pageDate, resolved[2])
+        assertEquals(java.time.LocalDate.of(2026, 7, 2).toEpochDay(), AiLedgerBatchPlanner.resolveDate(opWithOwnDate.date, pageDate, today))
+        assertEquals(pageDate, AiLedgerBatchPlanner.resolveDate(opWithoutDate.date, pageDate, today))
     }
 
     @Test
@@ -1058,4 +1052,3 @@ class LedgerReviewTest {
         assertEquals("1000", state.review.operations[0].amountCents)
     }
 }
-

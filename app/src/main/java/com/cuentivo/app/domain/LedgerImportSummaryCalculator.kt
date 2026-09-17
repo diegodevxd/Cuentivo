@@ -11,6 +11,8 @@ data class LedgerImportSummaryResult(
     val canConfirm: Boolean,
     val isConfirmButtonEnabled: Boolean,
     val pageIncompleteNoticeRequired: Boolean,
+    val unresolvedCount: Int,
+    val isPageCompletenessConfirmed: Boolean,
 )
 
 /**
@@ -20,20 +22,27 @@ data class LedgerImportSummaryResult(
  * - Detected: review.operations.size (parser discards do NOT count).
  * - Ready: isRegisterableLedgerOperation == true AND no financial diagnostic AND has resolved date.
  * - Pending Review: maxOf(0, detectedCount - readyCount - review.summary.excludedRowsCount).
- * - Button promise: If canConfirm is false (e.g. financial error on any row), isConfirmButtonEnabled is false.
+ * - Button promise: register only when the whole page is resolved.
  * - Incomplete page notice: Shown without numerical guess when pageIncomplete or unreadTextRemaining is true.
  */
 object LedgerImportSummaryCalculator {
 
-    fun calculate(review: LedgerReview): LedgerImportSummaryResult {
+    fun calculate(
+        review: LedgerReview,
+        objections: List<LedgerDeterministicObjection>,
+        isPageCompletenessConfirmed: Boolean = false,
+    ): LedgerImportSummaryResult {
         val detectedCount = review.operations.size
         val pageDateEpochDay = review.pageDateEpochDay
         val todayEpochDay = review.todayEpochDay
+        val objectionLineIndices = objections.map { it.lineIndex }.toSet()
+        val unresolvedCount = LedgerPageResolution.unresolvedLineIndices(review.operations, objectionLineIndices).size
 
         val readyOps = review.operations.filter { op ->
             if (!isRegisterableLedgerOperation(op)) return@filter false
             val hasFinancialError = review.summary.financialDiagnostics.any { it.lineIndex == op.lineIndex }
             if (hasFinancialError) return@filter false
+            if (op.lineIndex in objectionLineIndices) return@filter false
 
             val hasValidRowDate = op.date != null
             val hasValidPageDate = pageDateEpochDay != null &&
@@ -45,8 +54,9 @@ object LedgerImportSummaryCalculator {
         val readyCount = readyOps.size
         val pendingReviewCount = maxOf(0, detectedCount - readyCount - review.summary.excludedRowsCount)
         val canConfirm = review.summary.canConfirm
-        val isConfirmButtonEnabled = canConfirm && readyCount > 0
         val pageIncompleteNoticeRequired = review.pageIncomplete || review.unreadTextRemaining
+        val isConfirmButtonEnabled = canConfirm && readyCount > 0 && unresolvedCount == 0 &&
+            LedgerPageCompleteness.isRegistrable(pageIncompleteNoticeRequired, isPageCompletenessConfirmed)
 
         return LedgerImportSummaryResult(
             detectedCount = detectedCount,
@@ -55,6 +65,8 @@ object LedgerImportSummaryCalculator {
             canConfirm = canConfirm,
             isConfirmButtonEnabled = isConfirmButtonEnabled,
             pageIncompleteNoticeRequired = pageIncompleteNoticeRequired,
+            unresolvedCount = unresolvedCount,
+            isPageCompletenessConfirmed = isPageCompletenessConfirmed,
         )
     }
 }

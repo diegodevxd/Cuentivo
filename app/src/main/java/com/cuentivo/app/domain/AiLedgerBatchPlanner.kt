@@ -24,6 +24,7 @@ sealed interface BatchPlanningRejection {
     data class MissingDate(val lineIndex: Int) : BatchPlanningRejection
     data class FinancialError(val lineIndex: Int, val reason: FinancialRejectionReason) : BatchPlanningRejection
     data class BlankBusinessOrUser(val message: String) : BatchPlanningRejection
+    data class UnresolvedRows(val lineIndices: List<Int>) : BatchPlanningRejection
 
     /**
      * The row was anchored to a customer that is no longer among the existing ones.
@@ -58,7 +59,6 @@ data class PlannedLedgerBatch(
     val payments: List<PaymentEntity>,
     val paymentMovements: List<AccountMovementEntity>,
     val paymentAllocations: List<PaymentAllocationEntity>,
-    val skippedRowIndices: List<Int>,
     val executableOperationsCount: Int,
 )
 
@@ -79,38 +79,15 @@ object AiLedgerBatchPlanner {
     const val LINE_NAME_PRIOR_DEBT = OpeningBalance.LINE_NAME
 
     /**
-     * The key a batch will be reserved under. Derived from the business and from what the person
-     * actually approved, so re-confirming the same page returns the first result instead of writing
-     * it twice, and changing an amount produces a different batch.
+     * La clave depende sólo del negocio y la sesión: el contenido editable no puede crear otra clave
+     * después de que un commit se perdió y volver a escribir un cargo.
      *
      * Public because the caller needs it BEFORE planning: once a page is written, planning it again
      * sees the debt it already changed and would reject a payment that was in fact recorded.
      */
-    fun batchKeyFor(
-        businessId: String,
-        registrableOperations: List<LedgerOperation>,
-        resolvedDatesByLineIndex: Map<Int, Long>,
-    ): String {
-        val contentDigest = registrableOperations.joinToString(separator = "|") { op ->
-            val dateEpoch = resolvedDatesByLineIndex[op.lineIndex] ?: 0L
-            val normName = CustomerNameNormalizer.key(op.customerName.orEmpty())
-            val customerToken = if (!op.customerId.isNullOrBlank()) "id:${op.customerId}" else normName
-            // Free text is length-prefixed, not just glued together with separators. A customer
-            // called "Rosa: 2" and a description of "abono" used to run together into the same
-            // string as a customer "Rosa" with description "2:abono", and two different pages
-            // sharing a key is the worst failure this file can have: the second one is taken for a
-            // repeat of the first and is never written, silently, with no error to look at.
-            listOf(
-                op.lineIndex.toString(),
-                op.proposedKind.toString(),
-                field(customerToken),
-                field(op.amountCents.orEmpty()),
-                field(op.description.orEmpty()),
-                dateEpoch.toString(),
-            ).joinToString(separator = ":")
-        }
+    fun batchKeyFor(businessId: String, importSessionId: String): String {
         return "ai-ledger-batch-" + UUID.nameUUIDFromBytes(
-            "$businessId:$contentDigest".toByteArray(StandardCharsets.UTF_8)
+            "${field(businessId)}:${field(importSessionId)}".toByteArray(StandardCharsets.UTF_8)
         ).toString()
     }
 
@@ -141,26 +118,15 @@ object AiLedgerBatchPlanner {
         return candidateEpoch
     }
 
-    /** The dates a page resolves to, so a caller can compute [batchKeyFor] without planning. */
-    fun resolvedDatesFor(
-        operations: List<LedgerOperation>,
-        pageDateEpochDay: Long?,
-        todayEpochDay: Long,
-    ): Map<Int, Long> {
-        val resolved = mutableMapOf<Int, Long>()
-        for (op in operations.filter { isRegisterableLedgerOperation(it) }) {
-            val effective = resolveDate(op.date, pageDateEpochDay, todayEpochDay)
-            if (effective != null) {
-                resolved[op.lineIndex] = effective
-            }
-        }
-        return resolved
-    }
-
+    /**
+     * @param importSessionId Stable identity of this reviewed page across retries.
+     */
     fun plan(
         businessId: String,
         userId: String,
+        importSessionId: String,
         operations: List<LedgerOperation>,
+        blockedLineIndices: Set<Int>,
         existingCustomerMap: Map<String, CustomerEntity>, // keyed by normalizedCustomerName
         existingOutstandingSalesByCustomerId: Map<String, List<OutstandingSale>>,
         pageDateEpochDay: Long?,
@@ -175,21 +141,17 @@ object AiLedgerBatchPlanner {
 
         val rejections = mutableListOf<BatchPlanningRejection>()
 
-        // 1. Filter registrable operations. Non-registrable rows are skipped.
-        val registrableOps = mutableListOf<LedgerOperation>()
-        val skippedRowIndices = mutableListOf<Int>()
-
-        for (op in operations) {
-            if (isRegisterableLedgerOperation(op)) {
-                registrableOps.add(op)
-            } else {
-                skippedRowIndices.add(op.lineIndex)
-            }
-        }
-
-        if (registrableOps.size > MAX_BATCH_OPERATIONS) {
+        val unresolved = LedgerPageResolution.unresolvedLineIndices(operations, blockedLineIndices)
+        if (unresolved.isNotEmpty()) {
             return BatchPlanningResult.Rejected(
-                listOf(BatchPlanningRejection.ExceedsBatchCapacity(MAX_BATCH_OPERATIONS, registrableOps.size))
+                listOf(BatchPlanningRejection.UnresolvedRows(unresolved.sorted()))
+            )
+        }
+        val registrableOps = operations
+
+        if (operations.size > MAX_BATCH_OPERATIONS) {
+            return BatchPlanningResult.Rejected(
+                listOf(BatchPlanningRejection.ExceedsBatchCapacity(MAX_BATCH_OPERATIONS, operations.size))
             )
         }
 
@@ -301,7 +263,7 @@ object AiLedgerBatchPlanner {
         }
 
         // 4. Deterministic key bound to the business and to the approved content.
-        val batchKey = batchKeyFor(businessId, registrableOps, resolvedDatesByLineIndex)
+        val batchKey = batchKeyFor(businessId, importSessionId)
 
         // 5. Build entities
         val newCustomers = mutableListOf<CustomerEntity>()
@@ -536,7 +498,6 @@ object AiLedgerBatchPlanner {
             payments = Collections.unmodifiableList(payments),
             paymentMovements = Collections.unmodifiableList(paymentMovements),
             paymentAllocations = Collections.unmodifiableList(paymentAllocations),
-            skippedRowIndices = Collections.unmodifiableList(skippedRowIndices),
             executableOperationsCount = registrableOps.size,
         )
 

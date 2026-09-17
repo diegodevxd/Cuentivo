@@ -35,7 +35,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -79,7 +81,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -126,7 +130,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -168,7 +174,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -198,7 +206,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -235,7 +245,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = pageDate,
@@ -264,7 +276,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -279,7 +293,7 @@ class AiLedgerBatchPlannerTest {
     }
 
     @Test
-    fun plan_skips_unreadable_or_uncertain_rows_and_reports_skipped_indices() {
+    fun plan_rejects_the_page_when_any_row_is_unresolved() {
         val ops = listOf(
             LedgerOperation(
                 lineIndex = 1,
@@ -309,7 +323,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -317,12 +333,14 @@ class AiLedgerBatchPlannerTest {
             nowEpochMillis = nowEpochMillis,
         )
 
-        assertTrue(result is BatchPlanningResult.Success)
-        val plan = (result as BatchPlanningResult.Success).plan
-        assertEquals(1, plan.executableOperationsCount)
-        assertEquals(listOf(2, 3), plan.skippedRowIndices)
-        assertEquals(1, plan.sales.size)
-        assertEquals("valida", plan.sales.first().sellerUserId.let { plan.newCustomers.first().normalizedName })
+        assertTrue("debe rechazar la página entera, no saltar los renglones", result is BatchPlanningResult.Rejected)
+        val rejection = (result as BatchPlanningResult.Rejected).rejections.single()
+        assertTrue(rejection is BatchPlanningRejection.UnresolvedRows)
+        assertEquals(
+            "el rechazo tiene que nombrar los renglones que faltan",
+            listOf(2, 3),
+            (rejection as BatchPlanningRejection.UnresolvedRows).lineIndices,
+        )
     }
 
     @Test
@@ -340,7 +358,9 @@ class AiLedgerBatchPlannerTest {
         val result1 = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -351,7 +371,9 @@ class AiLedgerBatchPlannerTest {
         val result2 = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -403,7 +425,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = pageDate,
@@ -417,28 +441,13 @@ class AiLedgerBatchPlannerTest {
         assertEquals(1, (rejection as BatchPlanningRejection.MissingDate).lineIndex)
     }
 
-    @Test
-    fun unaccepted_automatic_candidate_does_not_change_operation_nor_batch_key() {
-        val opUnanchored = LedgerOperation(
-            lineIndex = 1,
-            proposedKind = ProposedLedgerKind.SALE,
-            customerName = "Mayra T5",
-            amountCents = "1000",
-            date = SafeDateCandidate(2026, 9, 1),
-            customerId = null, // Unaccepted / unanchored
-        )
-
-        val resolvedDates = mapOf(1 to todayEpochDay)
-        val keyUnanchored = AiLedgerBatchPlanner.batchKeyFor(businessId, listOf(opUnanchored), resolvedDates)
-
-        // Baseline key when customerId is null is identical to standard name-based key
-        val keyBaseline = AiLedgerBatchPlanner.batchKeyFor(
-            businessId,
-            listOf(opUnanchored.copy(customerId = null)),
-            resolvedDates,
-        )
-        assertEquals(keyBaseline, keyUnanchored)
-    }
+    // Aquí vivía `unaccepted_automatic_candidate_does_not_change_operation_nor_batch_key`, que
+    // comparaba `batchKeyFor(businessId, "session-test")` consigo mismo. Tras la ronda 3 eso es una
+    // constante comparada con otra constante: la clave es función de (negocio, sesión) y no puede ver
+    // el ancla, ni el importe, ni el cliente, así que la aserción no podía fallar nunca. Se retira en
+    // vez de conservar un verde que no prueba nada. Lo que sí puede fallar es la idempotencia del
+    // reintento, y eso vive en `LedgerSessionKeyIdempotencyTest`. El ancla aceptada se prueba justo
+    // debajo, contra el plan real.
 
     @Test
     fun accepting_customer_anchor_writes_sale_to_that_customerId_not_derived_from_name() {
@@ -470,7 +479,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = listOf(opAnchored),
+            blockedLineIndices = emptySet(),
             existingCustomerMap = mapOf(existingCustomer.normalizedName to existingCustomer),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -532,7 +543,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = mapOf(custA.normalizedName to custA, custB.normalizedName to custB),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -576,7 +589,9 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = ops,
+            blockedLineIndices = emptySet(),
             existingCustomerMap = mapOf(uno.normalizedName to uno, dos.normalizedName to dos),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -620,6 +635,7 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = listOf(
                 LedgerOperation(
                     lineIndex = 0,
@@ -630,6 +646,7 @@ class AiLedgerBatchPlannerTest {
                     customerId = "cliente-que-ya-no-esta",
                 ),
             ),
+            blockedLineIndices = emptySet(),
             existingCustomerMap = emptyMap(),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,
@@ -667,6 +684,7 @@ class AiLedgerBatchPlannerTest {
         val result = AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
+            importSessionId = "session-test",
             operations = listOf(
                 LedgerOperation(
                     lineIndex = 0,
@@ -677,6 +695,7 @@ class AiLedgerBatchPlannerTest {
                     customerId = "cust-real",
                 ),
             ),
+            blockedLineIndices = emptySet(),
             existingCustomerMap = mapOf(existing.normalizedName to existing),
             existingOutstandingSalesByCustomerId = emptyMap(),
             pageDateEpochDay = null,

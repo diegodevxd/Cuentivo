@@ -624,7 +624,12 @@
     <string name="ai_ledger_crop_not_available">No crop available</string>
     <string name="ai_ledger_page_incomplete_warning">Some text on this page may be missing. Check that every line is here before recording.</string>
     <string name="ai_ledger_recorded">Done: %1$d entries recorded from your notebook.</string>
-    <string name="ai_ledger_recorded_with_skipped">Done: %1$d entries recorded. %2$d lines were left out.</string>
+    <string name="ai_ledger_recorded_already">This page was already registered. Changes made later are not applied: what was recorded is corrected with a compensating entry.</string>
+    <string name="ai_ledger_legacy_save_blocked">This page was saved by an earlier version and what was recorded cannot be known. Check the entries before capturing it again.</string>
+    <string name="ai_ledger_legacy_save_discard">Discard this review</string>
+    <string name="ai_ledger_action_confirm_page_complete">I checked the sheet: nothing is missing, or I will record what is missing separately</string>
+    <string name="ai_ledger_page_completeness_confirmed">You confirmed that the sheet is complete.</string>
+    <string name="ai_ledger_action_register_blocked_incomplete">Confirm that the sheet is complete before registering</string>
     <string name="ai_ledger_failed">The notebook could not be recorded. Nothing was saved; you can review it again.</string>
     <string name="ai_ledger_row_date">Date: %1$s</string>
     <string name="ai_ledger_row_date_missing">No date in the notebook</string>
@@ -677,6 +682,7 @@
     <string name="ai_ledger_product_match_action">Is it %1$s? Tap to use that name</string>
     <string name="ai_ledger_summary_status_format">%1$s · %2$s</string>
     <string name="ai_ledger_action_register_disabled">No transactions to register</string>
+    <plurals name="ai_ledger_action_register_blocked_pending"><item quantity="one">%1$d line left to resolve</item><item quantity="other">%1$d lines left to resolve</item></plurals>
     <string name="ai_ledger_page_incomplete_notice">Unread content may remain on this page.</string>
     <plurals name="ai_ledger_summary_detected_count">
         <item quantity="one">%1$d transaction detected</item>
@@ -697,4 +703,9 @@
     <string name="ai_ledger_duplicate_badge">Possible duplicate</string>
     <string name="ai_ledger_duplicate_warning">There is already a similar transaction recorded: %1$s</string>
     <string name="ai_ledger_duplicate_detail_format">There is already a %1$s for %2$s of %3$s on %4$s%5$s</string>
+    <string name="ai_ledger_objection_decimal_shift">Possible decimal point error in price</string>
+    <string name="ai_ledger_objection_price_mismatch">Price does not match your registered product</string>
+    <string name="ai_ledger_objection_unusual_cents">Unusual cents on this page</string>
+    <string name="ai_ledger_objection_customer_confirmation">This customer already exists, confirm before registering</string>
+    <string name="ai_ledger_action_confirm_objection">Yes, it is correct</string>
 </resources>

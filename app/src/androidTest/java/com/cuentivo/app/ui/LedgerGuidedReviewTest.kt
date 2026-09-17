@@ -72,6 +72,13 @@ class LedgerGuidedReviewTest {
             onUpdateDate = { line, date -> operations = LedgerReviewEdits.applyDate(operations, line, date, today) },
             onUpdatePageDate = { },
             onRemoveRow = { line -> operations = LedgerReviewEdits.removeRow(operations, line) },
+            onConfirmObjection = { },
+            isPageCompletenessConfirmed = false,
+            onConfirmPageCompleteness = { },
+            customerMatches = emptyMap(),
+            productMatches = emptyMap(),
+            duplicateMatches = emptyMap(), objections = emptyList(),
+            isRegistrationBlockedByLegacySave = false,
             onConfirm = { },
             onCancel = { },
         )
@@ -99,24 +106,19 @@ class LedgerGuidedReviewTest {
         composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsEnabled()
     }
 
-    @Test fun a_half_reviewed_page_registers_only_what_was_confirmed_and_says_the_rest_is_pending() {
-        // A deliberate decision, written down because the opposite is defensible too. Leaving the
-        // walk halfway does NOT block the page: the rows already confirmed can be registered, and
-        // the doubtful ones are simply not imported. Blocking instead would mean one row nobody can
-        // read makes the whole notebook page unregisterable.
-        //
-        // What must never happen is that this is quiet. So the button counts only what it will
-        // actually write, and the banner keeps saying how many rows were left behind.
+    @Test fun a_half_reviewed_page_cannot_be_registered_and_says_why() {
+        // Una página se registra entera o no se registra. Antes, dejar la revisión a medias permitía
+        // registrar lo ya confirmado y omitir el resto en silencio; eso es exactamente lo que hacía
+        // cambiar el conjunto escribible entre intentos, y ahí es donde un reintento podía escribir
+        // un cargo dos veces. Ahora el botón está desactivado mientras falte un renglón.
         composeRule.setContent { host(listOf(doubtfulSale(0, "Rosa"), doubtfulSale(1, "Mayra"))) }
 
         composeRule.onNodeWithTag("ledger-start-review-button").performClick()
         composeRule.onNodeWithTag("ledger-edit-save-button").performClick()
         composeRule.onNodeWithTag("ledger-edit-cancel-button").performClick()
 
-        composeRule.onNodeWithTag("ledger-review-confirm-button")
-            .assertIsEnabled()
-            .assertTextContains("Registrar 1 movimiento")
-        // The row left behind is still announced, not swallowed.
+        composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsNotEnabled()
+        // El renglón que falta se sigue anunciando, y desde ahí se puede retomar la revisión.
         composeRule.onNodeWithTag("ledger-financial-error-banner").assertIsDisplayed()
         composeRule.onNodeWithTag("ledger-start-review-button").assertIsDisplayed()
     }
@@ -154,6 +156,13 @@ class LedgerGuidedReviewTest {
                 onUpdateDate = { line, date -> operations = LedgerReviewEdits.applyDate(operations, line, date, today) },
                 onUpdatePageDate = { },
                 onRemoveRow = { },
+                onConfirmObjection = { },
+            isPageCompletenessConfirmed = false,
+            onConfirmPageCompleteness = { },
+                customerMatches = emptyMap(),
+                productMatches = emptyMap(),
+                duplicateMatches = emptyMap(), objections = emptyList(),
+                isRegistrationBlockedByLegacySave = false,
                 onConfirm = { },
                 onCancel = { },
             )
@@ -200,6 +209,12 @@ class LedgerGuidedReviewTest {
                 onUpdateDate = { line, date -> operations = LedgerReviewEdits.applyDate(operations, line, date, today) },
                 onUpdatePageDate = { },
                 onRemoveRow = { },
+                onConfirmObjection = { },
+            isPageCompletenessConfirmed = false,
+            onConfirmPageCompleteness = { },
+                productMatches = emptyMap(),
+                duplicateMatches = emptyMap(), objections = emptyList(),
+                isRegistrationBlockedByLegacySave = false,
                 onConfirm = { },
                 onCancel = { },
             )
@@ -262,6 +277,12 @@ class LedgerGuidedReviewTest {
                 onUpdateDate = { line, date -> operations = LedgerReviewEdits.applyDate(operations, line, date, today) },
                 onUpdatePageDate = { },
                 onRemoveRow = { },
+                onConfirmObjection = { },
+            isPageCompletenessConfirmed = false,
+            onConfirmPageCompleteness = { },
+                customerMatches = emptyMap(),
+                duplicateMatches = emptyMap(), objections = emptyList(),
+                isRegistrationBlockedByLegacySave = false,
                 onConfirm = { },
                 onCancel = { },
             )

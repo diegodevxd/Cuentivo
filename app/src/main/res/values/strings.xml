@@ -624,7 +624,12 @@
     <string name="ai_ledger_crop_not_available">Sin recorte disponible</string>
     <string name="ai_ledger_page_incomplete_warning">Puede faltar texto de esta página. Revisa que estén todos los renglones antes de registrar.</string>
     <string name="ai_ledger_recorded">Listo: %1$d movimientos registrados de tu libreta.</string>
-    <string name="ai_ledger_recorded_with_skipped">Listo: %1$d movimientos registrados. %2$d renglones quedaron fuera.</string>
+    <string name="ai_ledger_recorded_already">Esta página ya estaba registrada. Los cambios que hiciste después no se aplican: lo registrado se corrige con un movimiento compensatorio.</string>
+    <string name="ai_ledger_legacy_save_blocked">Esta página se guardó con una versión anterior y no se puede saber qué se registró. Revisa el libro de movimientos antes de volver a capturarla.</string>
+    <string name="ai_ledger_legacy_save_discard">Descartar esta revisión</string>
+    <string name="ai_ledger_action_confirm_page_complete">Revisé la hoja: no falta nada, o lo que falta lo registro aparte</string>
+    <string name="ai_ledger_page_completeness_confirmed">Confirmaste que la hoja está completa.</string>
+    <string name="ai_ledger_action_register_blocked_incomplete">Confirma que la hoja está completa para registrar</string>
     <string name="ai_ledger_failed">No se pudo registrar la libreta. No se guardó nada; puedes revisarla otra vez.</string>
     <string name="ai_ledger_row_date">Fecha: %1$s</string>
     <string name="ai_ledger_row_date_missing">Sin fecha en la libreta</string>
@@ -677,6 +682,7 @@
     <string name="ai_ledger_product_match_action">¿Es %1$s? Tócalo para usar ese nombre</string>
     <string name="ai_ledger_summary_status_format">%1$s · %2$s</string>
     <string name="ai_ledger_action_register_disabled">Sin movimientos para registrar</string>
+    <plurals name="ai_ledger_action_register_blocked_pending"><item quantity="one">%1$d renglón por resolver</item><item quantity="other">%1$d renglones por resolver</item></plurals>
     <string name="ai_ledger_page_incomplete_notice">Puede quedar contenido sin leer en esta página.</string>
     <plurals name="ai_ledger_summary_detected_count">
         <item quantity="one">%1$d movimiento detectado</item>
@@ -697,4 +703,9 @@
     <string name="ai_ledger_duplicate_badge">Posible duplicado</string>
     <string name="ai_ledger_duplicate_warning">Ya hay un movimiento registrado igual o muy similar: %1$s</string>
     <string name="ai_ledger_duplicate_detail_format">Ya hay una %1$s de %2$s por %3$s el %4$s%5$s</string>
+    <string name="ai_ledger_objection_decimal_shift">Posible error de punto decimal en el precio</string>
+    <string name="ai_ledger_objection_price_mismatch">El precio no coincide con tu producto registrado</string>
+    <string name="ai_ledger_objection_unusual_cents">Centavos inusuales en esta página</string>
+    <string name="ai_ledger_objection_customer_confirmation">Este cliente ya existe, confírmalo antes de registrar</string>
+    <string name="ai_ledger_action_confirm_objection">Sí, es correcto</string>
 </resources>

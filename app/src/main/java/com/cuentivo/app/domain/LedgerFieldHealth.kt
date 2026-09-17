@@ -37,17 +37,20 @@ data class OperationFieldHealth(
     val dateHealth: FieldHealthColor,
     val customerOrigin: FieldOrigin = FieldOrigin.READ_HERE,
     val dateOrigin: FieldOrigin = FieldOrigin.READ_HERE,
+    val objections: List<LedgerDeterministicObjection> = emptyList(),
 ) {
     val isAllGreen: Boolean
         get() = customerHealth == FieldHealthColor.GREEN &&
                 amountHealth == FieldHealthColor.GREEN &&
                 kindHealth == FieldHealthColor.GREEN &&
-                dateHealth == FieldHealthColor.GREEN
+                dateHealth == FieldHealthColor.GREEN &&
+                objections.isEmpty()
 
     val needsAttention: Boolean
         get() = !isAllGreen ||
             customerOrigin != FieldOrigin.READ_HERE ||
-            dateOrigin != FieldOrigin.READ_HERE
+            dateOrigin != FieldOrigin.READ_HERE ||
+            objections.isNotEmpty()
 }
 
 /**
@@ -62,31 +65,26 @@ private val CANONICAL_CENTS_REGEX = Regex("^(0|[1-9][0-9]{0,17})$")
 private const val MAX_CUSTOMER_NAME_LEN = 80
 
 /**
- * Pure evaluator for operation field health (Fase 3).
+ * Pure evaluator for operation field health (Fase 3 + v41 Deterministic Objections).
  *
  * Derives field colors directly from the validity conditions of [isRegisterableLedgerOperation]
- * and financial diagnostics.
- *
- * Rules:
- * - GREEN: Field is present, validly formatted, not uncertain, not unreadable, no financial error.
- * - YELLOW: Field is present in uncertainFields.
- * - RED: Field is present in unreadableFields, missing/invalid, or has a financial diagnostic.
- * - Financial errors (ZERO_AMOUNT, OVERFLOW, PAYMENT_WITHOUT_DEBT, PAYMENT_EXCEEDS_DEBT) map to Amount field RED.
- * - confidence values never override list or predicate authority for field colors.
+ * and financial diagnostics. Objections can demote fields to YELLOW or RED.
  */
 object LedgerFieldHealth {
 
     fun evaluate(
         op: LedgerOperation,
-        financialDiagnostics: List<OperationFinancialDiagnostic> = emptyList(),
-        pageDateEpochDay: Long? = null,
-        todayEpochDay: Long? = null,
+        financialDiagnostics: List<OperationFinancialDiagnostic>,
+        pageDateEpochDay: Long?,
+        todayEpochDay: Long?,
+        objections: List<LedgerDeterministicObjection>,
     ): OperationFieldHealth {
         val lineDiags = financialDiagnostics.filter { it.lineIndex == op.lineIndex }
         val hasFinancialError = lineDiags.isNotEmpty()
+        val rowObjections = objections.filter { it.lineIndex == op.lineIndex }
 
         // 1. Customer Health
-        val customerHealth = when {
+        val baseCustomerHealth = when {
             op.unreadableFields.contains(UnreadableLedgerField.CUSTOMER) -> FieldHealthColor.RED
             op.uncertainFields.contains(UncertainLedgerField.CUSTOMER) -> FieldHealthColor.YELLOW
             else -> {
@@ -100,7 +98,7 @@ object LedgerFieldHealth {
         }
 
         // 2. Amount Health (financial diagnostics map to Amount RED)
-        val amountHealth = when {
+        val baseAmountHealth = when {
             hasFinancialError -> FieldHealthColor.RED
             op.unreadableFields.contains(UnreadableLedgerField.AMOUNT) -> FieldHealthColor.RED
             op.uncertainFields.contains(UncertainLedgerField.AMOUNT) -> FieldHealthColor.YELLOW
@@ -144,6 +142,28 @@ object LedgerFieldHealth {
                 color
             }
 
+        var customerHealth = demote(baseCustomerHealth, op.confidence?.customer)
+        var amountHealth = demote(baseAmountHealth, op.confidence?.amount)
+
+        // Objections can only demote:
+        // Customer confirmation demotes Customer to YELLOW
+        if (rowObjections.any { it.type == LedgerDeterministicObjectionType.CUSTOMER_CONFIRMATION_REQUIRED }) {
+            if (customerHealth == FieldHealthColor.GREEN) {
+                customerHealth = FieldHealthColor.YELLOW
+            }
+        }
+
+        // Price discrepancy, decimal shift, or unusual cents demotes Amount to YELLOW
+        if (rowObjections.any {
+            it.type == LedgerDeterministicObjectionType.SUSPECT_DECIMAL_SHIFT ||
+            it.type == LedgerDeterministicObjectionType.PRICE_MISMATCH_SUSPECT ||
+            it.type == LedgerDeterministicObjectionType.UNUSUAL_CENTS
+        }) {
+            if (amountHealth == FieldHealthColor.GREEN) {
+                amountHealth = FieldHealthColor.YELLOW
+            }
+        }
+
         fun originOf(source: com.cuentivo.app.ai.ledger.LedgerFieldSource?): FieldOrigin = when (source) {
             com.cuentivo.app.ai.ledger.LedgerFieldSource.INHERITED_PREVIOUS_ROW -> FieldOrigin.INHERITED_FROM_ROW_ABOVE
             com.cuentivo.app.ai.ledger.LedgerFieldSource.PAGE_DATE -> FieldOrigin.FROM_PAGE_DATE
@@ -153,12 +173,13 @@ object LedgerFieldHealth {
 
         return OperationFieldHealth(
             lineIndex = op.lineIndex,
-            customerHealth = demote(customerHealth, op.confidence?.customer),
-            amountHealth = demote(amountHealth, op.confidence?.amount),
+            customerHealth = customerHealth,
+            amountHealth = amountHealth,
             kindHealth = demote(kindHealth, op.confidence?.kind),
             dateHealth = demote(dateHealth, op.confidence?.date),
             customerOrigin = originOf(op.sources?.customer),
             dateOrigin = originOf(op.sources?.date),
+            objections = rowObjections,
         )
     }
 }

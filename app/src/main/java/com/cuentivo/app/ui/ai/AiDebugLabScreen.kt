@@ -205,7 +205,7 @@ fun AiDebugLabScreen(
     ledgerProductsResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.ProductCandidate>)? = null,
     /** What is already registered around this page's dates, so a second scan of the same sheet says so. */
     ledgerRegisteredResolver: (suspend (businessId: String, minEpochDay: Long, maxEpochDay: Long) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)? = null,
-    confirmLedgerBatch: (suspend (businessId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?) -> Int?)? = null,
+    confirmLedgerBatch: (suspend (businessId: String, importSessionId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?, blockedLineIndices: Set<Int>, modelSaysTextMayBeMissing: Boolean, isPageCompletenessConfirmed: Boolean) -> com.cuentivo.app.domain.LedgerBatchConfirmation)? = null,
     /**
      * Where the local import metrics are written. Null in tests and anywhere Room is not wired:
      * metrics are diagnostics, and their absence must never be a reason the import fails.
@@ -317,6 +317,7 @@ fun AiDebugLabScreen(
                 pageDateEpochDay = reviewing.review.pageDateEpochDay,
                 todayEpochDay = reviewing.review.todayEpochDay,
                 detectedPageDate = reviewing.review.detectedPageDate,
+                isPageCompletenessConfirmed = reviewing.isPageCompletenessConfirmed,
             )
         }
     }
@@ -757,6 +758,11 @@ fun AiDebugLabScreen(
 
     val ledgerReviewing = model.state as? AiDebugLabState.LedgerReviewing
     if (ledgerReviewing != null) {
+        val deterministicObjections = com.cuentivo.app.domain.LedgerDeterministicObjections.evaluate(
+            operations = ledgerReviewing.review.operations,
+            existingCustomerCandidates = ledgerReviewing.customerCandidates,
+            catalogProducts = ledgerReviewing.productCandidates,
+        )
         val cancelLedger = {
             // Stage 2 of the metric: the person discarded this page, so the import ended
             // abandoned. Written before the review is torn down, with it still in hand.
@@ -774,6 +780,11 @@ fun AiDebugLabScreen(
                 customerMatches = ledgerReviewing.customerMatches,
                 productMatches = ledgerReviewing.productMatches,
                 duplicateMatches = ledgerReviewing.duplicateMatches,
+                objections = deterministicObjections,
+                isPageCompletenessConfirmed = ledgerReviewing.isPageCompletenessConfirmed,
+                onConfirmPageCompleteness = {
+                    model = AiDebugLabMachine.onConfirmLedgerPageCompleteness(model, ledgerReviewing.sessionId, ledgerReviewing.businessId)
+                },
                 onAcceptProductAnchor = { lineIndex, candidate ->
                     // Only the name. The plan still writes an uncatalogued line, so nothing here
                     // moves stock or attaches a cost, and nothing here touches the amount.
@@ -831,6 +842,11 @@ fun AiDebugLabScreen(
                         LedgerReviewEdits.removeRow(operations, lineIndex)
                     }
                 },
+                onConfirmObjection = { lineIndex ->
+                    model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
+                        LedgerReviewEdits.confirmObjection(operations, lineIndex)
+                    }
+                },
                 onConfirm = {
                     val write = confirmLedgerBatch
                     val outcome = AiDebugLabMachine.onConfirmLedger(model, ledgerReviewing.sessionId, ledgerReviewing.businessId)
@@ -841,23 +857,22 @@ fun AiDebugLabScreen(
                         val businessId = ledgerReviewing.businessId
                         val operations = ledgerReviewing.review.operations
                         val pageDateEpochDay = ledgerReviewing.review.pageDateEpochDay
-                        val skipped = operations.count { !isRegisterableLedgerOperation(it) }
+                        val blockedLineIndices = deterministicObjections.mapTo(LinkedHashSet()) { it.lineIndex }
                         scope.launch {
-                            val recorded = withContext(Dispatchers.IO) {
-                                runCatching { write(businessId, operations, pageDateEpochDay) }.getOrNull()
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching { write(businessId, sessionId, operations, pageDateEpochDay, blockedLineIndices, com.cuentivo.app.domain.LedgerPageCompleteness.modelSaysTextMayBeMissing(ledgerReviewing.review), ledgerReviewing.isPageCompletenessConfirmed) }.getOrNull()
                             }
                             model = AiDebugLabMachine.onLedgerBatchResult(
                                 model = model,
                                 sessionId = sessionId,
                                 businessId = businessId,
                                 generation = token,
-                                recordedOperations = recorded,
-                                skippedOperations = skipped,
+                                result = result,
                             )
                             // The photo is released only once the page is written. Releasing it on
                             // the way in would leave a failed import without the evidence the
                             // person needs to correct it.
-                            if (recorded != null) {
+                            if (result is com.cuentivo.app.domain.LedgerBatchConfirmation.Recorded || result is com.cuentivo.app.domain.LedgerBatchConfirmation.AlreadyRecorded) {
                                 // Stage 2 of the metric: this import ended registered. Written
                                 // before the capture is discarded, with the review still in hand.
                                 recordImportEnded(true, ledgerReviewing)
@@ -866,6 +881,7 @@ fun AiDebugLabScreen(
                         }
                     }
                 },
+                isRegistrationBlockedByLegacySave = ledgerReviewing.isLegacySaveWithoutSessionKey,
                 onCancel = cancelLedger,
             )
         }
@@ -1457,12 +1473,9 @@ private fun ChatMessageRow(
         }
         AiChatMessage.AssistantGreeting -> Text(stringResource(R.string.ai_daily_chat_greeting))
         is AiChatMessage.AssistantLedgerRecorded -> Text(
-            if (message.skippedCount > 0) {
-                stringResource(R.string.ai_ledger_recorded_with_skipped, message.operationsCount, message.skippedCount)
-            } else {
-                stringResource(R.string.ai_ledger_recorded, message.operationsCount)
-            },
+            stringResource(R.string.ai_ledger_recorded, message.operationsCount),
         )
+        is AiChatMessage.AssistantLedgerAlreadyRecorded -> Text(stringResource(R.string.ai_ledger_recorded_already))
         AiChatMessage.AssistantLedgerFailed -> Text(stringResource(R.string.ai_ledger_failed))
         AiChatMessage.AssistantOutOfScope -> Text(stringResource(R.string.ai_daily_chat_out_of_scope))
         AiChatMessage.AssistantPending -> Row(verticalAlignment = Alignment.CenterVertically) {
