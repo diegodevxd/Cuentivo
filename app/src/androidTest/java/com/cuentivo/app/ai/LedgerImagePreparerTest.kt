@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
 import com.cuentivo.app.ai.ledger.LedgerImagePreparer
 import java.io.File
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -185,5 +186,59 @@ class LedgerImagePreparerTest {
 
         val (width, height) = sizeOf(file)
         assertEquals("A page just over the limit must land ON the limit", LedgerImagePreparer.MAX_EDGE_PIXELS, maxOf(width, height))
+    }
+
+    /**
+     * Una foto sin EXIF ya viene con los píxeles como están: no hay nada que rotar.
+     *
+     * Lo que NO puede pasar es que la ausencia de metadatos se convierta en un fallo y la página se
+     * pierda. Y el cuadrante importa: comparar sólo dimensiones no distingue "no se tocó" de "se rotó
+     * 180 grados".
+     */
+    @Test
+    fun a_page_without_any_exif_comes_out_untouched_and_does_not_fail() {
+        val file = writeCornerMarkedJpeg("sin-exif.jpg")
+        val sizeBefore = sizeOf(file)
+        val quadrantBefore = darkQuadrant(file)
+
+        val mime = LedgerImagePreparer.prepareInPlace(file)
+
+        assertEquals("Lo que falta es el metadato, no la foto: no puede fallar", "image/jpeg", mime)
+        assertEquals(sizeBefore, sizeOf(file))
+        assertEquals(quadrantBefore, darkQuadrant(file))
+    }
+
+    /** Un valor de orientación que la matriz no conoce (0, UNDEFINED) tiene que dejar la hoja igual. */
+    @Test
+    fun an_orientation_the_matrix_does_not_know_leaves_the_page_alone() {
+        val file = writeCornerMarkedJpeg("orientacion-desconocida.jpg")
+        ExifInterface(file.absolutePath).apply {
+            setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED.toString())
+            saveAttributes()
+        }
+        val sizeBefore = sizeOf(file)
+        val quadrantBefore = darkQuadrant(file)
+
+        val mime = LedgerImagePreparer.prepareInPlace(file)
+
+        assertEquals("image/jpeg", mime)
+        assertEquals(sizeBefore, sizeOf(file))
+        assertEquals(quadrantBefore, darkQuadrant(file))
+    }
+
+    /**
+     * Un fallo a mitad de camino no puede dejar el original dañado: `prepareInPlace` escribe en un
+     * archivo aparte y sólo sustituye el original si todo salió bien (`LedgerImagePreparer.kt:129-149`).
+     * Esto lo deja por escrito, que es lo que faltaba.
+     */
+    @Test
+    fun a_failed_prepare_does_not_touch_the_original() {
+        val file = File(dir, "no-es-imagen.jpg")
+        file.writeText("esto no es una foto")
+        val before = file.readBytes()
+
+        assertNull(LedgerImagePreparer.prepareInPlace(file))
+
+        assertArrayEquals("el original tiene que quedar byte por byte como estaba", before, file.readBytes())
     }
 }
