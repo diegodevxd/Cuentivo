@@ -13,6 +13,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic
+import com.cuentivo.app.ai.ledger.LedgerDiscardReason
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
@@ -62,6 +64,79 @@ class LedgerReviewScreenTest {
         }
 
         composeRule.onNodeWithTag("ledger-op-row-0").assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsEnabled()
+    }
+
+    @Test fun a_discarded_row_blocks_the_page_and_the_screen_says_how_many() {
+        // Un renglón descartado por el parser NO está en `operations`. Si la pantalla no lo dice, la
+        // página se registra sin él y no queda rastro de que faltaba: el hueco que este bloque cierra.
+        val review = LedgerReviewEngine.build(
+            operations = listOf(sale(0, "Rosa", "25000")),
+            discards = listOf(
+                LedgerDiscardDiagnostic(inputIndex = 1, reason = LedgerDiscardReason.entries.first()),
+                LedgerDiscardDiagnostic(inputIndex = 2, reason = LedgerDiscardReason.entries.first()),
+            ),
+        )
+
+        composeRule.setContent {
+            LedgerReviewContent(
+                review = review,
+                captureFile = null,
+                onUpdateAmount = { _, _ -> },
+                onUpdateCustomer = { _, _ -> },
+                onUpdateKind = { _, _ -> },
+                onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
+                onRemoveRow = { },
+                onConfirmObjection = { },
+                isPageCompletenessConfirmed = false,
+                onConfirmPageCompleteness = { },
+                customerMatches = emptyMap(),
+                productMatches = emptyMap(),
+                duplicateMatches = emptyMap(), objections = emptyList(),
+                isRegistrationBlockedByLegacySave = false,
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        // El motivo en pantalla, con el conteo real de renglones que no se pudieron leer.
+        composeRule.onNodeWithTag("ledger-page-unreadable-rows-notice")
+            .assertIsDisplayed()
+            .assertTextContains("2", substring = true)
+        // Y la página no se registra hasta que alguien lo confirme: el botón está apagado y el de
+        // confirmar la hoja está a la vista.
+        composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsNotEnabled()
+        composeRule.onNodeWithTag("ledger-confirm-page-complete-button").assertIsDisplayed()
+    }
+
+    @Test fun a_page_without_discards_does_not_ask_for_the_page_confirmation() {
+        // La otra mitad: que esto no pida confirmaciones que nadie necesita.
+        val review = LedgerReviewEngine.build(operations = listOf(sale(0, "Rosa", "25000")))
+
+        composeRule.setContent {
+            LedgerReviewContent(
+                review = review,
+                captureFile = null,
+                onUpdateAmount = { _, _ -> },
+                onUpdateCustomer = { _, _ -> },
+                onUpdateKind = { _, _ -> },
+                onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
+                onRemoveRow = { },
+                onConfirmObjection = { },
+                isPageCompletenessConfirmed = false,
+                onConfirmPageCompleteness = { },
+                customerMatches = emptyMap(),
+                productMatches = emptyMap(),
+                duplicateMatches = emptyMap(), objections = emptyList(),
+                isRegistrationBlockedByLegacySave = false,
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-page-unreadable-rows-notice").assertDoesNotExist()
         composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsEnabled()
     }
 

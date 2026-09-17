@@ -623,6 +623,11 @@
     <string name="ai_ledger_summary_new_customers_count">New customers to create: %1$d</string>
     <string name="ai_ledger_crop_not_available">No crop available</string>
     <string name="ai_ledger_page_incomplete_warning">Some text on this page may be missing. Check that every line is here before recording.</string>
+    <plurals name="ai_ledger_page_unreadable_rows">
+        <item quantity="one">%1$d line could not be read. Check it before recording.</item>
+        <item quantity="other">%1$d lines could not be read. Check them before recording.</item>
+    </plurals>
+    <string name="ai_ledger_page_not_accounts">This sheet does not look like an accounts page and still has rows. Confirm it before recording.</string>
     <string name="ai_ledger_recorded">Done: %1$d entries recorded from your notebook.</string>
     <string name="ai_ledger_recorded_already">This page was already registered. Changes made later are not applied: what was recorded is corrected with a compensating entry.</string>
     <string name="ai_ledger_legacy_save_blocked">This page was saved by an earlier version and what was recorded cannot be known. Check the entries before capturing it again.</string>
@@ -630,6 +635,7 @@
     <string name="ai_ledger_action_confirm_page_complete">I checked the sheet: nothing is missing, or I will record what is missing separately</string>
     <string name="ai_ledger_page_completeness_confirmed">You confirmed that the sheet is complete.</string>
     <string name="ai_ledger_action_register_blocked_incomplete">Confirm that the sheet is complete before registering</string>
+    <string name="ai_ledger_objection_page_total_mismatch">The sheet says %1$d, but the read rows add up to %2$d</string>
     <string name="ai_ledger_failed">The notebook could not be recorded. Nothing was saved; you can review it again.</string>
     <string name="ai_ledger_row_date">Date: %1$s</string>
     <string name="ai_ledger_row_date_missing">No date in the notebook</string>

@@ -442,4 +442,113 @@ class LedgerDeterministicObjectionsTest {
             LedgerPageResolution.unresolvedLineIndices(listOf(opWithoutRawText), setOf(0)),
         )
     }
+
+    // ---- Subtotales declarados por la hoja (bloque 3, punto 3) ----
+
+    private fun saleRow(lineIndex: Int, cents: String) = LedgerOperation(
+        lineIndex = lineIndex,
+        proposedKind = ProposedLedgerKind.SALE,
+        customerName = "Rosa",
+        amountCents = cents,
+        rawText = "Rosa $cents",
+        sources = LedgerFieldSources(customer = LedgerFieldSource.EXPLICIT),
+    )
+
+    private fun paymentRow(lineIndex: Int, cents: String) = LedgerOperation(
+        lineIndex = lineIndex,
+        proposedKind = ProposedLedgerKind.PAYMENT,
+        customerName = "Rosa",
+        amountCents = cents,
+        rawText = "Rosa abono $cents",
+        sources = LedgerFieldSources(customer = LedgerFieldSource.EXPLICIT),
+    )
+
+    private fun priorDebtRow(lineIndex: Int, cents: String) = LedgerOperation(
+        lineIndex = lineIndex,
+        proposedKind = ProposedLedgerKind.PRIOR_DEBT,
+        customerName = "Rosa",
+        amountCents = cents,
+        rawText = "Rosa debe $cents",
+        sources = LedgerFieldSources(customer = LedgerFieldSource.EXPLICIT),
+    )
+
+    private fun totalsOf(
+        operations: List<LedgerOperation>,
+        totals: List<com.cuentivo.app.ai.ledger.LedgerPageTotal>,
+    ) = LedgerDeterministicObjections.evaluate(operations, emptyList(), emptyList(), totals)
+
+    @Test
+    fun `un_subtotal_que_cuadra_exacto_no_objeta`() {
+        // 25000 de venta menos 5000 de abono son 20000: la hoja dice 20000 y lo leído suma 20000.
+        val operations = listOf(saleRow(0, "25000"), paymentRow(1, "5000"))
+        val totals = listOf(com.cuentivo.app.ai.ledger.LedgerPageTotal("saldo", 20_000L, afterLineIndex = 1))
+
+        assertTrue(totalsOf(operations, totals).isEmpty())
+    }
+
+    @Test
+    fun `un_subtotal_con_un_centavo_de_diferencia_objeta`() {
+        // Sin tolerancia: un centavo es un desacuerdo, no un redondeo.
+        val operations = listOf(saleRow(0, "25000"), paymentRow(1, "5000"))
+        val totals = listOf(com.cuentivo.app.ai.ledger.LedgerPageTotal("saldo", 20_001L, afterLineIndex = 1))
+
+        val objections = totalsOf(operations, totals)
+
+        assertEquals(
+            "un centavo de diferencia marca el bloque entero, no un renglón suelto",
+            setOf(0, 1),
+            objections.map { it.lineIndex }.toSet(),
+        )
+        assertTrue(objections.all { it.type == LedgerDeterministicObjectionType.PAGE_TOTAL_MISMATCH })
+    }
+
+    @Test
+    fun `el_saldo_anterior_cuenta_como_positivo`() {
+        // La deuda anterior es un cargo: 10000 que ya debía menos 4000 que abonó son 6000.
+        val operations = listOf(priorDebtRow(0, "10000"), paymentRow(1, "4000"))
+        val totals = listOf(com.cuentivo.app.ai.ledger.LedgerPageTotal("saldo", 6_000L, afterLineIndex = 1))
+
+        assertTrue(totalsOf(operations, totals).isEmpty())
+    }
+
+    @Test
+    fun `el_aviso_lleva_los_dos_numeros`() {
+        // El aviso dice "la hoja dice X, lo leído suma Y": sin los dos números, confirmar es a ciegas.
+        val operations = listOf(saleRow(0, "89500"))
+        val totals = listOf(com.cuentivo.app.ai.ledger.LedgerPageTotal("saldo", 20_000L, afterLineIndex = 0))
+
+        val objection = totalsOf(operations, totals).single()
+
+        assertEquals(20_000L, objection.declaredCents)
+        assertEquals(89_500L, objection.expectedCents)
+        assertEquals(
+            "el nombre del subtotal viaja en el detalle, para saber cuál de todos no cuadró",
+            "saldo",
+            objection.detail,
+        )
+    }
+
+    @Test
+    fun `los_renglones_despues_del_bloque_no_se_marcan`() {
+        // El bloque es hasta `afterLineIndex`: lo de abajo no tiene por qué quedar dudoso.
+        val operations = listOf(saleRow(0, "10000"), saleRow(1, "10000"), saleRow(2, "10000"))
+        val totals = listOf(com.cuentivo.app.ai.ledger.LedgerPageTotal("saldo", 999_999L, afterLineIndex = 1))
+
+        val marked = totalsOf(operations, totals).map { it.lineIndex }.distinct().sorted()
+
+        assertEquals(listOf(0, 1), marked)
+    }
+
+    @Test
+    fun `un_subtotal_que_no_cuadra_solo_anade_duda`() {
+        // Lo que importa: no cambia ningún importe y deja el renglón sin resolver (duda), nunca
+        // resuelto. El bloqueo es lo que hace que alguien lo mire.
+        val operations = listOf(saleRow(0, "89500"))
+        val totals = listOf(com.cuentivo.app.ai.ledger.LedgerPageTotal("saldo", 20_000L, afterLineIndex = 0))
+
+        val objections = totalsOf(operations, totals)
+
+        assertEquals("89500", operations.single().amountCents)
+        assertEquals(setOf(0), LedgerPageResolution.unresolvedLineIndices(operations, objections.map { it.lineIndex }.toSet()))
+    }
 }

@@ -96,4 +96,18 @@ class LedgerLegacyRestoreGateTest {
 
         assertTrue(state.isLegacySaveWithoutSessionKey)
     }
+
+    @Test
+    fun `una_revision_restaurada_de_la_version_2_no_se_puede_registrar`() {
+        // La versión 2 no guardaba `pageType`, `pageTotals` ni `marginNote`: restaurarla perdería el
+        // tipo de hoja y los subtotales declarados, y con ellos la duda que justifican.
+        val model = restore(reviewSchemaVersion = 2)
+        val state = model.state as AiDebugLabState.LedgerReviewing
+
+        assertTrue(state.isLegacySaveWithoutSessionKey)
+        assertEquals(
+            AiLedgerConfirmOutcome.Ignored,
+            AiDebugLabMachine.onConfirmLedger(model, sessionId, businessId),
+        )
+    }
 }

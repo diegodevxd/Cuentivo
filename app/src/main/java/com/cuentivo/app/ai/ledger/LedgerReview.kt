@@ -78,6 +78,7 @@ data class LedgerOperation(
     val sources: LedgerFieldSources? = null,
     /** The line as the model read it, kept as evidence of what the paper actually said. */
     val rawText: String? = null,
+    val marginNote: String? = null,
     /** The products the model separated out of the line, when it managed to. */
     val items: List<LedgerLineItem> = emptyList(),
     /**
@@ -292,7 +293,12 @@ data class LedgerReview(
      * calendar day. Carried so the date card can offer it; never applied without a tap.
      */
     val detectedPageDate: LedgerDetectedPageDate? = null,
+    val pageType: LedgerPageType? = null,
+    val pageTotals: List<LedgerPageTotal> = emptyList(),
 )
+
+enum class LedgerPageType { ACCOUNTS, COST_OR_PRICE_LIST, OTHER }
+data class LedgerPageTotal(val label: String, val amountCents: Long, val afterLineIndex: Int? = null)
 
 /**
  * Pure builder and state machine for ledger reviews.
@@ -315,6 +321,8 @@ object LedgerReviewEngine {
         pageDateEpochDay: Long? = null,
         todayEpochDay: Long? = null,
         detectedPageDate: LedgerDetectedPageDate? = null,
+        pageType: LedgerPageType? = null,
+        pageTotals: List<LedgerPageTotal> = emptyList(),
     ): LedgerReview {
         // Defensive copy: isolate snapshot from any caller modifications
         val frozenOps: List<LedgerOperation> = Collections.unmodifiableList(
@@ -492,6 +500,8 @@ object LedgerReviewEngine {
             pageDateEpochDay = pageDateEpochDay,
             todayEpochDay = todayEpochDay,
             detectedPageDate = detectedPageDate,
+            pageType = pageType,
+            pageTotals = pageTotals,
         )
     }
 

@@ -10,6 +10,8 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerRegion
 import com.cuentivo.app.ai.ledger.LedgerReview
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
+import com.cuentivo.app.ai.ledger.LedgerPageType
+import com.cuentivo.app.ai.ledger.LedgerPageTotal
 import com.cuentivo.app.ai.ledger.LedgerFieldConfidence
 import com.cuentivo.app.ai.ledger.LedgerFieldSource
 import com.cuentivo.app.ai.ledger.LedgerFieldSources
@@ -49,6 +51,8 @@ internal object LedgerReviewSaver {
     private const val KEY_INITIAL_DUPLICATE_COUNT = "initialDuplicateCount"
     private const val KEY_REVIEW_SCHEMA_VERSION = "reviewSchemaVersion"
     private const val KEY_PAGE_COMPLETENESS_CONFIRMED = "pageCompletenessConfirmed"
+    private const val KEY_PAGE_TYPE = "pageType"
+    private const val KEY_PAGE_TOTALS = "pageTotals"
 
     // Operation keys. Flat strings, one per field, so a malformed row can be skipped without
     // dragging the whole page down — but see writeOperations: a row that fails to round-trip
@@ -71,6 +75,7 @@ internal object LedgerReviewSaver {
     private const val OP_WARNINGS = "warnings"
     private const val OP_OBJECTION_CONFIRMED = "objectionConfirmed"
     private const val OP_OBJECTION_FINGERPRINT = "objectionConfirmedFingerprint"
+    private const val OP_MARGIN_NOTE = "marginNote"
 
     /**
      * The part of a review that cannot be recomputed: what the model read, what the person edited,
@@ -96,12 +101,17 @@ internal object LedgerReviewSaver {
         val initialDuplicateCount: Int = 0,
         val reviewSchemaVersion: Int? = null,
         val isPageCompletenessConfirmed: Boolean = false,
+        val pageType: LedgerPageType? = null,
+        val pageTotals: List<LedgerPageTotal> = emptyList(),
     )
 
     fun toBundle(saved: SavedLedgerReview): Bundle {
         val bundle = Bundle()
         bundle.putInt(KEY_REVIEW_SCHEMA_VERSION, LedgerReviewSchema.CURRENT)
         bundle.putBoolean(KEY_PAGE_COMPLETENESS_CONFIRMED, saved.isPageCompletenessConfirmed)
+        saved.operations.firstOrNull()?.let { }
+        saved.pageType?.let { bundle.putString(KEY_PAGE_TYPE, it.name) }
+        bundle.putParcelableArray(KEY_PAGE_TOTALS, saved.pageTotals.map { total -> Bundle().apply { putString("label", total.label); putLong("amount", total.amountCents); total.afterLineIndex?.let { putInt("after", it) } } }.toTypedArray())
         bundle.putString(KEY_SESSION_ID, saved.sessionId)
         bundle.putString(KEY_BUSINESS_ID, saved.businessId)
         bundle.putParcelableArray(KEY_OPERATIONS, saved.operations.map(::operationToBundle).toTypedArray())
@@ -183,6 +193,8 @@ internal object LedgerReviewSaver {
             initialDuplicateCount = initialDuplicateCount,
             reviewSchemaVersion = if (bundle.containsKey(KEY_REVIEW_SCHEMA_VERSION)) bundle.getInt(KEY_REVIEW_SCHEMA_VERSION) else null,
             isPageCompletenessConfirmed = bundle.getBoolean(KEY_PAGE_COMPLETENESS_CONFIRMED, false),
+            pageType = bundle.getString(KEY_PAGE_TYPE)?.let { runCatching { LedgerPageType.valueOf(it) }.getOrNull() },
+            pageTotals = (bundle.getParcelableArray(KEY_PAGE_TOTALS) ?: emptyArray()).mapNotNull { raw -> (raw as? Bundle)?.let { LedgerPageTotal(it.getString("label") ?: return@let null, it.getLong("amount"), if (it.containsKey("after")) it.getInt("after") else null) } },
         )
     }
 
@@ -248,6 +260,7 @@ internal object LedgerReviewSaver {
             bundle.putBoolean(OP_OBJECTION_CONFIRMED, true)
         }
         op.objectionConfirmedFingerprint?.let { bundle.putString(OP_OBJECTION_FINGERPRINT, it) }
+        op.marginNote?.let { bundle.putString(OP_MARGIN_NOTE, it) }
         return bundle
     }
 
@@ -330,6 +343,7 @@ internal object LedgerReviewSaver {
             warnings = bundle.getStringArray(OP_WARNINGS)?.toList() ?: emptyList(),
             isObjectionConfirmed = bundle.getBoolean(OP_OBJECTION_CONFIRMED, false),
             objectionConfirmedFingerprint = bundle.getString(OP_OBJECTION_FINGERPRINT),
+            marginNote = bundle.getString(OP_MARGIN_NOTE),
         )
     }
 

@@ -1,8 +1,12 @@
 package com.cuentivo.app.domain
 
+import com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic
+import com.cuentivo.app.ai.ledger.LedgerDiscardReason
 import com.cuentivo.app.ai.ledger.LedgerFieldSource
 import com.cuentivo.app.ai.ledger.LedgerFieldSources
 import com.cuentivo.app.ai.ledger.LedgerOperation
+import com.cuentivo.app.ai.ledger.LedgerPageType
+import com.cuentivo.app.ai.ledger.LedgerReview
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.data.local.ExpectedLedgerBatchResult
@@ -51,6 +55,95 @@ class LedgerPageCompletenessTest {
         assertTrue(LedgerPageCompleteness.isRegistrable(modelSaysTextMayBeMissing = false, isPageCompletenessConfirmed = false))
         assertFalse(LedgerPageCompleteness.isRegistrable(modelSaysTextMayBeMissing = true, isPageCompletenessConfirmed = false))
         assertTrue(LedgerPageCompleteness.isRegistrable(modelSaysTextMayBeMissing = true, isPageCompletenessConfirmed = true))
+    }
+
+    // ---- Los descartes del parser (el hueco que ya existía) ----
+
+    private fun reviewWithDiscards(): LedgerReview = LedgerReviewEngine.build(
+        operations = listOf(cleanRow()),
+        discards = listOf(
+            LedgerDiscardDiagnostic(
+                inputIndex = 1,
+                reason = LedgerDiscardReason.entries.first(),
+            ),
+        ),
+        pageDateEpochDay = pageDateEpochDay,
+        todayEpochDay = todayEpochDay,
+    )
+
+    @Test
+    fun `un_renglon_descartado_exige_la_misma_confirmacion_de_pagina`() {
+        // Sin esto, el renglón descartado DESAPARECE y la página se registra sin él: nadie se entera.
+        val review = reviewWithDiscards()
+
+        assertTrue(
+            "un descarte tiene que contar como motivo",
+            LedgerPageCompleteness.confirmationReasons(review).contains(LedgerPageConfirmationReason.UNREADABLE_ROWS),
+        )
+        assertTrue(LedgerPageCompleteness.requiresPageConfirmation(review))
+    }
+
+    @Test
+    fun `sin_descartes_y_sin_duda_la_pagina_no_pide_nada`() {
+        // La otra mitad: que esto no infle la duda de páginas limpias.
+        val clean = review(pageIncomplete = false)
+
+        assertTrue(LedgerPageCompleteness.confirmationReasons(clean).isEmpty())
+        assertFalse(LedgerPageCompleteness.requiresPageConfirmation(clean))
+    }
+
+    @Test
+    fun `el_boton_sigue_desactivado_por_un_descarte_hasta_que_se_confirma`() {
+        val review = reviewWithDiscards()
+
+        val before = LedgerImportSummaryCalculator.calculate(review, emptyList(), isPageCompletenessConfirmed = false)
+        assertFalse("con un renglón descartado no se puede registrar", before.isConfirmButtonEnabled)
+
+        val after = LedgerImportSummaryCalculator.calculate(review, emptyList(), isPageCompletenessConfirmed = true)
+        assertTrue("con la palabra de la persona, sí", after.isConfirmButtonEnabled)
+    }
+
+    // ---- Una hoja que no es de cuentas (punto 4) ----
+
+    @Test
+    fun `una_hoja_que_no_es_de_cuentas_y_trae_renglones_pide_confirmacion`() {
+        val priceList = LedgerReviewEngine.build(
+            operations = listOf(cleanRow()),
+            pageType = LedgerPageType.COST_OR_PRICE_LIST,
+            pageDateEpochDay = pageDateEpochDay,
+            todayEpochDay = todayEpochDay,
+        )
+
+        assertTrue(
+            LedgerPageCompleteness.confirmationReasons(priceList).contains(LedgerPageConfirmationReason.NOT_AN_ACCOUNTS_PAGE),
+        )
+        assertTrue(LedgerPageCompleteness.requiresPageConfirmation(priceList))
+    }
+
+    @Test
+    fun `una_hoja_que_no_es_de_cuentas_sin_renglones_no_pide_nada`() {
+        // Una lista de precios sin nada que registrar no necesita que nadie confirme nada.
+        val emptyPriceList = LedgerReviewEngine.build(
+            operations = emptyList(),
+            pageType = LedgerPageType.COST_OR_PRICE_LIST,
+            pageDateEpochDay = pageDateEpochDay,
+            todayEpochDay = todayEpochDay,
+        )
+
+        assertFalse(LedgerPageCompleteness.requiresPageConfirmation(emptyPriceList))
+    }
+
+    @Test
+    fun `una_hoja_de_cuentas_normal_no_pide_confirmacion_por_su_tipo`() {
+        val accounts = LedgerReviewEngine.build(
+            operations = listOf(cleanRow()),
+            pageType = LedgerPageType.ACCOUNTS,
+            pageDateEpochDay = pageDateEpochDay,
+            todayEpochDay = todayEpochDay,
+        )
+
+        assertFalse(LedgerPageCompleteness.confirmationReasons(accounts).contains(LedgerPageConfirmationReason.NOT_AN_ACCOUNTS_PAGE))
+        assertFalse(LedgerPageCompleteness.requiresPageConfirmation(accounts))
     }
 
     @Test

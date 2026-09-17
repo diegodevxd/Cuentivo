@@ -269,8 +269,35 @@ fun LedgerReviewContent(
     }
 
     if (summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed) {
-        Button(onClick = onConfirmPageCompleteness, modifier = Modifier.testTag("ledger-confirm-page-complete-button")) {
-            Text(stringResource(R.string.ai_ledger_action_confirm_page_complete))
+        Column {
+            // POR QUÉ se pide la confirmación. Sin el motivo, "confirma" es una orden sin contexto; y
+            // el caso de los renglones descartados es el que más importa: no están en la lista, así que
+            // si nadie dice cuántos fueron, se registra la página sin ellos y no queda rastro.
+            if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.UNREADABLE_ROWS)) {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.ai_ledger_page_unreadable_rows,
+                        summaryResult.unreadableRowsCount,
+                        summaryResult.unreadableRowsCount,
+                    ),
+                    modifier = Modifier.testTag("ledger-page-unreadable-rows-notice"),
+                )
+            }
+            if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.NOT_AN_ACCOUNTS_PAGE)) {
+                Text(
+                    text = stringResource(R.string.ai_ledger_page_not_accounts),
+                    modifier = Modifier.testTag("ledger-page-not-accounts-notice"),
+                )
+            }
+            if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.MODEL_DOUBT)) {
+                Text(
+                    text = stringResource(R.string.ai_ledger_page_incomplete_warning),
+                    modifier = Modifier.testTag("ledger-page-model-doubt-notice"),
+                )
+            }
+            Button(onClick = onConfirmPageCompleteness, modifier = Modifier.testTag("ledger-confirm-page-complete-button")) {
+                Text(stringResource(R.string.ai_ledger_action_confirm_page_complete))
+            }
         }
     } else if (summaryResult.pageIncompleteNoticeRequired) {
         Text(stringResource(R.string.ai_ledger_page_completeness_confirmed), modifier = Modifier.testTag("ledger-page-completeness-confirmed"))
@@ -948,6 +975,8 @@ private fun EditLedgerOperationDialog(
                             stringResource(R.string.ai_ledger_objection_unusual_cents)
                         com.cuentivo.app.domain.LedgerDeterministicObjectionType.CUSTOMER_CONFIRMATION_REQUIRED ->
                             stringResource(R.string.ai_ledger_objection_customer_confirmation)
+                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.PAGE_TOTAL_MISMATCH ->
+                            stringResource(R.string.ai_ledger_objection_page_total_mismatch, objection.declaredCents ?: 0L, objection.expectedCents ?: 0L)
                     }
                     Surface(
                         color = MaterialTheme.colorScheme.tertiaryContainer,

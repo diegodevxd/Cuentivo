@@ -33,6 +33,14 @@ class LedgerReviewSchemaTest {
     }
 
     @Test
+    fun `un_estado_de_la_version_2_ya_no_se_puede_registrar`() {
+        // El estado guardado por la versión 2 no llevaba `pageType`, `pageTotals` ni `marginNote`, así
+        // que restaurarlo perdería el tipo de hoja y los subtotales declarados —y con ellos la duda que
+        // justifican— y la página se registraría como si nada faltara. Se descarta: el lado seguro.
+        assertFalse(LedgerReviewSchema.canRegisterRestoredReview(2))
+    }
+
+    @Test
     fun `una_marca_mas_nueva_que_la_actual_no_se_puede_registrar`() {
         // Sólo la versión exacta. Un estado guardado por una versión más nueva puede traer campos que
         // esta no entiende, y esto decide si se escribe dinero: ante la duda, no se escribe.

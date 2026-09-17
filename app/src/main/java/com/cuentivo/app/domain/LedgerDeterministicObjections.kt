@@ -27,12 +27,15 @@ enum class LedgerDeterministicObjectionType {
 
     /** Line matches an existing customer but the name does not appear in rawText or was inherited. */
     CUSTOMER_CONFIRMATION_REQUIRED,
+    PAGE_TOTAL_MISMATCH,
 }
 
 data class LedgerDeterministicObjection(
     val lineIndex: Int,
     val type: LedgerDeterministicObjectionType,
     val detail: String? = null,
+    val declaredCents: Long? = null,
+    val expectedCents: Long? = null,
 )
 
 object LedgerDeterministicObjections {
@@ -50,9 +53,10 @@ object LedgerDeterministicObjections {
         operations: List<LedgerOperation>,
         existingCustomerCandidates: List<CustomerCandidate>,
         catalogProducts: List<ProductCandidate>,
+        pageTotals: List<com.cuentivo.app.ai.ledger.LedgerPageTotal> = emptyList(),
     ): List<LedgerDeterministicObjection> {
         val existingNames = existingCustomerCandidates.mapTo(LinkedHashSet()) { CustomerNameNormalizer.key(it.name) }
-        return evaluateWithContext(operations, productCandidatesByLine(operations, catalogProducts), existingNames)
+        return evaluateWithContext(operations, productCandidatesByLine(operations, catalogProducts), existingNames, pageTotals)
     }
 
     fun blockedLineIndices(
@@ -115,6 +119,7 @@ object LedgerDeterministicObjections {
         operations: List<LedgerOperation>,
         productCandidatesByLine: Map<Int, ProductCandidate>,
         existingCustomerNormalizedNames: Set<String>,
+        pageTotals: List<com.cuentivo.app.ai.ledger.LedgerPageTotal> = emptyList(),
     ): List<LedgerDeterministicObjection> {
         val objections = mutableListOf<LedgerDeterministicObjection>()
 
@@ -258,6 +263,16 @@ object LedgerDeterministicObjections {
             }
         }
 
+        for (total in pageTotals) {
+            val block = operations.filter { total.afterLineIndex == null || it.lineIndex <= total.afterLineIndex }
+            val expected = block.sumOf { op ->
+                val cents = op.amountCents?.toLongOrNull() ?: 0L
+                if (op.proposedKind == com.cuentivo.app.ai.ledger.ProposedLedgerKind.PAYMENT) -cents else cents
+            }
+            if (expected != total.amountCents) {
+                block.forEach { op -> objections.add(LedgerDeterministicObjection(op.lineIndex, LedgerDeterministicObjectionType.PAGE_TOTAL_MISMATCH, total.label, total.amountCents, expected)) }
+            }
+        }
         return objections
     }
 }

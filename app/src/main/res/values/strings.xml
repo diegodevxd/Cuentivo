@@ -623,6 +623,11 @@
     <string name="ai_ledger_summary_new_customers_count">Nuevos clientes a crear: %1$d</string>
     <string name="ai_ledger_crop_not_available">Sin recorte disponible</string>
     <string name="ai_ledger_page_incomplete_warning">Puede faltar texto de esta página. Revisa que estén todos los renglones antes de registrar.</string>
+    <plurals name="ai_ledger_page_unreadable_rows">
+        <item quantity="one">No se pudo leer %1$d renglón: revísalo antes de registrar.</item>
+        <item quantity="other">No se pudieron leer %1$d renglones: revísalos antes de registrar.</item>
+    </plurals>
+    <string name="ai_ledger_page_not_accounts">Esta hoja no parece de cuentas y aun así trae renglones. Confírmalo antes de registrar.</string>
     <string name="ai_ledger_recorded">Listo: %1$d movimientos registrados de tu libreta.</string>
     <string name="ai_ledger_recorded_already">Esta página ya estaba registrada. Los cambios que hiciste después no se aplican: lo registrado se corrige con un movimiento compensatorio.</string>
     <string name="ai_ledger_legacy_save_blocked">Esta página se guardó con una versión anterior y no se puede saber qué se registró. Revisa el libro de movimientos antes de volver a capturarla.</string>
@@ -630,6 +635,7 @@
     <string name="ai_ledger_action_confirm_page_complete">Revisé la hoja: no falta nada, o lo que falta lo registro aparte</string>
     <string name="ai_ledger_page_completeness_confirmed">Confirmaste que la hoja está completa.</string>
     <string name="ai_ledger_action_register_blocked_incomplete">Confirma que la hoja está completa para registrar</string>
+    <string name="ai_ledger_objection_page_total_mismatch">La hoja dice %1$d, lo leído suma %2$d</string>
     <string name="ai_ledger_failed">No se pudo registrar la libreta. No se guardó nada; puedes revisarla otra vez.</string>
     <string name="ai_ledger_row_date">Fecha: %1$s</string>
     <string name="ai_ledger_row_date_missing">Sin fecha en la libreta</string>

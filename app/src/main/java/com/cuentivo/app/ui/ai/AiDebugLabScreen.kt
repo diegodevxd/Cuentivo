@@ -318,6 +318,8 @@ fun AiDebugLabScreen(
                 todayEpochDay = reviewing.review.todayEpochDay,
                 detectedPageDate = reviewing.review.detectedPageDate,
                 isPageCompletenessConfirmed = reviewing.isPageCompletenessConfirmed,
+                pageType = reviewing.review.pageType,
+                pageTotals = reviewing.review.pageTotals,
             )
         }
     }
@@ -616,6 +618,8 @@ fun AiDebugLabScreen(
                                 discards = outcome.extraction.discards,
                                 unreadTextRemaining = outcome.extraction.unreadTextRemaining,
                                 pageIncomplete = outcome.extraction.pageIncomplete,
+                                pageType = outcome.extraction.pageType,
+                                pageTotals = outcome.extraction.pageTotals,
                                 existingCustomerBalances = balances,
                                 customerCandidates = customerCandidates,
                                 productCandidates = productCandidates,
@@ -762,6 +766,7 @@ fun AiDebugLabScreen(
             operations = ledgerReviewing.review.operations,
             existingCustomerCandidates = ledgerReviewing.customerCandidates,
             catalogProducts = ledgerReviewing.productCandidates,
+            pageTotals = ledgerReviewing.review.pageTotals,
         )
         val cancelLedger = {
             // Stage 2 of the metric: the person discarded this page, so the import ended

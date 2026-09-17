@@ -10,7 +10,12 @@ data class LedgerImportSummaryResult(
     val pendingReviewCount: Int,
     val canConfirm: Boolean,
     val isConfirmButtonEnabled: Boolean,
+    /** Hay algo que exige la palabra de la persona antes de registrar: mira [confirmationReasons]. */
     val pageIncompleteNoticeRequired: Boolean,
+    /** Por qué se pide esa confirmación. La pantalla elige su mensaje con esto. */
+    val confirmationReasons: Set<LedgerPageConfirmationReason>,
+    /** Renglones que el parser descartó. La pantalla dice cuántos no se pudieron leer. */
+    val unreadableRowsCount: Int,
     val unresolvedCount: Int,
     val isPageCompletenessConfirmed: Boolean,
 )
@@ -23,7 +28,9 @@ data class LedgerImportSummaryResult(
  * - Ready: isRegisterableLedgerOperation == true AND no financial diagnostic AND has resolved date.
  * - Pending Review: maxOf(0, detectedCount - readyCount - review.summary.excludedRowsCount).
  * - Button promise: register only when the whole page is resolved.
- * - Incomplete page notice: Shown without numerical guess when pageIncomplete or unreadTextRemaining is true.
+ * - Page confirmation: required for EVERY reason [LedgerPageCompleteness] lists — la duda del modelo,
+ *   un renglón descartado por el parser, o una hoja que no es de cuentas con renglones. Los descartes
+ *   no son un detalle numérico: un renglón descartado desaparece del registro sin que nadie lo vea.
  */
 object LedgerImportSummaryCalculator {
 
@@ -54,7 +61,12 @@ object LedgerImportSummaryCalculator {
         val readyCount = readyOps.size
         val pendingReviewCount = maxOf(0, detectedCount - readyCount - review.summary.excludedRowsCount)
         val canConfirm = review.summary.canConfirm
-        val pageIncompleteNoticeRequired = review.pageIncomplete || review.unreadTextRemaining
+        // La duda de la página NO es sólo lo que dijo el modelo. Un renglón descartado por el parser
+        // DESAPARECE y la página se registraría sin él; y una hoja que no es de cuentas con renglones
+        // tampoco es un registro normal. Los tres motivos piden la misma confirmación explícita.
+        val confirmationReasons = LedgerPageCompleteness.confirmationReasons(review)
+        val pageIncompleteNoticeRequired = confirmationReasons.isNotEmpty()
+        val unreadableRowsCount = review.discards.size
         val isConfirmButtonEnabled = canConfirm && readyCount > 0 && unresolvedCount == 0 &&
             LedgerPageCompleteness.isRegistrable(pageIncompleteNoticeRequired, isPageCompletenessConfirmed)
 
@@ -65,6 +77,8 @@ object LedgerImportSummaryCalculator {
             canConfirm = canConfirm,
             isConfirmButtonEnabled = isConfirmButtonEnabled,
             pageIncompleteNoticeRequired = pageIncompleteNoticeRequired,
+            confirmationReasons = confirmationReasons,
+            unreadableRowsCount = unreadableRowsCount,
             unresolvedCount = unresolvedCount,
             isPageCompletenessConfirmed = isPageCompletenessConfirmed,
         )

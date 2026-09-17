@@ -78,4 +78,48 @@ class LedgerPageCompletenessGateTest {
             AiDebugLabMachine.onConfirmLedger(model, sessionId, businessId) is AiLedgerConfirmOutcome.Started,
         )
     }
+
+    // ---- Renglones descartados por el parser (el punto 1) ----
+
+    /**
+     * Un renglón que el parser descartó no está en `operations`: si la máquina no mira `discards`, la
+     * página se registra sin él y nadie se entera.
+     */
+    private fun modelWithDiscards(): AiDebugLabModel = AiDebugLabModel(
+        state = AiDebugLabState.LedgerReviewing(
+            sessionId = sessionId,
+            businessId = businessId,
+            review = LedgerReviewEngine.build(
+                operations = listOf(cleanRow()),
+                discards = listOf(
+                    com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic(
+                        inputIndex = 1,
+                        reason = com.cuentivo.app.ai.ledger.LedgerDiscardReason.entries.first(),
+                    ),
+                ),
+                pageDateEpochDay = pageDateEpochDay,
+                todayEpochDay = todayEpochDay,
+            ),
+            registeredOperations = emptyList(),
+        ),
+    )
+
+    @Test
+    fun `la_maquina_se_niega_a_registrar_con_renglones_descartados_sin_confirmar`() {
+        val model = modelWithDiscards()
+
+        assertEquals(
+            AiLedgerConfirmOutcome.Ignored,
+            AiDebugLabMachine.onConfirmLedger(model, sessionId, businessId),
+        )
+    }
+
+    @Test
+    fun `tras_confirmar_la_pagina_con_descartes_la_maquina_arranca_el_registro`() {
+        val confirmed = AiDebugLabMachine.onConfirmLedgerPageCompleteness(modelWithDiscards(), sessionId, businessId)
+
+        assertTrue(
+            AiDebugLabMachine.onConfirmLedger(confirmed, sessionId, businessId) is AiLedgerConfirmOutcome.Started,
+        )
+    }
 }

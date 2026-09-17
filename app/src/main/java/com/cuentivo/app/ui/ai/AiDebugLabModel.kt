@@ -1059,6 +1059,8 @@ object AiDebugLabMachine {
         generation: Long,
         todayEpochDay: Long = java.time.LocalDate.now().toEpochDay(),
         detectedPageDate: com.cuentivo.app.ai.ledger.LedgerDetectedPageDate? = null,
+        pageType: com.cuentivo.app.ai.ledger.LedgerPageType? = null,
+        pageTotals: List<com.cuentivo.app.ai.ledger.LedgerPageTotal> = emptyList(),
     ): AiDebugLabModel {
         if (generation != model.generation) return model
         val state = model.state as? AiDebugLabState.LedgerExtracting ?: return model
@@ -1076,6 +1078,8 @@ object AiDebugLabMachine {
             existingCustomerBalances = frozenBalances,
             todayEpochDay = todayEpochDay,
             detectedPageDate = detectedPageDate,
+            pageType = pageType,
+            pageTotals = pageTotals,
         )
 
         return model.copy(
@@ -1132,6 +1136,8 @@ object AiDebugLabMachine {
             pageDateEpochDay = saved.pageDateEpochDay,
             todayEpochDay = saved.todayEpochDay,
             detectedPageDate = saved.detectedPageDate,
+            pageType = saved.pageType,
+            pageTotals = saved.pageTotals,
         )
         return model.copy(
             state = AiDebugLabState.LedgerReviewing(

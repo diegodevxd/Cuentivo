@@ -37,6 +37,75 @@ class LedgerExtractionGatewayTest {
         "unreadableFields" to emptyList<String>(),
     )
 
+    // ---- El reintento v5 -> v4 (bloque 3, punto 5) ----
+
+    private fun anExtractedPage() = LedgerExtractionCallResult.Extracted(
+        LedgerExtractionPayload(
+            operations = emptyList(),
+            discards = emptyList(),
+            unreadTextRemaining = false,
+            pageIncomplete = false,
+        ),
+    )
+
+    @Test fun `con v5 bueno hay una sola llamada`() {
+        val versions = mutableListOf<Int>()
+
+        val result = kotlinx.coroutines.runBlocking {
+            extractPageWithFallback { version ->
+                versions += version
+                anExtractedPage()
+            }
+        }
+
+        org.junit.Assert.assertEquals(listOf(5), versions)
+        org.junit.Assert.assertTrue(result is LedgerExtractionCallResult.Extracted)
+    }
+
+    @Test fun `si v5 no contesta se reintenta una vez con la 4`() {
+        val versions = mutableListOf<Int>()
+
+        val result = kotlinx.coroutines.runBlocking {
+            extractPageWithFallback { version ->
+                versions += version
+                if (version == 5) LedgerExtractionCallResult.Unavailable else anExtractedPage()
+            }
+        }
+
+        org.junit.Assert.assertEquals("v5 y luego v4, una vez cada una", listOf(5, 4), versions)
+        org.junit.Assert.assertTrue(result is LedgerExtractionCallResult.Extracted)
+    }
+
+    @Test fun `si v5 lanza tambien se reintenta una vez con la 4`() {
+        // Un servidor sin v5 desplegado puede contestar error en vez de una respuesta rara.
+        val versions = mutableListOf<Int>()
+
+        val result = kotlinx.coroutines.runBlocking {
+            extractPageWithFallback { version ->
+                versions += version
+                if (version == 5) throw IllegalStateException("boom") else anExtractedPage()
+            }
+        }
+
+        org.junit.Assert.assertEquals(listOf(5, 4), versions)
+        org.junit.Assert.assertTrue(result is LedgerExtractionCallResult.Extracted)
+    }
+
+    @Test fun `si fallan las dos no hay una tercera llamada`() {
+        // Un solo reintento, nunca un bucle: cada llamada al modelo se paga.
+        val versions = mutableListOf<Int>()
+
+        val result = kotlinx.coroutines.runBlocking {
+            extractPageWithFallback { version ->
+                versions += version
+                LedgerExtractionCallResult.Unavailable
+            }
+        }
+
+        org.junit.Assert.assertEquals("exactamente dos llamadas", listOf(5, 4), versions)
+        org.junit.Assert.assertEquals(LedgerExtractionCallResult.Unavailable, result)
+    }
+
     @Test fun `a well formed page is parsed`() {
         val result = parseLedgerExtractionResponse(response(listOf(sale("25000"))), REQUEST_ID)
 
@@ -145,7 +214,7 @@ class LedgerExtractionGatewayTest {
             setOf("contractVersion", "requestId", "action", "imageBase64", "imageMimeType"),
             payload.keys,
         )
-        assertEquals(4, payload["contractVersion"])
+        assertEquals(5, payload["contractVersion"])
         assertEquals("extract_ledger_page", payload["action"])
     }
 

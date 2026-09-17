@@ -7,7 +7,7 @@ import kotlinx.coroutines.withContext
 
 private const val CALLABLE_NAME = "extractLedgerPage"
 private const val REGION = "us-south1"
-private const val CONTRACT_VERSION_FIELD = 4
+private const val CONTRACT_VERSION_FIELD = 5
 private const val ACTION_VALUE = "extract_ledger_page"
 private const val MAX_LEDGER_OPERATIONS_WIRE = 25
 
@@ -32,6 +32,7 @@ private val OPERATION_ALLOWED_KEYS_V4 = OPERATION_ALLOWED_KEYS_V3 + setOf(
     "items",
     "warnings",
 )
+private val OPERATION_ALLOWED_KEYS_V5 = OPERATION_ALLOWED_KEYS_V4 + "marginNote"
 
 /** What the client is allowed to conclude from a page extraction attempt. */
 sealed interface LedgerExtractionCallResult {
@@ -57,6 +58,8 @@ data class LedgerExtractionPayload(
     val pageIncomplete: Boolean,
     /** Present only in v4 answers that carried a readable page date; null in v3 and in pages without one. */
     val detectedPageDate: LedgerDetectedPageDate? = null,
+    val pageType: LedgerPageType? = null,
+    val pageTotals: List<LedgerPageTotal> = emptyList(),
     /** Which contract version the server answered with, for the local import metrics. */
     val contractVersion: Int = 0,
 )
@@ -99,7 +102,7 @@ fun parseLedgerExtractionResponse(
         return LedgerExtractionCallResult.Unavailable
     }
     val version = versionNumber.toInt()
-    if (version != 3 && version != 4) {
+    if (version !in setOf(3, 4, 5)) {
         return LedgerExtractionCallResult.Unavailable
     }
 
@@ -116,8 +119,8 @@ fun parseLedgerExtractionResponse(
     if (version == 3) {
         if (rootKeys != baseKeys) return LedgerExtractionCallResult.Unavailable
     } else {
-        val allowedV4Keys = baseKeys + "pageDate"
-        if (!allowedV4Keys.containsAll(rootKeys) || !rootKeys.containsAll(baseKeys)) {
+        val allowedKeys = baseKeys + "pageDate" + if (version == 5) setOf("pageType", "pageTotals") else emptySet()
+        if (!allowedKeys.containsAll(rootKeys) || !rootKeys.containsAll(baseKeys)) {
             return LedgerExtractionCallResult.Unavailable
         }
     }
@@ -150,7 +153,7 @@ fun parseLedgerExtractionResponse(
             // the client never applies this date on its own — the worst a bad value can do is not
             // be offered. Refusing the whole page over it would trade twenty-four readable rows
             // for an advisory field.
-            val detectedPageDate = if (version == 4) parseDetectedPageDateWire(root["pageDate"]) else null
+            val detectedPageDate = if (version >= 4) parseDetectedPageDateWire(root["pageDate"]) else null
             LedgerExtractionCallResult.Extracted(
                 LedgerExtractionPayload(
                     operations = operations,
@@ -159,6 +162,8 @@ fun parseLedgerExtractionResponse(
                     pageIncomplete = incomplete,
                     detectedPageDate = detectedPageDate,
                     contractVersion = version,
+                    pageType = if (version == 5) parsePageTypeWire(root["pageType"]) else null,
+                    pageTotals = if (version == 5) parsePageTotalsWire(root["pageTotals"], operations.map { it.lineIndex }.toSet()) else emptyList(),
                 ),
             )
         }
@@ -170,7 +175,7 @@ private fun parseLedgerOperationsWire(value: Any?, contractVersion: Int): List<L
     val list = value as? List<*> ?: return null
     if (list.size > MAX_LEDGER_OPERATIONS_WIRE) return null
     val parsed = ArrayList<LedgerOperation>(list.size)
-    val allowedKeys = if (contractVersion == 3) OPERATION_ALLOWED_KEYS_V3 else OPERATION_ALLOWED_KEYS_V4
+    val allowedKeys = when (contractVersion) { 3 -> OPERATION_ALLOWED_KEYS_V3; 4 -> OPERATION_ALLOWED_KEYS_V4; else -> OPERATION_ALLOWED_KEYS_V5 }
     var lastLineIndex = -1
     for (item in list) {
         val map = item as? Map<*, *> ?: return null
@@ -233,9 +238,35 @@ private fun parseLedgerOperationsWire(value: Any?, contractVersion: Int): List<L
             rawText = (map["rawText"] as? String)?.also { if (it.length > MAX_RAW_TEXT_WIRE) return null },
             items = items,
             warnings = parseWarningsWire(map["warnings"]) ?: return null,
+            marginNote = if (contractVersion == 5) parseMarginNoteWire(map["marginNote"]) else null,
         )
     }
     return parsed
+}
+
+private fun parsePageTypeWire(value: Any?): LedgerPageType? = when (value as? String) {
+    "ACCOUNTS" -> LedgerPageType.ACCOUNTS
+    "COST_OR_PRICE_LIST" -> LedgerPageType.COST_OR_PRICE_LIST
+    "OTHER" -> LedgerPageType.OTHER
+    else -> null
+}
+
+private fun parseMarginNoteWire(value: Any?): String? = (value as? String)?.takeIf { it.isNotBlank() && it.length <= 40 }
+
+private fun parsePageTotalsWire(value: Any?, lineIndices: Set<Int>): List<LedgerPageTotal> {
+    val list = value as? List<*> ?: return emptyList()
+    if (list.size > 10) return emptyList()
+    val used = mutableSetOf<Int>()
+    return list.mapNotNull { raw ->
+        val map = raw as? Map<*, *> ?: return@mapNotNull null
+        val label = map["label"] as? String ?: return@mapNotNull null
+        if (label.isBlank() || label.length > 40) return@mapNotNull null
+        val amount = map["amountCents"] as? String ?: return@mapNotNull null
+        if (!CANONICAL_LEDGER_CENTS_WIRE_RE.matches(amount)) return@mapNotNull null
+        val after = map["afterLineIndex"]?.let { (it as? Number)?.toInt() ?: return@mapNotNull null }
+        if (after != null && (after !in lineIndices || !used.add(after))) return@mapNotNull null
+        LedgerPageTotal(label, amount.toLong(), after)
+    }
 }
 
 private fun parseDateWire(value: Any?): SafeDateCandidate? {
@@ -303,8 +334,11 @@ class LedgerExtractionGateway(
         requestId: String,
         imageBase64: String,
         imageMimeType: String,
-    ): LedgerExtractionCallResult {
-        val payload = buildLedgerCallablePayload(requestId, imageBase64, imageMimeType)
+    ): LedgerExtractionCallResult =
+        extractPageWithFallback { version -> callRemote(requestId, imageBase64, imageMimeType, version) }
+
+    private suspend fun callRemote(requestId: String, imageBase64: String, imageMimeType: String, version: Int): LedgerExtractionCallResult {
+        val payload = buildLedgerCallablePayload(requestId, imageBase64, imageMimeType).toMutableMap().apply { put("contractVersion", version) }
         return try {
             withContext(Dispatchers.IO) {
                 val task = functions.getHttpsCallable(CALLABLE_NAME).call(payload)
@@ -313,6 +347,34 @@ class LedgerExtractionGateway(
         } catch (_: Exception) {
             LedgerExtractionCallResult.Unavailable
         }
+    }
+}
+
+/**
+ * Pide la página con el contrato v5 y, si esa versión no contesta, **reintenta UNA sola vez con la 4**.
+ *
+ * Un despliegue llega a las instancias por partes, así que un teléfono v41 puede encontrarse con un
+ * servidor que todavía no habla v5. Reintentar aquí es seguro y por eso se permite: extraer **lee** una
+ * foto y no escribe dinero — al revés que el camino de escritura, donde reintentar a ciegas duplica un
+ * cargo. Y es exactamente UN reintento: cada llamada al modelo se paga.
+ *
+ * Vive fuera de la clase a propósito: así la prueba la puede invocar sin construir un
+ * `FirebaseFunctions`, que en JVM no existe. Es la misma salida que el proyecto pide cuando lo que hay
+ * que probar queda encerrado donde la prueba no llega.
+ */
+internal suspend fun extractPageWithFallback(
+    call: suspend (Int) -> LedgerExtractionCallResult,
+): LedgerExtractionCallResult {
+    val first = try {
+        call(5)
+    } catch (_: Exception) {
+        LedgerExtractionCallResult.Unavailable
+    }
+    if (first !is LedgerExtractionCallResult.Unavailable) return first
+    return try {
+        call(4)
+    } catch (_: Exception) {
+        LedgerExtractionCallResult.Unavailable
     }
 }
 

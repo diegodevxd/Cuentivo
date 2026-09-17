@@ -5,6 +5,7 @@ import {
   parseLedgerExtraction,
 } from "../src/ai/ledgerExtraction.js";
 import { MAX_DISPLAY_NAME_LENGTH } from "../src/ai/interpretation.js";
+import { MAX_LEDGER_PAGE_TOTALS } from "../src/contract.js";
 import type { LedgerOperation } from "../src/contract.js";
 
 const VALID_OPERATION_PRIOR_DEBT: LedgerOperation = {
@@ -811,6 +812,61 @@ describe("parseLedgerExtraction", () => {
       const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
 
       expect(res?.operations).toHaveLength(0);
+    });
+
+    test("a pageTotals list longer than the cap drops the whole list, and the page survives", () => {
+      // Comportamiento REAL del parser: con más de MAX_LEDGER_PAGE_TOTALS entradas no descarta la
+      // página, ignora la lista completa. Queda anotado en el reporte como algo a revisar: perder
+      // TODAS las comprobaciones de subtotales es *menos* duda, no más, y recortar a las primeras 10
+      // sería más consistente con lo que se decidió para `items`. No se cambia aquí.
+      const eleven = Array.from({ length: MAX_LEDGER_PAGE_TOTALS + 1 }, (_, i) => ({
+        label: `saldo ${i}`,
+        amountCents: "100",
+      }));
+
+      const res = parseLedgerExtraction({
+        operations: [
+          {
+            lineIndex: 0,
+            proposedKind: "SALE",
+            customerName: "Rosa",
+            amountCents: "100",
+            uncertainFields: [],
+            unreadableFields: [],
+          },
+        ],
+        pageIncomplete: false,
+        pageTotals: eleven,
+      });
+
+      expect(res).not.toBeNull();
+      expect(res?.operations).toHaveLength(1);
+      expect(res?.pageTotals).toBeUndefined();
+    });
+
+    test("a pageTotals list at exactly the cap is kept whole", () => {
+      // El borde bueno: el límite no puede estar tirando listas legítimas.
+      const ten = Array.from({ length: MAX_LEDGER_PAGE_TOTALS }, (_, i) => ({
+        label: `saldo ${i}`,
+        amountCents: "100",
+      }));
+
+      const res = parseLedgerExtraction({
+        operations: [
+          {
+            lineIndex: 0,
+            proposedKind: "SALE",
+            customerName: "Rosa",
+            amountCents: "100",
+            uncertainFields: [],
+            unreadableFields: [],
+          },
+        ],
+        pageIncomplete: false,
+        pageTotals: ten,
+      });
+
+      expect(res?.pageTotals).toHaveLength(MAX_LEDGER_PAGE_TOTALS);
     });
 
     test("an operation with more items than the cap is discarded, so the output stays bounded", () => {
