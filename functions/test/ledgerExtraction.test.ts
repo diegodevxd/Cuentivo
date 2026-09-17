@@ -771,6 +771,47 @@ describe("parseLedgerExtraction", () => {
       expect(res?.operations).toHaveLength(0);
     });
 
+    test("an operation without rawText still parses: the contract keeps it optional", () => {
+      // El bloque 2 ahora EXIGE rawText en la instrucción, pero el parser no puede volverse estricto
+      // por eso: si el modelo lo omite alguna vez, rechazar la respuesta entera dejaría sin libreta a
+      // los teléfonos que ya tienen la app instalada (v37 publicado y v40 en uso). Android objeta por
+      // su lado cuando falta, así que el renglón dudoso sigue siendo visible; lo que no puede pasar es
+      // que el servidor se caiga entero.
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "25000",
+        uncertainFields: [],
+        unreadableFields: [],
+      };
+
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+
+      expect(res).not.toBeNull();
+      expect(res?.operations).toHaveLength(1);
+      expect(res?.operations[0].rawText).toBeUndefined();
+    });
+
+    test("an operation carrying a key the contract does not know is discarded, not accepted", () => {
+      // El bloque 2 no añade campos a la respuesta, y esta es la prueba de que el contrato sigue
+      // cerrado: una llave de más descarta el renglón. Si algún día se añadiera un campo nuevo, esto
+      // se pone rojo y avisa de que hay teléfonos que van a rechazar la respuesta completa.
+      const op = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "25000",
+        uncertainFields: [],
+        unreadableFields: [],
+        campoQueElContratoNoConoce: "algo",
+      };
+
+      const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
+
+      expect(res?.operations).toHaveLength(0);
+    });
+
     test("a warning about a field the model could not read does not soften it to a doubt", () => {
       const unreadable = {
         lineIndex: 0,
