@@ -1,18 +1,31 @@
 package com.cuentivo.app.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onChildren
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import com.cuentivo.app.R
 import com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic
 import com.cuentivo.app.ai.ledger.LedgerDiscardReason
 import com.cuentivo.app.ai.ledger.LedgerOperation
@@ -20,6 +33,7 @@ import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.UnreadableLedgerField
 import com.cuentivo.app.ui.ai.LedgerReviewContent
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -108,6 +122,123 @@ class LedgerReviewScreenTest {
         // confirmar la hoja está a la vista.
         composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsNotEnabled()
         composeRule.onNodeWithTag("ledger-confirm-page-complete-button").assertIsDisplayed()
+    }
+
+    /**
+     * El hueco del recorte mide 48×48 dp FIJOS, así que no puede llevar texto: a 360 dp —ancho de
+     * teléfono normal— la frase "Sin recorte disponible" se partía en dos líneas y se montaba encima
+     * del renglón. Esta prueba fija las dos mitades del arreglo: que el hueco no dibuje texto y que no
+     * se salga de su renglón. Antes fallaba, porque ahí estaba el `Text`.
+     */
+    @Test fun at_three_hundred_sixty_dp_the_crop_slot_draws_no_text_and_stays_inside_its_row() {
+        val review = LedgerReviewEngine.build(operations = listOf(sale(0, "Rosa", "25000")))
+
+        composeRule.setContent {
+            // 360×640 dp: el ancho de un teléfono normal y la forma 9:16 de las capturas. Las dos
+            // medidas importan — sin altura acotada, el `weight(1f)` de la lista no compone ni una fila
+            // y la prueba no estaría mirando nada.
+            Box(Modifier.requiredWidth(360.dp).requiredHeight(640.dp)) {
+                LedgerReviewContent(
+                    review = review,
+                    captureFile = null,
+                    onUpdateAmount = { _, _ -> },
+                    onUpdateCustomer = { _, _ -> },
+                    onUpdateKind = { _, _ -> },
+                    onUpdateDate = { _, _ -> },
+                    onUpdatePageDate = { },
+                    onRemoveRow = { },
+                    onConfirmObjection = { },
+                    isPageCompletenessConfirmed = false,
+                    onConfirmPageCompleteness = { },
+                    customerMatches = emptyMap(),
+                    productMatches = emptyMap(),
+                    duplicateMatches = emptyMap(), objections = emptyList(),
+                    isRegistrationBlockedByLegacySave = false,
+                    onConfirm = { },
+                    onCancel = { },
+                )
+            }
+        }
+
+        // Árbol SIN fusionar: la fila es `clickable`, así que fusiona la semántica de sus hijos y el
+        // tag del hueco no existe en el árbol fusionado.
+        val slot = composeRule.onAllNodesWithTag("ledger-crop-slot", useUnmergedTree = true).onFirst()
+        // El hueco no dibuja NADA dentro cuando no hay recorte. Con el texto de antes, este hijo
+        // existía: se partía en dos líneas y se montaba encima del renglón. Se comprueba por los hijos
+        // del hueco, que es exactamente donde el defecto metía el texto.
+        slot.onChildren().assertCountEquals(0)
+
+        val slotNode = slot.fetchSemanticsNode()
+        assertTrue(
+            "y la descripcion tiene que seguir ahi para un lector de pantalla",
+            !slotNode.config.getOrNull(SemanticsProperties.ContentDescription).isNullOrEmpty(),
+        )
+
+        val row = composeRule.onNodeWithTag("ledger-op-row-0").getUnclippedBoundsInRoot()
+        val slotBounds = slot.getUnclippedBoundsInRoot()
+        assertTrue(
+            "el hueco no puede salirse de su renglon",
+            slotBounds.top >= row.top && slotBounds.bottom <= row.bottom,
+        )
+    }
+
+    /**
+     * Con un solo renglón dudoso la frase decía "Revisar 1 renglones". Es un `<plurals>`: la cadena
+     * depende de la cantidad y hay que leerla con `pluralStringResource` —sobre un plurals,
+     * `stringResource` no compila—, así que la prueba resuelve el recurso **con cantidad 1** y compara
+     * contra lo que se dibuja. Sin depender del idioma del emulador.
+     */
+    @Test fun the_review_button_says_one_row_in_the_singular() {
+        val doubtful = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Carmen",
+            amountCents = "14900",
+            description = "Cuaderno",
+            rawText = "1012 Cuaderno 149 (Carmen)",
+            date = com.cuentivo.app.ai.ledger.SafeDateCandidate(2026, 9, 1),
+            sources = com.cuentivo.app.ai.ledger.LedgerFieldSources(
+                customer = com.cuentivo.app.ai.ledger.LedgerFieldSource.EXPLICIT,
+            ),
+        )
+        val operations = listOf(doubtful)
+        val candidates = listOf(com.cuentivo.app.domain.CustomerCandidate(id = "carmen-id", name = "Carmen"))
+        val review = LedgerReviewEngine.build(
+            operations = operations,
+            pageDateEpochDay = com.cuentivo.app.ai.ledger.SafeDateCandidate(2026, 9, 1)
+                .let { java.time.LocalDate.of(it.year, it.month, it.day).toEpochDay() },
+            todayEpochDay = java.time.LocalDate.of(2026, 9, 1).toEpochDay(),
+        )
+
+        composeRule.setContent {
+            Box(Modifier.requiredWidth(360.dp).requiredHeight(640.dp)) {
+                LedgerReviewContent(
+                    review = review,
+                    captureFile = null,
+                    onUpdateAmount = { _, _ -> },
+                    onUpdateCustomer = { _, _ -> },
+                    onUpdateKind = { _, _ -> },
+                    onUpdateDate = { _, _ -> },
+                    onUpdatePageDate = { },
+                    onRemoveRow = { },
+                    onConfirmObjection = { },
+                    isPageCompletenessConfirmed = false,
+                    onConfirmPageCompleteness = { },
+                    customerMatches = emptyMap(),
+                    productMatches = emptyMap(),
+                    duplicateMatches = emptyMap(),
+                    objections = com.cuentivo.app.domain.LedgerDeterministicObjections
+                        .evaluate(operations, candidates, emptyList()),
+                    isRegistrationBlockedByLegacySave = false,
+                    onConfirm = { },
+                    onCancel = { },
+                )
+            }
+        }
+
+        val oneRow = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+            .targetContext.resources.getQuantityString(R.plurals.ai_ledger_action_review_uncertain, 1, 1)
+        composeRule.onNodeWithTag("ledger-start-review-button").assertTextContains(oneRow)
     }
 
     @Test fun a_page_without_discards_does_not_ask_for_the_page_confirmation() {

@@ -621,6 +621,7 @@
     <string name="ai_ledger_summary_excluded_count">Excluidos: %1$d</string>
     <string name="ai_ledger_summary_visible_customers_count">Clientes detectados: %1$d</string>
     <string name="ai_ledger_summary_new_customers_count">Nuevos clientes a crear: %1$d</string>
+    <string name="ai_ledger_field_page_date_plain">Fecha de la página</string>
     <string name="ai_ledger_crop_not_available">Sin recorte disponible</string>
     <string name="ai_ledger_page_incomplete_warning">Puede faltar texto de esta página. Revisa que estén todos los renglones antes de registrar.</string>
     <plurals name="ai_ledger_page_unreadable_rows">
@@ -675,13 +676,15 @@
     <string name="ai_ledger_unresolved_notice">Renglón con datos pendientes de resolver</string>
     <string name="ai_ledger_error_zero_operations">No hay operaciones listas para registrar. Resuelve los campos dudosos o ilegibles.</string>
     <string name="ai_ledger_error_rows_need_review">Gemini leyó %1$d renglones con dudas. Revísalos contra la foto para poder registrarlos.</string>
-    <string name="ai_ledger_action_review_uncertain">Revisar %1$d renglones con dudas</string>
+    <plurals name="ai_ledger_action_review_uncertain">
+        <item quantity="one">Revisar %1$d renglón con dudas</item>
+        <item quantity="other">Revisar %1$d renglones con dudas</item>
+    </plurals>
     <string name="ai_ledger_error_zero_amount">Renglón con importe en cero: el monto debe ser mayor a cero centavos.</string>
     <string name="ai_ledger_error_overflow">Renglón con desbordamiento numérico: el monto excede el límite permitido.</string>
     <string name="ai_ledger_error_payment_without_debt">Abono sin deuda: el cliente no tiene saldo pendiente por cobrar.</string>
     <string name="ai_ledger_error_payment_exceeds_debt">Abono excede la deuda: el monto abonado supera el saldo pendiente.</string>
     <string name="ai_ledger_error_missing_page_date">Hay renglones sin fecha: ingresa una fecha para la página antes de registrar.</string>
-    <string name="ai_ledger_field_page_date">Fecha de la página (AAAA-MM-DD)</string>
     <string name="ai_ledger_field_page_date_invalid">La fecha de la página no existe o es futura</string>
     <string name="ai_ledger_page_date_detected">CuentivoAI leyó %1$s en la hoja. Tócala para usarla</string>
     <string name="ai_ledger_page_date_detected_low_confidence">CuentivoAI leyó %1$s en la hoja, pero con dudas. Tócala solo si coincide con tu libreta</string>

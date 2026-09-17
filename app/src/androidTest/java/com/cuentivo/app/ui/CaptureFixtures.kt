@@ -1,11 +1,21 @@
 package com.cuentivo.app.ui
 
+import com.cuentivo.app.ai.ledger.LedgerFieldSource
+import com.cuentivo.app.ai.ledger.LedgerFieldSources
+import com.cuentivo.app.ai.ledger.LedgerOperation
+import com.cuentivo.app.ai.ledger.LedgerReview
+import com.cuentivo.app.ai.ledger.LedgerReviewEngine
+import com.cuentivo.app.ai.ledger.ProposedLedgerKind
+import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.domain.Alert
+import com.cuentivo.app.domain.CustomerCandidate
 import com.cuentivo.app.domain.DashboardActivity
 import com.cuentivo.app.domain.DueSale
+import com.cuentivo.app.domain.LedgerDeterministicObjection
+import com.cuentivo.app.domain.LedgerDeterministicObjections
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import java.time.LocalDate
@@ -153,4 +163,73 @@ internal object CaptureFixtures {
         amountCents = cents,
         occurredAtEpochMillis = System.currentTimeMillis() - hoursAgo * 3_600_000L,
     )
+
+    // ---------------------------------------------------------------------------------------------
+    // La libreta de la función nueva (importación por foto), también inventada.
+    //
+    // Nombres de persona inventados y montos redondos de tienda: NADA de una libreta real. Una
+    // libreta de verdad lleva nombres, montos y teléfonos de clientes, y esto termina en la ficha de
+    // Play, a la vista de cualquiera.
+    // ---------------------------------------------------------------------------------------------
+
+    /** Un día fijo, para que las capturas salgan iguales hoy y en un mes. */
+    private val LEDGER_DAY = LocalDate.of(2026, 9, 1).toEpochDay()
+
+    /**
+     * Un renglón de la libreta inventada, **con fecha**.
+     *
+     * La fecha no es un adorno: sin ella cada renglón dice "Sin fecha en la libreta", que es correcto
+     * pero le cuenta a quien mira la tienda justo lo contrario de lo que vendemos. La hoja trae la
+     * fecha arriba y la app la aplica; esto es la libreta ya leída.
+     */
+    private fun ledgerRow(lineIndex: Int, name: String, cents: String, rawText: String) = LedgerOperation(
+        lineIndex = lineIndex,
+        proposedKind = ProposedLedgerKind.SALE,
+        customerName = name,
+        amountCents = cents,
+        description = "Cuaderno",
+        rawText = rawText,
+        date = SafeDateCandidate(2026, 9, 1),
+        sources = LedgerFieldSources(customer = LedgerFieldSource.EXPLICIT),
+    )
+
+    /**
+     * Una página recién leída **sin dudas**: la foto ya es un montón de cuentas.
+     *
+     * Cuatro clientas a propósito, y no las mismas tres de la página con duda: una página limpia y
+     * esa misma página ya resuelta acaban en el **mismo** estado visual (sin aviso, botón activo), así
+     * que dos capturas distintas de esa historia salían idénticas byte por byte. Cuatro renglones
+     * frente a tres las separa.
+     */
+    val LEDGER_PAGE_READ = listOf(
+        ledgerRow(0, "Rosa", "25000", "1010 Cuaderno 250 Rosa"),
+        ledgerRow(1, "Juana", "18000", "1011 Cuaderno 180 Juana"),
+        ledgerRow(2, "Carmen", "14900", "1012 Cuaderno 149 Carmen"),
+        ledgerRow(3, "Pedro", "32000", "1013 Cuaderno 320 Pedro"),
+    )
+
+    /**
+     * La misma página, pero el renglón de Carmen sólo lleva su nombre **al margen, entre paréntesis**.
+     *
+     * Es el caso real que la app existe para atrapar: el modelo asigna a una clienta que ya existe
+     * apoyándose en una nota del margen, y cargarle sin que una persona lo confirme es cargarle a
+     * quien no era. Los tres montos y el nombre son inventados.
+     */
+    val LEDGER_PAGE_WITH_DOUBT = listOf(
+        ledgerRow(0, "Rosa", "25000", "1010 Cuaderno 250 Rosa"),
+        ledgerRow(1, "Juana", "18000", "1011 Cuaderno 180 Juana"),
+        ledgerRow(2, "Carmen", "14900", "1012 Cuaderno 149 (Carmen)"),
+    )
+
+    /** La clienta que ya existe: el renglón dudoso se parece a ella. */
+    val EXISTING_CARMEN = listOf(CustomerCandidate(id = "carmen-id", name = "Carmen"))
+
+    fun ledgerReview(operations: List<LedgerOperation>): LedgerReview = LedgerReviewEngine.build(
+        operations = operations,
+        pageDateEpochDay = LEDGER_DAY,
+        todayEpochDay = LEDGER_DAY,
+    )
+
+    fun ledgerObjections(operations: List<LedgerOperation>): List<LedgerDeterministicObjection> =
+        LedgerDeterministicObjections.evaluate(operations, EXISTING_CARMEN, emptyList())
 }

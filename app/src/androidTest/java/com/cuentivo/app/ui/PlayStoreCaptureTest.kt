@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -22,9 +24,12 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.cuentivo.app.ai.ledger.LedgerOperation
+import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.account.SubscriptionContent
+import com.cuentivo.app.ui.ai.LedgerReviewContent
 import com.cuentivo.app.ui.theme.CuentivoTheme
 import java.io.File
 import java.io.FileOutputStream
@@ -113,6 +118,67 @@ class PlayStoreCaptureTest {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // La función nueva: importar una libreta por foto. La v41 es la primera que la lleva a quien ya
+    // está en producción, así que necesita capturas propias.
+    //
+    // Datos inventados: nombres de persona y montos de tienda, nada de una libreta real (llevan
+    // nombres y teléfonos de clientes, y esto se publica).
+    // ---------------------------------------------------------------------------------------------
+
+    /** La foto ya convertida en cuentas: varias clientas, sus montos y el resumen de arriba. */
+    @Test fun capture_7_ledger_review() {
+        capture("7-libreta-revision") { LedgerCapture(CaptureFixtures.LEDGER_PAGE_READ) }
+
+        composeRule.onNodeWithTag("ledger-review-confirm-button").assertExists()
+    }
+
+    /**
+     * Un renglón dudoso con su aviso en palabras, y "Registrar" apagado.
+     *
+     * Es la captura que dice lo que de verdad diferencia a Cuentivo: no registra nada sin que la
+     * persona lo revise. La aserción del botón apagado no es adorno — si alguien dejara de exigir la
+     * confirmación, la captura fallaría en vez de publicar una promesa falsa.
+     */
+    @Test fun capture_8_ledger_warning() {
+        capture("8-libreta-aviso") { LedgerCapture(CaptureFixtures.LEDGER_PAGE_WITH_DOUBT) }
+
+        composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsNotEnabled()
+    }
+
+    /** La misma página ya resuelta: el aviso se fue y "Registrar 3 movimientos" está activo. */
+    @Test fun capture_9_ledger_ready() {
+        capture("9-libreta-resumen") {
+            LedgerCapture(LedgerReviewEdits.confirmObjection(CaptureFixtures.LEDGER_PAGE_WITH_DOUBT, 2))
+        }
+
+        composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsEnabled()
+    }
+
+    @Composable
+    private fun LedgerCapture(operations: List<LedgerOperation>) {
+        LedgerReviewContent(
+            review = CaptureFixtures.ledgerReview(operations),
+            captureFile = null,
+            onUpdateAmount = { _, _ -> },
+            onUpdateCustomer = { _, _ -> },
+            onUpdateKind = { _, _ -> },
+            onUpdateDate = { _, _ -> },
+            onUpdatePageDate = { },
+            onRemoveRow = { },
+            onConfirmObjection = { },
+            customerMatches = emptyMap(),
+            productMatches = emptyMap(),
+            duplicateMatches = emptyMap(),
+            objections = CaptureFixtures.ledgerObjections(operations),
+            isRegistrationBlockedByLegacySave = false,
+            isPageCompletenessConfirmed = false,
+            onConfirmPageCompleteness = { },
+            onConfirm = { },
+            onCancel = { },
+        )
     }
 
     private fun capture(name: String, content: @Composable () -> Unit) {

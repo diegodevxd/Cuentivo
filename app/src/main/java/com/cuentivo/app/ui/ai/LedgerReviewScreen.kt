@@ -46,6 +46,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -186,8 +188,9 @@ fun LedgerReviewContent(
                 diagnostics = review.summary.financialDiagnostics,
                 hasZeroOps = review.summary.executableOperationsCount == 0,
                 hasMissingDates = review.summary.hasMissingDates,
-                rowsNeedingReviewCount = allRowsNeedingReview.size,
-                onStartReview = {
+            rowsNeedingReviewCount = allRowsNeedingReview.size,
+            objections = objections,
+            onStartReview = {
                     pendingReviewQueue = allRowsNeedingReview.map { it.lineIndex }.drop(1)
                     editingOperation = allRowsNeedingReview.firstOrNull()
                 },
@@ -463,7 +466,7 @@ private fun PageDateCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = stringResource(R.string.ai_ledger_field_page_date),
+                text = stringResource(R.string.ai_ledger_field_page_date_plain),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -479,7 +482,7 @@ private fun PageDateCard(
                         onUpdatePageDate(null)
                     }
                 },
-                label = { Text(stringResource(R.string.ai_ledger_field_page_date)) },
+                label = { Text(stringResource(R.string.ai_ledger_field_page_date_plain)) },
                 placeholder = { Text(stringResource(R.string.ai_ledger_field_date_placeholder)) },
                 isError = dateIsWrong,
                 supportingText = if (dateIsWrong) {
@@ -524,15 +527,38 @@ private fun PageDateCard(
 /** Below this, a detected page date says so in its own offer text. */
 private const val LOW_PAGE_DATE_CONFIDENCE = 0.5
 
+/**
+ * El aviso de una objeción, en palabras.
+ *
+ * Un solo sitio para traducirlo, porque lo dicen dos: el banner de la pantalla —que es donde la
+ * persona decide si registra— y el diálogo del renglón. Antes vivía sólo en el diálogo, así que en la
+ * pantalla la persona veía un número y tenía que abrir el renglón para saber por qué.
+ */
+@Composable
+private fun ledgerObjectionMessage(objection: com.cuentivo.app.domain.LedgerDeterministicObjection): String =
+    when (objection.type) {
+        com.cuentivo.app.domain.LedgerDeterministicObjectionType.SUSPECT_DECIMAL_SHIFT ->
+            stringResource(R.string.ai_ledger_objection_decimal_shift)
+        com.cuentivo.app.domain.LedgerDeterministicObjectionType.PRICE_MISMATCH_SUSPECT ->
+            stringResource(R.string.ai_ledger_objection_price_mismatch)
+        com.cuentivo.app.domain.LedgerDeterministicObjectionType.UNUSUAL_CENTS ->
+            stringResource(R.string.ai_ledger_objection_unusual_cents)
+        com.cuentivo.app.domain.LedgerDeterministicObjectionType.CUSTOMER_CONFIRMATION_REQUIRED ->
+            stringResource(R.string.ai_ledger_objection_customer_confirmation)
+        com.cuentivo.app.domain.LedgerDeterministicObjectionType.PAGE_TOTAL_MISMATCH ->
+            stringResource(R.string.ai_ledger_objection_page_total_mismatch, objection.declaredCents ?: 0L, objection.expectedCents ?: 0L)
+    }
+
 @Composable
 private fun FinancialErrorBanner(
     diagnostics: List<OperationFinancialDiagnostic>,
     hasZeroOps: Boolean,
     hasMissingDates: Boolean = false,
     rowsNeedingReviewCount: Int = 0,
+    objections: List<com.cuentivo.app.domain.LedgerDeterministicObjection> = emptyList(),
     onStartReview: () -> Unit = {},
     modifier: Modifier = Modifier,
-) {
+    ) {
     Surface(
         modifier = modifier.testTag("ledger-financial-error-banner"),
         color = MaterialTheme.colorScheme.errorContainer,
@@ -560,11 +586,25 @@ private fun FinancialErrorBanner(
                     modifier = Modifier.testTag("ledger-start-review-button"),
                 ) {
                     Text(
-                        text = stringResource(R.string.ai_ledger_action_review_uncertain, rowsNeedingReviewCount),
+                        text = pluralStringResource(
+                            R.plurals.ai_ledger_action_review_uncertain,
+                            rowsNeedingReviewCount,
+                            rowsNeedingReviewCount,
+                        ),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }
+            }
+            // POR QUÉ no se puede registrar todavía, en palabras. Se deduplica por tipo —cinco
+            // renglones con el mismo aviso son un aviso, no cinco— para no ahogar el resto del banner.
+            for (objection in objections.distinctBy { it.type }) {
+                Text(
+                    text = ledgerObjectionMessage(objection),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.testTag("ledger-banner-objection"),
+                )
             }
             if (hasMissingDates && diagnostics.isEmpty() && !hasZeroOps) {
                 Text(
@@ -885,26 +925,39 @@ private fun RowCropThumbnail(
         loaded = true
     }
 
+    val currentBitmap = bitmap
+    // El hueco mide 48×48 dp FIJOS (ver `RowCropThumbnail(...)`) y la frase traducida no cabe: se
+    // partía en dos líneas y se montaba encima del renglón. Por eso aquí NO se dibuja texto.
+    //
+    // Las tres alternativas se descartaron a propósito:
+    // - un texto más corto vuelve a depender del largo de la traducción, que es el defecto;
+    // - recortarlo con puntos suspensivos deja "Sin recorte disp…", que se lee como un error;
+    // - un icono diría "sin imagen" sólo si existe uno que lo diga, y los que el proyecto ya usa
+    //   (persona, carrito, estrella, aviso…) no lo dicen: poner uno sería mentir en pequeño.
+    //
+    // Lo que se conserva es la descripción para lectores de pantalla, que es donde el texto sí cabe.
+    // El costo visual es un cuadro gris vacío, que ya se lee como "aquí no hay miniatura".
+    val noCropDescription = stringResource(R.string.ai_ledger_crop_not_available)
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .testTag("ledger-crop-slot")
+            .then(
+                if (currentBitmap == null) {
+                    Modifier.semantics { contentDescription = noCropDescription }
+                } else {
+                    Modifier
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        val currentBitmap = bitmap
         if (currentBitmap != null) {
             Image(
                 bitmap = currentBitmap.asImageBitmap(),
                 contentDescription = stringResource(R.string.ai_ledger_crop_content_description),
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-            )
-        } else {
-            Text(
-                text = stringResource(R.string.ai_ledger_crop_not_available),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(2.dp),
             )
         }
     }
@@ -966,18 +1019,7 @@ private fun EditLedgerOperationDialog(
                 // Deterministic objections banner
                 val rowObjections = objections.filter { it.lineIndex == operation.lineIndex }
                 for (objection in rowObjections) {
-                    val objectionMessage = when (objection.type) {
-                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.SUSPECT_DECIMAL_SHIFT ->
-                            stringResource(R.string.ai_ledger_objection_decimal_shift)
-                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.PRICE_MISMATCH_SUSPECT ->
-                            stringResource(R.string.ai_ledger_objection_price_mismatch)
-                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.UNUSUAL_CENTS ->
-                            stringResource(R.string.ai_ledger_objection_unusual_cents)
-                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.CUSTOMER_CONFIRMATION_REQUIRED ->
-                            stringResource(R.string.ai_ledger_objection_customer_confirmation)
-                        com.cuentivo.app.domain.LedgerDeterministicObjectionType.PAGE_TOTAL_MISMATCH ->
-                            stringResource(R.string.ai_ledger_objection_page_total_mismatch, objection.declaredCents ?: 0L, objection.expectedCents ?: 0L)
-                    }
+                    val objectionMessage = ledgerObjectionMessage(objection)
                     Surface(
                         color = MaterialTheme.colorScheme.tertiaryContainer,
                         shape = RoundedCornerShape(8.dp),

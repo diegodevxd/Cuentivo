@@ -48,7 +48,7 @@ class LedgerLabHostActivity : ComponentActivity() {
                         LedgerExtractionCallResult.Extracted(pagePayload())
                     },
                     ledgerBalancesResolver = { emptyMap() },
-                    ledgerCustomersResolver = { emptyList() },
+                    ledgerCustomersResolver = { customerCandidates },
                     ledgerProductsResolver = { emptyList() },
                     ledgerRegisteredResolver = { _, _, _ -> emptyList() },
                     confirmLedgerBatch = { _, _, _, _, _, _, _ -> com.cuentivo.app.domain.LedgerBatchConfirmation.Failed },
@@ -92,8 +92,25 @@ class LedgerLabHostActivity : ComponentActivity() {
         /** The URI the stubbed picker hands to the gallery flow. */
         lateinit var pickedUri: android.net.Uri
 
+        /**
+         * Página alternativa, para la prueba que graba el video de la ficha.
+         *
+         * Por defecto `null` y el host sirve la de siempre, así que la prueba de rotación (su único
+         * otro usuario) no se entera de que esto existe. La prueba del video la pone para recorrer la
+         * misma libreta inventada de las capturas.
+         */
+        var pagePayloadOverride: LedgerExtractionPayload? = null
+
+        /**
+         * Clientas que ya existen, para que la libreta del video pueda traer el aviso de "este cliente
+         * ya existe" —el mismo que vende la captura 8—. Vacío por defecto.
+         */
+        var customerCandidates: List<com.cuentivo.app.domain.CustomerCandidate> = emptyList()
+
+        fun pagePayload(): LedgerExtractionPayload = pagePayloadOverride ?: defaultPagePayload()
+
         /** The page the callable double reads: two rows, one of them doubtful. */
-        fun pagePayload() = LedgerExtractionPayload(
+        fun defaultPagePayload() = LedgerExtractionPayload(
             operations = listOf(
                 LedgerOperation(
                     lineIndex = 0,

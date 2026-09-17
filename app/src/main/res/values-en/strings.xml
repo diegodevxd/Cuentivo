@@ -621,6 +621,7 @@
     <string name="ai_ledger_summary_excluded_count">Excluded: %1$d</string>
     <string name="ai_ledger_summary_visible_customers_count">Detected customers: %1$d</string>
     <string name="ai_ledger_summary_new_customers_count">New customers to create: %1$d</string>
+    <string name="ai_ledger_field_page_date_plain">Page date</string>
     <string name="ai_ledger_crop_not_available">No crop available</string>
     <string name="ai_ledger_page_incomplete_warning">Some text on this page may be missing. Check that every line is here before recording.</string>
     <plurals name="ai_ledger_page_unreadable_rows">
@@ -675,13 +676,15 @@
     <string name="ai_ledger_unresolved_notice">Row with unresolved fields</string>
     <string name="ai_ledger_error_zero_operations">No operations ready to register. Resolve uncertain or unreadable fields.</string>
     <string name="ai_ledger_error_rows_need_review">Gemini read %1$d rows with doubts. Check them against the photo so they can be registered.</string>
-    <string name="ai_ledger_action_review_uncertain">Review %1$d rows with doubts</string>
+    <plurals name="ai_ledger_action_review_uncertain">
+        <item quantity="one">Review %1$d row with doubts</item>
+        <item quantity="other">Review %1$d rows with doubts</item>
+    </plurals>
     <string name="ai_ledger_error_zero_amount">Row with zero amount: amount must be greater than zero cents.</string>
     <string name="ai_ledger_error_overflow">Row with numeric overflow: amount exceeds allowed limit.</string>
     <string name="ai_ledger_error_payment_without_debt">Payment without debt: customer has no outstanding balance.</string>
     <string name="ai_ledger_error_payment_exceeds_debt">Payment exceeds debt: payment amount exceeds outstanding balance.</string>
     <string name="ai_ledger_error_missing_page_date">Some rows have no date: provide a page date before registering.</string>
-    <string name="ai_ledger_field_page_date">Page date (YYYY-MM-DD)</string>
     <string name="ai_ledger_field_page_date_invalid">That page date does not exist or is in the future</string>
     <string name="ai_ledger_page_date_detected">CuentivoAI read %1$s on the sheet. Tap to use it</string>
     <string name="ai_ledger_page_date_detected_low_confidence">CuentivoAI read %1$s on the sheet, but it was unsure. Tap only if it matches your notebook</string>
