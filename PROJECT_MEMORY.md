@@ -11,27 +11,27 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-09-08. **Trabajo de v39 en curso: fases 1 y 2 cerradas.**
+**Última actualización:** 2026-09-17. **v41 (`1.21.0`) subida a prueba INTERNA; Diego la está probando.**
 
 **Dónde está cada cosa ahora mismo:**
 
-- **Play.** `v37` / `1.19.0` en pista **cerrada**. `v38` / `1.20.0` en pista **interna** — y ése lleva
-  la tarjeta de revisión que ocupaba una pantalla por renglón, arreglada después.
-- **`versionCode` 38 y 39 están gastados.** El 39 (`1.20.1`, commit `a2c810e`) es el bundle con el
-  layout arreglado y **no se subió**. **El próximo bundle va como `versionCode 40`**, confirmado con
-  Diego.
-- **Functions:** contrato **v4 desplegado** en `extractLedgerPage(us-south1)`. Acepta v3 y v4 y
-  responde en la versión que le piden, así que el `v37` publicado no se entera de nada.
-- **Etiqueta de comparación:** `baseline-cuentivoai-v39-1.20.1` → `a2c810e`. La comparativa v38/v39
-  se mide contra ahí, **no** contra `1.20.0`: ése salió con el defecto de layout y compararlo mediría
-  el defecto en vez del pipeline.
+- **Play.** `v36` en **producción** (desde 2026-08-31). `v37` / `1.19.0` en **cerrada**. `v40` /
+  `1.20.2` y ahora **`v41` / `1.21.0`** en **interna**. `versionCode` 38 a 41 gastados: el próximo es
+  **42**. El AAB está en `dist/Cuentivo-v41-1.21.0.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
+- **Functions:** `extractLedgerPage(us-south1)` **desplegado desde `81194a7`** el 2026-09-17, con
+  contrato **v5** (y v3/v4 idénticos), `gemini-3.5-flash`, `thinkingBudget: 0` y
+  `maxOutputTokens: 32768`. **Probado contra la API real** con el v40 de Play: tres libretas leídas,
+  sin fallos del proveedor en los registros. Versión anterior, para volver atrás: `6629485`.
+- **Ruta de salida de la v41 (decidida):** interna → unos días de uso real → **cerrada** →
+  producción, **promoviendo el mismo AAB**. No directo a producción: la v41 cambió el núcleo del
+  registro y su parte propia (v5, página entera, objeciones) **nunca ha corrido en un teléfono real**.
 - La política de privacidad de la web está actualizada.
 
-**Reparto de agentes, cambiado el 2026-09-07:** Claude orquesta y verifica, **OpenCode (GLM-5.3)
-implementa** —sustituye a AGY—, y Sol (Codex, `gpt-5.6-sol` a esfuerzo bajo) revisa. La revisión de
-Sol se hace **dos veces por fase**: sobre el plan antes de escribir código, y sobre el diff después.
-La del plan ha encontrado algo real **seis de seis veces**, incluido un fallo de privacidad que
-Claude no vio.
+**Reparto de agentes, cambiado el 2026-09-16:** Claude orquesta y verifica. **OpenCode con DeepSeek
+V4.1 Flash implementa** (en modo Orchestrator su subagente `fixer` entregó a medias tres rondas
+seguidas; pedirle que **no delegue**). **AGY con Gemini 3.8 Flash (High) es la segunda opinión**, sólo
+lectura. **Codex/Sol quedó fuera** por sus límites de tokens. A los dos se les pide el reporte en un
+archivo de `C:/tmp/`, porque sus pantallas no guardan historial.
 
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 
@@ -74,63 +74,55 @@ llegar la extracción y una actualización idempotente al terminar. Así una imp
 medias deja rastro de que existió, y ninguna se cuenta dos veces. La escritura final va en
 `GlobalScope` a propósito: lanzarla desde el scope de Compose y cerrar la pantalla la cancelaría.
 
-## Qué sigue en v39: primero medir, después la CuentivoAI más lista
+## 2026-09-16/17 — v41: la CuentivoAI que no se engaña sola
 
-**Decidido por Diego el 2026-09-08, y el orden ya no está en discusión:**
+**El problema, medido con libretas reales de dos personas (la mamá y la abuela de Diego):** la
+confianza del modelo salía **al revés**. Marcaba dudosos los renglones que estaban bien (casi siempre
+por "sin fecha") y dejaba **listos** los que tenían el dinero mal: un precio 10 veces mayor, otro 10
+veces menor, y $385.90 cargados a una clienta que ya existía, todos sin marca.
 
-1. **El `versionCode 40` es el bundle de medición.** Sale con las fases 1 y 2 dentro —el borrador
-   que sobrevive y la tabla de métricas— y **con los tres bloqueantes arreglados**. Su único
-   trabajo es recoger la línea base.
-2. **Diego lo prueba con su libreta de papel.** Es la única forma de medir *cliente equivocado sin
-   marca*, *monto equivocado sin marca* e *inventados u omitidos*: nadie más puede hacerlo.
-3. **La "CuentivoAI más inteligente" es el bundle siguiente**, no éste. Ahí van la segunda pasada
-   de Gemini, el matching con más señales y el preprocesado de imagen.
+**Lo que se hizo, en cuatro bloques** (encargos en `docs/superpowers/encargos/2026-09-16-v41-*`):
 
-El motivo de ese orden: **la tabla de métricas está vacía y seguirá vacía hasta que Diego use un
-bundle que las incluya.** El criterio de éxito de v39 que él mismo fijó es *"menos correcciones
-humanas que v38 sin aumentar errores de dinero"*, así que construir la segunda pasada antes de
-medir es construir a ciegas: cuando estuviera lista no habría con qué comparar.
+1. **Comprobaciones deterministas en Android que sólo añaden duda** (`7015d65`): cliente existente
+   cuyo nombre no sale del propio renglón (por `rawText`, sin paréntesis ni palabras del producto),
+   precio contra el catálogo por `sku` o nombre, centavos fuera de patrón. Confirmación con huella.
+   Y **una página se registra entera o no se registra** (opción B de Diego): la clave de
+   idempotencia sale sólo de `(businessId, importSessionId)`. Ese cambio cerró un cargo duplicado
+   posible que **ya existía antes de v41**.
+2. **La instrucción aprendió cómo se lleva una libreta** (`f929b1d`): comillas, paréntesis como nota,
+   fecha que baja, palomitas que no son dígitos, nombres al margen, `rawText` obligatorio.
+3. **Presupuesto de salida y contrato v5** (`59af9b8`, `040fd16`, `fbf43c4`, `09697ab`): el tope de
+   8192 era un corte garantizado (el peor caso real son ~27.800 tokens); ahora se detecta un corte
+   (`TRUNCATED_BY_MAX_TOKENS`). v5 trae `pageTotals`, `pageType` y `marginNote`. Se cazó una **fuga de
+   llaves en la rama v4** que habría tumbado al v37 y al v40. Descartes del parser, hoja que no es de
+   cuentas y "puede faltar texto" obligan a confirmar la página, en las tres capas.
+4. **La foto de lado** (`81194a7`): la orientación EXIF **ya se aplicaba**; sólo faltaban pruebas.
 
-Mientras el 40 está en manos de Diego se puede avanzar con lo que no depende de medir: matching
-mejorado y preprocesado prudente de imagen. La comparativa se hace contra
-`baseline-cuentivoai-v39-1.20.1`.
+**Gate al cerrar:** JVM **1246**, 0 fallos; instrumentadas de las pantallas y lotes en el emulador en
+verde (leídas del XML); `release:check` con **491** unitarias y **9** del emulador.
 
-## Bloque 0 cerrado y `versionCode 40` generado (2026-09-08)
+**Primera prueba real con el servidor nuevo** (v40 de Play, 2026-09-17): en *Semana 9* desaparecieron
+todos los errores de dinero (el $999, los $385.90 de Charly, los centavos imposibles). En *Semana 5*
+ya salen la fecha de la hoja y los nombres limpios, y el "agotado" va dudoso.
 
-Los tres bloqueantes de la Fase 2 y los defectos que Sol fue encontrando en las revisiones
-sucesivas están **cerrados**, en cuatro rondas con AGY implementando, Claude ejecutando el gate y
-Sol revisando cada diff. **Sin commitear todavía.**
+### Qué verificar en la prueba interna antes de promoverla
 
-Lo que cambió, y por qué importa para medir:
+- Las fotos se leen con v5 sin error.
+- Con una objeción pendiente, "Registrar" queda desactivado hasta confirmarla.
+- Una página registrada deja los saldos bien, y **reintentar no duplica nada**.
+- En *Toño Gasca* aparece el aviso de subtotales ("la hoja dice $200…").
+- Con un cliente que ya existe, pide confirmar.
 
-- **Descartes y duplicados dejaron de estar cruzados.** `duplicateSuggestedCount` sale ahora de
-  `LedgerReviewing.initialDuplicateCount`, y los descartes del parser tienen **columna propia**,
-  `parserExcludedCount` — sin ella no se podría distinguir *"la hoja traía poco"* de *"el parser
-  perdió contenido"*. Eso trajo **base en versión 8**, `MIGRATION_7_8` aditiva, `8.json` exportado
-  y `Migration7To8Test` con `runMigrationsAndValidate`. Sol dio go explícito a la migración.
-- **Un registro fallido ya no destruye la lectura original.** `LedgerConfirming` lleva
-  `originalOperations`, candidatos y operaciones registradas, así que al volver de un fallo la
-  revisión reaparece entera, con sugerencias y duplicados.
-- **Las filas colgadas se cierran.** Estado `STALE`, que significa **"no sabemos cómo acabó"**, no
-  "fracasó", y por eso debe excluirse de las proporciones registrada/abandonada. El umbral usa `<`
-  estricto porque `hourRounded` trunca hacia abajo: con `<=`, una importación de 62 minutos se
-  marcaba como muerta.
-- **El conteo de duplicados se congela al crear la revisión** y se persiste en `LedgerReviewSaver`.
-  Antes se recalculaba, y como dependía de la fecha de hoja —que la persona edita— el número
-  "inicial" cambiaba al recrear la Activity, justo por el camino que construyó la Fase 1.
+### Pendiente para parches (ninguno bloquea la v41)
 
-**Gate ejecutado, no reportado de oídas:** `testDebugUnitTest --rerun` **1164 pruebas, 0 fallos**;
-`connectedDebugAndroidTest` con 7 clases por nombre **44 pruebas, 0 fallos**; `assembleDebug`,
-`assembleRelease` y `bundleRelease` exit 0; puerta del idioma limpia; paridad **627 = 627**.
-
-**El bundle:** `dist/Cuentivo-v40-1.20.2.aab`, 29,359,868 bytes. `jarsigner -verify` → *jar
-verified*. Llave **SHA1 `25:05:8A:9C:F3:1F:D7:B4:1E:8E:B3:2D:9A:AB:8F:9F:7A:E8:1D:BF`**, idéntica
-a la del v38 y el v39, que es lo que Play exige y no perdona. `versionName` subió a **1.20.2** para
-no tener dos binarios distintos llamados 1.20.1, porque el otro es la etiqueta de comparación.
-
-**Lo siguiente:** subirlo, usarlo con libretas reales para recoger la línea base, y mientras
-avanzar con los bloques 1 a 5 de `docs/superpowers/encargos/2026-09-08-v39-fases-restantes.md`,
-uno a la vez y con revisión entre medias.
+- **Bibi $499.90** donde el papel dice $44.90 o $49.90, sin marca. Lo caza la v41 **sólo si** el
+  producto 22710 tiene el código en `sku`. **Pregunta abierta a Diego: ¿sus productos tienen el
+  código de catálogo en `sku`?**
+- *Toño*: falta el abono de $500 del 14 de febrero; tres renglones siguen "sin fecha" aunque la fecha
+  de arriba aplicaba; 13 de 14 renglones salen dudosos porque el nombre sólo está arriba.
+- *Semana 5*: la hoja no trae año y el modelo puso 2026 por su cuenta.
+- "Lore." y "Lore" salen como dos clientes distintos: el normalizador no quita el punto final.
+- Los arreglos de instrucción son **parches de servidor**: llegan a todos sin actualizar la app.
 
 ## 2026-09-07 — Fase B cerrada: la libreta de papel se lee, se revisa y se registra
 

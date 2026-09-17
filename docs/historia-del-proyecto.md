@@ -1083,3 +1083,65 @@ cualquier prueba que espere a que Compose quede idle. La encontró un lector, no
 entregas seguidas en las que construía el motor puro y se saltaba el cableado, dejando objetos bien
 probados que no llamaba nadie. La primera entrega de OpenCode fue mejor: cableó, comentó el porqué y
 cuestionó una premisa falsa del encargo.
+
+
+<!-- movido desde PROJECT_MEMORY.md el 2026-09-17: dejó de estar vigente -->
+
+## Qué sigue en v39: primero medir, después la CuentivoAI más lista
+
+**Decidido por Diego el 2026-09-08, y el orden ya no está en discusión:**
+
+1. **El `versionCode 40` es el bundle de medición.** Sale con las fases 1 y 2 dentro —el borrador
+   que sobrevive y la tabla de métricas— y **con los tres bloqueantes arreglados**. Su único
+   trabajo es recoger la línea base.
+2. **Diego lo prueba con su libreta de papel.** Es la única forma de medir *cliente equivocado sin
+   marca*, *monto equivocado sin marca* e *inventados u omitidos*: nadie más puede hacerlo.
+3. **La "CuentivoAI más inteligente" es el bundle siguiente**, no éste. Ahí van la segunda pasada
+   de Gemini, el matching con más señales y el preprocesado de imagen.
+
+El motivo de ese orden: **la tabla de métricas está vacía y seguirá vacía hasta que Diego use un
+bundle que las incluya.** El criterio de éxito de v39 que él mismo fijó es *"menos correcciones
+humanas que v38 sin aumentar errores de dinero"*, así que construir la segunda pasada antes de
+medir es construir a ciegas: cuando estuviera lista no habría con qué comparar.
+
+Mientras el 40 está en manos de Diego se puede avanzar con lo que no depende de medir: matching
+mejorado y preprocesado prudente de imagen. La comparativa se hace contra
+`baseline-cuentivoai-v39-1.20.1`.
+
+## Bloque 0 cerrado y `versionCode 40` generado (2026-09-08)
+
+Los tres bloqueantes de la Fase 2 y los defectos que Sol fue encontrando en las revisiones
+sucesivas están **cerrados**, en cuatro rondas con AGY implementando, Claude ejecutando el gate y
+Sol revisando cada diff. **Sin commitear todavía.**
+
+Lo que cambió, y por qué importa para medir:
+
+- **Descartes y duplicados dejaron de estar cruzados.** `duplicateSuggestedCount` sale ahora de
+  `LedgerReviewing.initialDuplicateCount`, y los descartes del parser tienen **columna propia**,
+  `parserExcludedCount` — sin ella no se podría distinguir *"la hoja traía poco"* de *"el parser
+  perdió contenido"*. Eso trajo **base en versión 8**, `MIGRATION_7_8` aditiva, `8.json` exportado
+  y `Migration7To8Test` con `runMigrationsAndValidate`. Sol dio go explícito a la migración.
+- **Un registro fallido ya no destruye la lectura original.** `LedgerConfirming` lleva
+  `originalOperations`, candidatos y operaciones registradas, así que al volver de un fallo la
+  revisión reaparece entera, con sugerencias y duplicados.
+- **Las filas colgadas se cierran.** Estado `STALE`, que significa **"no sabemos cómo acabó"**, no
+  "fracasó", y por eso debe excluirse de las proporciones registrada/abandonada. El umbral usa `<`
+  estricto porque `hourRounded` trunca hacia abajo: con `<=`, una importación de 62 minutos se
+  marcaba como muerta.
+- **El conteo de duplicados se congela al crear la revisión** y se persiste en `LedgerReviewSaver`.
+  Antes se recalculaba, y como dependía de la fecha de hoja —que la persona edita— el número
+  "inicial" cambiaba al recrear la Activity, justo por el camino que construyó la Fase 1.
+
+**Gate ejecutado, no reportado de oídas:** `testDebugUnitTest --rerun` **1164 pruebas, 0 fallos**;
+`connectedDebugAndroidTest` con 7 clases por nombre **44 pruebas, 0 fallos**; `assembleDebug`,
+`assembleRelease` y `bundleRelease` exit 0; puerta del idioma limpia; paridad **627 = 627**.
+
+**El bundle:** `dist/Cuentivo-v40-1.20.2.aab`, 29,359,868 bytes. `jarsigner -verify` → *jar
+verified*. Llave **SHA1 `25:05:8A:9C:F3:1F:D7:B4:1E:8E:B3:2D:9A:AB:8F:9F:7A:E8:1D:BF`**, idéntica
+a la del v38 y el v39, que es lo que Play exige y no perdona. `versionName` subió a **1.20.2** para
+no tener dos binarios distintos llamados 1.20.1, porque el otro es la etiqueta de comparación.
+
+**Lo siguiente:** subirlo, usarlo con libretas reales para recoger la línea base, y mientras
+avanzar con los bloques 1 a 5 de `docs/superpowers/encargos/2026-09-08-v39-fases-restantes.md`,
+uno a la vez y con revisión entre medias.
+

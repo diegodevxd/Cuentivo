@@ -98,9 +98,9 @@ Innegociables. Vienen del prompt maestro y están codificadas en el esquema:
 
 ### Room es la fuente de verdad
 
-`data/local/CuentivoDatabase.kt` — `version = 6`, `exportSchema = true` → `app/schemas/`. 14 entidades, 9 DAOs.
+`data/local/CuentivoDatabase.kt` — `version = 8`, `exportSchema = true` → `app/schemas/`. 15 entidades. El número envejece: léelo del archivo antes de decidir si un cambio necesita migración.
 
-**No hay `fallbackToDestructiveMigration()` y no debe haberlo.** Hay tres migraciones — `MIGRATION_3_4`, `MIGRATION_4_5` y `MIGRATION_5_6` — exportadas en el arreglo `CUENTIVO_MIGRATIONS`. Si subes `version`:
+**No hay `fallbackToDestructiveMigration()` y no debe haberlo.** Hay cinco migraciones — de `MIGRATION_3_4` a `MIGRATION_7_8` — exportadas en el arreglo `CUENTIVO_MIGRATIONS`. Si subes `version`:
 
 1. Escribe la `Migration` y agrégala a `CUENTIVO_MIGRATIONS`.
 2. Registra el arreglo en **todos** los builders de `"cuentivo.db"` — hoy son **tres**: `MainActivity.onCreate`, `SyncWorker.doWork` y `CollectionReminderWorker.doWork`. Olvidar uno hace que solo truene esa ruta, y las dos rutas de WorkManager pueden correr en un proceso donde la Activity nunca arrancó. Verifica con `grep -rn '"cuentivo.db"' app/src/main` en vez de confiar en esta lista.
