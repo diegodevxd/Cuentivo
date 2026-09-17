@@ -12,9 +12,12 @@ import {
   type ReferenceDate,
 } from "./geminiTextProvider.js";
 import {
+  ALLOWED_WARNINGS,
+  MAX_LEDGER_ITEMS_PER_OPERATION,
   MAX_LEDGER_OPERATIONS,
   parseLedgerExtraction,
 } from "./ledgerExtraction.js";
+import { MAX_DISPLAY_NAME_LENGTH } from "./interpretation.js";
 
 /**
  * Model specifically dedicated to handwritten notebook page OCR and structured extraction.
@@ -108,16 +111,23 @@ export const LEDGER_EXTRACTION_JSON_SCHEMA = {
 /**
  * Builds a realistic worst-case ledger extraction JSON document to test the token budget.
  *
+ * EVERY v4 field at the maximum the parser accepts. A field left out of this document is a field
+ * that can truncate a real response: el bloque 2 hizo `rawText` obligatorio, así que lo que antes era
+ * un documento de relleno ahora es el tamaño al que tienden las respuestas normales.
+ *
  * Parameters for the worst-case:
- * - Exactly 25 operations (MAX_LEDGER_OPERATIONS)
- * - customerName: 80 chars including accents, escaped quotes, and special characters.
- * - amountCents: 18 digits ("999999999999999999")
- * - description: 80 chars with punctuation, quotes, and accents.
- * - date: { year: 9999, month: 12, day: 31 }
- * - uncertainFields: ["DATE", "KIND"]
- * - unreadableFields: ["AMOUNT", "CUSTOMER"] (worst-case split across disjoint sets)
- * - region: 15 decimal digits of precision for x, y, width, height (e.g. IEEE floating-point string representation)
- * - pageIncomplete: true
+ * - Exactly MAX_LEDGER_OPERATIONS (25) operations.
+ * - rawText: 200 chars (the parser's cap), with accents, escaped quotes and a quote inside.
+ * - customerName, description and every items[].description: MAX_DISPLAY_NAME_LENGTH (80).
+ * - amountCents and items[].subtotalCents: 18 digits ("999999999999999999").
+ * - items: MAX_LEDGER_ITEMS_PER_OPERATION, each with description, quantity and subtotal.
+ * - warnings: ALL of ALLOWED_WARNINGS — the parser rejects duplicates, so the enum size is the max.
+ * - uncertainFields + unreadableFields: the four values in two disjoint pairs (the parser forbids a
+ *   field from being in both, so four in total is the maximum).
+ * - confidence: all five fields with high-precision floats.
+ * - sources: both fields carrying the LONGEST enum value ("INHERITED_PREVIOUS_ROW").
+ * - date: { year: 9999, month: 12, day: 31 }; region: 15 decimal digits on all four coordinates.
+ * - pageIncomplete: true.
  */
 export function buildWorstCaseLedgerDocument(): Record<string, unknown> {
   const operations: Array<Record<string, unknown>> = [];
@@ -125,18 +135,33 @@ export function buildWorstCaseLedgerDocument(): Record<string, unknown> {
     operations.push({
       lineIndex: i,
       proposedKind: "PRIOR_DEBT",
-      customerName: 'María de los Ángeles O\'Connor-Sánchez "La Güera"'.padEnd(80, "ñ"),
+      customerName: 'María de los Ángeles O\'Connor-Sánchez "La Güera"'.padEnd(MAX_DISPLAY_NAME_LENGTH, "ñ"),
       amountCents: "9".repeat(18),
-      description: 'Venta especial: 2 cremas faciales con sábila y protector solar / "Oferta"'.padEnd(80, "é"),
+      description: 'Venta especial: 2 cremas faciales con sábila y protector solar / "Oferta"'.padEnd(MAX_DISPLAY_NAME_LENGTH, "é"),
+      rawText: '" 2 cocas y un pan grande de la esquina, más 3 cremas "especiales" de sábila'.padEnd(200, "ñ"),
       date: { year: 9999, month: 12, day: 31 },
       uncertainFields: ["DATE", "KIND"],
       unreadableFields: ["AMOUNT", "CUSTOMER"],
+      confidence: {
+        customer: 0.123456789012345,
+        concept: 0.123456789012345,
+        amount: 0.123456789012345,
+        date: 0.123456789012345,
+        kind: 0.123456789012345,
+      },
+      sources: { customer: "INHERITED_PREVIOUS_ROW", date: "INHERITED_PREVIOUS_ROW" },
       region: {
         x: 0.123456789012345,
         y: 0.123456789012345,
         width: 0.123456789012345,
         height: 0.123456789012345,
       },
+      items: Array.from({ length: MAX_LEDGER_ITEMS_PER_OPERATION }, (_, j) => ({
+        description: `Producto ${j} con sábila y protector solar "oferta"`.padEnd(MAX_DISPLAY_NAME_LENGTH, "é"),
+        quantity: 999999,
+        subtotalCents: "9".repeat(18),
+      })),
+      warnings: [...ALLOWED_WARNINGS],
     });
   }
   return {
@@ -159,18 +184,27 @@ export function calculateWorstCaseLedgerCharLength(): { compact: number; pretty:
 /**
  * Output token budget for ledger extraction.
  *
- * Estimated budget analysis:
- * - A fully loaded worst-case document of 25 operations with max length names (80 chars),
- *   escaped quotes, accented UTF-8 code points, 18-digit money strings, all uncertain and unreadable
- *   fields, structured dates and high-precision floating point region coordinates serializes to
- *   ~11,950 characters compact, and ~17,600 characters formatted (pretty-printed).
- * - Assuming an estimated average ratio of ~2.5 to 3.5 characters per token for JSON syntax and Spanish text,
- *   a 17,600-character payload corresponds to approximately 5,000 - 7,000 tokens.
- * - MAX_LEDGER_OUTPUT_TOKENS = 8192 provides a comfortable safety margin over the 512-token limit
- *   of v2, while remaining an upper bound estimate rather than a mathematical guarantee against
- *   adversarial multi-byte tokenization.
+ * Derived from the MEASURED worst case, not from an estimate. `calculateWorstCaseLedgerCharLength()`
+ * serializes a document with every v4 field at its parser maximum — 25 rows, 200-char rawText,
+ * MAX_LEDGER_ITEMS_PER_OPERATION items per row, all 9 warnings, full confidence and sources,
+ * 18-digit money strings, 80-char names — to ~48,900 characters compact and ~66,500 pretty.
+ *
+ * At the ~2.5-3.5 characters per token that JSON syntax and Spanish text show, 66,500 characters is
+ * roughly 19,000-26,600 tokens. 32768 is the next power of two above the worst end of that range, so
+ * a legitimate page cannot be cut for size. Before v4 fields were counted the same document was
+ * ~17,600 characters and 8192 looked like a wide margin; it was not.
+ *
+ * Two honest limits of this number, neither of them hidden:
+ * - It is an upper-bound ESTIMATE, not a proof: how a tokenizer splits long runs of accented padding
+ *   cannot be measured from this repository.
+ * - The model's own maximum output was NOT verifiable from the installed SDK types: `@google/genai`
+ *   2.18.0 carries no per-model limits. If the API rejects a request this large, it fails as
+ *   PROVIDER_ERROR_OR_TIMEOUT — visible, categorized, and it invents nothing.
+ *
+ * The safety net for when the estimate is wrong is TRUNCATED_BY_MAX_TOKENS: a cut response is
+ * detected and measured instead of being parsed into a partial page.
  */
-export const MAX_LEDGER_OUTPUT_TOKENS = 8192;
+export const MAX_LEDGER_OUTPUT_TOKENS = 32768;
 
 export function buildLedgerSystemInstruction(referenceDate: ReferenceDate): string {
   return [
@@ -349,12 +383,35 @@ class GeminiLedgerProvider implements LedgerExtractionProvider {
           // no lo detecta, porque el rechazo es del proveedor.
           // responseJsonSchema: LEDGER_EXTRACTION_JSON_SCHEMA,
           temperature: 0,
+          // Razonamiento DESACTIVADO, explícito y no heredado del default del modelo.
+          //
+          // Verificado en los tipos INSTALADOS de "@google/genai" 2.18.0 (dist/genai.d.ts): la
+          // interface ThinkingConfig documenta `thinkingBudget` como "Indicates the thinking budget
+          // in tokens. 0 is DISABLED. -1 is AUTOMATIC. The default values and allowed ranges are
+          // model dependent." Es decir: el SDK dice que el default DEPENDE DEL MODELO, y NO documenta
+          // si este modelo razona por defecto ni si sus tokens de razonamiento cuentan dentro de
+          // maxOutputTokens. No se puede determinar con certeza desde aquí, así que se apaga: es lo
+          // conservador, elimina el riesgo de corte por razonamiento, y una transcripción contra un
+          // ejemplo literal no necesita pensar. Si con fotos reales la lectura empeora, se sube el
+          // nivel de forma explícita y se recalcula el presupuesto — no se deja en automático.
+          thinkingConfig: { thinkingBudget: 0 },
           maxOutputTokens: MAX_LEDGER_OUTPUT_TOKENS,
           abortSignal: signal,
         },
       });
 
       const response = await Promise.race([generatePromise, timeoutPromise]);
+
+      // Una respuesta cortada por el tope de tokens llega INCOMPLETA, y hay que decirlo antes de
+      // intentar parsearla: un JSON truncado cae en INVALID_JSON y se pierde la causa, que es
+      // justamente lo que hay que poder medir. "MAX_TOKENS" es el valor del enum FinishReason del SDK
+      // instalado (dist/genai.d.ts). NO se reintenta: cada llamada se paga y el tope ya quedó
+      // calculado para el peor caso.
+      if (response?.finishReason === "MAX_TOKENS") {
+        this.emitFailure("TRUNCATED_BY_MAX_TOKENS", null);
+        return null;
+      }
+
       const rawText = response?.text;
       if (typeof rawText !== "string" || rawText.trim().length === 0) {
         this.emitFailure("EMPTY_RESPONSE", null);

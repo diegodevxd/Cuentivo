@@ -19,6 +19,17 @@ import { MAX_DISPLAY_NAME_LENGTH } from "./interpretation.js";
 
 export const MAX_LEDGER_OPERATIONS = 25;
 
+/**
+ * Máximo de items (productos/conceptos) que puede traer un renglón.
+ *
+ * No existía, y eso dejaba el peor caso de la respuesta sin cota: el presupuesto de salida del
+ * proveedor no se puede justificar sobre un campo que puede crecer sin límite. Un renglón de una
+ * libreta detalla los productos de ESA línea —el ejemplo de la instrucción trae uno—, así que cinco
+ * cubre de sobra lo legítimo. Pasarse descarta el renglón (MALFORMED), como cualquier otro límite
+ * violado: es el lado seguro, porque el renglón se ve y se puede corregir a mano.
+ */
+export const MAX_LEDGER_ITEMS_PER_OPERATION = 5;
+
 const PROPOSED_KINDS: readonly ProposedLedgerKind[] = [
   "PRIOR_DEBT",
   "SALE",
@@ -39,7 +50,7 @@ const UNREADABLE_FIELDS: readonly UnreadableLedgerField[] = [
   "KIND",
 ];
 
-const ALLOWED_WARNINGS: readonly LedgerWarning[] = [
+export const ALLOWED_WARNINGS: readonly LedgerWarning[] = [
   "ITEMS_TOTAL_MISMATCH",
   "INHERITED_CUSTOMER",
   "LOW_CONFIDENCE_CUSTOMER",
@@ -264,6 +275,7 @@ function parseItems(
 ): { ok: true; items: readonly LedgerItem[] | null } | { ok: false; reason: "INVALID_MONEY" | "MALFORMED" } {
   if (value === undefined) return { ok: true, items: null };
   if (!Array.isArray(value)) return { ok: false, reason: "MALFORMED" };
+  if (value.length > MAX_LEDGER_ITEMS_PER_OPERATION) return { ok: false, reason: "MALFORMED" };
 
   const parsedItems: LedgerItem[] = [];
   for (const item of value) {

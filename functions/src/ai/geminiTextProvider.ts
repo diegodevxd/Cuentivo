@@ -222,9 +222,17 @@ export interface GeminiClientSeam {
         responseJsonSchema?: unknown;
         temperature?: number;
         maxOutputTokens?: number;
+        /**
+         * Razonamiento del modelo. `thinkingBudget: 0` lo DESACTIVA (así lo documenta el SDK
+         * instalado: "@google/genai" 2.18.0, dist/genai.d.ts, interface ThinkingConfig).
+         */
+        thinkingConfig?: {
+          thinkingBudget?: number;
+          includeThoughts?: boolean;
+        };
         abortSignal?: AbortSignal;
       };
-    }): Promise<{ text?: string | null }>;
+    }): Promise<{ text?: string | null; finishReason?: string | null }>;
   };
 }
 
@@ -232,7 +240,13 @@ export type ProviderFailureCategory =
   | "PROVIDER_ERROR_OR_TIMEOUT"
   | "EMPTY_RESPONSE"
   | "INVALID_JSON"
-  | "INVALID_PROPOSAL";
+  | "INVALID_PROPOSAL"
+  /**
+   * El modelo cortó la generación por el tope de tokens: lo que llegó está incompleto. Categoría
+   * propia a propósito — un JSON truncado se veía como INVALID_JSON o como un fallo genérico, y así
+   * no se puede medir cuántas páginas se están cortando ni con qué tope.
+   */
+  | "TRUNCATED_BY_MAX_TOKENS";
 
 export interface ProviderFailureTelemetry {
   readonly category: ProviderFailureCategory;
@@ -377,7 +391,12 @@ export function adaptGoogleGenAiClient(sdk: GoogleGenAI): GeminiClientSeam {
           contents: sdkContents,
           config: params.config,
         });
-        return { text: response.text };
+        return {
+          text: response.text,
+          // Se propaga a propósito: sin esto, una respuesta cortada por MAX_TOKENS es
+          // indistinguible de un JSON mal escrito, y no se puede medir.
+          finishReason: response.candidates?.[0]?.finishReason ?? null,
+        };
       },
     },
   };

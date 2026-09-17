@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  MAX_LEDGER_ITEMS_PER_OPERATION,
   MAX_LEDGER_OPERATIONS,
   parseLedgerExtraction,
 } from "../src/ai/ledgerExtraction.js";
@@ -810,6 +811,50 @@ describe("parseLedgerExtraction", () => {
       const res = parseLedgerExtraction({ operations: [op], pageIncomplete: false });
 
       expect(res?.operations).toHaveLength(0);
+    });
+
+    test("an operation with more items than the cap is discarded, so the output stays bounded", () => {
+      // `items` no tenía tope, y un campo sin tope deja el peor caso de la respuesta sin cota: el
+      // presupuesto de salida del proveedor no se puede justificar sobre algo que crece sin límite.
+      const tooManyItems = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "25000",
+        uncertainFields: [],
+        unreadableFields: [],
+        items: Array.from({ length: MAX_LEDGER_ITEMS_PER_OPERATION + 1 }, (_, j) => ({
+          description: `producto ${j}`,
+          quantity: 1,
+          subtotalCents: "100",
+        })),
+      };
+
+      const res = parseLedgerExtraction({ operations: [tooManyItems], pageIncomplete: false });
+
+      expect(res?.operations).toHaveLength(0);
+    });
+
+    test("an operation with exactly the cap of items still parses", () => {
+      // El borde por el lado bueno: el límite no puede estar apagando renglones legítimos.
+      const atCap = {
+        lineIndex: 0,
+        proposedKind: "SALE",
+        customerName: "Rosa",
+        amountCents: "25000",
+        uncertainFields: [],
+        unreadableFields: [],
+        items: Array.from({ length: MAX_LEDGER_ITEMS_PER_OPERATION }, (_, j) => ({
+          description: `producto ${j}`,
+          quantity: 1,
+          subtotalCents: "100",
+        })),
+      };
+
+      const res = parseLedgerExtraction({ operations: [atCap], pageIncomplete: false });
+
+      expect(res?.operations).toHaveLength(1);
+      expect(res?.operations[0].items).toHaveLength(MAX_LEDGER_ITEMS_PER_OPERATION);
     });
 
     test("a warning about a field the model could not read does not soften it to a doubt", () => {

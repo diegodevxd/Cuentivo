@@ -12,7 +12,11 @@ import {
   type GeminiClientSeam,
   type ReferenceDate,
 } from "../src/ai/geminiTextProvider.js";
-import { MAX_LEDGER_OPERATIONS } from "../src/ai/ledgerExtraction.js";
+import {
+  ALLOWED_WARNINGS,
+  MAX_LEDGER_ITEMS_PER_OPERATION,
+  MAX_LEDGER_OPERATIONS,
+} from "../src/ai/ledgerExtraction.js";
 
 const TEST_REF_DATE: ReferenceDate = {
   year: 2026,
@@ -48,7 +52,7 @@ const VALID_RAW_EXTRACTION = {
 };
 
 function createMockClient(
-  handler: (params: any) => Promise<{ text?: string | null }>,
+  handler: (params: any) => Promise<{ text?: string | null; finishReason?: string | null }>,
 ): GeminiClientSeam {
   return {
     models: {
@@ -59,10 +63,11 @@ function createMockClient(
 
 describe("GeminiLedgerProvider", () => {
   describe("token budget calculation and worst case guarantees", () => {
-    test("worst case document has exactly MAX_LEDGER_OPERATIONS (25) operations with max boundaries", () => {
+    test("worst case document carries EVERY v4 field at its parser maximum", () => {
+      // Un campo fuera de este documento es un campo que puede truncar una respuesta real: el bloque 2
+      // hizo rawText obligatorio, así que lo que antes era relleno ahora es el tamaño normal.
       const doc = buildWorstCaseLedgerDocument();
       expect(doc.pageIncomplete).toBe(true);
-      expect(Array.isArray(doc.operations)).toBe(true);
       const ops = doc.operations as Array<Record<string, unknown>>;
       expect(ops.length).toBe(MAX_LEDGER_OPERATIONS);
       expect(ops.length).toBe(25);
@@ -74,21 +79,35 @@ describe("GeminiLedgerProvider", () => {
       expect(op0.uncertainFields).toEqual(["DATE", "KIND"]);
       expect(op0.unreadableFields).toEqual(["AMOUNT", "CUSTOMER"]);
       expect(op0.region).toBeDefined();
+
+      // Los campos de v4 que antes no se contaban:
+      expect((op0.rawText as string).length).toBe(200);
+      expect((op0.items as unknown[]).length).toBe(MAX_LEDGER_ITEMS_PER_OPERATION);
+      for (const item of op0.items as Array<Record<string, unknown>>) {
+        expect((item.description as string).length).toBe(80);
+        expect((item.subtotalCents as string).length).toBe(18);
+      }
+      expect(op0.warnings).toEqual([...ALLOWED_WARNINGS]);
+      expect(Object.keys(op0.confidence as object).length).toBe(5);
+      expect(Object.keys(op0.sources as object).length).toBe(2);
     });
 
-    test("worst-case serialized JSON length exceeds 10,000 characters compact and 15,000 characters formatted", () => {
+    test("worst-case serialized JSON is the measured v4 size, not the old v3 one", () => {
+      // Los topes son los medidos con todos los campos v4. Si alguien volviera a dejar fuera rawText,
+      // items o warnings, el documento encogería a más de la mitad y esta prueba lo dice.
       const { compact, pretty } = calculateWorstCaseLedgerCharLength();
-      expect(compact).toBeGreaterThan(10_000);
-      expect(pretty).toBeGreaterThan(15_000);
+      expect(compact).toBeGreaterThan(45_000);
+      expect(pretty).toBeGreaterThan(60_000);
     });
 
-    test("MAX_LEDGER_OUTPUT_TOKENS strictly exceeds 512 and is sufficient for the worst-case document", () => {
+    test("MAX_LEDGER_OUTPUT_TOKENS is sufficient for the measured worst-case document", () => {
       // 512 tokens was the v2 limit that CANNOT fit 25 operations.
       expect(MAX_LEDGER_OUTPUT_TOKENS).toBeGreaterThan(512);
 
       const { pretty } = calculateWorstCaseLedgerCharLength();
-      // Estimate tokens needed assuming ~2.5 characters per token for indented JSON.
-      // MAX_LEDGER_OUTPUT_TOKENS (8192) offers a generous margin over this ~6,500-token estimate.
+      // Estimate tokens needed assuming ~2.5 characters per token for indented JSON, which is the
+      // conservative end. Con el peor caso de v4 (~66,500 caracteres) esto son ~26,600 tokens: el
+      // tope viejo de 8192 NO cabía, y este es el cálculo que lo justifica.
       const estimatedTokensNeeded = Math.ceil(pretty / 2.5);
       expect(MAX_LEDGER_OUTPUT_TOKENS).toBeGreaterThan(estimatedTokensNeeded);
     });
@@ -231,6 +250,30 @@ describe("GeminiLedgerProvider", () => {
   });
 
   describe("extract invocation and Seam interaction", () => {
+    test("turns thinking OFF explicitly instead of inheriting a model default nobody can verify", async () => {
+      // El SDK instalado ("@google/genai" 2.18.0, dist/genai.d.ts, interface ThinkingConfig) documenta
+      // thinkingBudget como "0 is DISABLED. -1 is AUTOMATIC. The default values and allowed ranges are
+      // model dependent": o sea que el default NO se puede saber desde el repositorio. Dejarlo sin
+      // poner sería heredar a ciegas; se apaga explícitamente.
+      let capturedParams: any = null;
+      const mockClient = createMockClient(async (params) => {
+        capturedParams = params;
+        return { text: JSON.stringify(VALID_RAW_EXTRACTION) };
+      });
+
+      const provider = createGeminiLedgerProvider(
+        { apiKey: "test-key", timeoutMillis: 5000 },
+        mockClient,
+      );
+      await provider.extract({
+        imageBase64: "dGVzdA==",
+        imageMimeType: "image/jpeg",
+        referenceDate: TEST_REF_DATE,
+      });
+
+      expect(capturedParams.config.thinkingConfig).toEqual({ thinkingBudget: 0 });
+      expect(capturedParams.config.maxOutputTokens).toBe(MAX_LEDGER_OUTPUT_TOKENS);
+    });
     test("passes image as inlineData with mimeType, text instruction, and MAX_LEDGER_OUTPUT_TOKENS (not 512)", async () => {
       let capturedParams: any = null;
       const mockClient = createMockClient(async (params) => {
@@ -273,8 +316,10 @@ describe("GeminiLedgerProvider", () => {
         temperature: 0,
         maxOutputTokens: MAX_LEDGER_OUTPUT_TOKENS,
       });
-      expect(capturedParams.config.maxOutputTokens).not.toBe(512);
-      expect(capturedParams.config.maxOutputTokens).toBe(8192);
+    expect(capturedParams.config.maxOutputTokens).not.toBe(512);
+    // El tope sale de la constante, no de un número escrito a mano: cuando el peor caso de v4 obligó
+    // a subirlo, esta aserción no debía ser la que se enterara por sorpresa.
+    expect(capturedParams.config.maxOutputTokens).toBe(MAX_LEDGER_OUTPUT_TOKENS);
 
       // Result passes through parseLedgerExtraction
       expect(result).not.toBeNull();
@@ -391,6 +436,54 @@ describe("GeminiLedgerProvider", () => {
     test("returns null and emits INVALID_JSON when model returns unparseable text", async () => {
       const failures: any[] = [];
       const mockClient = createMockClient(async () => ({ text: "{ truncated json: [" }));
+
+      const provider = createGeminiLedgerProvider(
+        { apiKey: "test-key", timeoutMillis: 5000, onFailure: (f) => failures.push(f) },
+        mockClient,
+      );
+
+      const result = await provider.extract({
+        imageBase64: "dGVzdA==",
+        imageMimeType: "image/jpeg",
+        referenceDate: TEST_REF_DATE,
+      });
+
+      expect(result).toBeNull();
+      expect(failures).toEqual([{ category: "INVALID_JSON", status: null }]);
+    });
+
+    test("returns null and emits TRUNCATED_BY_MAX_TOKENS when the model is cut by the token cap", async () => {
+      const failures: any[] = [];
+      // Un JSON cortado a la mitad: antes esto caía en INVALID_JSON y la causa se perdía.
+      const mockClient = createMockClient(async () => ({
+        text: '{"operations": [{"lineIndex": 0, "proposedKind": "SALE", "customer',
+        finishReason: "MAX_TOKENS",
+      }));
+
+      const provider = createGeminiLedgerProvider(
+        { apiKey: "test-key", timeoutMillis: 5000, onFailure: (f) => failures.push(f) },
+        mockClient,
+      );
+
+      const result = await provider.extract({
+        imageBase64: "dGVzdA==",
+        imageMimeType: "image/jpeg",
+        referenceDate: TEST_REF_DATE,
+      });
+
+      expect(result).toBeNull();
+      // Categoría propia: es lo que permite medir cuántas páginas se están cortando, y con qué tope.
+      expect(failures).toEqual([{ category: "TRUNCATED_BY_MAX_TOKENS", status: null }]);
+    });
+
+    test("the same truncated-looking payload with a normal finish reason is INVALID_JSON, not a false truncation", async () => {
+      // Sin esta prueba, una categoría nueva podría estar disparándose por texto mal formado y
+      // atribuirle al tope de tokens un problema que no es suyo.
+      const failures: any[] = [];
+      const mockClient = createMockClient(async () => ({
+        text: '{"operations": [{"lineIndex": 0, "proposedKind": "SALE", "customer',
+        finishReason: "STOP",
+      }));
 
       const provider = createGeminiLedgerProvider(
         { apiKey: "test-key", timeoutMillis: 5000, onFailure: (f) => failures.push(f) },
