@@ -3,6 +3,7 @@ package com.cuentivo.app.sync
 import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.cuentivo.app.domain.BusinessClaimPolicy
+import com.cuentivo.app.domain.BusinessName
 import com.cuentivo.app.domain.DeletionRequestPolicy
 import com.cuentivo.app.domain.RemoteBusiness
 import com.google.firebase.firestore.DocumentReference
@@ -128,7 +129,7 @@ class FirestoreSyncGateway(
             val document = snapshots.getValue(chosen.businessId)
             BusinessLookupResult.Found(
                 businessId = chosen.businessId,
-                name = document.getString("name") ?: "Mi negocio",
+                name = document.getString("name") ?: BusinessName.DEFAULT,
                 currency = document.getString("currency") ?: "MXN",
                 timezone = document.getString("timezone") ?: "America/Mexico_City",
                 createdAtEpochMillis = chosen.createdAtEpochMillis,

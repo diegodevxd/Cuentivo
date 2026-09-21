@@ -39,6 +39,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 import com.cuentivo.app.customer.CreditLimitSuggestionStore
+import com.cuentivo.app.domain.BusinessName
 import com.cuentivo.app.domain.CreditHistory
 import com.cuentivo.app.domain.CreditLimitAdvisor
 import com.cuentivo.app.domain.CustomerNameNormalizer
@@ -93,6 +94,7 @@ import com.cuentivo.app.domain.OpeningBalancePlanner
 import com.cuentivo.app.domain.SaleLineSummary
 import com.cuentivo.app.domain.SoldLine
 import com.cuentivo.app.domain.StatementEntry
+import com.cuentivo.app.domain.StatementImage
 import com.cuentivo.app.domain.BusinessClaim
 import com.cuentivo.app.domain.BusinessClaimPolicy
 import com.cuentivo.app.domain.SubscriptionTier
@@ -111,6 +113,7 @@ import com.cuentivo.app.ui.CuentivoApp
 import com.cuentivo.app.ui.CuentivoClaimBlockedScreen
 import com.cuentivo.app.ui.CuentivoLoadingScreen
 import com.cuentivo.app.ui.PaymentRefundFactory
+import com.cuentivo.app.ui.share.StatementImageShareStore
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.dashboard.DashboardViewModel
 import com.cuentivo.app.auth.FirebaseAuthenticationGateway
@@ -202,6 +205,8 @@ private const val ENTITLEMENT_WAIT_MILLIS = 8_000L
 
 class MainActivity : ComponentActivity() {
     companion object {
+        private const val REQUEST_SHARE_STATEMENT_IMAGE = 831
+
         /**
          * What the collection reminder's notification carries: just the action. The intent holds no
          * customer, balance or business data — the host navigates and lets Room answer the who.
@@ -265,6 +270,9 @@ class MainActivity : ComponentActivity() {
      * PII, balances or ids ever reaches Crashlytics — see [CrashReporterFactory].
      */
     private val crashReporter = CrashReporterFactory.create()
+
+    /** The one temporary customer statement currently exposed to the selected share target. */
+    private val statementImageShareStore by lazy { StatementImageShareStore(applicationContext) }
 
     /**
      * Pro and AI prices as Play formats them, null until Play answers. Held here rather than read on demand
@@ -1090,7 +1098,7 @@ class MainActivity : ComponentActivity() {
                 val products by produceState<List<ProductEntity>>(initialValue = emptyList(), state, refreshKey) {
                     value = (state as? DashboardUiState.Content)?.let { database.productDao().searchActive(it.businessId, "", "") } ?: emptyList()
                 }
-                val businessName = (state as? DashboardUiState.Content)?.businessName ?: "Mi negocio"
+                val businessName = (state as? DashboardUiState.Content)?.businessName ?: BusinessName.DEFAULT
 
                 // Recomputed from the ledger on every refresh rather than stored: pay a sale and its
                 // alert simply stops existing, with no row left anywhere to go stale.
@@ -1411,7 +1419,7 @@ class MainActivity : ComponentActivity() {
                                     if (activeBusinessId == null) {
                                         val newBusiness = BusinessEntity(
                                             UUID.randomUUID().toString(),
-                                            "Mi negocio",
+                                            BusinessName.DEFAULT,
                                             currentUserId,
                                             "MXN",
                                             "America/Mexico_City",
@@ -1468,7 +1476,7 @@ class MainActivity : ComponentActivity() {
                                     val now = System.currentTimeMillis()
                                     val newBusiness = BusinessEntity(
                                         UUID.randomUUID().toString(),
-                                        "Mi negocio",
+                                        BusinessName.DEFAULT,
                                         currentUserId,
                                         "MXN",
                                         "America/Mexico_City",
@@ -1672,7 +1680,7 @@ class MainActivity : ComponentActivity() {
                     onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
-                        val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)
+                        val business = BusinessEntity(UUID.randomUUID().toString(), BusinessName.DEFAULT, currentUserId, "MXN", "America/Mexico_City", now, now)
                         database.businessDao().insert(business)
                         syncQueue.enqueue(business.id, "BUSINESS", business.id, now, SyncPayloads.business(business))
                         membershipBootstrap.ensure(business)
@@ -2399,7 +2407,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         share(
                             row.customer.name,
-                            DebtorShareText.forCustomer(businessName, row.customer.name, row.balanceCents),
+                            DebtorShareText.forCustomer(tier, businessName, row.customer.name, row.balanceCents),
                         )
                     }
                 }, onCancelPayment = { item ->
@@ -2460,15 +2468,31 @@ class MainActivity : ComponentActivity() {
                     }
                 }, onShareStatementText = {
                     statementCustomer?.let { row ->
-                        // Only this customer's numbers travel in the message.
-                        share(
-                            "Estado de cuenta - ${row.customer.name}",
-                            DebtorShareText.forCustomer(businessName, row.customer.name, row.balanceCents, statementEntries),
+                        // Both payloads are built from this one customer's already-scoped statement.
+                        // The pure image builder receives today's date at this Android boundary, never
+                        // reads a clock itself, so its content remains deterministic in JVM tests.
+                        shareStatementImage(
+                            subject = "Estado de cuenta - ${row.customer.name}",
+                            text = DebtorShareText.forCustomer(
+                                tier,
+                                businessName,
+                                row.customer.name,
+                                row.balanceCents,
+                                statementEntries,
+                            ),
+                            content = StatementImage.build(
+                                businessName = businessName,
+                                customerName = row.customer.name,
+                                balanceCents = row.balanceCents,
+                                entries = statementEntries,
+                                tier = tier,
+                                statementDateIso = LocalDate.now().toString(),
+                            ),
                         )
                     }
                 }, onShareDebtorList = {
                     val debtors = customers.map { Debtor(it.customer.name, it.balanceCents) }
-                    share("Clientes por cobrar", DebtorShareText.forBusiness(businessName, debtors))
+                    share("Clientes por cobrar", DebtorShareText.forBusiness(tier, businessName, debtors))
                 }, alerts = alerts, onOpenAlertCustomer = { customerId ->
                     // The alert only knows who; the statement sheet needs the row with the balance,
                     // which the screen already has loaded.
@@ -2581,6 +2605,19 @@ class MainActivity : ComponentActivity() {
      */
     private fun dial(phone: String) {
         startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")))
+    }
+
+    /** Shares one temporary PNG and removes it after the Sharesheet returns to this Activity. */
+    private fun shareStatementImage(subject: String, text: String, content: com.cuentivo.app.domain.StatementImageContent) {
+        val intent = statementImageShareStore.createShareIntent(subject, text, content)
+        @Suppress("DEPRECATION")
+        startActivityForResult(Intent.createChooser(intent, subject), REQUEST_SHARE_STATEMENT_IMAGE)
+    }
+
+    @Deprecated("The result is only used to remove the temporary statement PNG.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_SHARE_STATEMENT_IMAGE) statementImageShareStore.clear()
     }
 
     /** Hands text to the Android Sharesheet, where WhatsApp shows up on its own. */

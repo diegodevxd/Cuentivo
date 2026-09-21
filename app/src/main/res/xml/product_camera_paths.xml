@@ -6,4 +6,7 @@
     <cache-path
         name="ai-camera"
         path="ai-camera/" />
+    <cache-path
+        name="statement-share"
+        path="statement-share/" />
 </paths>

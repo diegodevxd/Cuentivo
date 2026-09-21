@@ -66,6 +66,7 @@ class PlanLimitsAndShareTest {
     @Test
     fun `business list shows every debtor largest first with the total`() {
         val text = DebtorShareText.forBusiness(
+            SubscriptionTier.FREE,
             "Tienda Ejemplo",
             listOf(Debtor("Ana", 15_000), Debtor("Beto", 40_000, isOverdue = true)),
         )
@@ -76,13 +77,13 @@ class PlanLimitsAndShareTest {
 
     @Test
     fun `business list leaves out customers who owe nothing`() {
-        val text = DebtorShareText.forBusiness("Tienda", listOf(Debtor("Ana", 0), Debtor("Beto", 100)))
+        val text = DebtorShareText.forBusiness(SubscriptionTier.FREE, "Tienda", listOf(Debtor("Ana", 0), Debtor("Beto", 100)))
         assertFalse(text.contains("Ana"))
     }
 
     @Test
     fun `customer message never mentions another customer`() {
-        val text = DebtorShareText.forCustomer("Tienda", "Ana", 15_000)
+        val text = DebtorShareText.forCustomer(SubscriptionTier.FREE, "Tienda", "Ana", 15_000)
         assertTrue(text.contains("Ana"))
         assertFalse(text.contains("Beto"))
         assertTrue(text.contains("Saldo pendiente"))
@@ -90,7 +91,7 @@ class PlanLimitsAndShareTest {
 
     @Test
     fun `a settled customer is thanked instead of being asked for money`() {
-        val text = DebtorShareText.forCustomer("Tienda", "Ana", 0)
+        val text = DebtorShareText.forCustomer(SubscriptionTier.FREE, "Tienda", "Ana", 0)
         assertTrue(text.contains("al corriente"))
         assertFalse(text.contains("Saldo pendiente"))
     }
@@ -98,6 +99,7 @@ class PlanLimitsAndShareTest {
     @Test
     fun `customer message can carry that customer's own movements`() {
         val text = DebtorShareText.forCustomer(
+            SubscriptionTier.FREE,
             "Tienda",
             "Ana",
             5_000,
@@ -106,7 +108,8 @@ class PlanLimitsAndShareTest {
                 StatementEntry("2026-07-10", "PAYMENT", "CREDIT", 10_000, null),
             ),
         )
-        assertTrue(text.contains("Venta"))
+        // "Compra", no "Venta": la palabra la lee el cliente, y para él fue una compra.
+        assertTrue(text.contains("Compra"))
         assertTrue(text.contains("Abono"))
         // What was bought, and a date a person can read: the message lands on WhatsApp, where
         // "2026-07-01  Compra" tells the customer nothing about their own debt.
@@ -125,5 +128,116 @@ class PlanLimitsAndShareTest {
         assertEquals(null, Money.centsFromPesos("10.005"))
         assertEquals(1_000L, Money.centsFromPesos("10"))
         assertEquals(null, Money.positiveCentsFromPesos("0"))
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // El mensaje que le llega AL CLIENTE.
+    // ---------------------------------------------------------------------------------------------
+
+    /** El mensaje del cliente con lo mínimo, para las pruebas que no van del nombre ni del pie. */
+    private fun customerMessage(
+        tier: SubscriptionTier = SubscriptionTier.FREE,
+        businessName: String = "Novedades Lupita",
+        customerName: String = "Dana TS",
+        balanceCents: Long = 79_900,
+        entries: List<StatementEntry> = listOf(StatementEntry("2026-08-03", "CHARGE", "DEBIT", 79_900, null)),
+    ) = DebtorShareText.forCustomer(tier, businessName, customerName, balanceCents, entries)
+
+    @Test
+    fun `el_nombre_por_defecto_o_vacio_no_le_llega_al_cliente`() {
+        // "con Mi negocio" es un detalle interno. Vacío, sólo espacios, el valor por defecto exacto y el
+        // mismo disfrazado con otras mayúsculas y espacios: los cuatro son el mismo caso.
+        for (name in listOf("", "   ", BusinessName.DEFAULT, "  mi NEGOCIO  ")) {
+            val firstLine = customerMessage(businessName = name).lines().first()
+            assertEquals("con '$name' el encabezado tiene que ser corto", "Hola Dana TS, te comparto tu estado de cuenta.", firstLine)
+        }
+    }
+
+    @Test
+    fun `un_nombre_configurado_si_aparece_y_sin_espacios_de_sobra`() {
+        val firstLine = customerMessage(businessName = "  Novedades Lupita  ").lines().first()
+        assertEquals("Hola Dana TS, te comparto tu estado de cuenta de Novedades Lupita.", firstLine)
+    }
+
+    @Test
+    fun `una_compra_va_sin_signo_y_un_abono_con_menos`() {
+        val text = customerMessage(
+            balanceCents = 59_900,
+            entries = listOf(
+                StatementEntry("2026-08-03", "CHARGE", "DEBIT", 79_900, null),
+                StatementEntry("2026-08-05", "PAYMENT", "CREDIT", 20_000, null),
+            ),
+        )
+        val chargeLine = text.lines().first { it.contains("Compra") }
+        val paymentLine = text.lines().first { it.contains("Abono") }
+        // Una compra de 799 le llegaba como "+$799.00", que desde el lado del cliente se lee como saldo
+        // a favor. Es el defecto que esta ronda existe para cerrar.
+        assertFalse("una compra nunca lleva '+': $chargeLine", chargeLine.contains("+"))
+        assertTrue("un abono baja la deuda y lleva menos: $paymentLine", paymentLine.contains("−"))
+        // Y el saldo, sin signo: desde el lado del cliente no es "menos" nada.
+        assertTrue(text.contains("Saldo pendiente: ${Money.format(59_900)}"))
+    }
+
+    @Test
+    fun `los_tipos_que_diego_no_especifico_toman_el_signo_de_la_direccion`() {
+        val text = customerMessage(
+            entries = listOf(
+                StatementEntry("2026-08-03", "REFUND", "DEBIT", 5_000, null),
+                StatementEntry("2026-08-04", "CANCELLATION", "CREDIT", 3_000, null),
+                StatementEntry("2026-08-05", "ADJUSTMENT", "CREDIT", 1_000, null),
+            ),
+        )
+        assertFalse("lo que sube la deuda va sin signo", text.lines().first { it.contains("Devolución") }.contains("−"))
+        assertTrue("lo que la baja lleva menos", text.lines().first { it.contains("Cancelación") }.contains("−"))
+        assertTrue("un ajuste tambien lo dice su direccion", text.lines().first { it.contains("Ajuste") }.contains("−"))
+    }
+
+    @Test
+    fun `solo_compras_y_cuenta_al_corriente`() {
+        val onlyCharges = customerMessage(entries = listOf(StatementEntry("2026-08-03", "CHARGE", "DEBIT", 79_900, null)))
+        assertTrue(onlyCharges.contains("Compra"))
+        assertFalse(onlyCharges.contains("Abono"))
+
+        val settled = customerMessage(balanceCents = 0, entries = emptyList())
+        assertTrue(settled.contains("al corriente"))
+        assertFalse(settled.contains("Saldo pendiente"))
+    }
+
+    @Test
+    fun `el_pie_solo_va_en_el_plan_gratis`() {
+        assertTrue(customerMessage(tier = SubscriptionTier.FREE).contains("Enviado con Cuentivo · Gratis en Google Play"))
+        // Con includesProBenefits y no `== FREE`: un plan de pago nuevo tampoco lleva publicidad.
+        for (paid in listOf(SubscriptionTier.PRO, SubscriptionTier.AI)) {
+            assertFalse("$paid no lleva pie", customerMessage(tier = paid).contains("Enviado con Cuentivo"))
+        }
+    }
+
+    @Test
+    fun `la_lista_de_deudores_lleva_el_pie_solo_en_gratis_y_va_sin_signos`() {
+        val debtors = listOf(Debtor("Ana", 15_000), Debtor("Beto", 40_000))
+        val free = DebtorShareText.forBusiness(SubscriptionTier.FREE, "Novedades Lupita", debtors)
+        val pro = DebtorShareText.forBusiness(SubscriptionTier.PRO, "Novedades Lupita", debtors)
+        assertTrue(free.contains("Enviado con Cuentivo"))
+        assertFalse(pro.contains("Enviado con Cuentivo"))
+        // Los signos de la lista ya estaban bien y lo compruebo: todos deben, así que ninguno lleva
+        // signo (ni "+" ni el menos).
+        assertFalse(free.contains("+"))
+        assertFalse(free.contains("−"))
+    }
+
+    @Test
+    fun `el_mensaje_de_un_cliente_nunca_lleva_el_nombre_ni_el_saldo_de_otro`() {
+        // Es la razón de que forCustomer y forBusiness sean dos funciones: este texto sale del teléfono
+        // del negocio y lo lee un cliente.
+        val text = customerMessage(
+            customerName = "Dana TS",
+            balanceCents = 79_900,
+            entries = listOf(
+                StatementEntry("2026-08-03", "CHARGE", "DEBIT", 79_900, null, saleId = "s1", detail = "2 Jabón Zote"),
+            ),
+        )
+        assertTrue(text.contains("Dana TS"))
+        assertFalse("el nombre de otra clienta no puede viajar", text.contains("Beto"))
+        assertFalse("ni su saldo", text.contains(Money.format(40_000)))
     }
 }

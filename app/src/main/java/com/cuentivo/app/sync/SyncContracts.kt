@@ -1,5 +1,6 @@
 package com.cuentivo.app.sync
 
+import com.cuentivo.app.domain.BusinessName
 import java.security.MessageDigest
 
 object SyncOperationId {
@@ -91,7 +92,7 @@ sealed interface BusinessLookupResult {
      */
     data class Found(
         val businessId: String,
-        val name: String = "Mi negocio",
+        val name: String = BusinessName.DEFAULT,
         val currency: String = "MXN",
         val timezone: String = "America/Mexico_City",
         val createdAtEpochMillis: Long = 0L,
