@@ -39,7 +39,8 @@ internal data class StatementImagePalette(
                 detail = onSurfaceVariant.toInt(),
                 more = onSurfaceVariant.toInt(),
                 balanceLabel = onSurfaceVariant.toInt(),
-                balanceValue = secondary.toInt(),
+                // Blanco, no el verde de los abonos: el saldo es lo que se debe, no algo pagado.
+                balanceValue = onBackground.toInt(),
                 divider = outlineVariant.toInt(),
                 stamp = onSurfaceVariant.toInt(),
             )
