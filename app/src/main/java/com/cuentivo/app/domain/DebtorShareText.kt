@@ -72,12 +72,10 @@ object DebtorShareText {
         // No column alignment: WhatsApp renders this in a proportional font, so padded columns
         // arrive crooked. Separators and an indented second line survive any width.
         val detail = entries.takeIf { it.isNotEmpty() }?.joinToString("\n") { entry ->
-            // El signo lo da `direction`, no el tipo: DEBIT aumenta la deuda y va sin signo; CREDIT la
-            // baja y lleva menos. Así "Compra", "Abono", "Devolución", "Cancelación" y cualquier
-            // "Ajuste" quedan bien solos, en vez de depender de una lista que envejece.
-            val sign = if (entry.direction == "CREDIT") "−" else ""
-            val line = "${displayDate(entry.dateIso)} · ${movementLabel(entry.type)} · $sign${Money.format(entry.amountCents)}"
-            entry.detail?.takeIf { it.isNotBlank() }?.let { "$line\n   $it" } ?: line
+            // La forma de la línea y el signo viven en `StatementLineFormat`, que la imagen del estado
+            // de cuenta usa también: el texto y la imagen no pueden decir cosas distintas.
+            val line = StatementLineFormat.movementLine(entry)
+            StatementLineFormat.detailOrNull(entry)?.let { "$line\n   $it" } ?: line
         }
         return buildString {
             append(header).append('\n')
@@ -88,22 +86,5 @@ object DebtorShareText {
                 else "Tu cuenta está al corriente. ¡Gracias!"
             )
         } + footer(tier)
-    }
-
-    /** "2026-08-03" → "03/08/2026". Nobody outside a database reads ISO dates. */
-    private fun displayDate(dateIso: String): String {
-        val parts = dateIso.split('-')
-        return if (parts.size == 3 && parts[0].length == 4) "${parts[2]}/${parts[1]}/${parts[0]}" else dateIso
-    }
-
-    private fun movementLabel(type: String): String = when (type) {
-        // "Compra", no "Venta": la palabra la lee el cliente, y para él fue una compra. Las demás se
-        // quedan como estaban; sólo esta cambia.
-        "CHARGE" -> "Compra"
-        "PAYMENT" -> "Abono"
-        "ADJUSTMENT" -> "Ajuste"
-        "REFUND" -> "Devolución"
-        "CANCELLATION" -> "Cancelación"
-        else -> type
     }
 }

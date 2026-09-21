@@ -13,6 +13,13 @@ No es un source of truth. Manda, en este orden:
 
 **Última actualización:** 2026-09-17. **v41 (`1.21.0`) subida a prueba INTERNA; Diego la está probando.**
 
+**2026-09-20 — estado de cuenta por imagen.** En `diegodevxd/mensaje-al-cliente`: el mensaje al
+cliente ya no invierte los signos, y al compartir el resumen va **imagen + texto**. La imagen lleva
+los últimos 10 movimientos, `y N movimientos anteriores`, el saldo real y la fecha del estado de
+cuenta; el sello de Cuentivo sólo en plan Gratis. **Falta lo único que no se puede automatizar:**
+que Diego confirme en su teléfono si WhatsApp respeta el texto junto a la imagen o lo convierte en
+pie de foto. Muestras en `dist/muestras-estado-cuenta/`.
+
 **Dónde está cada cosa ahora mismo:**
 
 - **Play.** `v36` en **producción** (desde 2026-08-31). `v37` / `1.19.0` en **cerrada**. `v40` /
