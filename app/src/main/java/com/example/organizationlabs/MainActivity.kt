@@ -97,6 +97,8 @@ import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.StatementImage
 import com.cuentivo.app.domain.BusinessClaim
 import com.cuentivo.app.domain.BusinessClaimPolicy
+import com.cuentivo.app.BuildConfig
+import com.cuentivo.app.domain.ShareTier
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.domain.SyncEntitlement
 import com.cuentivo.app.ui.CorrectionCandidate
@@ -524,6 +526,9 @@ class MainActivity : ComponentActivity() {
                 val reminderPreferences = remember { CollectionReminderPreferences(this@MainActivity) }
                 var reminderEnabled by remember { mutableStateOf(reminderPreferences.enabled) }
                 var reminderHour by remember { mutableStateOf(reminderPreferences.hourOfDay) }
+                // Debug only, and never persisted: forces the free-plan footer on shared messages so a
+                // Pro tester can see it. Sync and the stored entitlement keep the real plan.
+                var debugForceFreeShare by remember { mutableStateOf(false) }
                 val applyReminderEnabled: (Boolean) -> Unit = { value ->
                     reminderPreferences.enabled = value
                     reminderEnabled = value
@@ -810,6 +815,7 @@ class MainActivity : ComponentActivity() {
                 val productImages = remember { ProductImageStore(this@MainActivity) }
                 // The real plan, straight from Google Play. Was pinned to FREE until Billing existed.
                 val tier by tierState
+                val shareTier = ShareTier.resolve(tier, BuildConfig.DEBUG, debugForceFreeShare)
                 val billingMessage by billingMessageState
                 LaunchedEffect(billingMessage) {
                     billingMessage?.let {
@@ -2407,7 +2413,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         share(
                             row.customer.name,
-                            DebtorShareText.forCustomer(tier, businessName, row.customer.name, row.balanceCents),
+                            DebtorShareText.forCustomer(shareTier, businessName, row.customer.name, row.balanceCents),
                         )
                     }
                 }, onCancelPayment = { item ->
@@ -2474,7 +2480,7 @@ class MainActivity : ComponentActivity() {
                         shareStatementImage(
                             subject = "Estado de cuenta - ${row.customer.name}",
                             text = DebtorShareText.forCustomer(
-                                tier,
+                                shareTier,
                                 businessName,
                                 row.customer.name,
                                 row.balanceCents,
@@ -2485,14 +2491,14 @@ class MainActivity : ComponentActivity() {
                                 customerName = row.customer.name,
                                 balanceCents = row.balanceCents,
                                 entries = statementEntries,
-                                tier = tier,
+                                tier = shareTier,
                                 statementDateIso = LocalDate.now().toString(),
                             ),
                         )
                     }
                 }, onShareDebtorList = {
                     val debtors = customers.map { Debtor(it.customer.name, it.balanceCents) }
-                    share("Clientes por cobrar", DebtorShareText.forBusiness(tier, businessName, debtors))
+                    share("Clientes por cobrar", DebtorShareText.forBusiness(shareTier, businessName, debtors))
                 }, alerts = alerts, onOpenAlertCustomer = { customerId ->
                     // The alert only knows who; the statement sheet needs the row with the balance,
                     // which the screen already has loaded.
@@ -2570,6 +2576,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }, reminderEnabled = reminderEnabled, reminderHour = reminderHour,
+                debugForceFreeShare = if (BuildConfig.DEBUG) debugForceFreeShare else null,
+                onDebugForceFreeShareChange = { debugForceFreeShare = it },
                 onReminderEnabledChange = { wanted ->
                     if (wanted) {
                         // Only Android 13+ has a notification permission to ask for; below it the

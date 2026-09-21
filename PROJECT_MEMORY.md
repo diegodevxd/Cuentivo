@@ -11,20 +11,20 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-09-17. **v41 (`1.21.0`) subida a prueba INTERNA; Diego la está probando.**
+**Última actualización:** 2026-09-21. **v41 (`1.21.0`) en producción; v42 (`1.22.0`) ya subida a Play.**
 
-**2026-09-20 — estado de cuenta por imagen.** En `diegodevxd/mensaje-al-cliente`: el mensaje al
-cliente ya no invierte los signos, y al compartir el resumen va **imagen + texto**. La imagen lleva
-los últimos 10 movimientos, `y N movimientos anteriores`, el saldo real y la fecha del estado de
-cuenta; el sello de Cuentivo sólo en plan Gratis. **Falta lo único que no se puede automatizar:**
-que Diego confirme en su teléfono si WhatsApp respeta el texto junto a la imagen o lo convierte en
-pie de foto. Muestras en `dist/muestras-estado-cuenta/`.
+**v43 (`1.22.1`, parche) sale a más tardar el 2026-09-28, con lo que esté listo.** Ya en la rama
+(`diegodevxd/mensaje-al-cliente` confirmada fusionada): la calificación ya no dice "sin historial de
+pago" junto a un abono; el saldo de la tarjeta va en blanco; el "Saldo pendiente" repetido en
+Detalle de Cliente se quitó; y un interruptor **sólo de debug** en Cuenta ("[Debug] Compartir como
+plan Gratis") para ver el pie en un teléfono Pro — sólo afecta lo compartido, no la sync
+(`domain/ShareTier.kt`). Falta: limpiar la caché de la imagen al abrir la app, y lo que salga de
+probar la v42 (incluido si WhatsApp respeta el texto junto a la imagen).
 
 **Dónde está cada cosa ahora mismo:**
 
-- **Play.** `v36` en **producción** (desde 2026-08-31). `v37` / `1.19.0` en **cerrada**. `v40` /
-  `1.20.2` y ahora **`v41` / `1.21.0`** en **interna**. `versionCode` 38 a 41 gastados: el próximo es
-  **42**. El AAB está en `dist/Cuentivo-v41-1.21.0.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
+- **Play.** `v41` / `1.21.0` en **producción**; `v42` / `1.22.0` subida. `versionCode` hasta 42
+  gastados: el próximo es **43**. AAB en `dist/Cuentivo-v42-1.22.0.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
 - **Functions:** `extractLedgerPage(us-south1)` **desplegado desde `81194a7`** el 2026-09-17, con
   contrato **v5** (y v3/v4 idénticos), `gemini-3.5-flash`, `thinkingBudget: 0` y
   `maxOutputTokens: 32768`. **Probado contra la API real** con el v40 de Play: tres libretas leídas,

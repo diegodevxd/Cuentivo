@@ -69,6 +69,9 @@ fun AccountSheet(
     reminderHour: Int = 9,
     onReminderEnabledChange: (Boolean) -> Unit = {},
     onReminderHourChange: (Int) -> Unit = {},
+    /** Debug builds only: forces the free-plan footer on shares. Null hides the row entirely. */
+    debugForceFreeShare: Boolean? = null,
+    onDebugForceFreeShareChange: (Boolean) -> Unit = {},
 ) {
     var confirmSignOut by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -212,6 +215,23 @@ fun AccountSheet(
                         .testTag("reminder-enabled-switch")
                         .semantics { contentDescription = reminderSwitchDescription },
                 )
+            }
+            if (debugForceFreeShare != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.debug_force_free_share),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = debugForceFreeShare,
+                        onCheckedChange = onDebugForceFreeShareChange,
+                        modifier = Modifier.testTag("debug-force-free-share-switch"),
+                    )
+                }
             }
 
             val context = LocalContext.current

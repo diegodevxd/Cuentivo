@@ -106,6 +106,7 @@
     <string name="customer_score_punctual">Paga puntual</string>
     <string name="customer_score_slow">Se tarda en pagar</string>
     <string name="customer_score_delinquent">Casi nunca paga a tiempo</string>
+    <string name="debug_force_free_share">[Debug] Compartir como plan Gratis</string>
     <string name="customer_score_no_history">Aún sin calificación: faltan ventas con fecha límite</string>
     <string name="customer_score_average_days">Retraso promedio: %1$d días</string>
     <string name="customer_score_on_time">Paga en la fecha acordada</string>

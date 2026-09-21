@@ -40,6 +40,20 @@ internal fun PaymentReliability.labelRes(): Int? = when (this) {
     PaymentReliability.NO_HISTORY -> null
 }
 
+/**
+ * Whether the detail hero should draw the status pill under the balance.
+ *
+ * The hero already names the balance kind ("Saldo pendiente", "Saldo a favor"), and the pill for a
+ * pending customer with no due date, or one in credit, says exactly the same words again. The pill
+ * only earns its place when it adds a date: due today, due in N days, or overdue. A settled
+ * customer keeps it, because "Al día" says more than "Saldo en cero".
+ */
+internal fun CustomerStatus.addsToBalanceKind(): Boolean = when (tone) {
+    CustomerTone.PENDING -> daysUntilDue != null
+    CustomerTone.CREDIT -> false
+    CustomerTone.OVERDUE, CustomerTone.SETTLED -> true
+}
+
 enum class CustomerFilter(val labelRes: Int) {
     ALL(com.cuentivo.app.R.string.customer_filter_all),
     OWING(com.cuentivo.app.R.string.customer_filter_owing),

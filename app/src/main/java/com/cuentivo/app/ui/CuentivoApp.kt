@@ -271,6 +271,9 @@ fun CuentivoApp(
     reminderHour: Int = 9,
     onReminderEnabledChange: (Boolean) -> Unit = {},
     onReminderHourChange: (Int) -> Unit = {},
+    /** Debug builds only: forces the free-plan footer on shares. Null hides the switch. */
+    debugForceFreeShare: Boolean? = null,
+    onDebugForceFreeShareChange: (Boolean) -> Unit = {},
     /**
      * A reminder notification was tapped: the host wants Clientes with the overdue filter. Consumed
      * once through [onOpenOverdueCustomersConsumed], so the navigation cannot re-fire.
@@ -641,6 +644,8 @@ fun CuentivoApp(
             reminderHour = reminderHour,
             onReminderEnabledChange = onReminderEnabledChange,
             onReminderHourChange = onReminderHourChange,
+            debugForceFreeShare = debugForceFreeShare,
+            onDebugForceFreeShareChange = onDebugForceFreeShareChange,
         )
     }
     if (showAiPaywall) {

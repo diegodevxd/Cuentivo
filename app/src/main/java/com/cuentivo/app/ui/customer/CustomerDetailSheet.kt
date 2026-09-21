@@ -333,8 +333,10 @@ private fun BalanceHero(balanceCents: Long, status: CustomerStatus, score: Custo
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(NeoSpacing.xs))
-            StatusPill(status)
+            if (status.addsToBalanceKind()) {
+                Spacer(Modifier.height(NeoSpacing.xs))
+                StatusPill(status)
+            }
             ScoreLine(score)
         }
     }
