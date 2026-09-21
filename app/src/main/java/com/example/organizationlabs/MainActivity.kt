@@ -39,6 +39,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 import com.cuentivo.app.customer.CreditLimitSuggestionStore
+import com.cuentivo.app.domain.BusinessName
 import com.cuentivo.app.domain.CreditHistory
 import com.cuentivo.app.domain.CreditLimitAdvisor
 import com.cuentivo.app.domain.CustomerNameNormalizer
@@ -1090,7 +1091,7 @@ class MainActivity : ComponentActivity() {
                 val products by produceState<List<ProductEntity>>(initialValue = emptyList(), state, refreshKey) {
                     value = (state as? DashboardUiState.Content)?.let { database.productDao().searchActive(it.businessId, "", "") } ?: emptyList()
                 }
-                val businessName = (state as? DashboardUiState.Content)?.businessName ?: "Mi negocio"
+                val businessName = (state as? DashboardUiState.Content)?.businessName ?: BusinessName.DEFAULT
 
                 // Recomputed from the ledger on every refresh rather than stored: pay a sale and its
                 // alert simply stops existing, with no row left anywhere to go stale.
@@ -1411,7 +1412,7 @@ class MainActivity : ComponentActivity() {
                                     if (activeBusinessId == null) {
                                         val newBusiness = BusinessEntity(
                                             UUID.randomUUID().toString(),
-                                            "Mi negocio",
+                                            BusinessName.DEFAULT,
                                             currentUserId,
                                             "MXN",
                                             "America/Mexico_City",
@@ -1468,7 +1469,7 @@ class MainActivity : ComponentActivity() {
                                     val now = System.currentTimeMillis()
                                     val newBusiness = BusinessEntity(
                                         UUID.randomUUID().toString(),
-                                        "Mi negocio",
+                                        BusinessName.DEFAULT,
                                         currentUserId,
                                         "MXN",
                                         "America/Mexico_City",
@@ -1672,7 +1673,7 @@ class MainActivity : ComponentActivity() {
                     onCreateBusiness = {
                     lifecycleScope.launch {
                         val now = System.currentTimeMillis()
-                        val business = BusinessEntity(UUID.randomUUID().toString(), "Mi negocio", currentUserId, "MXN", "America/Mexico_City", now, now)
+                        val business = BusinessEntity(UUID.randomUUID().toString(), BusinessName.DEFAULT, currentUserId, "MXN", "America/Mexico_City", now, now)
                         database.businessDao().insert(business)
                         syncQueue.enqueue(business.id, "BUSINESS", business.id, now, SyncPayloads.business(business))
                         membershipBootstrap.ensure(business)
@@ -2399,7 +2400,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         share(
                             row.customer.name,
-                            DebtorShareText.forCustomer(businessName, row.customer.name, row.balanceCents),
+                            DebtorShareText.forCustomer(tier, businessName, row.customer.name, row.balanceCents),
                         )
                     }
                 }, onCancelPayment = { item ->
@@ -2463,12 +2464,12 @@ class MainActivity : ComponentActivity() {
                         // Only this customer's numbers travel in the message.
                         share(
                             "Estado de cuenta - ${row.customer.name}",
-                            DebtorShareText.forCustomer(businessName, row.customer.name, row.balanceCents, statementEntries),
+                            DebtorShareText.forCustomer(tier, businessName, row.customer.name, row.balanceCents, statementEntries),
                         )
                     }
                 }, onShareDebtorList = {
                     val debtors = customers.map { Debtor(it.customer.name, it.balanceCents) }
-                    share("Clientes por cobrar", DebtorShareText.forBusiness(businessName, debtors))
+                    share("Clientes por cobrar", DebtorShareText.forBusiness(tier, businessName, debtors))
                 }, alerts = alerts, onOpenAlertCustomer = { customerId ->
                     // The alert only knows who; the statement sheet needs the row with the balance,
                     // which the screen already has loaded.
