@@ -710,6 +710,10 @@
         <item quantity="one">Register %1$d transaction</item>
         <item quantity="other">Register %1$d transactions</item>
     </plurals>
+    <plurals name="ai_ledger_due_born_overdue">
+        <item quantity="one">%1$d sale would be overdue as of today</item>
+        <item quantity="other">%1$d sales would be overdue as of today</item>
+    </plurals>
     <string name="ai_ledger_duplicate_badge">Possible duplicate</string>
     <string name="ai_ledger_duplicate_warning">There is already a similar transaction recorded: %1$s</string>
     <string name="ai_ledger_duplicate_detail_format">There is already a %1$s for %2$s of %3$s on %4$s%5$s</string>
@@ -718,4 +722,33 @@
     <string name="ai_ledger_objection_unusual_cents">Unusual cents on this page</string>
     <string name="ai_ledger_objection_customer_confirmation">This customer already exists, confirm before registering</string>
     <string name="ai_ledger_action_confirm_objection">Yes, it is correct</string>
+    <string name="message_account_wiped">This phone had data from another account and it was deleted</string>
+    <string name="message_cloud_restored">Restored %1$d customers from the cloud</string>
+    <string name="message_cloud_restore_failed">We could not bring your information from the cloud. Check your connection and reopen the app (%1$s/%2$s)</string>
+    <string name="message_business_created">Business created</string>
+    <string name="message_create_business_first">Create your business on Home first</string>
+    <string name="message_customer_name_taken">You already have another customer with that name</string>
+    <string name="message_customer_added">Customer added</string>
+    <string name="message_customer_updated">Customer updated</string>
+    <string name="message_removed">%1$s removed</string>
+    <string name="message_product_save_failed">The product could not be saved</string>
+    <string name="message_product_added">Product added</string>
+    <string name="message_product_updated">Product updated</string>
+    <string name="message_file_read_failed">That file could not be read</string>
+    <string name="message_import_no_products">No products were found in that file</string>
+    <string name="message_import_products_ok">%1$d products imported</string>
+    <string name="message_import_products_partial">%1$d imported; %2$d with problems</string>
+    <string name="share_statement_subject">Account statement - %1$s</string>
+    <string name="share_debtor_list_subject">Customers to collect</string>
+    <string name="billing_purchase_failed">The purchase could not be completed. Try again.</string>
+    <string name="billing_subscriptions_unavailable">Subscriptions are not available right now</string>
+    <string name="billing_plan_not_available">That plan is not available yet</string>
+    <string name="billing_subscription_query_failed">Your subscription status could not be checked. Try again.</string>
+    <string name="billing_replacement_not_identified">The subscription to replace could not be identified</string>
+    <string name="billing_plan_already_active">This plan is already active</string>
+    <string name="billing_plan_change_in_progress">A plan change is in progress. Try again later.</string>
+    <string name="billing_sign_in_required">Sign in to subscribe to CuentivoAI</string>
+    <string name="billing_session_changed">The session changed. Try again.</string>
+    <string name="billing_purchase_could_not_start">The purchase could not be started. Try again.</string>
+    <string name="billing_free_plan_active">The free plan is already active</string>
 </resources>

@@ -100,7 +100,7 @@ class BillingGateway(
             // Backing out of the payment sheet is a normal thing to do, not an error to report.
             BillingClient.BillingResponseCode.USER_CANCELED -> Unit
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> refresh(request.userId)
-            else -> onMessage("No se pudo completar la compra. Inténtalo de nuevo.")
+            else -> onMessage(context.getString(com.cuentivo.app.R.string.billing_purchase_failed))
         }
     }
 
@@ -202,18 +202,18 @@ class BillingGateway(
         isAnonymous: Boolean = false,
     ) {
         if (!client.isReady) {
-            onMessage("Las suscripciones no están disponibles en este momento")
+            onMessage(context.getString(com.cuentivo.app.R.string.billing_subscriptions_unavailable))
             return
         }
 
         val product = products[targetProductId]
         if (product == null) {
-            onMessage("Las suscripciones no están disponibles en este momento")
+            onMessage(context.getString(com.cuentivo.app.R.string.billing_subscriptions_unavailable))
             return
         }
         val offerToken = product.subscriptionOfferDetails?.firstOrNull()?.offerToken
         if (offerToken == null) {
-            onMessage("El plan no está disponible todavía")
+            onMessage(context.getString(com.cuentivo.app.R.string.billing_plan_not_available))
             return
         }
 
@@ -225,7 +225,7 @@ class BillingGateway(
         client.queryPurchasesAsync(params) { result, purchases ->
             if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                 purchasesQueryState = PurchasesQueryState.Failed
-                onMessage("No se pudo verificar el estado de tu suscripción. Inténtalo de nuevo.")
+                onMessage(context.getString(com.cuentivo.app.R.string.billing_subscription_query_failed))
                 return@queryPurchasesAsync
             }
 
@@ -263,7 +263,7 @@ class BillingGateway(
                                 purchase.products.contains(decision.productToReplace)
                         }
                         if (existingPurchase == null) {
-                            onMessage("No se pudo identificar la suscripción a reemplazar")
+                            onMessage(context.getString(com.cuentivo.app.R.string.billing_replacement_not_identified))
                             return@queryPurchasesAsync
                         }
 
@@ -291,25 +291,25 @@ class BillingGateway(
                             onRequireAccount()
                         }
                         PurchaseBlockReason.ALREADY_ACTIVE -> {
-                            onMessage("Este plan ya se encuentra activo")
+                            onMessage(context.getString(com.cuentivo.app.R.string.billing_plan_already_active))
                             refresh(userId)
                         }
                         PurchaseBlockReason.INCONSISTENT_STATE -> {
-                            onMessage("Hay un cambio de plan en proceso. Inténtalo más tarde.")
+                            onMessage(context.getString(com.cuentivo.app.R.string.billing_plan_change_in_progress))
                             refresh(userId)
                         }
                         PurchaseBlockReason.MISSING_USER_ID -> {
-                            onMessage("Inicia sesión para suscribirte a CuentivoAI")
+                            onMessage(context.getString(com.cuentivo.app.R.string.billing_sign_in_required))
                         }
                         PurchaseBlockReason.USER_MISMATCH -> {
-                            onMessage("La sesión cambió. Inténtalo de nuevo.")
+                            onMessage(context.getString(com.cuentivo.app.R.string.billing_session_changed))
                             refresh(userId)
                         }
                         PurchaseBlockReason.QUERY_PENDING, PurchaseBlockReason.QUERY_FAILED -> {
-                            onMessage("No se pudo verificar el estado de tu suscripción. Inténtalo de nuevo.")
+                            onMessage(context.getString(com.cuentivo.app.R.string.billing_subscription_query_failed))
                         }
                         PurchaseBlockReason.UNKNOWN_PRODUCT, PurchaseBlockReason.INVALID_REPLACEMENT -> {
-                            onMessage("No se pudo iniciar la compra. Inténtalo de nuevo.")
+                            onMessage(context.getString(com.cuentivo.app.R.string.billing_purchase_could_not_start))
                         }
                     }
                 }
@@ -330,7 +330,7 @@ class BillingGateway(
             SubscriptionTier.AI -> SubscriptionTier.AI_PRODUCT_ID
             SubscriptionTier.PRO -> SubscriptionTier.PRO_PRODUCT_ID
             SubscriptionTier.FREE -> {
-                onMessage("El plan gratuito ya está activo")
+                onMessage(context.getString(com.cuentivo.app.R.string.billing_free_plan_active))
                 return
             }
         }

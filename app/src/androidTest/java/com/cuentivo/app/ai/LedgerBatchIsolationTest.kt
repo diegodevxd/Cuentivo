@@ -108,7 +108,11 @@ class LedgerBatchIsolationTest {
     /** Cada página tiene su propia sesión, igual que en producción, donde es un UUID por captura. */
     private fun page(id: String) = "session-$id"
 
-    private suspend fun planFor(sessionId: String, operations: List<LedgerOperation>): BatchPlanningResult =
+    private suspend fun planFor(
+        sessionId: String,
+        operations: List<LedgerOperation>,
+        dueDateDays: Long? = null,
+    ): BatchPlanningResult =
         AiLedgerBatchPlanner.plan(
             businessId = businessId,
             userId = userId,
@@ -118,6 +122,7 @@ class LedgerBatchIsolationTest {
             existingCustomerMap = existingCustomers(),
             existingOutstandingSalesByCustomerId = outstandingByCustomer(),
             pageDateEpochDay = todayEpochDay,
+            dueDateDays = dueDateDays,
             todayEpochDay = todayEpochDay,
             nowEpochMillis = nowEpochMillis,
         )
@@ -145,6 +150,7 @@ class LedgerBatchIsolationTest {
     private suspend fun confirm(
         sessionId: String,
         operations: List<LedgerOperation>,
+        dueDateDays: Long? = null,
     ): LedgerBatchConfirmation =
         LedgerBatchCoordinator.confirm(
             businessId = businessId,
@@ -157,6 +163,7 @@ class LedgerBatchIsolationTest {
             modelSaysTextMayBeMissing = false,
             isPageCompletenessConfirmed = false,
             pageDateEpochDay = todayEpochDay,
+            dueDateDays = dueDateDays,
             todayEpochDay = todayEpochDay,
             nowEpochMillis = nowEpochMillis,
             alreadyRecorded = { key -> database.financialDao().operationResultId(key) != null },
@@ -165,8 +172,12 @@ class LedgerBatchIsolationTest {
             write = { plan -> saleRepository.registerLedgerBatch(plan) },
         )
 
-    private suspend fun write(sessionId: String, operations: List<LedgerOperation>): ExpectedLedgerBatchResult {
-        val result = confirm(sessionId, operations)
+    private suspend fun write(
+        sessionId: String,
+        operations: List<LedgerOperation>,
+        dueDateDays: Long? = null,
+    ): ExpectedLedgerBatchResult {
+        val result = confirm(sessionId, operations, dueDateDays)
         assertTrue(
             "The page must be recorded, but the coordinator answered $result " +
                 "[${explain(sessionId, operations)}]: $operations",
@@ -372,5 +383,50 @@ class LedgerBatchIsolationTest {
         val saleEvents = audit.filter { it.entityType == "SALE" }
         assertEquals("One audit row per sale, not one for the whole page", 2, saleEvents.size)
         assertEquals(2, saleEvents.map { it.entityId }.distinct().size)
+    }
+
+    /**
+     * El flujo completo de la Parte A del encargo: una página fotografiada, con plazo elegido en
+     * la revisión, registrada contra Room **de verdad**, y después leída por la misma consulta que
+     * alimenta el recordatorio de cobro y el filtro de vencidos.
+     *
+     * Sin plazo la venta no puede salir ahí (`dueDateEpochDay IS NOT NULL` es parte del WHERE), y
+     * esa es exactamente el hueco que este cambio cierra: por eso la página de Beto, escrita sin
+     * plazo, no aparece.
+     */
+    @Test
+    fun con_plazo_la_venta_importada_aparece_en_salesWithDueDate() = runBlocking {
+        // La venta de la libreta es del 10 de marzo; con 15 dias vence el 25 de marzo.
+        write(page("plazo-15"), listOf(sale(0, "Rosa", "25000")), dueDateDays = 15)
+        // La misma pagina de siempre pero sin plazo: el comportamiento anterior.
+        write(page("sin-plazo"), listOf(sale(1, "Beto", "12500")))
+
+        val dueRows = database.financialDao().salesWithDueDate(businessId)
+
+        assertEquals(
+            "solo la venta con plazo entra al recordatorio de cobro",
+            1,
+            dueRows.size,
+        )
+        assertEquals("Rosa", dueRows.single().customerName)
+        assertEquals(
+            "la fecha limite se cuenta desde la fecha del renglon + 15, no desde hoy",
+            java.time.LocalDate.of(2026, 3, 10).toEpochDay() + 15,
+            dueRows.single().dueDateEpochDay,
+        )
+        assertEquals(25_000L, dueRows.single().outstandingCents)
+
+        // Y la ve tambien el calculador de estado que clasifica las ventas: la del 10 de marzo
+        // con vencimiento el 25 de marzo, leidos contra el hoy de esta prueba, es OVERDUE.
+        assertEquals(
+            com.cuentivo.app.domain.SalePaymentStatus.OVERDUE,
+            com.cuentivo.app.domain.SaleStatusCalculator.status(
+                totalCents = 25_000L,
+                paidCents = 0L,
+                dueDateEpochDay = dueRows.single().dueDateEpochDay,
+                todayEpochDay = todayEpochDay,
+                isCanceled = false,
+            ),
+        )
     }
 }

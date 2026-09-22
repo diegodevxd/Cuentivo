@@ -114,6 +114,15 @@ sealed interface AiDebugLabState {
         val registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection> = emptyList(),
         val isLegacySaveWithoutSessionKey: Boolean = false,
         val isPageCompletenessConfirmed: Boolean = false,
+        /**
+         * El plazo de pago elegido para **toda la página**, en días, o `null` para "Sin fecha".
+         *
+         * Arranca en 15 —lo mismo que propone la venta manual— porque una venta sin fecha no puede
+         * vencerse ni entrar al recordatorio de cobro. Es elección de la persona, no un derivado de
+         * los renglones, y viaja al planificador en la confirmación: lo que se registra es lo que
+         * esta pantalla muestra.
+         */
+        val dueDateDays: Long? = com.cuentivo.app.ui.transaction.DueOption.FIFTEEN.days,
     ) : AiDebugLabState {
         /** What the app may offer, recomputed from the rows as they are edited. */
         val customerMatches: Map<Int, com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>>
@@ -146,6 +155,8 @@ sealed interface AiDebugLabState {
         val registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection> = emptyList(),
         val isLegacySaveWithoutSessionKey: Boolean = false,
         val isPageCompletenessConfirmed: Boolean = false,
+        /** Copiado desde [LedgerReviewing] al confirmar, para que un fallo de escritura devuelva la revisión con el plazo que la persona veía. */
+        val dueDateDays: Long? = com.cuentivo.app.ui.transaction.DueOption.FIFTEEN.days,
     ) : AiDebugLabState
 }
 
@@ -1151,6 +1162,7 @@ object AiDebugLabMachine {
                 productCandidates = Collections.unmodifiableList(ArrayList(productCandidates)),
                 registeredOperations = Collections.unmodifiableList(ArrayList(registeredOperations)),
                 isLegacySaveWithoutSessionKey = !com.cuentivo.app.domain.LedgerReviewSchema.canRegisterRestoredReview(saved.reviewSchemaVersion),
+                dueDateDays = saved.dueDateDays,
             ),
             // A restored review is a new generation: any in-flight result from before the
             // recreation must not land on it.
@@ -1160,8 +1172,7 @@ object AiDebugLabMachine {
 
     /**
      * Updates the page date of the active review in LedgerReviewing.
-     */
-    fun onUpdateLedgerPageDate(
+     */    fun onUpdateLedgerPageDate(
         model: AiDebugLabModel,
         sessionId: String,
         pageDateEpochDay: Long?,
@@ -1272,6 +1283,7 @@ object AiDebugLabMachine {
                 registeredOperations = state.registeredOperations,
                 isLegacySaveWithoutSessionKey = state.isLegacySaveWithoutSessionKey,
                 isPageCompletenessConfirmed = state.isPageCompletenessConfirmed,
+                dueDateDays = state.dueDateDays,
             ),
             generation = nextGeneration,
         )
@@ -1290,6 +1302,22 @@ object AiDebugLabMachine {
         val state = model.state as? AiDebugLabState.LedgerReviewing ?: return model
         if (state.sessionId != sessionId || state.businessId != businessId) return model
         return model.copy(state = state.copy(isPageCompletenessConfirmed = true))
+    }
+
+    /**
+     * El plazo que la persona eligió, para la página entera.
+     *
+     * Sólo el valor viaja: el cálculo de la fecha límite y del aviso de vencidas vive en
+     * `domain/LedgerDueDatePolicy`, no aquí ni en el Composable.
+     */
+    fun onUpdateLedgerDueDateDays(
+        model: AiDebugLabModel,
+        sessionId: String,
+        dueDateDays: Long?,
+    ): AiDebugLabModel {
+        val state = model.state as? AiDebugLabState.LedgerReviewing ?: return model
+        if (state.sessionId != sessionId) return model
+        return model.copy(state = state.copy(dueDateDays = dueDateDays))
     }
 
     /**
@@ -1337,6 +1365,7 @@ object AiDebugLabMachine {
                     productCandidates = state.productCandidates,
                     registeredOperations = state.registeredOperations,
                     isLegacySaveWithoutSessionKey = state.isLegacySaveWithoutSessionKey,
+                    dueDateDays = state.dueDateDays,
                 ),
                 messages = model.messages + AiChatMessage.AssistantLedgerFailed,
                 generation = model.generation + 1,

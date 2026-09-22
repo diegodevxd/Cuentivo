@@ -347,6 +347,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Si la app murió con el menú de compartir abierto, el PNG del estado de cuenta de un cliente
+        // quedó en la caché. Sólo en arranque en frío: al girar el teléfono con el menú abierto, la
+        // Activity se recrea y borrarlo ahí dejaría a WhatsApp sin imagen que leer.
+        if (savedInstanceState == null) statementImageShareStore.clear()
         enableEdgeToEdge(
             // The app draws edge-to-edge over its own graphite ground. The system bars stay dark
             // with light icons so the clock, battery and navigation hints remain legible on every
@@ -839,7 +843,7 @@ class MainActivity : ComponentActivity() {
                     billing.refresh(currentUserId)
 
                     if (sessionGuard.adopt(currentUserId)) {
-                        uiMessage = "Este teléfono tenía datos de otra cuenta y se borraron"
+                        uiMessage = getString(R.string.message_account_wiped)
                     }
                     // Backfills the owner membership for businesses created before it was published,
                     // whose queued rows are otherwise parked on PERMISSION_DENIED forever.
@@ -947,7 +951,7 @@ class MainActivity : ComponentActivity() {
                     // button is never reachable while its data is still on its way back.
                     when (val result = cloudRestore.restore(currentUserId)) {
                         is CloudRestoreResult.Restored -> {
-                            uiMessage = "Se restauraron ${result.customers} clientes de la nube"
+                            uiMessage = getString(R.string.message_cloud_restored, result.customers)
                             refreshKey++
                         }
                         // Nothing in the cloud is the normal path for a new Pro account: say nothing
@@ -960,7 +964,13 @@ class MainActivity : ComponentActivity() {
                         // stack trace stay in the log; only this short code reaches the screen.
                         is CloudRestoreResult.Failed -> {
                             crashReporter.report(CrashEvent.CLOUD_RESTORE_FAILURE)
-                            uiMessage = "No pudimos traer tu información de la nube. Revisa tu conexión y vuelve a abrir la app (${result.stage}/${result.failure.message.substringBefore(":").take(40)})"
+                            // La frase se traduce; los códigos técnicos stage/failure viajan tal
+                            // cual, que son lo único que sirve para diagnosticar.
+                            uiMessage = getString(
+                                R.string.message_cloud_restore_failed,
+                                result.stage,
+                                result.failure.message.substringBefore(":").take(40),
+                            )
                         }
                     }
                     isRestoring = false
@@ -1543,7 +1553,7 @@ class MainActivity : ComponentActivity() {
                     // Writing a photographed page: plan first with real debts, then one atomic
                     // transaction. Returns how many operations were recorded, or null if nothing
                     // was written, so the screen can tell the truth either way.
-                    confirmLedgerBatch = { businessId, importSessionId, operations, pageDateEpochDay, blockedLineIndices, modelSaysTextMayBeMissing, isPageCompletenessConfirmed ->
+                    confirmLedgerBatch = { businessId, importSessionId, operations, pageDateEpochDay, dueDateDays, blockedLineIndices, modelSaysTextMayBeMissing, isPageCompletenessConfirmed ->
                         val dao = database.financialDao()
                         val repository = com.cuentivo.app.domain.SaleRepository(dao)
                         val today = java.time.LocalDate.now().toEpochDay()
@@ -1556,6 +1566,7 @@ class MainActivity : ComponentActivity() {
                             modelSaysTextMayBeMissing = modelSaysTextMayBeMissing,
                             isPageCompletenessConfirmed = isPageCompletenessConfirmed,
                             pageDateEpochDay = pageDateEpochDay,
+                            dueDateDays = dueDateDays,
                             todayEpochDay = today,
                             nowEpochMillis = System.currentTimeMillis(),
                             alreadyRecorded = { key -> dao.operationResultId(key) != null },
@@ -1691,7 +1702,7 @@ class MainActivity : ComponentActivity() {
                         syncQueue.enqueue(business.id, "BUSINESS", business.id, now, SyncPayloads.business(business))
                         membershipBootstrap.ensure(business)
                         refreshKey++
-                        uiMessage = "Negocio creado"
+                        uiMessage = getString(R.string.message_business_created)
                     }
                 }, onCreateCustomer = { newCustomer ->
                     val name = newCustomer.name
@@ -1703,7 +1714,7 @@ class MainActivity : ComponentActivity() {
                     if (businessId == null) {
                         // The old return@CuentivoApp here was silent: the form had already closed
                         // on the tap, and nothing told the person why nothing happened.
-                        uiMessage = "Primero crea tu negocio en Inicio"
+                        uiMessage = getString(R.string.message_create_business_first)
                         return@CuentivoApp
                     }
                     // Plan limit checked before writing: refusing after the insert would leave a
@@ -1812,7 +1823,7 @@ class MainActivity : ComponentActivity() {
                                     throw cancellation
                                 } catch (error: Exception) {
                                     Log.w(TAG, "No se pudo guardar el cliente.", error)
-                                    uiMessage = "Ya tienes otro cliente con ese nombre"
+                                    uiMessage = getString(R.string.message_customer_name_taken)
                                     false
                                 }
                                 if (saved) {
@@ -1857,7 +1868,7 @@ class MainActivity : ComponentActivity() {
                                         // Same order as the writes above: the sale is the headline
                                         // when there is one, the opening balance when there is not.
                                         opening != null -> getString(R.string.message_opening_balance_created, Money.format(opening.sale.totalCents))
-                                        else -> "Cliente agregado"
+                                        else -> getString(R.string.message_customer_added)
                                     }
                                     // The only signal that closes the form. It advances only here,
                                     // so a failure above leaves it untouched and the dialog stays up.
@@ -1874,7 +1885,7 @@ class MainActivity : ComponentActivity() {
                 }, onImportOpeningBalances = { rows ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId
                     if (businessId == null) {
-                        uiMessage = "Primero crea tu negocio en Inicio"
+                        uiMessage = getString(R.string.message_create_business_first)
                         return@CuentivoApp
                     }
                     lifecycleScope.launch {
@@ -1985,9 +1996,9 @@ class MainActivity : ComponentActivity() {
                         runCatching { database.customerDao().update(updated) }.onSuccess {
                             syncQueue.enqueue(businessId, "CUSTOMER", updated.id, now, SyncPayloads.customer(updated))
                             refreshKey++
-                            uiMessage = "Cliente actualizado"
+                            uiMessage = getString(R.string.message_customer_updated)
                         }.onFailure {
-                            uiMessage = "Ya tienes otro cliente con ese nombre"
+                            uiMessage = getString(R.string.message_customer_name_taken)
                         }
                     }
                 }, onArchiveCustomer = { row ->
@@ -2022,12 +2033,12 @@ class MainActivity : ComponentActivity() {
                             syncQueue.enqueue(businessId, "CUSTOMER", archived.id, now, SyncPayloads.customer(archived))
                         }
                         refreshKey++
-                        uiMessage = "${row.customer.name} eliminado"
+                        uiMessage = getString(R.string.message_removed, row.customer.name)
                     }
                 }, onCreateProduct = { name, priceCents, imageFileName ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId
                     if (businessId == null) {
-                        uiMessage = "Primero crea tu negocio en Inicio"
+                        uiMessage = getString(R.string.message_create_business_first)
                         return@CuentivoApp
                     }
                     lifecycleScope.launch {
@@ -2045,7 +2056,7 @@ class MainActivity : ComponentActivity() {
                                 throw cancellation
                             } catch (error: Exception) {
                                 Log.w(TAG, "No se pudo guardar el producto.", error)
-                                uiMessage = "No fue posible guardar el producto"
+                                uiMessage = getString(R.string.message_product_save_failed)
                                 false
                             }
                             if (saved) {
@@ -2057,7 +2068,7 @@ class MainActivity : ComponentActivity() {
                                     Log.w(TAG, "El producto quedó guardado pero no se pudo encolar para sincronizar.", error)
                                 }
                                 refreshKey++
-                                uiMessage = "Producto agregado"
+                                uiMessage = getString(R.string.message_product_added)
                                 productSavedToken++
                             }
                         } finally {
@@ -2077,7 +2088,7 @@ class MainActivity : ComponentActivity() {
                         product.imageUri?.takeIf { it != imageFileName }?.let(productImages::delete)
                         syncQueue.enqueue(businessId, "PRODUCT", updated.id, now, SyncPayloads.product(updated))
                         refreshKey++
-                        uiMessage = "Producto actualizado"
+                        uiMessage = getString(R.string.message_product_updated)
                     }
                 }, onArchiveProduct = { product ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
@@ -2094,7 +2105,7 @@ class MainActivity : ComponentActivity() {
                             syncQueue.enqueue(businessId, "PRODUCT", archived.id, now, SyncPayloads.product(archived))
                         }
                         refreshKey++
-                        uiMessage = "${product.name} eliminado"
+                        uiMessage = getString(R.string.message_removed, product.name)
                     }
                 }, onImportProducts = { uri ->
                     // Announced as part of Pro, so it is gated like every other paid feature. Until
@@ -2135,12 +2146,18 @@ class MainActivity : ComponentActivity() {
                                 importReport = result
                                 uiMessage = when {
                                     result.accepted.isEmpty() && result.rejected.isEmpty() ->
-                                        "No se encontraron productos en ese archivo"
-                                    result.rejected.isEmpty() -> "Se importaron ${result.accepted.size} productos"
-                                    else -> "Se importaron ${result.accepted.size}; ${result.rejected.size} con problemas"
+                                        getString(R.string.message_import_no_products)
+                                    result.rejected.isEmpty() ->
+                                        getString(R.string.message_import_products_ok, result.accepted.size)
+                                    else ->
+                                        getString(
+                                            R.string.message_import_products_partial,
+                                            result.accepted.size,
+                                            result.rejected.size,
+                                        )
                                 }
                             }?.onFailure {
-                                uiMessage = "No fue posible leer ese archivo"
+                                uiMessage = getString(R.string.message_file_read_failed)
                             }
                         }
                     }
@@ -2470,7 +2487,10 @@ class MainActivity : ComponentActivity() {
                     suggestedCreditLimitCents = null
                 }, onShareStatementCsv = {
                     statementCustomer?.let { row ->
-                        share("Estado de cuenta - ${row.customer.name}", CustomerStatementCsv.build(statementEntries))
+                        share(
+                            getString(R.string.share_statement_subject, row.customer.name),
+                            CustomerStatementCsv.build(statementEntries),
+                        )
                     }
                 }, onShareStatementText = {
                     statementCustomer?.let { row ->
@@ -2478,7 +2498,7 @@ class MainActivity : ComponentActivity() {
                         // The pure image builder receives today's date at this Android boundary, never
                         // reads a clock itself, so its content remains deterministic in JVM tests.
                         shareStatementImage(
-                            subject = "Estado de cuenta - ${row.customer.name}",
+                            subject = getString(R.string.share_statement_subject, row.customer.name),
                             text = DebtorShareText.forCustomer(
                                 shareTier,
                                 businessName,
@@ -2498,7 +2518,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }, onShareDebtorList = {
                     val debtors = customers.map { Debtor(it.customer.name, it.balanceCents) }
-                    share("Clientes por cobrar", DebtorShareText.forBusiness(shareTier, businessName, debtors))
+                    share(getString(R.string.share_debtor_list_subject), DebtorShareText.forBusiness(shareTier, businessName, debtors))
                 }, alerts = alerts, onOpenAlertCustomer = { customerId ->
                     // The alert only knows who; the statement sheet needs the row with the balance,
                     // which the screen already has loaded.

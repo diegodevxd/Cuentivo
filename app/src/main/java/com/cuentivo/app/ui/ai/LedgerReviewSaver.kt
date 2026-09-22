@@ -19,6 +19,7 @@ import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.UncertainLedgerField
 import com.cuentivo.app.ai.ledger.UnreadableLedgerField
+import com.cuentivo.app.ui.transaction.DueOption
 
 /**
  * What a ledger review under way saves across Activity recreation, and nothing else.
@@ -53,6 +54,7 @@ internal object LedgerReviewSaver {
     private const val KEY_PAGE_COMPLETENESS_CONFIRMED = "pageCompletenessConfirmed"
     private const val KEY_PAGE_TYPE = "pageType"
     private const val KEY_PAGE_TOTALS = "pageTotals"
+    private const val KEY_DUE_DATE_DAYS = "dueDateDays"
 
     // Operation keys. Flat strings, one per field, so a malformed row can be skipped without
     // dragging the whole page down — but see writeOperations: a row that fails to round-trip
@@ -103,6 +105,16 @@ internal object LedgerReviewSaver {
         val isPageCompletenessConfirmed: Boolean = false,
         val pageType: LedgerPageType? = null,
         val pageTotals: List<LedgerPageTotal> = emptyList(),
+        /**
+         * El plazo de la página, en días, o `null` para "Sin fecha".
+         *
+         * Viaja en el Bundle como **texto** (`"15"` / cadena vacía) y no como `Long` ausente, y esa
+         * elección es la que distingue dos casos que para `Bundle` son el mismo "no está":
+         * un borrador guardado **antes** de que existiera el selector (clave ausente → vuelve con
+         * 15, no con `null`) y la elección explícita "Sin fecha" (clave presente, vacía → `null`).
+         * Al volver de la app el selector tiene que mostrar exactamente lo que se registrará.
+         */
+        val dueDateDays: Long? = DueOption.FIFTEEN.days,
     )
 
     fun toBundle(saved: SavedLedgerReview): Bundle {
@@ -121,6 +133,9 @@ internal object LedgerReviewSaver {
         bundle.putBoolean(KEY_INCOMPLETE, saved.pageIncomplete)
         bundle.putInt(KEY_INITIAL_DUPLICATE_COUNT, saved.initialDuplicateCount)
         saved.pageDateEpochDay?.let { bundle.putLong(KEY_PAGE_DATE, it) }
+        // Siempre presente: cadena vacía = "Sin fecha" elegida a mano. Que la clave exista es lo
+        // que permite distinguirla de un guardado anterior que no trae el campo.
+        bundle.putString(KEY_DUE_DATE_DAYS, saved.dueDateDays?.toString() ?: "")
         saved.todayEpochDay?.let { bundle.putLong(KEY_TODAY, it) }
         saved.detectedPageDate?.let { detected ->
             bundle.putBundle(
@@ -195,6 +210,13 @@ internal object LedgerReviewSaver {
             isPageCompletenessConfirmed = bundle.getBoolean(KEY_PAGE_COMPLETENESS_CONFIRMED, false),
             pageType = bundle.getString(KEY_PAGE_TYPE)?.let { runCatching { LedgerPageType.valueOf(it) }.getOrNull() },
             pageTotals = (bundle.getParcelableArray(KEY_PAGE_TOTALS) ?: emptyArray()).mapNotNull { raw -> (raw as? Bundle)?.let { LedgerPageTotal(it.getString("label") ?: return@let null, it.getLong("amount"), if (it.containsKey("after")) it.getInt("after") else null) } },
+            dueDateDays = if (bundle.containsKey(KEY_DUE_DATE_DAYS)) {
+                bundle.getString(KEY_DUE_DATE_DAYS)?.takeIf { it.isNotBlank() }?.toLongOrNull()
+            } else {
+                // Guardado anterior al selector: vuelve con 15 marcado, no en "Sin fecha". Si
+                // volviera en null la persona registraría sin fecha lo que vio con fecha.
+                DueOption.FIFTEEN.days
+            },
         )
     }
 

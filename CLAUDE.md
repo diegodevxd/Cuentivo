@@ -246,13 +246,33 @@ dos huecos **estructurales** del código de sync, porque condicionan cómo se es
 
 ### Puerta de verificación del idioma
 
-El trabajo de i18n no está hecho hasta que esto salga vacío (salvo etiquetas de animación de Compose):
+El trabajo de i18n no está hecho hasta que **las dos** salgan vacías (salvo etiquetas de animación
+de Compose). La segunda existe porque los avisos que se ven desde cualquier pantalla —los de
+`MainActivity` y los de compra de `billing/`— no viven en `ui/`, y estuvieron fijos en español hasta
+la v43 mientras esta puerta sólo miraba un directorio. **Un patrón que no casa nada en un archivo
+que dice escanear es una puerta que hace menos de lo que parece**: la de `billing/` caza
+`onMessage("..."`, que es como ahí se dicen los avisos.
 
 ```bash
-grep -rnE '(Text\(|text = |label = |title = |detail = |placeholder = |contentDescription = |emptyText = |actionLabel = |eyebrow = |note = |backDescription = )"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ¿¡][^"]*"' app/src/main/java/com/cuentivo/app/ui --include=*.kt | grep -vE '"\$ "|" · "|testTag|neo-action-press|"Cuentivo"'
+# 1) Composables de ui/. La exclusión de la cola son etiquetas de animación (el "salvo" de arriba):
+#    están listadas a mano para que la salida sea VACÍA de verdad; una animación nueva aparecerá
+#    en la puerta y habrá que añadirla aquí conscientemente, no filtrarla a ciegas.
+grep -rnE '(Text\(|text = |label = |title = |detail = |placeholder = |contentDescription = |emptyText = |actionLabel = |eyebrow = |note = |backDescription = )"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ¿¡][^"]*"' app/src/main/java/com/cuentivo/app/ui --include=*.kt | grep -vE '"\$ "|" · "|testTag|neo-action-press|"Cuentivo"|"destination entrance"|"navigation press depth"|"navigation content color"|"waveform-bar"'
+
+# 2) Avisos fijos al usuario fuera de ui/: asignaciones, asuntos de compartir y ramas de `when`,
+#    incluida la línea que sólo contiene el literal (ramas que se parten en dos líneas).
+grep -rnE '(uiMessage = |share\(|subject = |onMessage\(|-> )"[^"]*"|^\s*"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ][^"]*"$' \
+  app/src/main/java/com/example/organizationlabs/MainActivity.kt \
+  app/src/main/java/com/cuentivo/app/billing --include=*.kt
 ```
 
-Y la paridad de claves debe seguir cuadrando (2026-09-06: 609 y 609). El número envejece, así que cuenta, no confíes en esta línea:
+**Fuera de la puerta, a propósito:** `Log.*`, `error(...)` y comentarios — no son avisos que vea
+nadie, y el contenido mandado **al cliente** (`DebtorShareText`, `StatementImage`,
+`StatementLineFormat`, el CSV) se queda en español por decisión de Diego: sus clientes están en
+México.
+
+Y la paridad de claves debe seguir cuadrando (2026-09-22: 668 y 668; el 2026-09-06 eran 609). El
+número envejece, así que cuenta, no confíes en esta línea:
 
 ```bash
 grep -c "<string name=" app/src/main/res/values/strings.xml app/src/main/res/values-en/strings.xml

@@ -66,9 +66,12 @@ import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.domain.FieldHealthColor
+import com.cuentivo.app.domain.LedgerDueDatePolicy
 import com.cuentivo.app.domain.LedgerFieldHealth
 import com.cuentivo.app.domain.LedgerImportSummaryCalculator
 import com.cuentivo.app.domain.ProductCandidate
+import com.cuentivo.app.ui.transaction.DueOption
+import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -87,6 +90,13 @@ fun LedgerReviewContent(
     onUpdateKind: (lineIndex: Int, kind: ProposedLedgerKind) -> Unit,
     onUpdateDate: (lineIndex: Int, date: SafeDateCandidate?) -> Unit,
     onUpdatePageDate: (pageDateEpochDay: Long?) -> Unit,
+    /**
+     * El plazo de pago de **toda la página**, en días, o `null` para "Sin fecha". Las mismas
+     * opciones de la venta manual ([DueOption]); 15 marcado por defecto. La fecha límite de cada
+     * cargo se calcula en `domain/LedgerDueDatePolicy`, no aquí.
+     */
+    dueDateDays: Long? = DueOption.FIFTEEN.days,
+    onUpdateDueDateDays: (dueDateDays: Long?) -> Unit = {},
     onRemoveRow: (lineIndex: Int) -> Unit,
     onConfirmObjection: (lineIndex: Int) -> Unit,
     /** Existing customers this page's rows resemble, keyed by lineIndex. Offers, never decisions. */
@@ -111,6 +121,15 @@ fun LedgerReviewContent(
     // because every edit rebuilds the review, and the object held here would go stale mid-walk.
     var pendingReviewQueue by remember { mutableStateOf<List<Int>>(emptyList()) }
     val hasRowsWithoutDate = review.operations.filter { isRegisterableLedgerOperation(it) }.any { it.date == null }
+    // ¿Trae cargos? El selector de plazo sólo se dibuja cuando algo de la página puede vencer:
+    // una página sólo de abonos no tiene fecha límite que elegir. Se mira el tipo, no si el
+    // renglón ya está resuelto, para que el selector no aparezca y desaparezca conforme se
+    // resuelven las objeciones.
+    val hasChargeRows = remember(review.operations) {
+        review.operations.any {
+            it.proposedKind == ProposedLedgerKind.SALE || it.proposedKind == ProposedLedgerKind.PRIOR_DEBT
+        }
+    }
     // What the model read but would not vouch for. Registering one of these without a person having
     // looked at it is the whole thing this feature must never do, so they stay out of the count --
     // but leaving the person to discover, unaided, that every row needs a tap is how a working
@@ -118,6 +137,28 @@ fun LedgerReviewContent(
     val objectionLineIndices = remember(objections) { objections.map { it.lineIndex }.toSet() }
     val allRowsNeedingReview = remember(review.operations, objections) {
         review.operations.filter { !isRegisterableLedgerOperation(it) || it.lineIndex in objectionLineIndices }
+    }
+    // Cuántas ventas nacerían vencidas con este plazo. El cálculo —la fecha efectiva de cada
+    // renglón, la suma, y sobre todo la decisión de "vencida"— vive en el objeto puro
+    // `LedgerDueDatePolicy`, que le pregunta al mismo `SaleStatusCalculator` que después
+    // clasifica la venta ya escrita. Aquí sólo se lo pasamos: un número no se calcula en un
+    // Composable, y menos uno que la persona ve antes de pulsar Registrar.
+    val bornOverdueCount = remember(
+        review.operations,
+        review.pageDateEpochDay,
+        review.todayEpochDay,
+        objectionLineIndices,
+        dueDateDays,
+    ) {
+        review.todayEpochDay?.let { today ->
+            LedgerDueDatePolicy.bornOverdueCount(
+                operations = review.operations,
+                blockedLineIndices = objectionLineIndices,
+                pageDateEpochDay = review.pageDateEpochDay,
+                todayEpochDay = today,
+                dueDateDays = dueDateDays,
+            )
+        } ?: 0
     }
 
     val summaryResult = LedgerImportSummaryCalculator.calculate(review, objections, isPageCompletenessConfirmed)
@@ -147,57 +188,6 @@ fun LedgerReviewContent(
             }
         }
 
-        // Summary Card
-        LedgerSummaryCard(
-            review = review,
-            objections = objections,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        // Page date selector: shown ONLY when at least one registrable operation lacks a date
-        if (hasRowsWithoutDate) {
-            PageDateCard(
-                pageDateEpochDay = review.pageDateEpochDay,
-                detectedPageDate = review.detectedPageDate,
-                onUpdatePageDate = onUpdatePageDate,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        // A page that did not fit, or whose text the model could not finish reading, must say so
-        // here. Confirming a partial import silently is how a notebook ends up half migrated with
-        // nobody aware which half is missing.
-        if (review.pageIncomplete || review.unreadTextRemaining) {
-            Text(
-                text = stringResource(R.string.ai_ledger_page_incomplete_warning),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("ledger-page-incomplete-warning"),
-            )
-        }
-
-        // Financial & Date Block Alert (if any)
-        // Also when some rows are fine and others are not: a page that registers 8 of its 20 rows
-        // and says nothing about the other 12 is the quiet half-import this screen exists to prevent.
-        if (review.summary.hasFinancialErrors || review.summary.executableOperationsCount == 0 ||
-            review.summary.hasMissingDates || allRowsNeedingReview.isNotEmpty()
-        ) {
-            FinancialErrorBanner(
-                diagnostics = review.summary.financialDiagnostics,
-                hasZeroOps = review.summary.executableOperationsCount == 0,
-                hasMissingDates = review.summary.hasMissingDates,
-            rowsNeedingReviewCount = allRowsNeedingReview.size,
-            objections = objections,
-            onStartReview = {
-                    pendingReviewQueue = allRowsNeedingReview.map { it.lineIndex }.drop(1)
-                    editingOperation = allRowsNeedingReview.firstOrNull()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
         // Customer groups and operations list
         LazyColumn(
             modifier = Modifier
@@ -205,6 +195,145 @@ fun LedgerReviewContent(
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // El encabezado (resumen, plazo, avisos) viaja DENTRO de la lista y se desplaza con ella.
+            // Fijo arriba, en un teléfono normal se comía toda la altura y los renglones —lo que la
+            // persona tiene que revisar— quedaban reducidos a una franja o desaparecían.
+            item(key = "ledger-review-header") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Summary Card
+                LedgerSummaryCard(
+                    review = review,
+                    objections = objections,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                // Page date selector: shown ONLY when at least one registrable operation lacks a date
+                if (hasRowsWithoutDate) {
+                    PageDateCard(
+                        pageDateEpochDay = review.pageDateEpochDay,
+                        detectedPageDate = review.detectedPageDate,
+                        onUpdatePageDate = onUpdatePageDate,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                // Un plazo para toda la página, con las mismas opciones de la venta manual. Debajo, cuando
+                // aplique, el aviso que no puede faltar: si la página es vieja, con 15 días marcadas varias
+                // ventas nacen vencidas, y eso la persona tiene que verlo antes de pulsar Registrar.
+                if (hasChargeRows) {
+                    DueDateCard(
+                        dueDateDays = dueDateDays,
+                        onUpdateDueDateDays = onUpdateDueDateDays,
+                        bornOverdueCount = bornOverdueCount,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                // A page that did not fit, or whose text the model could not finish reading, must say so
+                // here. Confirming a partial import silently is how a notebook ends up half migrated with
+                // nobody aware which half is missing.
+                // Cuando además hay que confirmar la hoja, la frase va dentro de esa tarjeta, junto al botón:
+                // dos bloques seguidos diciendo lo mismo se comían el espacio de la lista de renglones.
+                val incompleteCardShown = summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed
+                if ((review.pageIncomplete || review.unreadTextRemaining) && !incompleteCardShown) {
+                    Text(
+                        text = stringResource(R.string.ai_ledger_page_incomplete_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("ledger-page-incomplete-warning"),
+                    )
+                }
+
+                // Estos avisos van DENTRO de la columna. Estuvieron fuera de ella y se dibujaban flotando
+                // encima del título, con el texto transparente sobre la pantalla: parecía un error.
+                if (isRegistrationBlockedByLegacySave) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(stringResource(R.string.ai_ledger_legacy_save_blocked))
+                            TextButton(onClick = onCancel) { Text(stringResource(R.string.ai_ledger_legacy_save_discard)) }
+                        }
+                    }
+                }
+
+                if (incompleteCardShown) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            // POR QUÉ se pide la confirmación. Sin el motivo, "confirma" es una orden sin
+                            // contexto; y el caso de los renglones descartados es el que más importa: no están
+                            // en la lista, así que si nadie dice cuántos fueron, se registra la página sin
+                            // ellos y no queda rastro. La duda del modelo va aquí y no suelta arriba, para
+                            // no decirla dos veces.
+                            if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.MODEL_DOUBT)) {
+                                Text(
+                                    text = stringResource(R.string.ai_ledger_page_incomplete_warning),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.testTag("ledger-page-incomplete-warning"),
+                                )
+                            }
+                            if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.UNREADABLE_ROWS)) {
+                                Text(
+                                    text = pluralStringResource(
+                                        R.plurals.ai_ledger_page_unreadable_rows,
+                                        summaryResult.unreadableRowsCount,
+                                        summaryResult.unreadableRowsCount,
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.testTag("ledger-page-unreadable-rows-notice"),
+                                )
+                            }
+                            if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.NOT_AN_ACCOUNTS_PAGE)) {
+                                Text(
+                                    text = stringResource(R.string.ai_ledger_page_not_accounts),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.testTag("ledger-page-not-accounts-notice"),
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = onConfirmPageCompleteness,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("ledger-confirm-page-complete-button"),
+                            ) {
+                                Text(stringResource(R.string.ai_ledger_action_confirm_page_complete))
+                            }
+                        }
+                    }
+                } else if (summaryResult.pageIncompleteNoticeRequired) {
+                    Text(
+                        stringResource(R.string.ai_ledger_page_completeness_confirmed),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("ledger-page-completeness-confirmed"),
+                    )
+                }
+
+                // Financial & Date Block Alert (if any)
+                // Also when some rows are fine and others are not: a page that registers 8 of its 20 rows
+                // and says nothing about the other 12 is the quiet half-import this screen exists to prevent.
+                if (review.summary.hasFinancialErrors || review.summary.executableOperationsCount == 0 ||
+                    review.summary.hasMissingDates || allRowsNeedingReview.isNotEmpty()
+                ) {
+                    FinancialErrorBanner(
+                        diagnostics = review.summary.financialDiagnostics,
+                        hasZeroOps = review.summary.executableOperationsCount == 0,
+                        hasMissingDates = review.summary.hasMissingDates,
+                    rowsNeedingReviewCount = allRowsNeedingReview.size,
+                    objections = objections,
+                    onStartReview = {
+                            pendingReviewQueue = allRowsNeedingReview.map { it.lineIndex }.drop(1)
+                            editingOperation = allRowsNeedingReview.firstOrNull()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                }
+            }
             // Computed once for the page, not per row: the evaluator is pure and the diagnostics
             // it needs belong to the whole review.
             val fieldHealth = review.operations.associate { op ->
@@ -262,49 +391,6 @@ fun LedgerReviewContent(
         }
     }
 
-    if (isRegistrationBlockedByLegacySave) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(stringResource(R.string.ai_ledger_legacy_save_blocked))
-                TextButton(onClick = onCancel) { Text(stringResource(R.string.ai_ledger_legacy_save_discard)) }
-            }
-        }
-    }
-
-    if (summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed) {
-        Column {
-            // POR QUÉ se pide la confirmación. Sin el motivo, "confirma" es una orden sin contexto; y
-            // el caso de los renglones descartados es el que más importa: no están en la lista, así que
-            // si nadie dice cuántos fueron, se registra la página sin ellos y no queda rastro.
-            if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.UNREADABLE_ROWS)) {
-                Text(
-                    text = pluralStringResource(
-                        R.plurals.ai_ledger_page_unreadable_rows,
-                        summaryResult.unreadableRowsCount,
-                        summaryResult.unreadableRowsCount,
-                    ),
-                    modifier = Modifier.testTag("ledger-page-unreadable-rows-notice"),
-                )
-            }
-            if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.NOT_AN_ACCOUNTS_PAGE)) {
-                Text(
-                    text = stringResource(R.string.ai_ledger_page_not_accounts),
-                    modifier = Modifier.testTag("ledger-page-not-accounts-notice"),
-                )
-            }
-            if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.MODEL_DOUBT)) {
-                Text(
-                    text = stringResource(R.string.ai_ledger_page_incomplete_warning),
-                    modifier = Modifier.testTag("ledger-page-model-doubt-notice"),
-                )
-            }
-            Button(onClick = onConfirmPageCompleteness, modifier = Modifier.testTag("ledger-confirm-page-complete-button")) {
-                Text(stringResource(R.string.ai_ledger_action_confirm_page_complete))
-            }
-        }
-    } else if (summaryResult.pageIncompleteNoticeRequired) {
-        Text(stringResource(R.string.ai_ledger_page_completeness_confirmed), modifier = Modifier.testTag("ledger-page-completeness-confirmed"))
-    }
 
     // Edit modal dialog when a row or unresolved field is tapped
     editingOperation?.let { op ->
@@ -526,6 +612,81 @@ private fun PageDateCard(
 
 /** Below this, a detected page date says so in its own offer text. */
 private const val LOW_PAGE_DATE_CONFIDENCE = 0.5
+
+/**
+ * El plazo de pago de la página entera: Sin fecha / 7 / 15 / 30 días, con 15 marcado.
+ *
+ * Reutiliza [DueOption] y sus textos —la misma pregunta y las mismas etiquetas de la venta
+ * manual— porque dos listas de plazos que se desincronicen es como el mismo negocio acabara con
+ * ventas que el score trata distinto según por dónde se registraron.
+ *
+ * Un solo plazo para la página, no uno por renglón: en la libreta se acuerda una fecha para la
+ * compra, no una por renglón.
+ *
+ * Debajo, el aviso de ventas que nacerían vencidas, calculado fuera por
+ * [LedgerDueDatePolicy.bornOverdueCount] y leído con `pluralStringResource` —un `plurals`, nunca
+ * `stringResource` sobre un `plurals`, que ya reventó una pantalla así.
+ */
+@Composable
+private fun DueDateCard(
+    dueDateDays: Long?,
+    onUpdateDueDateDays: (Long?) -> Unit,
+    bornOverdueCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    // "Sin fecha" es una opción con texto, no la ausencia de respuesta, así que se muestra siempre
+    // y se puede volver a ella. El `?:` sólo cubre un valor fuera del conjunto, que esta pantalla
+    // no puede producir: sólo se escriben valores de [DueOption].
+    val selected = DueOption.entries.firstOrNull { it.days == dueDateDays } ?: DueOption.FIFTEEN
+
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.new_sale_due_question),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            // Two by two, same as Nueva venta: four chips in one row truncate "Sin fecha" at 320 dp.
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                DueOption.entries.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        pair.forEach { option ->
+                            NeoChoiceChip(
+                                label = stringResource(option.labelRes),
+                                isSelected = selected == option,
+                                onClick = { onUpdateDueDateDays(option.days) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("ledger-due-option-" + option.name),
+                            )
+                        }
+                    }
+                }
+            }
+            if (bornOverdueCount > 0) {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.ai_ledger_due_born_overdue,
+                        bornOverdueCount,
+                        bornOverdueCount,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("ledger-due-born-overdue-warning"),
+                )
+            }
+        }
+    }
+}
 
 /**
  * El aviso de una objeción, en palabras.

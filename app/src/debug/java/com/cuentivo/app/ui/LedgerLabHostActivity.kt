@@ -51,7 +51,7 @@ class LedgerLabHostActivity : ComponentActivity() {
                     ledgerCustomersResolver = { customerCandidates },
                     ledgerProductsResolver = { emptyList() },
                     ledgerRegisteredResolver = { _, _, _ -> emptyList() },
-                    confirmLedgerBatch = { _, _, _, _, _, _, _ -> com.cuentivo.app.domain.LedgerBatchConfirmation.Failed },
+                    confirmLedgerBatch = { _, _, _, _, _, _, _, _ -> com.cuentivo.app.domain.LedgerBatchConfirmation.Failed },
                 )
             }
         }

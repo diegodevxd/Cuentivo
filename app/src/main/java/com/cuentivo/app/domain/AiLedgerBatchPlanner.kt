@@ -130,6 +130,17 @@ object AiLedgerBatchPlanner {
         existingCustomerMap: Map<String, CustomerEntity>, // keyed by normalizedCustomerName
         existingOutstandingSalesByCustomerId: Map<String, List<OutstandingSale>>,
         pageDateEpochDay: Long?,
+        /**
+         * Plazo de pago para los cargos de esta página, en días, o `null` para "Sin fecha"
+         * (el comportamiento de siempre: la venta nace sin fecha límite y por eso no puede
+         * vencerse). Un solo plazo para la página entera, elegido en la pantalla de revisión.
+         *
+         * Se aplica **sólo a los cargos**, y la fecha límite se cuenta desde la fecha efectiva del
+         * renglón (`effectiveDate`, ya resuelta), **no desde hoy**: una venta del 1 de agosto a 15
+         * días vence el 16 de agosto, que es lo que habría pasado en la libreta. La cuenta vive en
+         * [LedgerDueDatePolicy], compartida con el aviso de "quedarían vencidas".
+         */
+        dueDateDays: Long? = null,
         todayEpochDay: Long,
         nowEpochMillis: Long,
     ): BatchPlanningResult {
@@ -362,7 +373,7 @@ object AiLedgerBatchPlanner {
                         saleDateEpochDay = effectiveDate,
                         todayEpochDay = todayEpochDay,
                         nowEpochMillis = nowEpochMillis,
-                        dueDateEpochDay = null,
+                        dueDateEpochDay = LedgerDueDatePolicy.dueDateEpochDay(effectiveDate, dueDateDays),
                         notes = null,
                         lineNameSnapshot = lineDescription,
                     )
@@ -370,9 +381,19 @@ object AiLedgerBatchPlanner {
                     saleItems.add(uncataloged.item)
                     chargeMovements.add(uncataloged.charge)
 
-                    // Add new sale to running outstanding sales for this customer
+                    // Add new sale to running outstanding sales for this customer. The due date goes
+                    // in here too: PaymentAllocator orders by `dueDateEpochDay ?: Long.MAX_VALUE`, so
+                    // a running list that kept null would allocate payments in a different order than
+                    // the sales actually stored with a due date.
                     val runningList = runningOutstandingSalesByCustomerId.getOrPut(customer.id) { mutableListOf() }
-                    runningList.add(OutstandingSale(saleId, amountCents, null, effectiveDate))
+                    runningList.add(
+                        OutstandingSale(
+                            saleId,
+                            amountCents,
+                            LedgerDueDatePolicy.dueDateEpochDay(effectiveDate, dueDateDays),
+                            effectiveDate,
+                        ),
+                    )
                 }
                 ProposedLedgerKind.PRIOR_DEBT -> {
                     val saleId = SaleOperationIds.sale(opKey)
@@ -404,7 +425,7 @@ object AiLedgerBatchPlanner {
                         saleDateEpochDay = effectiveDate,
                         todayEpochDay = todayEpochDay,
                         nowEpochMillis = nowEpochMillis,
-                        dueDateEpochDay = null,
+                        dueDateEpochDay = LedgerDueDatePolicy.dueDateEpochDay(effectiveDate, dueDateDays),
                         notes = null,
                         lineNameSnapshot = lineDescription,
                     )
@@ -412,8 +433,16 @@ object AiLedgerBatchPlanner {
                     saleItems.add(uncataloged.item)
                     chargeMovements.add(uncataloged.charge)
 
+                    // Same due date as the stored sale, for the same allocation-order reason above.
                     val runningList = runningOutstandingSalesByCustomerId.getOrPut(customer.id) { mutableListOf() }
-                    runningList.add(OutstandingSale(saleId, amountCents, null, effectiveDate))
+                    runningList.add(
+                        OutstandingSale(
+                            saleId,
+                            amountCents,
+                            LedgerDueDatePolicy.dueDateEpochDay(effectiveDate, dueDateDays),
+                            effectiveDate,
+                        ),
+                    )
                 }
                 ProposedLedgerKind.PAYMENT -> {
                     val paymentId = SaleOperationIds.payment(opKey)

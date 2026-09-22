@@ -17,6 +17,7 @@ import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.UncertainLedgerField
 import com.cuentivo.app.domain.LedgerReviewSchema
 import com.cuentivo.app.ui.ai.LedgerReviewSaver
+import com.cuentivo.app.ui.transaction.DueOption
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -129,6 +130,44 @@ class LedgerReviewSaverBundleTest {
 
         assertNotNull(restored)
         assertNull("sin marca, la revision no se puede registrar", restored!!.reviewSchemaVersion)
+    }
+
+    // ---- El plazo de la pagina (la pregunta 2 del encargo) ----
+
+    @Test
+    fun a_chosen_due_term_survives_the_bundle_round_trip() {
+        // 30 dias elegidos a mano: al volver, el selector tiene que seguir en 30.
+        val original = savedReview(listOf(heavyOperation(0))).copy(dueDateDays = 30L)
+
+        val restored = LedgerReviewSaver.fromBundle(LedgerReviewSaver.toBundle(original))
+
+        assertNotNull(restored)
+        assertEquals("el plazo elegido vuelve entero", 30L, restored!!.dueDateDays)
+    }
+
+    @Test
+    fun an_explicit_sin_fecha_comes_back_as_null_and_not_as_15() {
+        // "Sin fecha" es una eleccion, no la falta del campo: tiene que volver en null.
+        val original = savedReview(listOf(heavyOperation(0))).copy(dueDateDays = null)
+
+        val restored = LedgerReviewSaver.fromBundle(LedgerReviewSaver.toBundle(original))
+
+        assertNotNull(restored)
+        assertNull("sin fecha elegido vuelve sin fecha", restored!!.dueDateDays)
+    }
+
+    @Test
+    fun a_bundle_written_before_the_selector_restores_with_15_marked() {
+        // Un borrador de antes de este cambio no trae la clave. Si volviera en null, la persona
+        // registraria sin fecha una pagina que vio con "15 dias" marcado — o peor: creeria que
+        // tenia plazo y no lo tendria. Vuelve con 15, que es lo que la pantalla mostrara.
+        val bundle = LedgerReviewSaver.toBundle(savedReview(listOf(heavyOperation(0))))
+        bundle.remove("dueDateDays")
+
+        val restored = LedgerReviewSaver.fromBundle(bundle)
+
+        assertNotNull(restored)
+        assertEquals("el borrador viejo vuelve con 15 marcado", DueOption.FIFTEEN.days, restored!!.dueDateDays)
     }
 
     @Test
