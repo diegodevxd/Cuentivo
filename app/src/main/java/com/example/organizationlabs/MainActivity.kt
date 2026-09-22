@@ -347,6 +347,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Si la app murió con el menú de compartir abierto, el PNG del estado de cuenta de un cliente
+        // quedó en la caché. Sólo en arranque en frío: al girar el teléfono con el menú abierto, la
+        // Activity se recrea y borrarlo ahí dejaría a WhatsApp sin imagen que leer.
+        if (savedInstanceState == null) statementImageShareStore.clear()
         enableEdgeToEdge(
             // The app draws edge-to-edge over its own graphite ground. The system bars stay dark
             // with light icons so the clock, battery and navigation hints remain legible on every
