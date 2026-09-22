@@ -27,6 +27,8 @@ object LedgerBatchCoordinator {
         modelSaysTextMayBeMissing: Boolean,
         isPageCompletenessConfirmed: Boolean,
         pageDateEpochDay: Long?,
+        /** Plazo en días para los cargos de la página, o `null` para "Sin fecha". Ver [AiLedgerBatchPlanner.plan]. */
+        dueDateDays: Long? = null,
         todayEpochDay: Long,
         nowEpochMillis: Long,
         alreadyRecorded: suspend (batchKey: String) -> Boolean,
@@ -53,6 +55,7 @@ object LedgerBatchCoordinator {
             existingCustomerMap = loadCustomersByNormalizedName(),
             existingOutstandingSalesByCustomerId = loadOutstandingByCustomerId(),
             pageDateEpochDay = pageDateEpochDay,
+            dueDateDays = dueDateDays,
             todayEpochDay = todayEpochDay,
             nowEpochMillis = nowEpochMillis,
         )

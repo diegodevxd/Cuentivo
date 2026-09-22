@@ -66,9 +66,12 @@ import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.domain.FieldHealthColor
+import com.cuentivo.app.domain.LedgerDueDatePolicy
 import com.cuentivo.app.domain.LedgerFieldHealth
 import com.cuentivo.app.domain.LedgerImportSummaryCalculator
 import com.cuentivo.app.domain.ProductCandidate
+import com.cuentivo.app.ui.transaction.DueOption
+import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -87,6 +90,13 @@ fun LedgerReviewContent(
     onUpdateKind: (lineIndex: Int, kind: ProposedLedgerKind) -> Unit,
     onUpdateDate: (lineIndex: Int, date: SafeDateCandidate?) -> Unit,
     onUpdatePageDate: (pageDateEpochDay: Long?) -> Unit,
+    /**
+     * El plazo de pago de **toda la página**, en días, o `null` para "Sin fecha". Las mismas
+     * opciones de la venta manual ([DueOption]); 15 marcado por defecto. La fecha límite de cada
+     * cargo se calcula en `domain/LedgerDueDatePolicy`, no aquí.
+     */
+    dueDateDays: Long? = DueOption.FIFTEEN.days,
+    onUpdateDueDateDays: (dueDateDays: Long?) -> Unit = {},
     onRemoveRow: (lineIndex: Int) -> Unit,
     onConfirmObjection: (lineIndex: Int) -> Unit,
     /** Existing customers this page's rows resemble, keyed by lineIndex. Offers, never decisions. */
@@ -111,6 +121,15 @@ fun LedgerReviewContent(
     // because every edit rebuilds the review, and the object held here would go stale mid-walk.
     var pendingReviewQueue by remember { mutableStateOf<List<Int>>(emptyList()) }
     val hasRowsWithoutDate = review.operations.filter { isRegisterableLedgerOperation(it) }.any { it.date == null }
+    // ¿Trae cargos? El selector de plazo sólo se dibuja cuando algo de la página puede vencer:
+    // una página sólo de abonos no tiene fecha límite que elegir. Se mira el tipo, no si el
+    // renglón ya está resuelto, para que el selector no aparezca y desaparezca conforme se
+    // resuelven las objeciones.
+    val hasChargeRows = remember(review.operations) {
+        review.operations.any {
+            it.proposedKind == ProposedLedgerKind.SALE || it.proposedKind == ProposedLedgerKind.PRIOR_DEBT
+        }
+    }
     // What the model read but would not vouch for. Registering one of these without a person having
     // looked at it is the whole thing this feature must never do, so they stay out of the count --
     // but leaving the person to discover, unaided, that every row needs a tap is how a working
@@ -118,6 +137,28 @@ fun LedgerReviewContent(
     val objectionLineIndices = remember(objections) { objections.map { it.lineIndex }.toSet() }
     val allRowsNeedingReview = remember(review.operations, objections) {
         review.operations.filter { !isRegisterableLedgerOperation(it) || it.lineIndex in objectionLineIndices }
+    }
+    // Cuántas ventas nacerían vencidas con este plazo. El cálculo —la fecha efectiva de cada
+    // renglón, la suma, y sobre todo la decisión de "vencida"— vive en el objeto puro
+    // `LedgerDueDatePolicy`, que le pregunta al mismo `SaleStatusCalculator` que después
+    // clasifica la venta ya escrita. Aquí sólo se lo pasamos: un número no se calcula en un
+    // Composable, y menos uno que la persona ve antes de pulsar Registrar.
+    val bornOverdueCount = remember(
+        review.operations,
+        review.pageDateEpochDay,
+        review.todayEpochDay,
+        objectionLineIndices,
+        dueDateDays,
+    ) {
+        review.todayEpochDay?.let { today ->
+            LedgerDueDatePolicy.bornOverdueCount(
+                operations = review.operations,
+                blockedLineIndices = objectionLineIndices,
+                pageDateEpochDay = review.pageDateEpochDay,
+                todayEpochDay = today,
+                dueDateDays = dueDateDays,
+            )
+        } ?: 0
     }
 
     val summaryResult = LedgerImportSummaryCalculator.calculate(review, objections, isPageCompletenessConfirmed)
@@ -160,6 +201,18 @@ fun LedgerReviewContent(
                 pageDateEpochDay = review.pageDateEpochDay,
                 detectedPageDate = review.detectedPageDate,
                 onUpdatePageDate = onUpdatePageDate,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        // Un plazo para toda la página, con las mismas opciones de la venta manual. Debajo, cuando
+        // aplique, el aviso que no puede faltar: si la página es vieja, con 15 días marcadas varias
+        // ventas nacen vencidas, y eso la persona tiene que verlo antes de pulsar Registrar.
+        if (hasChargeRows) {
+            DueDateCard(
+                dueDateDays = dueDateDays,
+                onUpdateDueDateDays = onUpdateDueDateDays,
+                bornOverdueCount = bornOverdueCount,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -526,6 +579,81 @@ private fun PageDateCard(
 
 /** Below this, a detected page date says so in its own offer text. */
 private const val LOW_PAGE_DATE_CONFIDENCE = 0.5
+
+/**
+ * El plazo de pago de la página entera: Sin fecha / 7 / 15 / 30 días, con 15 marcado.
+ *
+ * Reutiliza [DueOption] y sus textos —la misma pregunta y las mismas etiquetas de la venta
+ * manual— porque dos listas de plazos que se desincronicen es como el mismo negocio acabara con
+ * ventas que el score trata distinto según por dónde se registraron.
+ *
+ * Un solo plazo para la página, no uno por renglón: en la libreta se acuerda una fecha para la
+ * compra, no una por renglón.
+ *
+ * Debajo, el aviso de ventas que nacerían vencidas, calculado fuera por
+ * [LedgerDueDatePolicy.bornOverdueCount] y leído con `pluralStringResource` —un `plurals`, nunca
+ * `stringResource` sobre un `plurals`, que ya reventó una pantalla así.
+ */
+@Composable
+private fun DueDateCard(
+    dueDateDays: Long?,
+    onUpdateDueDateDays: (Long?) -> Unit,
+    bornOverdueCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    // "Sin fecha" es una opción con texto, no la ausencia de respuesta, así que se muestra siempre
+    // y se puede volver a ella. El `?:` sólo cubre un valor fuera del conjunto, que esta pantalla
+    // no puede producir: sólo se escriben valores de [DueOption].
+    val selected = DueOption.entries.firstOrNull { it.days == dueDateDays } ?: DueOption.FIFTEEN
+
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.new_sale_due_question),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            // Two by two, same as Nueva venta: four chips in one row truncate "Sin fecha" at 320 dp.
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                DueOption.entries.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        pair.forEach { option ->
+                            NeoChoiceChip(
+                                label = stringResource(option.labelRes),
+                                isSelected = selected == option,
+                                onClick = { onUpdateDueDateDays(option.days) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("ledger-due-option-" + option.name),
+                            )
+                        }
+                    }
+                }
+            }
+            if (bornOverdueCount > 0) {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.ai_ledger_due_born_overdue,
+                        bornOverdueCount,
+                        bornOverdueCount,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("ledger-due-born-overdue-warning"),
+                )
+            }
+        }
+    }
+}
 
 /**
  * El aviso de una objeción, en palabras.

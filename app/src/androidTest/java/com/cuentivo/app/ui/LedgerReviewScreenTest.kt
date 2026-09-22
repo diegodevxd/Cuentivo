@@ -15,6 +15,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -622,5 +623,88 @@ class LedgerReviewScreenTest {
         composeRule.runOnIdle {
             org.junit.Assert.assertEquals("Protector Tapete", acceptedProductCandidateName)
         }
+    }
+
+    /**
+     * El aviso que el encargo exige debajo del selector: con una página vieja y 15 días marcados,
+     * la persona tiene que ver cuántas ventas nacerían vencidas antes de pulsar Registrar.
+     * El número lo calcula el objeto puro (`LedgerDueDatePolicy`); aquí sólo se comprueba que la
+     * pantalla lo dice — y que lo dice con `pluralStringResource`, no con `stringResource` sobre un
+     * `plurals`, que ya reventó una pantalla así.
+     */
+    @Test fun el_aviso_de_ventas_vencidas_aparece_debajo_del_selector_con_15_marcado() {
+        val today = java.time.LocalDate.of(2026, 9, 22).toEpochDay()
+        // Venta del 1 de septiembre + 15 = 16 de septiembre, ya pasada frente al 22: una venta
+        // que nace vencida, que es el caso que no puede pasar sin que la persona lo vea.
+        val review = LedgerReviewEngine.build(
+            operations = listOf(sale(0, "Rosa", "25000")),
+            todayEpochDay = today,
+        )
+
+        composeRule.setContent {
+            // dueDateDays sin pasarlo: arranca con el default de 15, igual que en producción.
+            LedgerReviewContent(
+                review = review,
+                captureFile = null,
+                onUpdateAmount = { _, _ -> },
+                onUpdateCustomer = { _, _ -> },
+                onUpdateKind = { _, _ -> },
+                onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
+                onRemoveRow = { },
+                onConfirmObjection = { },
+                isPageCompletenessConfirmed = false,
+                onConfirmPageCompleteness = { },
+                customerMatches = emptyMap(),
+                productMatches = emptyMap(),
+                duplicateMatches = emptyMap(), objections = emptyList(),
+                isRegistrationBlockedByLegacySave = false,
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-due-option-FIFTEEN").assertIsDisplayed()
+        // El texto completo, no "1" como subcadena: eso también aceptaría 10, 11 o 12.
+        val oneSale = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+            .targetContext.resources.getQuantityString(R.plurals.ai_ledger_due_born_overdue, 1, 1)
+        composeRule.onNodeWithTag("ledger-due-born-overdue-warning")
+            .assertIsDisplayed()
+            .assertTextEquals(oneSale)
+    }
+
+    /** Sin fecha no hay fecha límite, así que no hay nada que avisar: el aviso no puede aparecer. */
+    @Test fun sin_fecha_elegida_no_hay_aviso_de_vencidas() {
+        val today = java.time.LocalDate.of(2026, 9, 22).toEpochDay()
+        val review = LedgerReviewEngine.build(
+            operations = listOf(sale(0, "Rosa", "25000")),
+            todayEpochDay = today,
+        )
+
+        composeRule.setContent {
+            LedgerReviewContent(
+                review = review,
+                captureFile = null,
+                onUpdateAmount = { _, _ -> },
+                onUpdateCustomer = { _, _ -> },
+                onUpdateKind = { _, _ -> },
+                onUpdateDate = { _, _ -> },
+                onUpdatePageDate = { },
+                dueDateDays = null,
+                onRemoveRow = { },
+                onConfirmObjection = { },
+                isPageCompletenessConfirmed = false,
+                onConfirmPageCompleteness = { },
+                customerMatches = emptyMap(),
+                productMatches = emptyMap(),
+                duplicateMatches = emptyMap(), objections = emptyList(),
+                isRegistrationBlockedByLegacySave = false,
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-due-option-NONE").assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger-due-born-overdue-warning").assertDoesNotExist()
     }
 }

@@ -291,7 +291,7 @@ fun CuentivoApp(
     ledgerCustomersResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.CustomerCandidate>)? = null,
     ledgerProductsResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.ProductCandidate>)? = null,
     ledgerRegisteredResolver: (suspend (businessId: String, minEpochDay: Long, maxEpochDay: Long) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)? = null,
-    confirmLedgerBatch: (suspend (businessId: String, importSessionId: String, operations: List<com.cuentivo.app.ai.ledger.LedgerOperation>, pageDateEpochDay: Long?, blockedLineIndices: Set<Int>, modelSaysTextMayBeMissing: Boolean, isPageCompletenessConfirmed: Boolean) -> com.cuentivo.app.domain.LedgerBatchConfirmation)? = null,
+    confirmLedgerBatch: (suspend (businessId: String, importSessionId: String, operations: List<com.cuentivo.app.ai.ledger.LedgerOperation>, pageDateEpochDay: Long?, dueDateDays: Long?, blockedLineIndices: Set<Int>, modelSaysTextMayBeMissing: Boolean, isPageCompletenessConfirmed: Boolean) -> com.cuentivo.app.domain.LedgerBatchConfirmation)? = null,
     /** Local import metrics DAO; null keeps the lab working without metrics, e.g. in previews. */
     ledgerImportMetricDao: com.cuentivo.app.data.local.AiLedgerImportMetricDao? = null,
     businessQueryResolver: (suspend (businessId: String, proposal: com.cuentivo.app.ai.BusinessQueryProposal, choice: com.cuentivo.app.ai.AiEntityChoice?) -> com.cuentivo.app.ai.AiBusinessQueryResult)? = null,

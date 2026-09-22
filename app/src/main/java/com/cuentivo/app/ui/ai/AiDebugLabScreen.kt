@@ -205,7 +205,7 @@ fun AiDebugLabScreen(
     ledgerProductsResolver: (suspend (businessId: String) -> List<com.cuentivo.app.domain.ProductCandidate>)? = null,
     /** What is already registered around this page's dates, so a second scan of the same sheet says so. */
     ledgerRegisteredResolver: (suspend (businessId: String, minEpochDay: Long, maxEpochDay: Long) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)? = null,
-    confirmLedgerBatch: (suspend (businessId: String, importSessionId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?, blockedLineIndices: Set<Int>, modelSaysTextMayBeMissing: Boolean, isPageCompletenessConfirmed: Boolean) -> com.cuentivo.app.domain.LedgerBatchConfirmation)? = null,
+    confirmLedgerBatch: (suspend (businessId: String, importSessionId: String, operations: List<LedgerOperation>, pageDateEpochDay: Long?, dueDateDays: Long?, blockedLineIndices: Set<Int>, modelSaysTextMayBeMissing: Boolean, isPageCompletenessConfirmed: Boolean) -> com.cuentivo.app.domain.LedgerBatchConfirmation)? = null,
     /**
      * Where the local import metrics are written. Null in tests and anywhere Room is not wired:
      * metrics are diagnostics, and their absence must never be a reason the import fails.
@@ -842,6 +842,14 @@ fun AiDebugLabScreen(
                         pageDateEpochDay = pageDateEpochDay,
                     )
                 },
+                dueDateDays = ledgerReviewing.dueDateDays,
+                onUpdateDueDateDays = { dueDateDays ->
+                    model = AiDebugLabMachine.onUpdateLedgerDueDateDays(
+                        model = model,
+                        sessionId = ledgerReviewing.sessionId,
+                        dueDateDays = dueDateDays,
+                    )
+                },
                 onRemoveRow = { lineIndex ->
                     model = AiDebugLabMachine.onUpdateLedgerOperations(model, ledgerReviewing.sessionId) { operations ->
                         LedgerReviewEdits.removeRow(operations, lineIndex)
@@ -862,10 +870,14 @@ fun AiDebugLabScreen(
                         val businessId = ledgerReviewing.businessId
                         val operations = ledgerReviewing.review.operations
                         val pageDateEpochDay = ledgerReviewing.review.pageDateEpochDay
+                        // Capturado en el momento de pulsar, y leído del estado que devolvió la
+                        // máquina: así la prueba de `onConfirmLedger` cubre el valor que de verdad
+                        // se escribe, no una copia paralela tomada de la clausura.
+                        val dueDateDays = (outcome.model.state as AiDebugLabState.LedgerConfirming).dueDateDays
                         val blockedLineIndices = deterministicObjections.mapTo(LinkedHashSet()) { it.lineIndex }
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
-                                runCatching { write(businessId, sessionId, operations, pageDateEpochDay, blockedLineIndices, com.cuentivo.app.domain.LedgerPageCompleteness.modelSaysTextMayBeMissing(ledgerReviewing.review), ledgerReviewing.isPageCompletenessConfirmed) }.getOrNull()
+                                runCatching { write(businessId, sessionId, operations, pageDateEpochDay, dueDateDays, blockedLineIndices, com.cuentivo.app.domain.LedgerPageCompleteness.modelSaysTextMayBeMissing(ledgerReviewing.review), ledgerReviewing.isPageCompletenessConfirmed) }.getOrNull()
                             }
                             model = AiDebugLabMachine.onLedgerBatchResult(
                                 model = model,

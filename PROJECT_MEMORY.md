@@ -11,15 +11,22 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-09-21. **v41 (`1.21.0`) en producción; v42 (`1.22.0`) ya subida a Play.**
+**Última actualización:** 2026-09-22. **v41 (`1.21.0`) en producción; v42 (`1.22.0`) ya subida a Play.**
 
 **v43 (`1.22.1`, parche) sale a más tardar el 2026-09-28, con lo que esté listo.** Ya en la rama
 (`diegodevxd/mensaje-al-cliente` confirmada fusionada): la calificación ya no dice "sin historial de
 pago" junto a un abono; el saldo de la tarjeta va en blanco; el "Saldo pendiente" repetido en
 Detalle de Cliente se quitó; y un interruptor **sólo de debug** en Cuenta ("[Debug] Compartir como
 plan Gratis") para ver el pie en un teléfono Pro — sólo afecta lo compartido, no la sync
-(`domain/ShareTier.kt`). Falta: limpiar la caché de la imagen al abrir la app, y lo que salga de
-probar la v42 (incluido si WhatsApp respeta el texto junto a la imagen).
+(`domain/ShareTier.kt`). **También para v43, en `diegodevxd/v43-plazo-e-idioma` (2026-09-22, sin
+commitear):** la importación de libreta lleva **selector de plazo** en revisión (Sin fecha/7/15/30,
+15 marcado, un plazo por página, aviso "N ventas quedarían vencidas desde hoy"; sólo cargos;
+vence en fecha del renglón + días; **ventas existentes intactas**), y los avisos fijos de
+`MainActivity` + `billing/` pasaron a `strings.xml` (**668/668**) con la puerta de idioma ampliada
+y **vacía**. Gate de esa rama: JVM **1285/0/0** desde XML, instrumentadas **54/54** en
+`emulator-5554`, 4 mutaciones detectadas y restauradas; reporte en `C:/tmp/oc-v43-reporte.md`.
+Falta: limpiar la caché de la imagen al abrir la app, y lo que salga de probar la v42 (incluido si
+WhatsApp respeta el texto junto a la imagen).
 
 **Dónde está cada cosa ahora mismo:**
 
