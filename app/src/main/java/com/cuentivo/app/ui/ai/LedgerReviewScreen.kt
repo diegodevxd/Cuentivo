@@ -192,13 +192,16 @@ fun LedgerReviewContent(
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .testTag("ledger-review-list"),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // El encabezado (resumen, plazo, avisos) viaja DENTRO de la lista y se desplaza con ella.
+            // El encabezado (resumen, plazo, avisos) viaja DENTRO de la lista y se desplaza con ella,
+            // en elementos separados: como UN solo elemento más alto que la pantalla, en horizontal la
+            // lista se quedaba recalculándose en bucle (LedgerReviewRotationTest colgado).
             // Fijo arriba, en un teléfono normal se comía toda la altura y los renglones —lo que la
             // persona tiene que revisar— quedaban reducidos a una franja o desaparecían.
-            item(key = "ledger-review-header") {
+            item(key = "ledger-review-summary") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Summary Card
                 LedgerSummaryCard(
@@ -207,6 +210,10 @@ fun LedgerReviewContent(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
+                }
+            }
+            if (hasRowsWithoutDate) item(key = "ledger-review-page-date") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Page date selector: shown ONLY when at least one registrable operation lacks a date
                 if (hasRowsWithoutDate) {
                     PageDateCard(
@@ -217,6 +224,10 @@ fun LedgerReviewContent(
                     )
                 }
 
+                }
+            }
+            if (hasChargeRows) item(key = "ledger-review-due-date") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Un plazo para toda la página, con las mismas opciones de la venta manual. Debajo, cuando
                 // aplique, el aviso que no puede faltar: si la página es vieja, con 15 días marcadas varias
                 // ventas nacen vencidas, y eso la persona tiene que verlo antes de pulsar Registrar.
@@ -229,6 +240,10 @@ fun LedgerReviewContent(
                     )
                 }
 
+                }
+            }
+            item(key = "ledger-review-notices") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // A page that did not fit, or whose text the model could not finish reading, must say so
                 // here. Confirming a partial import silently is how a notebook ends up half migrated with
                 // nobody aware which half is missing.
@@ -313,6 +328,10 @@ fun LedgerReviewContent(
                     )
                 }
 
+                }
+            }
+            item(key = "ledger-review-banner") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Financial & Date Block Alert (if any)
                 // Also when some rows are fine and others are not: a page that registers 8 of its 20 rows
                 // and says nothing about the other 12 is the quiet half-import this screen exists to prevent.

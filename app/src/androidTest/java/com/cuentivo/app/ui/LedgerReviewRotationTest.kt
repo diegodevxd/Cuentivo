@@ -2,10 +2,12 @@ package com.cuentivo.app.ui
 
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -64,12 +66,7 @@ class LedgerReviewRotationTest {
         composeRule.onNodeWithTag("ai-ledger-source-gallery").performClick()
 
         // The review is on screen with both rows.
-        composeRule.waitUntil(timeoutMillis = 20_000) {
-            composeRule.onAllNodesWithTag("ledger-op-row-0").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("ledger-op-row-0").assertExists()
-        composeRule.onNodeWithTag("ledger-op-row-1").assertExists()
+        awaitReviewWithBothRows()
         composeRule.runOnIdle { assertEquals("the callable ran exactly once for this page", 1, LedgerLabHostActivity.extractionCalls) }
 
         // Rotate. The host has no configChanges, so this recreates the Activity for real.
@@ -79,9 +76,7 @@ class LedgerReviewRotationTest {
         }
 
         // The review is still there, with both rows, and the callable was not called again.
-        composeRule.waitUntil(timeoutMillis = 20_000) {
-            composeRule.onAllNodesWithTag("ledger-op-row-0").fetchSemanticsNodes().isNotEmpty()
-        }
+        awaitReviewWithBothRows()
         composeRule.runOnIdle {
             assertNotEquals(
                 "the rotation must recreate the Activity for this test to mean anything",
@@ -94,7 +89,20 @@ class LedgerReviewRotationTest {
                 LedgerLabHostActivity.extractionCalls,
             )
         }
+    }
+
+    /**
+     * The header (summary, page date, due date) scrolls with the rows, so in landscape it fills the
+     * screen and the rows are below the fold. A lazy list does not compose what is off screen, so
+     * waiting for a row without scrolling waits forever: scroll to each row the way a person would.
+     */
+    private fun awaitReviewWithBothRows() {
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("ledger-review-list").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("ledger-review-list").performScrollToNode(hasTestTag("ledger-op-row-0"))
         composeRule.onNodeWithTag("ledger-op-row-0").assertExists()
+        composeRule.onNodeWithTag("ledger-review-list").performScrollToNode(hasTestTag("ledger-op-row-1"))
         composeRule.onNodeWithTag("ledger-op-row-1").assertExists()
     }
 
