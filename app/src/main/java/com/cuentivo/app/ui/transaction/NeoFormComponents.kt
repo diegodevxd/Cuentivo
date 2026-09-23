@@ -103,7 +103,7 @@ internal fun preselectedCustomer(
  */
 @Composable
 internal fun NeoTaskHeader(
-    eyebrow: String,
+    eyebrow: String? = null,
     title: String,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
@@ -125,12 +125,14 @@ internal fun NeoTaskHeader(
             Spacer(Modifier.size(NeoSpacing.xs))
         }
         Column(Modifier.weight(1f)) {
-            Text(
-                text = eyebrow.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-            )
+            eyebrow?.let {
+                Text(
+                    text = it.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                )
+            }
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,

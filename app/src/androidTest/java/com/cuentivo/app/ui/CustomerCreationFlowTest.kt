@@ -94,7 +94,7 @@ class CustomerCreationFlowTest {
         // And the keyboard moves through it: Next walks name → phone → credit, Done finishes.
         composeRule.onNodeWithText("Nombre del cliente").assert(hasImeAction(ImeAction.Next))
         composeRule.onNodeWithText("Teléfono (opcional)").assert(hasImeAction(ImeAction.Next))
-        composeRule.onNodeWithText("Cupo de crédito (opcional)").assert(hasImeAction(ImeAction.Done))
+        composeRule.onNodeWithText("¿Hasta cuánto le fías? (opcional)").assert(hasImeAction(ImeAction.Done))
     }
 
     private fun openForm() {

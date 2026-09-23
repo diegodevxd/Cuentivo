@@ -213,6 +213,13 @@ fun AiDebugLabScreen(
      * metrics are diagnostics, and their absence must never be a reason the import fails.
      */
     ledgerImportMetricDao: com.cuentivo.app.data.local.AiLedgerImportMetricDao? = null,
+    /**
+     * Opened from "Tomar foto de mi libreta": the lab skips the chat and goes straight to the
+     * camera/gallery chooser, because the person already said what they came to do. Consumed once
+     * the chooser is shown, through [onStartLedgerImportConsumed].
+     */
+    startLedgerImport: Boolean = false,
+    onStartLedgerImportConsumed: () -> Unit = {},
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     var voiceModel by remember { mutableStateOf(VoiceCaptureModel()) }
@@ -252,6 +259,19 @@ fun AiDebugLabScreen(
     // LedgerReviewing state already froze.
     var ledgerReviewContext by remember {
         mutableStateOf<com.cuentivo.app.ui.ai.LedgerReviewContext?>(null)
+    }
+
+    // "Tomar foto de mi libreta" arrives with the intent already declared: open the camera/gallery
+    // chooser as soon as there is a business to write to, instead of making the person find the
+    // small link inside the chat. The same session-naming rule as the in-chat entry applies, so a
+    // late result cannot land on a different review.
+    LaunchedEffect(startLedgerImport, activeBusinessId, extractLedgerPage) {
+        if (!startLedgerImport) return@LaunchedEffect
+        if (extractLedgerPage == null || activeBusinessId.isNullOrBlank()) return@LaunchedEffect
+        ledgerSessionId = java.util.UUID.randomUUID().toString()
+        ledgerBusinessId = activeBusinessId
+        showLedgerSourceSelector = true
+        onStartLedgerImportConsumed()
     }
 
     DisposableEffect(effectiveVoiceRecognizer) {
@@ -1760,15 +1780,9 @@ private fun ChatMessageRow(
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                if (line.resolutionMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
-                    Text(
-                        text = stringResource(
-                            R.string.ai_sale_preview_new_product_habitual_price,
-                            formatCents(line.sourceDeclaredPriceCents),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+                // No "Precio habitual" line for a product the person just named. A brand-new product
+                // has no habitual price, and the number the draft carries is the one they said — so
+                // announcing it as habitual was inventing a history the product does not have.
             }
             Text(
                 text = stringResource(

@@ -15,7 +15,7 @@
     <string name="dashboard_receivable_total">Total receivable</string>
     <string name="dashboard_due_today">Due today</string>
     <string name="dashboard_overdue">Overdue</string>
-    <string name="dashboard_critical_customers">Critical customers</string>
+    <string name="dashboard_critical_customers">Who owes you the most</string>
     <string name="dashboard_see_all">See all</string>
     <string name="dashboard_no_urgent_title">No urgent collections</string>
     <string name="dashboard_no_urgent_detail">Nobody has an overdue payment today.</string>
@@ -51,12 +51,13 @@
     <string name="customers_form_edit_title">Edit customer</string>
     <string name="customers_form_name_label">Customer name</string>
     <string name="customers_form_phone_label">Phone (optional)</string>
-    <string name="customers_form_credit_limit_label">Credit limit (optional)</string>
+    <string name="customers_form_credit_limit_label">How much do you lend them? (optional)</string>
     <string name="customers_form_credit_limit_none">No credit limit</string>
     <string name="customers_form_credit_limit_invalid">Invalid amount</string>
     <string name="customers_form_credit_limit_hint">You will be warned if the balance goes over %1$s</string>
     <string name="customers_form_edit_note">Fixing the name does not change their sales or balance.</string>
-    <string name="opening_import_action">Bring in debts from my notebook</string>
+    <string name="opening_import_action">Write debts by hand</string>
+    <string name="opening_import_photo_action">Photograph my notebook</string>
     <string name="opening_import_title">Debts from your notebook</string>
     <string name="opening_import_hint">Write each name and how much they owe. If that person is already here, the debt is added to what they already owe.</string>
     <string name="opening_import_select_customer">Select an existing customer</string>
@@ -323,7 +324,7 @@
     <!-- Customer detail (CustomerDetailSheet) -->
     <string name="detail_title">Customer detail</string>
     <string name="detail_back">Back</string>
-    <string name="detail_balance_total">TOTAL BALANCE</string>
+    <string name="detail_balance_total">You are owed</string>
     <string name="detail_balance_pending">Balance due</string>
     <string name="detail_balance_settled">Balance settled</string>
     <string name="detail_balance_credit">Customer credit</string>
@@ -334,7 +335,8 @@
     <string name="detail_register_payment">Register payment</string>
     <string name="detail_share">Share</string>
     <string name="detail_share_summary">Share summary</string>
-    <string name="detail_share_csv">Share CSV</string>
+    <string name="detail_share_csv">Share as Excel (CSV)</string>
+    <string name="detail_movement_prior_debt">Previous debt</string>
     <string name="detail_history">Movement history</string>
     <string name="detail_no_movements_title">No movements</string>
     <string name="detail_no_movements_detail">Sales and payments for this customer will show up here.</string>

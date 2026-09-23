@@ -332,6 +332,21 @@ interface FinancialDao {
     )
     suspend fun salesTotalCents(businessId: String, startEpochDay: Long, endEpochDay: Long): Long
 
+    /**
+     * The sales that are really a debt carried over from before the app, for one customer.
+     *
+     * Used by the statement so a prior debt reads as "Deuda anterior" and not as a sale nobody made.
+     * Same two signals as [salesTotalCents]: the persisted marker, and — for rows written before the
+     * marker existed and that nobody can edit — the uncataloged line named "Saldo anterior".
+     */
+    @Query(
+        "SELECT s.id FROM sales AS s " +
+            "WHERE s.businessId = :businessId AND s.customerId = :customerId " +
+            "AND (s.notes = 'ALTA_CLIENTE_SALDO_ANTERIOR' " +
+            "OR EXISTS (SELECT 1 FROM sale_items AS i WHERE i.saleId = s.id AND i.productId IS NULL AND i.productNameSnapshot = 'Saldo anterior'))"
+    )
+    suspend fun priorDebtSaleIdsForCustomer(businessId: String, customerId: String): List<String>
+
     @Query("SELECT COALESCE(SUM(amountCents), 0) FROM payments WHERE businessId = :businessId AND canceledAtEpochMillis IS NULL AND paymentDateEpochDay BETWEEN :startEpochDay AND :endEpochDay")
     suspend fun collectedTotalCents(businessId: String, startEpochDay: Long, endEpochDay: Long): Long
 

@@ -138,6 +138,12 @@ fun CustomersScreen(
     onArchiveCustomer: (CustomerBalanceRow) -> Unit = {},
     onOpen: (CustomerBalanceRow) -> Unit = {},
     /**
+     * Opens CuentivoAI straight on the notebook-photo import (camera or gallery). The photo entry
+     * used to live only inside the AI lab, behind the robot, so the action that said "from my
+     * notebook" was really a hand-typed form — the photo was hidden one screen away.
+     */
+    onOpenLedgerPhoto: () -> Unit = {},
+    /**
      * Whether a create is in flight. The host closes the form itself once the write actually
      * succeeds — see `CuentivoApp`'s `customerSavedToken` — so this screen's only job with it is to
      * disable Guardar for as long as it is true, which is what stops a double tap from firing the
@@ -150,6 +156,12 @@ fun CustomersScreen(
      * later visit returns to "Todos".
      */
     initialFilter: CustomerFilter? = null,
+    /**
+     * Bumped by the host when the bar is tapped on the tab already showing: back to the root of the
+     * tab, which means the search box empty and the "Todos" chip. 0 means "never tapped", so the
+     * first composition is not treated as a reset.
+     */
+    resetToken: Int = 0,
 ) {
     val customersNewCustomerDescription = stringResource(R.string.customers_new_customer_description)
     var query by remember { mutableStateOf("") }
@@ -163,6 +175,17 @@ fun CustomersScreen(
     // Same rule as the customer form: the sheet closes on a write that landed, never on the tap.
     LaunchedEffect(balancesImportedToken) {
         if (balancesImportedToken > 0) importingBalances = false
+    }
+    // Tapping the tab you are already on returns to the root: no search, no filter, no half-open
+    // form. Guarded on > 0 so the very first composition keeps whatever `initialFilter` asked for.
+    LaunchedEffect(resetToken) {
+        if (resetToken > 0) {
+            query = ""
+            chip = CustomerFilter.ALL
+            editing = null
+            archiving = null
+            importingBalances = false
+        }
     }
     val today = LocalDate.now().toEpochDay()
     val visible = CustomerDirectoryPresentation.filter(customers, query, chip, dueSales, today)
@@ -214,11 +237,24 @@ fun CustomersScreen(
                 }
             }
             item {
-                TextButton(
-                    onClick = { importingBalances = true },
-                    modifier = Modifier.fillMaxWidth().testTag("open-debt-import"),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
                 ) {
-                    Text(stringResource(R.string.opening_import_action))
+                    TextButton(
+                        onClick = { importingBalances = true },
+                        modifier = Modifier.weight(1f).testTag("open-debt-import"),
+                    ) {
+                        Text(stringResource(R.string.opening_import_action))
+                    }
+                    // The photo is the action that actually matches "mi libreta"; typing rows by
+                    // hand is the fallback, not the headline.
+                    TextButton(
+                        onClick = onOpenLedgerPhoto,
+                        modifier = Modifier.weight(1f).testTag("open-ledger-photo"),
+                    ) {
+                        Text(stringResource(R.string.opening_import_photo_action))
+                    }
                 }
             }
             if (visible.isEmpty()) {

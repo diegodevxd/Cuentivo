@@ -210,6 +210,13 @@ fun CuentivoApp(
     pendingSaleCustomerId: String? = null,
     /** Called once the hand-off above has been acted on, so it cannot fire twice. */
     onPendingSaleConsumed: () -> Unit = {},
+    /**
+     * The customer a just-finished create actually wrote, whatever the intent. Set by the host in
+     * the same place as [customerSavedToken]. It is what lets "Agregar cliente" from inside Nueva
+     * venta come back with that customer selected, without the person having to press "Guardar y
+     * vender" — the form was opened from the sale, so saving is the whole intent.
+     */
+    lastCreatedCustomerId: String? = null,
     onImportOpeningBalances: (List<OpeningBalanceRow>) -> Unit = {},
     isImportingBalances: Boolean = false,
     /** Same shape as [customerSavedToken], for the notebook import. */
@@ -319,12 +326,29 @@ fun CuentivoApp(
     // Transport for AI lab: release builds resolve to null until T6, where AiEntryPolicy routes
     // paying subscribers to an unavailable notice and non-subscribers to the paywall.
     val debugAiLabTransport = remember { debugAiTransport() }
+    // One definition of "the lab can run here": the transport exists and there is a chat store. The
+    // robot entry, the notebook-photo shortcut and the lab itself must agree, or a tap leads nowhere.
+    val hasAiTransport = debugAiLabTransport != null && aiDailyChatRepository != null
     // Saveable on purpose: a review of a photographed page can be open when the Activity is
     // recreated (the system reclaiming the process, a uiMode change, the camera app in front).
     // A plain remember here closed the whole lab on the way back, and the review state saved
     // inside it never got the chance to restore.
     var showAiDebugLab by rememberSaveable { mutableStateOf(false) }
     var showAiPaywall by remember { mutableStateOf(false) }
+    // Bumped when a tap on the bar asks a destination to go back to its own root (clear the search,
+    // the filter, the amount being typed). 0 means "never tapped", so the first composition is not
+    // mistaken for a reset.
+    var customersResetToken by remember { mutableStateOf(0) }
+    var productsResetToken by remember { mutableStateOf(0) }
+    var paymentsResetToken by remember { mutableStateOf(0) }
+    // Set when "Agregar cliente" is tapped from inside Nueva venta. The form opens over Clientes,
+    // and once the write lands the person is returned to the sale with the new customer selected.
+    var saleReturnPending by remember { mutableStateOf(false) }
+    var saleReturnDestination by remember { mutableStateOf(MainDestination.HOME) }
+    var saleReturnCustomerId by remember { mutableStateOf<String?>(null) }
+    // Set when "Tomar foto de mi libreta" is tapped: the AI lab opens straight on the camera/gallery
+    // chooser instead of the chat. Consumed once the lab has acted on it.
+    var pendingLedgerImport by remember { mutableStateOf(false) }
     val coordinator = remember(aiAvailabilityGateway) {
         aiAvailabilityGateway?.let { AiAvailabilityCoordinator(it) }
     }
@@ -371,7 +395,26 @@ fun CuentivoApp(
     // host's write actually reached Room, so a duplicate name or a missing business — which leave
     // the token untouched — leave the dialog open with its message instead of closing it blind.
     LaunchedEffect(customerSavedToken) {
-        if (customerSavedToken > 0) showCustomerForm = false
+        if (customerSavedToken > 0) {
+            showCustomerForm = false
+            // A create that landed while the form was opened from the sale hands its id over here;
+            // the effect below waits for the row to appear in `customers` before returning.
+            if (saleReturnPending) {
+                saleReturnPending = false
+                saleReturnCustomerId = lastCreatedCustomerId
+            }
+        }
+    }
+    // Keyed on the list too, not just the id, for the same reason as the pending-sale hand-off: on
+    // the composition where the id first arrives the refreshed list may not include the new row yet.
+    LaunchedEffect(saleReturnCustomerId, customers) {
+        val target = saleReturnCustomerId ?: return@LaunchedEffect
+        val row = customers.firstOrNull { it.customer.id == target } ?: return@LaunchedEffect
+        saleReturnCustomerId = null
+        showCustomerForm = false
+        destination = saleReturnDestination
+        saleCustomer = row
+        showNewSale = true
     }
     LaunchedEffect(productSavedToken) {
         if (productSavedToken > 0) showProductForm = false
@@ -411,12 +454,39 @@ fun CuentivoApp(
     }
     NeoFintechShell(
         destination = destination,
+        // A sale owns the screen and is not a destination: the bar marks its action, not the tab
+        // the person happened to be on when they opened it.
+        newSaleActive = showNewSale || (saleCorrection != null && statementCustomer != null),
+        // A customer's account belongs to Clientes, whichever tab it was opened from.
+        detailOpen = statementCustomer != null,
         onDestination = { selected ->
+            val currentSelection = MainNavigationPolicy.barSelection(
+                destination = destination,
+                newSaleActive = showNewSale || (saleCorrection != null && statementCustomer != null),
+                detailOpen = statementCustomer != null,
+            )
+            when (MainNavigationPolicy.tabTapAction(currentSelection, selected)) {
+                TabTapAction.RESET_ROOT -> when (selected) {
+                    MainDestination.CUSTOMERS -> customersResetToken++
+                    MainDestination.PRODUCTS -> productsResetToken++
+                    MainDestination.PAYMENTS -> paymentsResetToken++
+                    MainDestination.HOME -> Unit
+                }
+                TabTapAction.OPEN -> Unit
+            }
             destination = selected
             showNewSale = false
+            saleCustomer = null
             // Reaching Abonos from the bar is a fresh decision, not a continuation of whoever was
             // open in the detail a minute ago.
             paymentCustomer = null
+            // Tapping a tab also closes whatever task was open — the customer detail, the forms —
+            // so "Clientes" from a customer's account lands back on the list.
+            if (statementCustomer != null) onDismissStatement()
+            showCustomerForm = false
+            showProductForm = false
+            saleReturnPending = false
+            pendingOverdueFilter = false
         },
         onNewSale = {
             destination = MainNavigationPolicy.destinationAfterNewSale(destination)
@@ -430,8 +500,7 @@ fun CuentivoApp(
         onOpenLanguage = { showLanguage = true },
         onOpenAlerts = { showAlerts = true },
         onOpenAi = {
-            val hasTransport = debugAiLabTransport != null && aiDailyChatRepository != null
-            when (AiEntryPolicy.route(tier, hasTransport, isAiServiceAvailable)) {
+            when (AiEntryPolicy.route(tier, hasAiTransport, isAiServiceAvailable)) {
                 AiEntryRoute.Paywall -> showAiPaywall = true
                 AiEntryRoute.Assistant -> showAiDebugLab = true
                 AiEntryRoute.UnavailableInCurrentBuild -> {
@@ -460,6 +529,14 @@ fun CuentivoApp(
                 initialCustomer = statementCustomer,
                 initialDraft = saleCorrection.draft,
                 onCreateSale = { _, draft -> onSaveCorrection(draft) },
+                onAddCustomer = {
+                    saleReturnDestination = destination
+                    saleReturnPending = true
+                    showNewSale = false
+                    saleCustomer = null
+                    destination = MainDestination.CUSTOMERS
+                    showCustomerForm = true
+                },
                 onExit = onDismissCorrection,
             )
         } else if (statementCustomer != null) {
@@ -495,6 +572,16 @@ fun CuentivoApp(
                 modifier = Modifier.padding(padding),
                 initialCustomer = saleCustomer,
                 onCreateSale = onCreateSale,
+                onAddCustomer = {
+                    // The sale in progress is not discarded: its destination is remembered so that
+                    // saving the new customer returns here with them selected.
+                    saleReturnDestination = destination
+                    saleReturnPending = true
+                    showNewSale = false
+                    saleCustomer = null
+                    destination = MainDestination.CUSTOMERS
+                    showCustomerForm = true
+                },
                 onExit = { showNewSale = false; saleCustomer = null },
             )
         } else when (destination) {
@@ -519,7 +606,12 @@ fun CuentivoApp(
                 scores = customerScores.mapValues { (_, score) -> score.reliability },
                 modifier = Modifier.padding(padding),
                 showForm = showCustomerForm,
-                onShowFormChange = { showCustomerForm = it },
+                onShowFormChange = {
+                    showCustomerForm = it
+                    // Closing the form by hand abandons the return-to-sale intent; otherwise a later
+                    // create from this same tab would jump into a sale nobody asked for.
+                    if (!it) saleReturnPending = false
+                },
                 products = products,
                 onCreateCustomer = onCreateCustomer,
                 onImportOpeningBalances = onImportOpeningBalances,
@@ -528,8 +620,24 @@ fun CuentivoApp(
                 onEditCustomer = onEditCustomer,
                 onArchiveCustomer = onArchiveCustomer,
                 onOpen = onShowStatement,
+                onOpenLedgerPhoto = {
+                    when (AiEntryPolicy.route(tier, hasAiTransport, isAiServiceAvailable)) {
+                        AiEntryRoute.Paywall -> showAiPaywall = true
+                        AiEntryRoute.Assistant -> {
+                            pendingLedgerImport = true
+                            showAiDebugLab = true
+                        }
+                        AiEntryRoute.UnavailableInCurrentBuild -> coroutineScope.launch {
+                            snackbar.showSnackbar(aiUnavailableInVersionMessage)
+                        }
+                        AiEntryRoute.ServiceDisabled -> coroutineScope.launch {
+                            snackbar.showSnackbar(aiDisabledMessage)
+                        }
+                    }
+                },
                 isSaving = isSavingCustomer,
                 initialFilter = if (pendingOverdueFilter) CustomerFilter.OVERDUE else null,
+                resetToken = customersResetToken,
             )
             MainDestination.PRODUCTS -> ProductsScreen(
                 products = products,
@@ -544,15 +652,17 @@ fun CuentivoApp(
                 onImportBlocked = onImportBlocked,
                 isImportingProducts = isImportingProducts,
                 isSaving = isSavingProduct,
+                resetToken = productsResetToken,
             )
             MainDestination.PAYMENTS -> PaymentScreen(
                 customers = customers,
                 modifier = Modifier.padding(padding),
                 initialCustomer = paymentCustomer,
                 onCreatePayment = onCreatePayment,
+                resetToken = paymentsResetToken,
             )
         }
-        if (debugAiLabTransport != null && aiDailyChatRepository != null && showAiDebugLab) {
+        if (hasAiTransport && showAiDebugLab) {
             val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
             key(aiDailyChatRepository) {
                 AiDebugLabScreen(
@@ -571,6 +681,8 @@ fun CuentivoApp(
                     ledgerRegisteredResolver = ledgerRegisteredResolver,
                     confirmLedgerBatch = confirmLedgerBatch,
                     ledgerImportMetricDao = ledgerImportMetricDao,
+                    startLedgerImport = pendingLedgerImport,
+                    onStartLedgerImportConsumed = { pendingLedgerImport = false },
                     onClose = { showAiDebugLab = false },
                     onOpenPaywall = {
                         showAiDebugLab = false

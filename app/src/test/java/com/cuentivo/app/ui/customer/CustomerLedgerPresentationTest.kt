@@ -53,6 +53,21 @@ class CustomerLedgerPresentationTest {
     }
 
     @Test
+    fun a_prior_debt_is_not_a_sale_made_in_the_app() {
+        // Same arithmetic as a charge — DEBIT raises the debt — but it is a debt the person already
+        // had, so the history must not claim a sale with a cart.
+        assertEquals(
+            LedgerVisual("Deuda anterior", "−", "Deuda anterior", LedgerTone.DEBT, isPriorDebt = true),
+            CustomerLedgerPresentation.from("CHARGE", "DEBIT", isPriorDebt = true),
+        )
+        // The flag is what decides it, not the type: a normal charge stays a sale.
+        assertEquals(
+            LedgerVisual("Venta", "−", "Deuda", LedgerTone.DEBT),
+            CustomerLedgerPresentation.from("CHARGE", "DEBIT", isPriorDebt = false),
+        )
+    }
+
+    @Test
     fun an_unknown_type_still_gets_the_arithmetic_right() {
         // Wording degrades, sign does not: direction alone decides which way the debt moves.
         assertEquals(

@@ -15,7 +15,7 @@
     <string name="dashboard_receivable_total">Saldo total por cobrar</string>
     <string name="dashboard_due_today">Vence hoy</string>
     <string name="dashboard_overdue">Vencido</string>
-    <string name="dashboard_critical_customers">Clientes críticos</string>
+    <string name="dashboard_critical_customers">Quién te debe más</string>
     <string name="dashboard_see_all">Ver todos</string>
     <string name="dashboard_no_urgent_title">Sin cobros urgentes</string>
     <string name="dashboard_no_urgent_detail">Nadie tiene un pago vencido hoy.</string>
@@ -51,12 +51,13 @@
     <string name="customers_form_edit_title">Editar cliente</string>
     <string name="customers_form_name_label">Nombre del cliente</string>
     <string name="customers_form_phone_label">Teléfono (opcional)</string>
-    <string name="customers_form_credit_limit_label">Cupo de crédito (opcional)</string>
+    <string name="customers_form_credit_limit_label">¿Hasta cuánto le fías? (opcional)</string>
     <string name="customers_form_credit_limit_none">Sin límite de crédito</string>
     <string name="customers_form_credit_limit_invalid">Monto no válido</string>
     <string name="customers_form_credit_limit_hint">Se avisará si el saldo pasa de %1$s</string>
     <string name="customers_form_edit_note">Corregir el nombre no cambia sus ventas ni su saldo.</string>
-    <string name="opening_import_action">Traer deudas de mi libreta</string>
+    <string name="opening_import_action">Anotar deudas a mano</string>
+    <string name="opening_import_photo_action">Tomar foto de mi libreta</string>
     <string name="opening_import_title">Deudas de tu libreta</string>
     <string name="opening_import_hint">Escribe el nombre y cuánto te debe cada quien. Si ya tienes a esa persona, la deuda se le suma a la que ya está.</string>
     <string name="opening_import_select_customer">Seleccionar cliente existente</string>
@@ -323,7 +324,7 @@
     <!-- Customer detail (CustomerDetailSheet) -->
     <string name="detail_title">Detalle de Cliente</string>
     <string name="detail_back">Volver</string>
-    <string name="detail_balance_total">BALANCE TOTAL</string>
+    <string name="detail_balance_total">Te debe</string>
     <string name="detail_balance_pending">Saldo pendiente</string>
     <string name="detail_balance_settled">Saldo en cero</string>
     <string name="detail_balance_credit">Saldo a favor</string>
@@ -334,7 +335,8 @@
     <string name="detail_register_payment">Registrar abono</string>
     <string name="detail_share">Compartir</string>
     <string name="detail_share_summary">Compartir resumen</string>
-    <string name="detail_share_csv">Compartir CSV</string>
+    <string name="detail_share_csv">Compartir en Excel (CSV)</string>
+    <string name="detail_movement_prior_debt">Deuda anterior</string>
     <string name="detail_history">Historial de Movimientos</string>
     <string name="detail_no_movements_title">Sin movimientos</string>
     <string name="detail_no_movements_detail">Las ventas y los abonos de este cliente aparecerán aquí.</string>

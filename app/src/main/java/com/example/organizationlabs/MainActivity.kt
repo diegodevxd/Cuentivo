@@ -822,6 +822,10 @@ class MainActivity : ComponentActivity() {
                 // Set alongside the token above, and for the same reason: only a write that reached
                 // Room may send anyone into a cart for that customer.
                 var pendingSaleCustomerId by remember { mutableStateOf<String?>(null) }
+                // The customer the last successful create actually wrote, whatever the intent. Used
+                // by the "Agregar cliente" shortcut inside Nueva venta: the form was opened from the
+                // sale, so any save is the signal to return there with that customer selected.
+                var lastCreatedCustomerId by remember { mutableStateOf<String?>(null) }
                 var isImportingBalances by remember { mutableStateOf(false) }
                 var balancesImportedToken by remember { mutableIntStateOf(0) }
                 var isSavingProduct by remember { mutableStateOf(false) }
@@ -1217,6 +1221,11 @@ class MainActivity : ComponentActivity() {
                         .mapValues { (_, lines) ->
                             SaleLineSummary.describe(lines.map { SoldLine(it.productNameSnapshot, it.quantity) })
                         }
+                    // Which of this customer's charges are really the debt they already had before
+                    // the app. Read once for the whole statement, not per row.
+                    val priorDebtSaleIds = financialDao
+                        .priorDebtSaleIdsForCustomer(businessId, row.customer.id)
+                        .toSet()
                     statementEntries = financialDao.customerMovements(businessId, row.customer.id)
                         .asReversed()
                         .map { movement ->
@@ -1230,6 +1239,7 @@ class MainActivity : ComponentActivity() {
                                 paymentId = movement.paymentId,
                                 saleId = movement.saleId,
                                 detail = movement.saleId?.let(soldLines::get),
+                                isPriorDebt = movement.saleId?.let(priorDebtSaleIds::contains) == true,
                             )
                         }
                     val sales = financialDao.cancelableSalesForCustomer(businessId, row.customer.id)
@@ -1587,6 +1597,7 @@ class MainActivity : ComponentActivity() {
                     customerSavedToken = customerSavedToken,
                     pendingSaleCustomerId = pendingSaleCustomerId,
                     onPendingSaleConsumed = { pendingSaleCustomerId = null },
+                    lastCreatedCustomerId = lastCreatedCustomerId,
                     isImportingBalances = isImportingBalances,
                     balancesImportedToken = balancesImportedToken,
                     isSavingProduct = isSavingProduct,
@@ -1961,6 +1972,7 @@ class MainActivity : ComponentActivity() {
                                     customerSavedToken++
                                     // Same rule, same place: the hand-off into Nueva venta only
                                     // happens for a customer that actually reached Room.
+                                    lastCreatedCustomerId = customer.id
                                     if (newCustomer.continueToSale) pendingSaleCustomerId = customer.id
                                 }
                             } finally {
