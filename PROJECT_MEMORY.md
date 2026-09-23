@@ -1,62 +1,32 @@
 # Estado vivo — Cuentivo / CuentivoAI
 
-Este archivo dice **dónde está el proyecto hoy y qué sigue**. No es un diario: se actualiza
-**sustituyendo, no añadiendo**, y se mantiene por debajo de ~100 líneas. Lo que deja de estar
-vigente baja a `docs/historia-del-proyecto.md`.
+Este archivo refleja el estado actual, no un diario: sustituye este encabezado y mantenlo por debajo de ~100 líneas. El material histórico empieza después de este estado vivo.
 
-No es un source of truth. Manda, en este orden:
+Manda, en este orden:
 
-1. [`docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md`](docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md) — arquitectura, seguridad, fases, GO/NO-GO y changelog de CuentivoAI.
-2. [`PROJECT.md`](PROJECT.md) — dirección de producto y checkpoint.
-3. El código y sus pruebas para comportamiento real.
-4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
+1. [`docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md`](docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md) — arquitectura, seguridad y fases.
+2. [`PROJECT.md`](PROJECT.md) — dirección de producto.
+3. El código y sus pruebas para el comportamiento real.
+4. `CLAUDE.md` — arquitectura del repo y trampas del entorno; contrástalo con el código.
 
-**Última actualización:** 2026-09-23 (madrugada). **v41 en producción; v43 (`1.22.1`, `18102af`,
-etiqueta `v1.22.1-43`) generada y subida a Play; v44 en curso, SIN COMMITEAR.**
+**Última actualización: 2026-09-23.** v43 (`1.22.1`, code 43) sigue en Play. La v44 (`1.23.0`, code 44) está preparada localmente en `diegodevxd/v44-libreta`; **no se ha hecho push, tag ni publicación**.
 
-**v44 — rama `diegodevxd/v44-libreta` (desde `18102af`), todo en el árbol de trabajo sin commitear.**
-Hecho por OpenCode (MiMo tanda 1; DeepSeek v4.1 Flash tandas 2 y 3) y auditado por Codex `gpt-6-sol`;
-reportes en `C:/tmp/oc-v44-reporte.md`, `oc-v44-tanda2-reporte.md`, `oc-v44-tanda3-reporte.md`,
-`codex-v44-auditoria.md`; encargos en `docs/superpowers/encargos/2026-09-22-v44-*.md`.
-Gate verificado por Claude: JVM **1334/0/0** desde XML, paridad **673/673**.
-- **A** refrescar Inicio/Clientes tras registrar una hoja (`LedgerConfirmAndRefresh`). Probado en teléfono.
-- **B** objeción de fecha imposible (año ≠ página, >180 días, futura). Probado en teléfono con hoja real.
-- **C** el posible duplicado frena el renglón hasta "Sí, es otra venta"; consulta por fecha efectiva.
-- **D** eliminar cuenta: reautentica con Google antes de borrar, marca durable de borrado pendiente,
-  `ERROR_REQUIRES_RECENT_LOGIN`. **Probado en teléfono con pibedieguillo: el usuario Auth SÍ se borró.**
-- **E** con imagen el texto va corto; si el PNG falla, texto completo. Visto en teléfono.
-- **F** el diálogo de la revisión guiada ya no guarda los datos del renglón anterior (`key(lineIndex)`).
-- La huella de confirmación incluye fecha y tipo.
+**v44 — commits locales:**
+- `ebcc161` — cierra los huecos de auditoría de la tanda 6.
+- `45e4ddd` — fija versión 44 / 1.23.0 y repara el ancla de la captura de abonos.
+- Tanda 6: “Cambiar todos” recibe sólo líneas con objeción `IMPLAUSIBLE_DATE`; una prueba mixta comprueba que una objeción de precio queda fuera. La vista previa de “Precio habitual” se verifica renderizando el composable real de producción. Al cerrar el detalle tras registrar, Inicio/Clientes queda visible y no reaparece la venta vacía.
+- Las tandas anteriores cubren refresco de Inicio/Clientes, fechas imposibles, posibles duplicados, borrado de cuenta con reautenticación, captura de hoja y restauración de la revisión.
 
-**Siguiente paso (pendiente de Diego):** decidir si antes de commitear la v44 se arreglan los puntos 1
-y 3 del recorrido (abajo), o se commitea tal cual y van a la v45. Luego: commit, versionCode 44, gate
-completo con instrumentadas, AAB.
+**Verificación completada:**
+- `testDebugUnitTest --rerun-tasks`: 1,358 casos desde XML, 0 fallos.
+- Gate Android release: `assembleDebug`, `compileDebugAndroidTestKotlin`, `assembleRelease`, `lintDebug`, `bundleRelease`; pasó. `bundleRelease --rerun-tasks` se reconstruyó después del commit local y pasó.
+- Suite conectada A059P (`00170157R000160`, Android 17 / API 37), con `leaveApksInstalledAfterRun=true`: 385 casos, 374 pasaron, 0 fallos/errores, 11 omitidos. Las omisiones son 1 prueba que requiere token App Check registrado y 10 pruebas de emulador Android para GuestCloudIsolation/Sync; no representan fallos.
+- `npm test`: 18 archivos / 491 pruebas; `npm run lint`: pasó. Gate de Functions con Firestore Emulator: 9/9. Recursos ES/EN: 686 strings + 14 plurals por idioma, claves iguales. El guard de textos no encontró texto de UI hardcodeado; la única coincidencia fue la etiqueta de animación Compose `waveform-bar`. `git diff --check`: pasó.
+- El test instrumentado mixto de entitlement usó `cuentivoAiExpectedDecision=AI_ENTITLEMENT_REQUIRED`, que es la respuesta actual de la cuenta del teléfono.
 
-**Recorrido "Doña Mary" (2026-09-23, Claude en el teléfono)** — reporte completo en
-`docs/superpowers/reportes/2026-09-23-recorrido-dona-mary.md`. Lo más grave: (1) ante una fecha
-imposible el botón fácil es "Sí, es correcto" y acepta 2023; (2) corregir el año es renglón por renglón
-(la IA leyó 2023 en los 12 renglones de una hoja real); (3) registrar una venta no confirma nada visible.
+**AAB listo:** `dist/Cuentivo-v44-1.23.0.aab` (dist está ignorado por Git). `jarsigner -verify`: jar verified. SHA1: `25:05:8A:9C:F3:1F:D7:B4:1E:8E:B3:2D:9A:AB:8F:9F:7A:E8:1D:BF`. SHA256: `2141122797D6079AACB91509DCBD16C29CF442872F770F355AEC3728DA15F62E`; coincide con el AAB de `app/build/outputs/bundle/release/`.
 
-**Idea para después (no v44):** mover el borrado de cuenta a una Cloud Function con Admin SDK.
-
-**Dónde está cada cosa ahora mismo:**
-
-- **Play.** `v41` / `1.21.0` en **producción**; `v43` / `1.22.1` subida. `versionCode` hasta 43
-  gastados: el próximo es **44**. AAB en `dist/Cuentivo-v43-1.22.1.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
-- **Functions:** `extractLedgerPage(us-south1)` **desplegado desde `81194a7`** el 2026-09-17, con
-  contrato **v5** (y v3/v4 idénticos), `gemini-3.5-flash`, `thinkingBudget: 0` y
-  `maxOutputTokens: 32768`. **Probado contra la API real** con el v40 de Play: tres libretas leídas,
-  sin fallos del proveedor en los registros. Versión anterior, para volver atrás: `6629485`.
-- **Ruta de salida de la v41 (decidida):** interna → unos días de uso real → **cerrada** →
-  producción, **promoviendo el mismo AAB**. No directo a producción: la v41 cambió el núcleo del
-  registro y su parte propia (v5, página entera, objeciones) **nunca ha corrido en un teléfono real**.
-- La política de privacidad de la web está actualizada.
-
-**Reparto de agentes, cambiado el 2026-09-16:** Claude orquesta y verifica. **OpenCode con DeepSeek
-V4.1 Flash implementa** (en modo Orchestrator su subagente `fixer` entregó a medias tres rondas
-seguidas; pedirle que **no delegue**). **AGY con Gemini 3.8 Flash (High) es la segunda opinión**, sólo
-lectura. **Codex/Sol quedó fuera** por sus límites de tokens. A los dos se les pide el reporte en un
-archivo de `C:/tmp/`, porque sus pantallas no guardan historial.
+**Siguiente paso:** esperar la instrucción explícita de Diego antes de subir la rama o crear/publicar una etiqueta. No hacer push ni publicar a Play antes de eso.
 
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 
