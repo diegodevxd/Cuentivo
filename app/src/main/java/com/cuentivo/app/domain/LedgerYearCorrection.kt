@@ -49,32 +49,40 @@ object LedgerYearCorrection {
     /**
      * El plan de corrección masiva, o `null` si la hoja no lo pide.
      *
-     * Sólo hay plan cuando **dos o más** renglones con objeción traen un año distinto al de la hoja:
-     * con uno solo, el diálogo del renglón ya ofrece "Cambiar a \<año\>", y una tarjeta para un caso
-     * que se resuelve en un toque sería ruido.
+     * Sólo hay plan cuando **dos o más** renglones con la objeción de fecha traen un año distinto al
+     * de la hoja: con uno solo, el diálogo del renglón ya ofrece "Cambiar a \<año\>", y una tarjeta
+     * para un caso que se resuelve en un toque sería ruido.
      *
-     * `objectionLineIndices` son los renglones con `IMPLAUSIBLE_DATE`. La ausencia de un renglón en
-     * esa lista es exactamente lo que garantiza que **no se toque un renglón sin objeción**, por muy
-     * viejo que parezca su año.
+     * El tipo de objeción se filtra **aquí**, en el objeto puro, y no en la pantalla: "Cambiar todos"
+     * corrige el año mal leído, y la única señal de eso es `IMPLAUSIBLE_DATE`. Un renglón con precio
+     * sospechoso cuya fecha es reciente y plausible no tiene nada que corregir, y no puede entrar al
+     * plan sólo porque el llamador le pasara su índice. La garantía no puede depender de que la
+     * pantalla pre-filtre: el plan recibe las objeciones **tipadas** y decide.
      */
     fun plan(
         operations: List<LedgerOperation>,
-        objectionLineIndices: Set<Int>,
+        objections: List<LedgerDeterministicObjection>,
         pageDateEpochDay: Long?,
         todayEpochDay: Long,
     ): LedgerYearBulkCorrection? {
         val targetYear = targetYear(pageDateEpochDay, todayEpochDay)
+        val dateObjectionLineIndices = objections
+            .filter { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }
+            .map { it.lineIndex }
+            .toSet()
         val candidates = operations.filter { op ->
-            op.lineIndex in objectionLineIndices &&
+            op.lineIndex in dateObjectionLineIndices &&
                 op.date != null &&
                 op.date.year != targetYear
         }
         if (candidates.size < 2) return null
 
         // El año que "dicen" los renglones: el más repetido. Con años mezclados gana el dominante;
-        // el empate cae al más antiguo, que es el que la IA suele inventar de menos.
-        val readYear = candidates
-            .mapNotNull { it.date?.year }
+        // el empate cae al más antiguo, que es el que la IA suele inventar de menos. Cuando los años
+        // no son todos el mismo, el dominante ya no representa a todos los renglones: la tarjeta lo
+        // sabe por `hasMixedReadYears` y deja de afirmar que el conteo entero "dice" ese año.
+        val candidateYears = candidates.mapNotNull { it.date?.year }
+        val readYear = candidateYears
             .groupingBy { it }
             .eachCount()
             .entries
@@ -86,6 +94,7 @@ object LedgerYearCorrection {
             readYear = readYear,
             targetYear = targetYear,
             lineIndices = candidates.map { it.lineIndex },
+            hasMixedReadYears = candidateYears.distinct().size > 1,
         )
     }
 
@@ -96,9 +105,14 @@ object LedgerYearCorrection {
 
 /**
  * Qué renglones corregir de golpe, y de qué año a qué año. Producto del [LedgerYearCorrection.plan].
+ *
+ * [hasMixedReadYears] es `true` cuando los renglones del plan no comparten un solo año leído. En ese
+ * caso [readYear] es sólo el dominante y la tarjeta no puede decir que *todos* los renglones lo
+ * dicen: el conteo incluiría a los minoritarios, que traen otro año.
  */
 data class LedgerYearBulkCorrection(
     val readYear: Int,
     val targetYear: Int,
     val lineIndices: List<Int>,
+    val hasMixedReadYears: Boolean = false,
 )

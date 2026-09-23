@@ -185,7 +185,9 @@ class StitchCaptureTest {
         Espresso.closeSoftKeyboard()
         scrollSaleTo("15 días")
         composeRule.onNodeWithText("15 días").invokeClick()
-        scrollSaleTo("CAPTURA GUIADA")
+        // T5 removed the obsolete "CAPTURA GUIADA" eyebrow; the actual task title is now the
+        // stable top-of-screen anchor for returning to the beginning of the form.
+        scrollSaleTo("Nueva venta")
         shoot("new-sale-${widthDp}dp")
     }
 

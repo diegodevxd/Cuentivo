@@ -741,6 +741,10 @@
         <item quantity="one">%1$d renglón dice %2$d. ¿Lo cambio a %3$d?</item>
         <item quantity="other">%1$d renglones dicen %2$d. ¿Los cambio a %3$d?</item>
     </plurals>
+    <plurals name="ai_ledger_year_bulk_question_mixed">
+        <item quantity="one">%1$d renglón trae un año distinto al de la hoja. ¿Lo cambio a %2$d?</item>
+        <item quantity="other">%1$d renglones traen un año distinto al de la hoja. ¿Los cambio a %2$d?</item>
+    </plurals>
     <string name="ai_ledger_pending_in_doubt">+ %1$s por revisar</string>
     <string name="ai_ledger_action_show_details">Ver por qué</string>
     <string name="ai_ledger_action_hide_details">Ocultar detalle</string>

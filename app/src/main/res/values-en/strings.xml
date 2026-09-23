@@ -741,6 +741,10 @@
         <item quantity="one">%1$d row says %2$d. Change it to %3$d?</item>
         <item quantity="other">%1$d rows say %2$d. Change them to %3$d?</item>
     </plurals>
+    <plurals name="ai_ledger_year_bulk_question_mixed">
+        <item quantity="one">%1$d row has a different year than the page. Change it to %2$d?</item>
+        <item quantity="other">%1$d rows have a different year than the page. Change them to %2$d?</item>
+    </plurals>
     <string name="ai_ledger_pending_in_doubt">+ %1$s to review</string>
     <string name="ai_ledger_action_show_details">See why</string>
     <string name="ai_ledger_action_hide_details">Hide details</string>

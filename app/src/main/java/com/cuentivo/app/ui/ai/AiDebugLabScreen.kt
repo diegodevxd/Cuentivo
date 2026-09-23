@@ -87,6 +87,7 @@ import com.cuentivo.app.ai.AiSaleBlockReason
 import com.cuentivo.app.ai.AiSaleConfirmationRequest
 import com.cuentivo.app.ai.AiSaleExecutionResult
 import com.cuentivo.app.ai.AiSalePreviewResult
+import com.cuentivo.app.ai.AiResolvedSalePreview
 import com.cuentivo.app.ai.BusinessQueryProposal
 import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.CreateSaleProposal
@@ -1742,125 +1743,14 @@ private fun ChatMessageRow(
             text = stringResource(R.string.ai_payment_rejected_message),
             style = MaterialTheme.typography.bodyMedium,
         )
-        is AiChatMessage.AssistantSalePreview -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = stringResource(R.string.ai_debug_chat_draft_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-            val customerBadge = stringResource(
-                if (message.preview.customerMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
-                    R.string.ai_entity_badge_new
-                } else {
-                    R.string.ai_entity_badge_existing
-                },
-            )
-            Text(
-                text = stringResource(
-                    R.string.ai_sale_preview_customer_format,
-                    message.preview.customerName,
-                    customerBadge,
-                ),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            message.preview.lines.forEach { line ->
-                val productBadge = stringResource(
-                    if (line.resolutionMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
-                        R.string.ai_entity_badge_new
-                    } else {
-                        R.string.ai_entity_badge_existing
-                    },
-                )
-                Text(
-                    text = stringResource(
-                        R.string.ai_debug_lab_line_format,
-                        line.productName + " (" + productBadge + ")",
-                        line.quantity,
-                        formatCents(line.lineTotalCents),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                // No "Precio habitual" line for a product the person just named. A brand-new product
-                // has no habitual price, and the number the draft carries is the one they said — so
-                // announcing it as habitual was inventing a history the product does not have.
-            }
-            Text(
-                text = stringResource(
-                    R.string.ai_sale_preview_total,
-                    formatCents(message.preview.totalCents),
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (message.preview.initialPaymentCents > 0L) {
-                Text(
-                    text = stringResource(
-                        R.string.ai_sale_preview_initial_payment,
-                        formatCents(message.preview.initialPaymentCents),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    text = stringResource(
-                        R.string.ai_sale_preview_remainder,
-                        formatCents(message.preview.remainderCents),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            message.preview.promisedPaymentCandidate?.let { promise ->
-                val date = promise as? com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate
-                if (date != null) {
-                    Text(
-                        stringResource(R.string.ai_debug_lab_promised_date, "${date.year}-${date.month}-${date.day}"),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-            // El plazo del borrador, antes de confirmar. Antes la venta por CuentivoAI nacía sin
-            // fecha límite salvo que la persona la dijera en el texto, así que nunca vencía ni
-            // entraba al recordatorio (v44). Mismo selector que la venta manual.
-            if (onUpdateSaleDueDateDays != null) {
-                Text(
-                    text = stringResource(R.string.new_sale_due_question),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DueOption.entries.chunked(2).forEach { pair ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            pair.forEach { option ->
-                                NeoChoiceChip(
-                                    label = stringResource(option.labelRes),
-                                    isSelected = saleDueDateDays == option.days,
-                                    onClick = { onUpdateSaleDueDateDays(option.days) },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("ai-sale-due-option-" + option.name),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            if (onConfirmSale != null && onCancelSale != null) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = onConfirmSale,
-                        enabled = !isConfirming,
-                    ) {
-                        Text(stringResource(R.string.ai_sale_confirm_action))
-                    }
-                    TextButton(
-                        onClick = onCancelSale,
-                        enabled = !isConfirming,
-                    ) {
-                        Text(stringResource(R.string.ai_sale_confirm_cancel))
-                    }
-                }
-            }
-        }
+        is AiChatMessage.AssistantSalePreview -> AiSalePreviewContent(
+            preview = message.preview,
+            onConfirmSale = onConfirmSale,
+            onCancelSale = onCancelSale,
+            saleDueDateDays = saleDueDateDays,
+            onUpdateSaleDueDateDays = onUpdateSaleDueDateDays,
+            isConfirming = isConfirming,
+        )
         is AiChatMessage.AssistantSaleCustomerSelection -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(R.string.ai_sale_preview_customer_selection_prompt),
@@ -2107,6 +1997,144 @@ private fun ChatMessageRow(
                         text = stringResource(R.string.ai_debug_lab_unavailable),
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * La vista previa de una venta del borrador de CuentivoAI, extraída de [ChatMessageRow] para que una
+ * prueba Compose pueda renderizar exactamente el mismo camino de producción que ve la persona.
+ *
+ * Un producto que la persona acaba de nombrar (`resolutionMode == NEW`) no tiene precio habitual,
+ * así que esta vista nunca imprime la fila "Precio habitual": anunciarla inventaba una historia que
+ * el producto no tiene. Si esa fila volviera a este composable, la prueba conductual se pondría roja.
+ */
+@Composable
+fun AiSalePreviewContent(
+    preview: AiResolvedSalePreview,
+    onConfirmSale: (() -> Unit)? = null,
+    onCancelSale: (() -> Unit)? = null,
+    saleDueDateDays: Long? = null,
+    onUpdateSaleDueDateDays: ((Long?) -> Unit)? = null,
+    isConfirming: Boolean = false,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = stringResource(R.string.ai_debug_chat_draft_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+        val customerBadge = stringResource(
+            if (preview.customerMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
+                R.string.ai_entity_badge_new
+            } else {
+                R.string.ai_entity_badge_existing
+            },
+        )
+        Text(
+            text = stringResource(
+                R.string.ai_sale_preview_customer_format,
+                preview.customerName,
+                customerBadge,
+            ),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        preview.lines.forEach { line ->
+            val productBadge = stringResource(
+                if (line.resolutionMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
+                    R.string.ai_entity_badge_new
+                } else {
+                    R.string.ai_entity_badge_existing
+                },
+            )
+            Text(
+                text = stringResource(
+                    R.string.ai_debug_lab_line_format,
+                    line.productName + " (" + productBadge + ")",
+                    line.quantity,
+                    formatCents(line.lineTotalCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            // No "Precio habitual" line for a product the person just named. A brand-new product
+            // has no habitual price, and the number the draft carries is the one they said — so
+            // announcing it as habitual was inventing a history the product does not have.
+        }
+        Text(
+            text = stringResource(
+                R.string.ai_sale_preview_total,
+                formatCents(preview.totalCents),
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (preview.initialPaymentCents > 0L) {
+            Text(
+                text = stringResource(
+                    R.string.ai_sale_preview_initial_payment,
+                    formatCents(preview.initialPaymentCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.ai_sale_preview_remainder,
+                    formatCents(preview.remainderCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        preview.promisedPaymentCandidate?.let { promise ->
+            val date = promise as? com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate
+            if (date != null) {
+                Text(
+                    stringResource(R.string.ai_debug_lab_promised_date, "${date.year}-${date.month}-${date.day}"),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+        // El plazo del borrador, antes de confirmar. Antes la venta por CuentivoAI nacía sin
+        // fecha límite salvo que la persona la dijera en el texto, así que nunca vencía ni
+        // entraba al recordatorio (v44). Mismo selector que la venta manual.
+        if (onUpdateSaleDueDateDays != null) {
+            Text(
+                text = stringResource(R.string.new_sale_due_question),
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                DueOption.entries.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        pair.forEach { option ->
+                            NeoChoiceChip(
+                                label = stringResource(option.labelRes),
+                                isSelected = saleDueDateDays == option.days,
+                                onClick = { onUpdateSaleDueDateDays(option.days) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("ai-sale-due-option-" + option.name),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (onConfirmSale != null && onCancelSale != null) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = onConfirmSale,
+                    enabled = !isConfirming,
+                ) {
+                    Text(stringResource(R.string.ai_sale_confirm_action))
+                }
+                TextButton(
+                    onClick = onCancelSale,
+                    enabled = !isConfirming,
+                ) {
+                    Text(stringResource(R.string.ai_sale_confirm_cancel))
                 }
             }
         }

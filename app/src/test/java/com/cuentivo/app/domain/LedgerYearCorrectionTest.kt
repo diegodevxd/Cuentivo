@@ -5,7 +5,9 @@ import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -27,6 +29,20 @@ class LedgerYearCorrectionTest {
         customerName = "Rosa",
         amountCents = "15000",
         date = date,
+    )
+
+    /** La objeción que sí habilita la corrección masiva: la fecha no es posible. */
+    private fun dateObjection(lineIndex: Int) = LedgerDeterministicObjection(
+        lineIndex = lineIndex,
+        type = LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE,
+    )
+
+    private fun dateObjections(vararg lineIndices: Int) = lineIndices.map { dateObjection(it) }
+
+    /** Una objeción de otro tipo: no autoriza tocar la fecha del renglón. */
+    private fun priceObjection(lineIndex: Int) = LedgerDeterministicObjection(
+        lineIndex = lineIndex,
+        type = LedgerDeterministicObjectionType.PRICE_MISMATCH_SUSPECT,
     )
 
     @Test
@@ -55,7 +71,7 @@ class LedgerYearCorrectionTest {
     @Test
     fun `con un solo renglon no hay plan masivo`() {
         val operations = listOf(op(0, SafeDateCandidate(2023, 3, 10)))
-        val plan = LedgerYearCorrection.plan(operations, setOf(0), pageDate, today)
+        val plan = LedgerYearCorrection.plan(operations, dateObjections(0), pageDate, today)
         assertNull(plan)
     }
 
@@ -66,7 +82,7 @@ class LedgerYearCorrectionTest {
             op(1, SafeDateCandidate(2023, 4, 2)),
             op(2, SafeDateCandidate(2023, 5, 1)),
         )
-        val plan = LedgerYearCorrection.plan(operations, setOf(0, 1, 2), pageDate, today)
+        val plan = LedgerYearCorrection.plan(operations, dateObjections(0, 1, 2), pageDate, today)
         assertEquals(2023, plan?.readYear)
         assertEquals(2026, plan?.targetYear)
         assertEquals(listOf(0, 1, 2), plan?.lineIndices)
@@ -81,7 +97,7 @@ class LedgerYearCorrectionTest {
             op(1, SafeDateCandidate(2023, 4, 2)),
             op(2, SafeDateCandidate(2023, 5, 1)),
         )
-        val plan = LedgerYearCorrection.plan(operations, setOf(0, 2), pageDate, today)
+        val plan = LedgerYearCorrection.plan(operations, dateObjections(0, 2), pageDate, today)
         assertEquals(listOf(0, 2), plan?.lineIndices)
     }
 
@@ -93,7 +109,7 @@ class LedgerYearCorrectionTest {
             // Objeción por antigüedad/futuridad, no por año: no hay nada que corregir aquí.
             op(2, SafeDateCandidate(2026, 8, 30)),
         )
-        val plan = LedgerYearCorrection.plan(operations, setOf(0, 1, 2), pageDate, today)
+        val plan = LedgerYearCorrection.plan(operations, dateObjections(0, 1, 2), pageDate, today)
         assertEquals(listOf(0, 1), plan?.lineIndices)
     }
 
@@ -104,8 +120,57 @@ class LedgerYearCorrectionTest {
             op(1, SafeDateCandidate(2023, 4, 2)),
             op(2, SafeDateCandidate(2022, 5, 1)),
         )
-        val plan = LedgerYearCorrection.plan(operations, setOf(0, 1, 2), pageDate, today)
+        val plan = LedgerYearCorrection.plan(operations, dateObjections(0, 1, 2), pageDate, today)
         assertEquals(2023, plan?.readYear)
+        assertTrue(plan?.hasMixedReadYears == true)
+    }
+
+    @Test
+    fun `cuando todos los renglones comparten el ano leido no se marca mezcla`() {
+        val operations = listOf(
+            op(0, SafeDateCandidate(2023, 3, 10)),
+            op(1, SafeDateCandidate(2023, 4, 2)),
+        )
+        val plan = LedgerYearCorrection.plan(operations, dateObjections(0, 1), pageDate, today)
+        assertFalse(plan?.hasMixedReadYears == true)
+    }
+
+    /**
+     * La regresión del recorrido: "Cambiar todos" corrige el año mal leído, y el año mal leído se
+     * anuncia con `IMPLAUSIBLE_DATE`. Un renglón con otra objeción —aquí precio sospechoso— cuya
+     * fecha no es la del año de la hoja pero es reciente y plausible **no** puede entrar al plan.
+     * Si el filtro de tipo desapareciera, el renglón 2 se colaría y este caso se pondría rojo.
+     */
+    @Test
+    fun `cambiar todos solo toca los renglones con objecion de fecha`() {
+        // Jan 5 is intentional: Dec 31 in the previous year is only five days old and therefore
+        // plausible under the production date objection policy when the page has no date.
+        val scenarioToday = LocalDate.of(2026, 1, 5).toEpochDay()
+        val operations = listOf(
+            op(0, SafeDateCandidate(2023, 3, 10)),
+            op(1, SafeDateCandidate(2023, 4, 2)),
+            // Fecha plausible y reciente: cinco días antes de scenarioToday, sin año de página.
+            op(2, SafeDateCandidate(2025, 12, 31)),
+        )
+        val actualDateObjections = LedgerDeterministicObjections.evaluate(
+            operations = operations,
+            existingCustomerCandidates = emptyList(),
+            catalogProducts = emptyList(),
+            pageDateEpochDay = null,
+            todayEpochDay = scenarioToday,
+        ).filter { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }
+        assertEquals("the recent row must not also have a date objection", listOf(0, 1), actualDateObjections.map { it.lineIndex })
+
+        val objections = actualDateObjections + priceObjection(2)
+        val plan = LedgerYearCorrection.plan(
+            operations = operations,
+            objections = objections,
+            pageDateEpochDay = null,
+            todayEpochDay = scenarioToday,
+        )
+
+        assertEquals(listOf(0, 1), plan?.lineIndices)
+        assertFalse("el renglón con objeción de precio no puede entrar", plan?.lineIndices?.contains(2) == true)
     }
 
     @Test

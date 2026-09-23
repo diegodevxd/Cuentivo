@@ -179,12 +179,13 @@ fun LedgerReviewContent(
     val summaryResult = LedgerImportSummaryCalculator.calculate(review, objections, isPageCompletenessConfirmed, duplicateBlockedLineIndices)
     // El año mal leído en toda la hoja (v44): con dos o más renglones que dicen un año distinto al
     // de la página, se ofrece corregirlos de golpe. La decisión —qué renglones, de qué año a qué
-    // año, y que no se toque ninguno sin objeción— vive en `LedgerYearCorrection`.
+    // año, y que no se toque ninguno sin objeción de FECHA— vive en `LedgerYearCorrection`, que
+    // recibe las objeciones tipadas y filtra `IMPLAUSIBLE_DATE` él mismo.
     val yearBulkPlan = remember(review.operations, objections, review.pageDateEpochDay, review.todayEpochDay) {
         val today = review.todayEpochDay
         if (today == null) null else LedgerYearCorrection.plan(
             operations = review.operations,
-            objectionLineIndices = objectionLineIndices,
+            objections = objections,
             pageDateEpochDay = review.pageDateEpochDay,
             todayEpochDay = today,
         )
@@ -716,13 +717,25 @@ private fun YearBulkCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = pluralStringResource(
-                    R.plurals.ai_ledger_year_bulk_question,
-                    plan.lineIndices.size,
-                    plan.lineIndices.size,
-                    plan.readYear,
-                    plan.targetYear,
-                ),
+                text = if (plan.hasMixedReadYears) {
+                    // Años mezclados: el dominante no representa a todos los renglones, así que la
+                    // tarjeta describe lo único verdadero para todos —que su año no es el de la
+                    // hoja— y el conteo sigue siendo exactamente el de filas que se modificarán.
+                    pluralStringResource(
+                        R.plurals.ai_ledger_year_bulk_question_mixed,
+                        plan.lineIndices.size,
+                        plan.lineIndices.size,
+                        plan.targetYear,
+                    )
+                } else {
+                    pluralStringResource(
+                        R.plurals.ai_ledger_year_bulk_question,
+                        plan.lineIndices.size,
+                        plan.lineIndices.size,
+                        plan.readYear,
+                        plan.targetYear,
+                    )
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )

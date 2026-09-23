@@ -433,6 +433,18 @@ fun CuentivoApp(
     // System Back closes the sale task and nothing else — and it must drop the preselection with
     // it, or the next sale would silently inherit a customer nobody chose for it.
     BackHandler(enabled = showNewSale) { showNewSale = false; saleCustomer = null }
+    // Un registro exitoso abre el detalle de la clienta (lo hace el host, vía `onShowStatement`).
+    // El detalle manda sobre el formulario, así que mientras está abierto la venta sigue "abierta"
+    // por debajo y, al cerrar el detalle, reaparecía el formulario vacío. La venta ya se registró:
+    // la tarea terminó. Cerrarla cuando el detalle se abre es lo que hace que Atrás caiga en
+    // Inicio/Clientes y no en un formulario vacío. Se deja la corrección/edición intacta: ahí
+    // `saleCorrection` abre su propia pantalla y `showNewSale` no está activo.
+    LaunchedEffect(statementCustomer) {
+        if (statementCustomer != null && showNewSale) {
+            showNewSale = false
+            saleCustomer = null
+        }
+    }
     // The tapped reminder navigates to Clientes with the overdue chip. Only the action travels —
     // the host consumed the intent, and Room answers the "who owes" from here.
     LaunchedEffect(openOverdueCustomers) {

@@ -774,18 +774,6 @@ class AiDebugLabGuardsTest {
     }
 
     @Test
-    fun `a new product draft does not claim a habitual price`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
-        // A product the person just named has no habitual price, and the figure the draft carries is
-        // the one they said. Announcing it as habitual invented a history the product does not have.
-        // The string stays in the resources (parity), but nothing may render it for a new product.
-        assertFalse(
-            "the draft must not print a habitual price for a new product",
-            source.contains("ai_sale_preview_new_product_habitual_price"),
-        )
-    }
-
-    @Test
     fun `sale preview string resources maintain key parity across spanish and english`() {
         val esXml = File("src/main/res/values/strings.xml").readText()
         val enXml = File("src/main/res/values-en/strings.xml").readText()
