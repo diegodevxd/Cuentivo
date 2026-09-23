@@ -11,27 +11,38 @@ No es un source of truth. Manda, en este orden:
 3. El código y sus pruebas para comportamiento real.
 4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
 
-**Última actualización:** 2026-09-22. **v41 (`1.21.0`) en producción; v42 (`1.22.0`) ya subida a Play.**
+**Última actualización:** 2026-09-23 (madrugada). **v41 en producción; v43 (`1.22.1`, `18102af`,
+etiqueta `v1.22.1-43`) generada y subida a Play; v44 en curso, SIN COMMITEAR.**
 
-**v43 (`1.22.1`, parche) sale a más tardar el 2026-09-28, con lo que esté listo.** Ya en la rama
-(`diegodevxd/mensaje-al-cliente` confirmada fusionada): la calificación ya no dice "sin historial de
-pago" junto a un abono; el saldo de la tarjeta va en blanco; el "Saldo pendiente" repetido en
-Detalle de Cliente se quitó; y un interruptor **sólo de debug** en Cuenta ("[Debug] Compartir como
-plan Gratis") para ver el pie en un teléfono Pro — sólo afecta lo compartido, no la sync
-(`domain/ShareTier.kt`). **También para v43, en `diegodevxd/v43-plazo-e-idioma` (2026-09-22, sin
-commitear):** la importación de libreta lleva **selector de plazo** en revisión (Sin fecha/7/15/30,
-15 marcado, un plazo por página, aviso "N ventas quedarían vencidas desde hoy"; sólo cargos;
-vence en fecha del renglón + días; **ventas existentes intactas**), y los avisos fijos de
-`MainActivity` + `billing/` pasaron a `strings.xml` (**668/668**) con la puerta de idioma ampliada
-y **vacía**. Gate de esa rama: JVM **1285/0/0** desde XML, instrumentadas **54/54** en
-`emulator-5554`, 4 mutaciones detectadas y restauradas; reporte en `C:/tmp/oc-v43-reporte.md`.
-Falta: limpiar la caché de la imagen al abrir la app, y lo que salga de probar la v42 (incluido si
-WhatsApp respeta el texto junto a la imagen).
+**v44 — rama `diegodevxd/v44-libreta` (desde `18102af`), todo en el árbol de trabajo sin commitear.**
+Hecho por OpenCode (MiMo tanda 1; DeepSeek v4.1 Flash tandas 2 y 3) y auditado por Codex `gpt-6-sol`;
+reportes en `C:/tmp/oc-v44-reporte.md`, `oc-v44-tanda2-reporte.md`, `oc-v44-tanda3-reporte.md`,
+`codex-v44-auditoria.md`; encargos en `docs/superpowers/encargos/2026-09-22-v44-*.md`.
+Gate verificado por Claude: JVM **1334/0/0** desde XML, paridad **673/673**.
+- **A** refrescar Inicio/Clientes tras registrar una hoja (`LedgerConfirmAndRefresh`). Probado en teléfono.
+- **B** objeción de fecha imposible (año ≠ página, >180 días, futura). Probado en teléfono con hoja real.
+- **C** el posible duplicado frena el renglón hasta "Sí, es otra venta"; consulta por fecha efectiva.
+- **D** eliminar cuenta: reautentica con Google antes de borrar, marca durable de borrado pendiente,
+  `ERROR_REQUIRES_RECENT_LOGIN`. **Probado en teléfono con pibedieguillo: el usuario Auth SÍ se borró.**
+- **E** con imagen el texto va corto; si el PNG falla, texto completo. Visto en teléfono.
+- **F** el diálogo de la revisión guiada ya no guarda los datos del renglón anterior (`key(lineIndex)`).
+- La huella de confirmación incluye fecha y tipo.
+
+**Siguiente paso (pendiente de Diego):** decidir si antes de commitear la v44 se arreglan los puntos 1
+y 3 del recorrido (abajo), o se commitea tal cual y van a la v45. Luego: commit, versionCode 44, gate
+completo con instrumentadas, AAB.
+
+**Recorrido "Doña Mary" (2026-09-23, Claude en el teléfono)** — reporte completo en
+`docs/superpowers/reportes/2026-09-23-recorrido-dona-mary.md`. Lo más grave: (1) ante una fecha
+imposible el botón fácil es "Sí, es correcto" y acepta 2023; (2) corregir el año es renglón por renglón
+(la IA leyó 2023 en los 12 renglones de una hoja real); (3) registrar una venta no confirma nada visible.
+
+**Idea para después (no v44):** mover el borrado de cuenta a una Cloud Function con Admin SDK.
 
 **Dónde está cada cosa ahora mismo:**
 
-- **Play.** `v41` / `1.21.0` en **producción**; `v42` / `1.22.0` subida. `versionCode` hasta 42
-  gastados: el próximo es **43**. AAB en `dist/Cuentivo-v42-1.22.0.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
+- **Play.** `v41` / `1.21.0` en **producción**; `v43` / `1.22.1` subida. `versionCode` hasta 43
+  gastados: el próximo es **44**. AAB en `dist/Cuentivo-v43-1.22.1.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
 - **Functions:** `extractLedgerPage(us-south1)` **desplegado desde `81194a7`** el 2026-09-17, con
   contrato **v5** (y v3/v4 idénticos), `gemini-3.5-flash`, `thinkingBudget: 0` y
   `maxOutputTokens: 32768`. **Probado contra la API real** con el v40 de Play: tres libretas leídas,

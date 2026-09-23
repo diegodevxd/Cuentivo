@@ -64,11 +64,7 @@ object DebtorShareText {
     ): String {
         // El nombre del negocio se calla cuando está vacío o cuando es el valor por defecto: el cliente
         // no tiene por qué recibir "con Mi negocio".
-        val header = if (BusinessName.isConfigured(businessName)) {
-            "Hola $customerName, te comparto tu estado de cuenta de ${businessName.trim()}."
-        } else {
-            "Hola $customerName, te comparto tu estado de cuenta."
-        }
+        val header = header(businessName, customerName)
         // No column alignment: WhatsApp renders this in a proportional font, so padded columns
         // arrive crooked. Separators and an indented second line survive any width.
         val detail = entries.takeIf { it.isNotEmpty() }?.joinToString("\n") { entry ->
@@ -81,10 +77,42 @@ object DebtorShareText {
             append(header).append('\n')
             if (detail != null) append('\n').append(detail).append('\n')
             append('\n')
-            append(
-                if (balanceCents > 0) "Saldo pendiente: ${Money.format(balanceCents)}"
-                else "Tu cuenta está al corriente. ¡Gracias!"
-            )
+            append(balanceLine(balanceCents))
         } + footer(tier)
     }
+
+    /**
+     * El texto que acompaña a la **imagen** del estado de cuenta (v44).
+     *
+     * WhatsApp manda imagen y texto juntos —el texto queda como pie de foto—, así que los
+     * movimientos salían dos veces: en la imagen y en el texto. Decidido por Diego (2026-09-22):
+     * cuando va con imagen, el texto se acorta. Sin movimientos —ya van en la imagen—, con el mismo
+     * encabezado y el mismo pie que [forCustomer], y el mismo saldo en cero / a favor.
+     *
+     * Reutiliza [header], [balanceLine] y [footer] a propósito: el encabezado y el pie no pueden
+     * divergir entre el texto corto y el completo.
+     */
+    fun forCustomerWithImage(
+        tier: SubscriptionTier,
+        businessName: String,
+        customerName: String,
+        balanceCents: Long,
+    ): String = buildString {
+        append(header(businessName, customerName)).append('\n')
+        append('\n')
+        append(balanceLine(balanceCents))
+    } + footer(tier)
+
+    /** El encabezado, con o sin nombre de negocio. Uno solo para los dos textos. */
+    private fun header(businessName: String, customerName: String): String =
+        if (BusinessName.isConfigured(businessName)) {
+            "Hola $customerName, te comparto tu estado de cuenta de ${businessName.trim()}."
+        } else {
+            "Hola $customerName, te comparto tu estado de cuenta."
+        }
+
+    /** El saldo, en cero / a favor o pendiente. Uno solo para los dos textos. */
+    private fun balanceLine(balanceCents: Long): String =
+        if (balanceCents > 0) "Saldo pendiente: ${Money.format(balanceCents)}"
+        else "Tu cuenta está al corriente. ¡Gracias!"
 }

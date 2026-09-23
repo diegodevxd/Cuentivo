@@ -223,6 +223,9 @@
     <string name="message_account_delete_cloud_failed">We could not delete your information in the cloud, so nothing on your phone was erased. Check your connection and try again.</string>
     <string name="message_account_delete_failed">The account could not be deleted. Try again.</string>
     <string name="message_account_delete_recent_login">Your session is too old to delete the account. Sign out, sign in again and repeat the deletion.</string>
+    <string name="message_account_delete_reauth_cancelled">You cancelled the Google confirmation, so nothing was erased. You can try again whenever you want.</string>
+    <string name="message_account_delete_reauth_failed">We could not confirm your account with Google, so nothing was erased. Check your connection and try again.</string>
+    <string name="message_account_delete_data_gone_auth_failed">Your data was erased, but we could not close your account. Sign in again to finish.</string>
 
     <!-- Alerts (AlertsSheet) -->
     <string name="alerts_title">Alerts</string>
@@ -721,7 +724,9 @@
     <string name="ai_ledger_objection_price_mismatch">Price does not match your registered product</string>
     <string name="ai_ledger_objection_unusual_cents">Unusual cents on this page</string>
     <string name="ai_ledger_objection_customer_confirmation">This customer already exists, confirm before registering</string>
+    <string name="ai_ledger_objection_implausible_date">This row date does not look possible (different year than the page, too old, or in the future): check the year before continuing</string>
     <string name="ai_ledger_action_confirm_objection">Yes, it is correct</string>
+    <string name="ai_ledger_action_confirm_duplicate">Yes, it is another sale</string>
     <string name="message_account_wiped">This phone had data from another account and it was deleted</string>
     <string name="message_cloud_restored">Restored %1$d customers from the cloud</string>
     <string name="message_cloud_restore_failed">We could not bring your information from the cloud. Check your connection and reopen the app (%1$s/%2$s)</string>

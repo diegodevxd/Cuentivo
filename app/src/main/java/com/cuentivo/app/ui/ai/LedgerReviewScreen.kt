@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -135,8 +136,17 @@ fun LedgerReviewContent(
     // but leaving the person to discover, unaided, that every row needs a tap is how a working
     // import looked like a dead button.
     val objectionLineIndices = remember(objections) { objections.map { it.lineIndex }.toSet() }
-    val allRowsNeedingReview = remember(review.operations, objections) {
-        review.operations.filter { !isRegisterableLedgerOperation(it) || it.lineIndex in objectionLineIndices }
+    // El posible duplicado frena el renglón igual que una objeción determinista (v44): hasta que la
+    // persona confirme "Sí, es otra venta", el renglón no está resuelto. La decisión vive en el
+    // objeto puro `LedgerDuplicateBlocking`; aquí sólo se le pasa lo que ya está calculado.
+    val duplicateBlockedLineIndices = remember(review.operations, duplicateMatches) {
+        com.cuentivo.app.domain.LedgerDuplicateBlocking.blockedLineIndices(review.operations, duplicateMatches)
+    }
+    val blockedLineIndices = remember(objectionLineIndices, duplicateBlockedLineIndices) {
+        objectionLineIndices + duplicateBlockedLineIndices
+    }
+    val allRowsNeedingReview = remember(review.operations, objections, duplicateBlockedLineIndices) {
+        review.operations.filter { !isRegisterableLedgerOperation(it) || it.lineIndex in blockedLineIndices }
     }
     // Cuántas ventas nacerían vencidas con este plazo. El cálculo —la fecha efectiva de cada
     // renglón, la suma, y sobre todo la decisión de "vencida"— vive en el objeto puro
@@ -161,7 +171,7 @@ fun LedgerReviewContent(
         } ?: 0
     }
 
-    val summaryResult = LedgerImportSummaryCalculator.calculate(review, objections, isPageCompletenessConfirmed)
+    val summaryResult = LedgerImportSummaryCalculator.calculate(review, objections, isPageCompletenessConfirmed, duplicateBlockedLineIndices)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -411,56 +421,69 @@ fun LedgerReviewContent(
     }
 
 
-    // Edit modal dialog when a row or unresolved field is tapped
+    // Edit modal dialog when a row or unresolved field is tapped.
+    //
+    // `key(op.lineIndex)` re-monta el diálogo cuando la cola avanza al renglón siguiente. Es la mitad
+    // que faltaba: la cola cambia `editingOperation` sin desmontar el diálogo (`onSave`/`onConfirm`
+    // avanzan y vuelven a llamar a `editingOperation`), y los `remember` sin key de dentro sobreviven
+    // a esa recomposición, así que la fila N abría con los campos de la N-1 y Guardar los escribía
+    // ENCIMA de la N --una página Laura/Estefanía/Nosotros quedó como 3 x Laura--.
+    //
+    // Se elige `key` alrededor del diálogo y no un `remember(operation.lineIndex)` por campo porque el
+    // defecto es exactamente "un `remember` sin key": con la llave en el sitio, cualquier `remember`
+    // que se añada mañana dentro del diálogo nace ya aislado por renglón, sin depender de que alguien
+    // se acuerde de pasar la key a cada uno.
     editingOperation?.let { op ->
-        EditLedgerOperationDialog(
-            operation = op,
-            captureFile = captureFile,
-            customerMatch = customerMatches[op.lineIndex],
-            productMatch = productMatches[op.lineIndex],
-            duplicateMatch = duplicateMatches[op.lineIndex],
-            objections = objections,
-            onConfirmObjection = {
-                onConfirmObjection(op.lineIndex)
-                val nextLineIndex = pendingReviewQueue.firstOrNull()
-                pendingReviewQueue = pendingReviewQueue.drop(1)
-                editingOperation = nextLineIndex?.let { next ->
-                    review.operations.firstOrNull { it.lineIndex == next }
-                }
-            },
-            onAcceptCustomerAnchor = { candidate ->
-                onAcceptCustomerAnchor(op.lineIndex, candidate)
-                val nextLineIndex = pendingReviewQueue.firstOrNull()
-                pendingReviewQueue = pendingReviewQueue.drop(1)
-                editingOperation = nextLineIndex?.let { next ->
-                    review.operations.firstOrNull { it.lineIndex == next }
-                }
-            },
-            onAcceptProductAnchor = { candidate ->
-                onAcceptProductAnchor(op.lineIndex, candidate)
-            },
-            onDismiss = {
-                editingOperation = null
-                pendingReviewQueue = emptyList()
-            },
-            onSave = { updatedName, updatedAmount, updatedKind, updatedDate ->
-                // Saving is an explicit confirmation of all three fields, not a diff. Someone who
-                // opens a doubtful row, checks it against the crop and saves has resolved the
-                // doubt even when they changed nothing; forwarding only what differs would leave
-                // that row out with no way to ever let it in.
-                onUpdateCustomer(op.lineIndex, updatedName)
-                onUpdateAmount(op.lineIndex, updatedAmount)
-                onUpdateKind(op.lineIndex, updatedKind)
-                onUpdateDate(op.lineIndex, updatedDate)
-                // Straight on to the next doubtful row. Twenty rows means twenty confirmations
-                // either way -- what changes is whether the person has to hunt for each one.
-                val nextLineIndex = pendingReviewQueue.firstOrNull()
-                pendingReviewQueue = pendingReviewQueue.drop(1)
-                editingOperation = nextLineIndex?.let { next ->
-                    review.operations.firstOrNull { it.lineIndex == next }
-                }
-            },
-        )
+        key(op.lineIndex) {
+            EditLedgerOperationDialog(
+                operation = op,
+                captureFile = captureFile,
+                customerMatch = customerMatches[op.lineIndex],
+                productMatch = productMatches[op.lineIndex],
+                duplicateMatch = duplicateMatches[op.lineIndex],
+                objections = objections,
+                onConfirmObjection = {
+                    onConfirmObjection(op.lineIndex)
+                    val nextLineIndex = pendingReviewQueue.firstOrNull()
+                    pendingReviewQueue = pendingReviewQueue.drop(1)
+                    editingOperation = nextLineIndex?.let { next ->
+                        review.operations.firstOrNull { it.lineIndex == next }
+                    }
+                },
+                onAcceptCustomerAnchor = { candidate ->
+                    onAcceptCustomerAnchor(op.lineIndex, candidate)
+                    val nextLineIndex = pendingReviewQueue.firstOrNull()
+                    pendingReviewQueue = pendingReviewQueue.drop(1)
+                    editingOperation = nextLineIndex?.let { next ->
+                        review.operations.firstOrNull { it.lineIndex == next }
+                    }
+                },
+                onAcceptProductAnchor = { candidate ->
+                    onAcceptProductAnchor(op.lineIndex, candidate)
+                },
+                onDismiss = {
+                    editingOperation = null
+                    pendingReviewQueue = emptyList()
+                },
+                onSave = { updatedName, updatedAmount, updatedKind, updatedDate ->
+                    // Saving is an explicit confirmation of all three fields, not a diff. Someone who
+                    // opens a doubtful row, checks it against the crop and saves has resolved the
+                    // doubt even when they changed nothing; forwarding only what differs would leave
+                    // that row out with no way to ever let it in.
+                    onUpdateCustomer(op.lineIndex, updatedName)
+                    onUpdateAmount(op.lineIndex, updatedAmount)
+                    onUpdateKind(op.lineIndex, updatedKind)
+                    onUpdateDate(op.lineIndex, updatedDate)
+                    // Straight on to the next doubtful row. Twenty rows means twenty confirmations
+                    // either way -- what changes is whether the person has to hunt for each one.
+                    val nextLineIndex = pendingReviewQueue.firstOrNull()
+                    pendingReviewQueue = pendingReviewQueue.drop(1)
+                    editingOperation = nextLineIndex?.let { next ->
+                        review.operations.firstOrNull { it.lineIndex == next }
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -727,6 +750,8 @@ private fun ledgerObjectionMessage(objection: com.cuentivo.app.domain.LedgerDete
             stringResource(R.string.ai_ledger_objection_customer_confirmation)
         com.cuentivo.app.domain.LedgerDeterministicObjectionType.PAGE_TOTAL_MISMATCH ->
             stringResource(R.string.ai_ledger_objection_page_total_mismatch, objection.declaredCents ?: 0L, objection.expectedCents ?: 0L)
+        com.cuentivo.app.domain.LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE ->
+            stringResource(R.string.ai_ledger_objection_implausible_date)
     }
 
 @Composable
@@ -1266,6 +1291,27 @@ private fun EditLedgerOperationDialog(
                             modifier = Modifier.padding(8.dp),
                         )
                     }
+                    // El duplicado frena el renglón hasta que la persona diga que es otra venta
+                    // (v44). Mismo mecanismo que las objeciones —la huella en el renglón—, con su
+                    // propio texto: "Sí, es otra venta". Si corrige el renglón y deja de casar, la
+                    // duda desaparece sola y este botón ya no aparece.
+                    if (!com.cuentivo.app.domain.LedgerObjectionConfirmation.isConfirmed(operation)) {
+                        Button(
+                            onClick = onConfirmObjection,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("ledger-edit-confirm-duplicate-button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary,
+                                contentColor = MaterialTheme.colorScheme.onSecondary,
+                            ),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.ai_ledger_action_confirm_duplicate),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
                 }
 
                 OutlinedTextField(
@@ -1273,7 +1319,7 @@ private fun EditLedgerOperationDialog(
                     onValueChange = { name = it },
                     label = { Text(stringResource(R.string.ai_ledger_field_customer)) },
                     placeholder = { Text(stringResource(R.string.ai_ledger_field_customer_placeholder)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("ledger-edit-customer-field"),
                     singleLine = true,
                 )
 

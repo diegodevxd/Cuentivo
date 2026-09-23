@@ -1202,6 +1202,28 @@ object AiDebugLabMachine {
     }
 
     /**
+     * Reemplaza las operaciones ya registradas contra las que se comparan los duplicados (v44).
+     *
+     * La consulta a Room se hizo una vez al extraer/restaurar, con la ventana de fechas que había
+     * entonces. Si durante la revisión cambia la fecha de un renglón o la de la página, esa ventana
+     * deja de cubrir lo que el detector compara, así que hay que volver a consultar. Sólo válido en
+     * LedgerReviewing con el sessionId que coincide.
+     */
+    fun onUpdateLedgerRegisteredOperations(
+        model: AiDebugLabModel,
+        sessionId: String,
+        registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection>,
+    ): AiDebugLabModel {
+        val state = model.state as? AiDebugLabState.LedgerReviewing ?: return model
+        if (state.sessionId != sessionId) return model
+        return model.copy(
+            state = state.copy(
+                registeredOperations = java.util.Collections.unmodifiableList(ArrayList(registeredOperations)),
+            ),
+        )
+    }
+
+    /**
      * Pure update to the active reviews operations. Only valid while in LedgerReviewing with matching sessionId.
      * Retains the existing customer balances context without requiring callers to re-inject it.
      */

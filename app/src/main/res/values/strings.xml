@@ -223,6 +223,9 @@
     <string name="message_account_delete_cloud_failed">No pudimos borrar tu información en la nube, así que no se borró nada de tu teléfono. Revisa tu conexión y vuelve a intentarlo.</string>
     <string name="message_account_delete_failed">No se pudo eliminar la cuenta. Inténtalo de nuevo.</string>
     <string name="message_account_delete_recent_login">Tu sesión es demasiado antigua para eliminar la cuenta. Cierra sesión, vuelve a entrar y repite el borrado.</string>
+    <string name="message_account_delete_reauth_cancelled">Cancelaste la confirmación con Google, así que no se borró nada. Puedes intentarlo de nuevo cuando quieras.</string>
+    <string name="message_account_delete_reauth_failed">No pudimos confirmar tu cuenta con Google, así que no se borró nada. Revisa tu conexión y vuelve a intentarlo.</string>
+    <string name="message_account_delete_data_gone_auth_failed">Tus datos se borraron, pero no pudimos cerrar tu cuenta. Vuelve a entrar para terminar.</string>
 
     <!-- Alerts (AlertsSheet) -->
     <string name="alerts_title">Avisos</string>
@@ -721,7 +724,9 @@
     <string name="ai_ledger_objection_price_mismatch">El precio no coincide con tu producto registrado</string>
     <string name="ai_ledger_objection_unusual_cents">Centavos inusuales en esta página</string>
     <string name="ai_ledger_objection_customer_confirmation">Este cliente ya existe, confírmalo antes de registrar</string>
+    <string name="ai_ledger_objection_implausible_date">La fecha de este renglón no parece posible (año distinto al de la página, demasiado vieja o futura): revisa el año antes de continuar</string>
     <string name="ai_ledger_action_confirm_objection">Sí, es correcto</string>
+    <string name="ai_ledger_action_confirm_duplicate">Sí, es otra venta</string>
     <string name="message_account_wiped">Este teléfono tenía datos de otra cuenta y se borraron</string>
     <string name="message_cloud_restored">Se restauraron %1$d clientes de la nube</string>
     <string name="message_cloud_restore_failed">No pudimos traer tu información de la nube. Revisa tu conexión y vuelve a abrir la app (%1$s/%2$s)</string>

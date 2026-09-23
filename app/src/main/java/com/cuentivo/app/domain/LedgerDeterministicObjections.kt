@@ -28,6 +28,14 @@ enum class LedgerDeterministicObjectionType {
     /** Line matches an existing customer but the name does not appear in rawText or was inherited. */
     CUSTOMER_CONFIRMATION_REQUIRED,
     PAGE_TOTAL_MISMATCH,
+
+    /**
+     * La fecha del renglón no puede ser buena: cae en un año distinto al de la página,
+     * es más de 180 días anterior a hoy, o es futura. En la práctica casi siempre es un
+     * AÑO MAL LEÍDO por el modelo — una hoja fotografiada en 2026 leída como 2023 se
+     * convierte, con el plazo, en "vencido hace 3 años" sin que nada lo frenara (v44).
+     */
+    IMPLAUSIBLE_DATE,
 }
 
 data class LedgerDeterministicObjection(
@@ -39,6 +47,13 @@ data class LedgerDeterministicObjection(
 )
 
 object LedgerDeterministicObjections {
+
+    /**
+     * Una fecha de renglón más vieja que esto, medida contra **hoy**, es casi siempre un año
+     * mal leído y no una venta real de hace medio año. La persona puede confirmar igual: la
+     * objeción sólo añade duda (v44).
+     */
+    const val MAX_PLAUSIBLE_AGE_DAYS = 180L
 
     private val PARENTHESES_REGEX = Regex("\\([^)]*\\)")
 
@@ -54,16 +69,35 @@ object LedgerDeterministicObjections {
         existingCustomerCandidates: List<CustomerCandidate>,
         catalogProducts: List<ProductCandidate>,
         pageTotals: List<com.cuentivo.app.ai.ledger.LedgerPageTotal> = emptyList(),
+        /**
+         * Fecha de la página, para comparar el año del renglón contra el año de la hoja.
+         * `null` apaga esa comparación (no hay referencia); los demás criterios siguen.
+         */
+        pageDateEpochDay: Long? = null,
+        /**
+         * Hoy, en epoch day. `null` apaga los criterios de "demasiado vieja" y "futura"
+         * (no hay punto de comparación); el criterio de año sigue pudiendo evaluar.
+         */
+        todayEpochDay: Long? = null,
     ): List<LedgerDeterministicObjection> {
         val existingNames = existingCustomerCandidates.mapTo(LinkedHashSet()) { CustomerNameNormalizer.key(it.name) }
-        return evaluateWithContext(operations, productCandidatesByLine(operations, catalogProducts), existingNames, pageTotals)
+        return evaluateWithContext(
+            operations,
+            productCandidatesByLine(operations, catalogProducts),
+            existingNames,
+            pageTotals,
+            pageDateEpochDay,
+            todayEpochDay,
+        )
     }
 
     fun blockedLineIndices(
         operations: List<LedgerOperation>,
         existingCustomerCandidates: List<CustomerCandidate>,
         catalogProducts: List<ProductCandidate>,
-    ): Set<Int> = evaluate(operations, existingCustomerCandidates, catalogProducts)
+        pageDateEpochDay: Long? = null,
+        todayEpochDay: Long? = null,
+    ): Set<Int> = evaluate(operations, existingCustomerCandidates, catalogProducts, pageDateEpochDay = pageDateEpochDay, todayEpochDay = todayEpochDay)
         .mapTo(LinkedHashSet()) { it.lineIndex }
 
     private fun productCandidatesByLine(
@@ -120,6 +154,8 @@ object LedgerDeterministicObjections {
         productCandidatesByLine: Map<Int, ProductCandidate>,
         existingCustomerNormalizedNames: Set<String>,
         pageTotals: List<com.cuentivo.app.ai.ledger.LedgerPageTotal> = emptyList(),
+        pageDateEpochDay: Long? = null,
+        todayEpochDay: Long? = null,
     ): List<LedgerDeterministicObjection> {
         val objections = mutableListOf<LedgerDeterministicObjection>()
 
@@ -195,6 +231,35 @@ object LedgerDeterministicObjections {
                             }
                         }
                     }
+                }
+            }
+
+            // 1.3 Fecha imposible (v44): una fecha que el papel casi nunca puede tener.
+            //     Un año mal leído por el modelo pasa hoy sin objeción alguna y con el plazo
+            //     se convierte en "vencido hace 3 años". Sólo añade duda: la persona confirma
+            //     el renglón o corrige la fecha, igual que con el resto de objeciones.
+            //     Reglas (cualquiera de las tres basta):
+            //       1. el año del renglón difiere del año de la página, o
+            //       2. es más de 180 días anterior a hoy, o
+            //       3. es futura.
+            val rowDate = op.date
+            if (rowDate != null) {
+                val rowEpoch = runCatching {
+                    java.time.LocalDate.of(rowDate.year, rowDate.month, rowDate.day).toEpochDay()
+                }.getOrNull()
+                val pageYear = pageDateEpochDay?.let { runCatching { java.time.LocalDate.ofEpochDay(it).year }.getOrNull() }
+                val yearDiffersFromPage = pageYear != null && rowDate.year != pageYear
+                // Un renglón sin año utilizable no se juzga por antigüedad/futuridad aquí:
+                // el planificador ya lo rechaza como fecha no resoluble.
+                val tooOld = rowEpoch != null && todayEpochDay != null && rowEpoch < todayEpochDay - MAX_PLAUSIBLE_AGE_DAYS
+                val isFuture = rowEpoch != null && todayEpochDay != null && rowEpoch > todayEpochDay
+                if (yearDiffersFromPage || tooOld || isFuture) {
+                    objections.add(
+                        LedgerDeterministicObjection(
+                            lineIndex = lineIndex,
+                            type = LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE,
+                        ),
+                    )
                 }
             }
 

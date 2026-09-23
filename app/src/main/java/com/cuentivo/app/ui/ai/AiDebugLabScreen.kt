@@ -377,6 +377,7 @@ fun AiDebugLabScreen(
             resolver = ledgerRegisteredResolver,
             businessId = businessId,
             operations = saved.operations,
+            pageDateEpochDay = saved.pageDateEpochDay,
         )
         ledgerReviewContext = LedgerReviewContext(
             existingCustomerBalances = balances,
@@ -762,11 +763,35 @@ fun AiDebugLabScreen(
 
     val ledgerReviewing = model.state as? AiDebugLabState.LedgerReviewing
     if (ledgerReviewing != null) {
+        // v44: la consulta a Room se hizo una vez al extraer/restaurar, con la ventana de fechas que
+        // había entonces. Si durante la revisión cambia la fecha de un renglón o la de la página, esa
+        // ventana deja de cubrir lo que el detector compara (una página de 2023 sin fechas por renglón
+        // consultaba 2026 y no encontraba nada). Se vuelve a consultar cuando cambia la firma de fechas
+        // efectivas, con la MISMA definición de ventana que usa el detector (`LedgerEffectiveDate`).
+        val effectiveDateSignature = ledgerReviewing.review.operations.joinToString("|") { op ->
+            "${op.lineIndex}:${com.cuentivo.app.domain.LedgerEffectiveDate.of(op, ledgerReviewing.review.pageDateEpochDay, ledgerReviewing.review.todayEpochDay)}"
+        } + "|page:${ledgerReviewing.review.pageDateEpochDay}"
+        LaunchedEffect(effectiveDateSignature, ledgerReviewing.sessionId) {
+            if (ledgerRegisteredResolver == null) return@LaunchedEffect
+            val refreshed = loadRegisteredAround(
+                resolver = ledgerRegisteredResolver,
+                businessId = ledgerReviewing.businessId,
+                operations = ledgerReviewing.review.operations,
+                pageDateEpochDay = ledgerReviewing.review.pageDateEpochDay,
+            )
+            model = AiDebugLabMachine.onUpdateLedgerRegisteredOperations(
+                model = model,
+                sessionId = ledgerReviewing.sessionId,
+                registeredOperations = refreshed,
+            )
+        }
         val deterministicObjections = com.cuentivo.app.domain.LedgerDeterministicObjections.evaluate(
             operations = ledgerReviewing.review.operations,
             existingCustomerCandidates = ledgerReviewing.customerCandidates,
             catalogProducts = ledgerReviewing.productCandidates,
             pageTotals = ledgerReviewing.review.pageTotals,
+            pageDateEpochDay = ledgerReviewing.review.pageDateEpochDay,
+            todayEpochDay = ledgerReviewing.review.todayEpochDay,
         )
         val cancelLedger = {
             // Stage 2 of the metric: the person discarded this page, so the import ended
@@ -874,7 +899,15 @@ fun AiDebugLabScreen(
                         // máquina: así la prueba de `onConfirmLedger` cubre el valor que de verdad
                         // se escribe, no una copia paralela tomada de la clausura.
                         val dueDateDays = (outcome.model.state as AiDebugLabState.LedgerConfirming).dueDateDays
-                        val blockedLineIndices = deterministicObjections.mapTo(LinkedHashSet()) { it.lineIndex }
+                        // El posible duplicado frena el renglón igual que una objeción determinista
+                        // (v44): hasta que la persona confirme "Sí, es otra venta", no se escribe.
+                        // Se calcula con el mismo objeto puro que usa la pantalla, para que lo que
+                        // se ve bloqueado y lo que se escribe bloqueado no puedan discrepar.
+                        val blockedLineIndices = com.cuentivo.app.domain.LedgerDuplicateBlocking.blockedLineIndices(
+                            operations = operations,
+                            duplicateMatches = ledgerReviewing.duplicateMatches,
+                            deterministicBlockedLineIndices = deterministicObjections.mapTo(LinkedHashSet()) { it.lineIndex },
+                        )
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
                                 runCatching { write(businessId, sessionId, operations, pageDateEpochDay, dueDateDays, blockedLineIndices, com.cuentivo.app.domain.LedgerPageCompleteness.modelSaysTextMayBeMissing(ledgerReviewing.review), ledgerReviewing.isPageCompletenessConfirmed) }.getOrNull()
@@ -2105,24 +2138,26 @@ private fun VoiceWaveformBars(
 /**
  * What is already registered around the days this page talks about.
  *
- * The range is taken from the rows themselves, widened by a couple of weeks on each side so a sheet
- * re-photographed after a correction still lines up. A page with no dated row falls back to today,
- * which is the only date anybody knows in that case.
+ * The range is taken from the **effective** date of each row — the row's own date, or the page date
+ * when the row has none — widened by a couple of weeks on each side so a sheet re-photographed after
+ * a correction still lines up. That definition lives in `LedgerEffectiveDate`, shared with the
+ * detector, so the query and the comparison cannot disagree (v44). Only when no row has any usable
+ * date does it fall back to today, which is the only date anybody knows in that case.
  */
 private suspend fun loadRegisteredAround(
     resolver: (suspend (businessId: String, minEpochDay: Long, maxEpochDay: Long) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)?,
     businessId: String,
     operations: List<com.cuentivo.app.ai.ledger.LedgerOperation>,
+    pageDateEpochDay: Long? = null,
 ): List<com.cuentivo.app.domain.RegisteredOperationProjection> {
     if (resolver == null) return emptyList()
-    val days = operations.mapNotNull { op ->
-        op.date?.let { date ->
-            runCatching { java.time.LocalDate.of(date.year, date.month, date.day).toEpochDay() }.getOrNull()
-        }
-    }
     val today = java.time.LocalDate.now().toEpochDay()
-    val min = (days.minOrNull() ?: today) - DUPLICATE_WINDOW_DAYS
-    val max = (days.maxOrNull() ?: today) + DUPLICATE_WINDOW_DAYS
+    val (min, max) = com.cuentivo.app.domain.LedgerEffectiveDate.queryWindow(
+        operations = operations,
+        pageDateEpochDay = pageDateEpochDay,
+        todayEpochDay = today,
+        windowDays = DUPLICATE_WINDOW_DAYS,
+    )
     return runCatching { resolver(businessId, min, max) }.getOrDefault(emptyList())
 }
 

@@ -551,4 +551,160 @@ class LedgerDeterministicObjectionsTest {
         assertEquals("89500", operations.single().amountCents)
         assertEquals(setOf(0), LedgerPageResolution.unresolvedLineIndices(operations, objections.map { it.lineIndex }.toSet()))
     }
+
+    // ---- Fechas imposibles (v44, encargo: años imposibles) ----
+
+    private val hoy = java.time.LocalDate.of(2026, 9, 22)
+
+    private fun candidate(day: java.time.LocalDate) = SafeDateCandidate(day.year, day.monthValue, day.dayOfMonth)
+
+    private fun datedRow(lineIndex: Int, date: SafeDateCandidate?) = LedgerOperation(
+        lineIndex = lineIndex,
+        proposedKind = ProposedLedgerKind.SALE,
+        customerName = "Rosa",
+        amountCents = "25000",
+        rawText = "Rosa 250",
+        date = date,
+        sources = LedgerFieldSources(customer = LedgerFieldSource.EXPLICIT),
+    )
+
+    private fun fechaDe(
+        operations: List<LedgerOperation>,
+        pageDateEpochDay: Long?,
+        todayEpochDay: Long? = hoy.toEpochDay(),
+    ) = LedgerDeterministicObjections.evaluate(
+        operations = operations,
+        existingCustomerCandidates = emptyList(),
+        catalogProducts = emptyList(),
+        pageDateEpochDay = pageDateEpochDay,
+        todayEpochDay = todayEpochDay,
+    ).filter { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }
+
+    @Test
+    fun `fecha_en_el_mismo_anio_que_la_pagina_y_reciente_no_objeta`() {
+        val row = datedRow(0, SafeDateCandidate(2026, 9, 15))
+        assertTrue(
+            fechaDe(listOf(row), pageDateEpochDay = java.time.LocalDate.of(2026, 9, 10).toEpochDay()).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `fecha_en_otro_anio_que_la_pagina_objeta`() {
+        // Aislado del criterio de antigüedad: el renglón tiene 15 días, no puede objetarse por
+        // edad; sólo el año difiere (2025 vs 2026).
+        val hoyEnero = java.time.LocalDate.of(2026, 1, 15)
+        val row = datedRow(0, SafeDateCandidate(2025, 12, 31))
+        val objections = LedgerDeterministicObjections.evaluate(
+            operations = listOf(row),
+            existingCustomerCandidates = emptyList(),
+            catalogProducts = emptyList(),
+            pageDateEpochDay = java.time.LocalDate.of(2026, 1, 10).toEpochDay(),
+            todayEpochDay = hoyEnero.toEpochDay(),
+        ).filter { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }
+
+        assertEquals("el año del renglón (2025) difiere del año de la página (2026)", 1, objections.size)
+        assertEquals(0, objections.single().lineIndex)
+    }
+
+    @Test
+    fun `el_caso_de_diego_fecha_2023_en_una_hoja_de_2026_objeta`() {
+        val row = datedRow(0, SafeDateCandidate(2023, 3, 1))
+        val objections = fechaDe(
+            listOf(row),
+            pageDateEpochDay = java.time.LocalDate.of(2026, 9, 10).toEpochDay(),
+        )
+
+        assertEquals(1, objections.size)
+        assertEquals(LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE, objections.single().type)
+        assertEquals(0, objections.single().lineIndex)
+    }
+
+    @Test
+    fun `fecha_181_dias_anterior_a_hoy_objeta_y_180_no`() {
+        val page = java.time.LocalDate.of(hoy.year, 1, 1).toEpochDay()
+
+        val hace181 = datedRow(0, candidate(hoy.minusDays(181)))
+        assertEquals(
+            "181 días es 'más de 180': objeta",
+            1,
+            fechaDe(listOf(hace181), pageDateEpochDay = page).size,
+        )
+
+        val hace180 = datedRow(1, candidate(hoy.minusDays(180)))
+        assertTrue(
+            "180 días exactos NO es 'más de 180': no objeta (límite)",
+            fechaDe(listOf(hace180), pageDateEpochDay = page).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `fecha_futura_objeta_y_la_de_hoy_no`() {
+        val page = hoy.toEpochDay()
+
+        val manana = datedRow(0, candidate(hoy.plusDays(1)))
+        assertEquals(1, fechaDe(listOf(manana), pageDateEpochDay = page).size)
+
+        val hoyMismo = datedRow(1, candidate(hoy))
+        assertTrue(
+            "la fecha de hoy no es futura (límite: > hoy, no >= hoy)",
+            fechaDe(listOf(hoyMismo), pageDateEpochDay = page).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `sin_fecha_de_pagina_el_anio_no_se_compara_pero_la_edad_si`() {
+        val vieja = datedRow(0, SafeDateCandidate(2023, 3, 1))
+        assertEquals("el criterio de edad no depende de la página", 1, fechaDe(listOf(vieja), pageDateEpochDay = null).size)
+
+        val reciente = datedRow(1, SafeDateCandidate(2026, 9, 15))
+        assertTrue(fechaDe(listOf(reciente), pageDateEpochDay = null).isEmpty())
+    }
+
+    @Test
+    fun `sin_hoy_no_se_juzga_la_edad_pero_el_anio_si`() {
+        // todayEpochDay null: sin punto de comparación no hay antigüedad ni futuridad, pero el
+        // año del renglón todavía se puede comparar con el de la página.
+        val mismaPagina = datedRow(0, SafeDateCandidate(2023, 3, 1))
+        assertTrue(
+            "sin hoy no se puede medir la edad",
+            LedgerDeterministicObjections.evaluate(
+                operations = listOf(mismaPagina),
+                existingCustomerCandidates = emptyList(),
+                catalogProducts = emptyList(),
+                pageDateEpochDay = java.time.LocalDate.of(2023, 3, 16).toEpochDay(),
+                todayEpochDay = null,
+            ).isEmpty(),
+        )
+
+        val otroAnio = datedRow(1, SafeDateCandidate(2023, 3, 1))
+        assertEquals(
+            "el año se compara con la página aunque no se conozca hoy",
+            1,
+            LedgerDeterministicObjections.evaluate(
+                operations = listOf(otroAnio),
+                existingCustomerCandidates = emptyList(),
+                catalogProducts = emptyList(),
+                pageDateEpochDay = java.time.LocalDate.of(2026, 9, 10).toEpochDay(),
+                todayEpochDay = null,
+            ).count { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE },
+        )
+    }
+
+    @Test
+    fun `renglon_sin_fecha_no_se_juzga_como_fecha_imposible`() {
+        val sinFecha = datedRow(0, null)
+        assertTrue(fechaDe(listOf(sinFecha), pageDateEpochDay = hoy.toEpochDay()).isEmpty())
+    }
+
+    @Test
+    fun `renglon_de_fecha_imposible_confirmado_deja_de_objetar`() {
+        val row = datedRow(0, SafeDateCandidate(2023, 3, 1))
+        assertEquals(1, fechaDe(listOf(row), pageDateEpochDay = java.time.LocalDate.of(2026, 9, 10).toEpochDay()).size)
+
+        val confirmed = LedgerReviewEdits.confirmObjection(listOf(row), 0)
+        assertTrue(
+            "confirmar la objeción la levanta: la libreta vieja de verdad sigue siendo registrable",
+            fechaDe(confirmed, pageDateEpochDay = java.time.LocalDate.of(2026, 9, 10).toEpochDay()).isEmpty(),
+        )
+    }
 }

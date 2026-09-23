@@ -6,11 +6,13 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
+import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ExpectedLedgerBatchResult
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -172,5 +174,66 @@ class LedgerObjectionWriteGateTest {
         assertTrue(LedgerDeterministicObjections.evaluate(edited, customers, emptyList()).any {
             it.type == LedgerDeterministicObjectionType.CUSTOMER_CONFIRMATION_REQUIRED
         })
+    }
+
+    // ---- v44: fecha imposible bloquea el registro hasta confirmar o corregir ----
+
+    private val hoyEpochDay = LocalDate.of(2026, 9, 16).toEpochDay()
+
+    private fun impossibleDateRow() = LedgerOperation(
+        lineIndex = 1, proposedKind = ProposedLedgerKind.SALE,
+        customerName = "Rosa", amountCents = "25000",
+        rawText = "Rosa 250", date = SafeDateCandidate(2023, 3, 1),
+        sources = LedgerFieldSources(customer = LedgerFieldSource.EXPLICIT),
+    )
+
+    @Test
+    fun `un_renglon_con_fecha_imposible_no_se_registra_hasta_que_se_confirma_o_se_corrige`() {
+        val operations = listOf(cleanRow(), impossibleDateRow())
+        val page = LocalDate.of(2026, 9, 10).toEpochDay()
+        val blocked = LedgerDeterministicObjections.blockedLineIndices(
+            operations, existingCustomers, emptyList(),
+            pageDateEpochDay = page, todayEpochDay = hoyEpochDay,
+        )
+        assertEquals("la fecha 2023 deja el renglón sin resolver", setOf(1), blocked)
+
+        var captured: PlannedLedgerBatch? = null
+        assertEquals(
+            LedgerBatchConfirmation.Failed,
+            kotlinx.coroutines.runBlocking { confirm(operations, blocked) { captured = it } },
+        )
+        assertNull("sin confirmar no se escribe nada", captured)
+
+        // Corregir la fecha (2026, mismo año que la página, dentro de los 180 días) la levanta.
+        val corrected = LedgerReviewEdits.applyDate(operations, 1, SafeDateCandidate(2026, 9, 10), hoyEpochDay)
+        val blockedAfterEdit = LedgerDeterministicObjections.blockedLineIndices(
+            corrected, existingCustomers, emptyList(),
+            pageDateEpochDay = page, todayEpochDay = hoyEpochDay,
+        )
+        assertTrue("corregir la fecha despeja el renglón", blockedAfterEdit.isEmpty())
+        assertEquals(
+            LedgerBatchConfirmation.Recorded(2),
+            kotlinx.coroutines.runBlocking { confirm(corrected, blockedAfterEdit) { captured = it } },
+        )
+        assertNotNull(captured)
+    }
+
+    @Test
+    fun `confirmar_la_objecion_de_fecha_tambien_desbloquea_el_renglon`() {
+        val operations = listOf(cleanRow(), impossibleDateRow())
+        val page = LocalDate.of(2026, 9, 10).toEpochDay()
+        val confirmed = LedgerReviewEdits.confirmObjection(operations, 1)
+        val blocked = LedgerDeterministicObjections.blockedLineIndices(
+            confirmed, existingCustomers, emptyList(),
+            pageDateEpochDay = page, todayEpochDay = hoyEpochDay,
+        )
+        assertTrue("confirmar la objeción levanta el bloqueo", blocked.isEmpty())
+
+        var captured: PlannedLedgerBatch? = null
+        assertEquals(
+            LedgerBatchConfirmation.Recorded(2),
+            kotlinx.coroutines.runBlocking { confirm(confirmed, blocked) { captured = it } },
+        )
+        assertNotNull("la libreta vieja de verdad se puede registrar tras confirmar", captured)
     }
 }

@@ -251,6 +251,75 @@ class LedgerGuidedReviewTest {
         composeRule.onNodeWithTag("ledger-review-confirm-button").assertIsEnabled()
     }
 
+    /**
+     * La cola avanza de renglón sin desmontar el diálogo de edición, así que cada renglón tiene que
+     * abrir con SUS campos y guardarlos. Antes, los `remember` sin key del diálogo sobrevivían a esa
+     * recomposición: el renglón 2 abría con los datos del 1 y Guardar los escribía ENCIMA del 2. En la
+     * prueba del teléfono de la primera tanda, una página Laura $999 / Estefanía $250 / Nosotros $150
+     * quedó como 3 × Laura $999. Esta prueba recorre la cola con dos renglones distintos y comprueba
+     * que el segundo muestra y guarda lo suyo; sin el arreglo, el segundo abre con los datos del
+     * primero y esto falla.
+     */
+    @Test fun cada_renglon_de_la_cola_abre_con_sus_datos_y_guarda_los_suyos() {
+        var currentOperations: List<LedgerOperation> = emptyList()
+        val first = doubtfulSale(0, "Laura").copy(
+            amountCents = "99900",
+            date = SafeDateCandidate(2026, 3, 1),
+        )
+        val second = doubtfulSale(1, "Estefania").copy(
+            amountCents = "25000",
+            date = SafeDateCandidate(2026, 8, 14),
+        )
+
+        composeRule.setContent {
+            var operations by remember { mutableStateOf(listOf(first, second)) }
+            currentOperations = operations
+            LedgerReviewContent(
+                review = LedgerReviewEngine.build(operations = operations, todayEpochDay = today),
+                captureFile = null,
+                onUpdateAmount = { line, amount -> operations = LedgerReviewEdits.applyAmount(operations, line, amount) },
+                onUpdateCustomer = { line, name -> operations = LedgerReviewEdits.applyCustomer(operations, line, name) },
+                onUpdateKind = { line, kind -> operations = LedgerReviewEdits.applyKind(operations, line, kind) },
+                onUpdateDate = { line, date -> operations = LedgerReviewEdits.applyDate(operations, line, date, today) },
+                onUpdatePageDate = { },
+                onRemoveRow = { line -> operations = LedgerReviewEdits.removeRow(operations, line) },
+                onConfirmObjection = { },
+                isPageCompletenessConfirmed = false,
+                onConfirmPageCompleteness = { },
+                customerMatches = emptyMap(),
+                productMatches = emptyMap(),
+                duplicateMatches = emptyMap(),
+                objections = emptyList(),
+                isRegistrationBlockedByLegacySave = false,
+                onConfirm = { },
+                onCancel = { },
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-start-review-button").performClick()
+
+        // El primer renglón abre con lo suyo.
+        composeRule.onNodeWithTag("ledger-edit-customer-field").assertTextContains("Laura")
+        composeRule.onNodeWithTag("ledger-edit-amount-field").assertTextContains("999")
+        composeRule.onNodeWithTag("ledger-edit-date-field").assertTextContains("2026-03-01")
+
+        composeRule.onNodeWithTag("ledger-edit-save-button").performClick()
+
+        // El siguiente abre con LO SUYO, no con lo del anterior. Aquí es donde fallaba.
+        composeRule.onNodeWithTag("ledger-edit-customer-field").assertTextContains("Estefania")
+        composeRule.onNodeWithTag("ledger-edit-amount-field").assertTextContains("250")
+        composeRule.onNodeWithTag("ledger-edit-date-field").assertTextContains("2026-08-14")
+
+        composeRule.onNodeWithTag("ledger-edit-save-button").performClick()
+
+        // Y lo guardado son dos renglones distintos, no dos veces el primero.
+        composeRule.runOnIdle {
+            assertEquals(listOf("Laura", "Estefania"), currentOperations.map { it.customerName })
+            assertEquals(listOf("99900", "25000"), currentOperations.map { it.amountCents })
+            assertEquals(listOf(2026 to 3, 2026 to 8), currentOperations.map { it.date?.year to it.date?.month })
+        }
+    }
+
     @Test fun accepting_a_catalogue_name_never_touches_the_amount() {
         // The catalogue says 79.90 and the paper says 85. The paper wins, always: the price list is
         // what the business charges in general, the notebook is what it charged this person.
