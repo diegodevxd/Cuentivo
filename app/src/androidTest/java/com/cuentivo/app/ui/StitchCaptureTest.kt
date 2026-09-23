@@ -200,7 +200,9 @@ class StitchCaptureTest {
         chooseInSelector("selector-cliente", CUSTOMERS[0].customer.name)
         composeRule.onNodeWithText("Monto del abono").performTextInput("450")
         Espresso.closeSoftKeyboard()
-        composeRule.onNodeWithTag(PAYMENT_LIST_TAG).performScrollToNode(hasText("MOVIMIENTO ENTRANTE"))
+        // The old uppercase movement eyebrow was removed; the task title is still a stable anchor
+        // in the real payment form and returns this capture to the top after the keyboard closes.
+        composeRule.onNodeWithTag(PAYMENT_LIST_TAG).performScrollToNode(hasText("Registrar abono"))
         shoot("payment-${widthDp}dp")
     }
 
