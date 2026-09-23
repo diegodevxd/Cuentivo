@@ -1,51 +1,32 @@
 # Estado vivo — Cuentivo / CuentivoAI
 
-Este archivo dice **dónde está el proyecto hoy y qué sigue**. No es un diario: se actualiza
-**sustituyendo, no añadiendo**, y se mantiene por debajo de ~100 líneas. Lo que deja de estar
-vigente baja a `docs/historia-del-proyecto.md`.
+Este archivo refleja el estado actual, no un diario: sustituye este encabezado y mantenlo por debajo de ~100 líneas. El material histórico empieza después de este estado vivo.
 
-No es un source of truth. Manda, en este orden:
+Manda, en este orden:
 
-1. [`docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md`](docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md) — arquitectura, seguridad, fases, GO/NO-GO y changelog de CuentivoAI.
-2. [`PROJECT.md`](PROJECT.md) — dirección de producto y checkpoint.
-3. El código y sus pruebas para comportamiento real.
-4. `CLAUDE.md` para arquitectura del repo y trampas del entorno — **verifícalo contra el código**; ha estado desactualizado.
+1. [`docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md`](docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md) — arquitectura, seguridad y fases.
+2. [`PROJECT.md`](PROJECT.md) — dirección de producto.
+3. El código y sus pruebas para el comportamiento real.
+4. `CLAUDE.md` — arquitectura del repo y trampas del entorno; contrástalo con el código.
 
-**Última actualización:** 2026-09-22. **v41 (`1.21.0`) en producción; v42 (`1.22.0`) ya subida a Play.**
+**Última actualización: 2026-09-23.** v43 (`1.22.1`, code 43) sigue en Play. La v44 (`1.23.0`, code 44) está preparada localmente en `diegodevxd/v44-libreta`; **no se ha hecho push, tag ni publicación**.
 
-**v43 (`1.22.1`, parche) sale a más tardar el 2026-09-28, con lo que esté listo.** Ya en la rama
-(`diegodevxd/mensaje-al-cliente` confirmada fusionada): la calificación ya no dice "sin historial de
-pago" junto a un abono; el saldo de la tarjeta va en blanco; el "Saldo pendiente" repetido en
-Detalle de Cliente se quitó; y un interruptor **sólo de debug** en Cuenta ("[Debug] Compartir como
-plan Gratis") para ver el pie en un teléfono Pro — sólo afecta lo compartido, no la sync
-(`domain/ShareTier.kt`). **También para v43, en `diegodevxd/v43-plazo-e-idioma` (2026-09-22, sin
-commitear):** la importación de libreta lleva **selector de plazo** en revisión (Sin fecha/7/15/30,
-15 marcado, un plazo por página, aviso "N ventas quedarían vencidas desde hoy"; sólo cargos;
-vence en fecha del renglón + días; **ventas existentes intactas**), y los avisos fijos de
-`MainActivity` + `billing/` pasaron a `strings.xml` (**668/668**) con la puerta de idioma ampliada
-y **vacía**. Gate de esa rama: JVM **1285/0/0** desde XML, instrumentadas **54/54** en
-`emulator-5554`, 4 mutaciones detectadas y restauradas; reporte en `C:/tmp/oc-v43-reporte.md`.
-Falta: limpiar la caché de la imagen al abrir la app, y lo que salga de probar la v42 (incluido si
-WhatsApp respeta el texto junto a la imagen).
+**v44 — commits locales:**
+- `ebcc161` — cierra los huecos de auditoría de la tanda 6.
+- `45e4ddd` — fija versión 44 / 1.23.0 y repara el ancla de la captura de abonos.
+- Tanda 6: “Cambiar todos” recibe sólo líneas con objeción `IMPLAUSIBLE_DATE`; una prueba mixta comprueba que una objeción de precio queda fuera. La vista previa de “Precio habitual” se verifica renderizando el composable real de producción. Al cerrar el detalle tras registrar, Inicio/Clientes queda visible y no reaparece la venta vacía.
+- Las tandas anteriores cubren refresco de Inicio/Clientes, fechas imposibles, posibles duplicados, borrado de cuenta con reautenticación, captura de hoja y restauración de la revisión.
 
-**Dónde está cada cosa ahora mismo:**
+**Verificación completada:**
+- `testDebugUnitTest --rerun-tasks`: 1,358 casos desde XML, 0 fallos.
+- Gate Android release: `assembleDebug`, `compileDebugAndroidTestKotlin`, `assembleRelease`, `lintDebug`, `bundleRelease`; pasó. `bundleRelease --rerun-tasks` se reconstruyó después del commit local y pasó.
+- Suite conectada A059P (`00170157R000160`, Android 17 / API 37), con `leaveApksInstalledAfterRun=true`: 385 casos, 374 pasaron, 0 fallos/errores, 11 omitidos. Las omisiones son 1 prueba que requiere token App Check registrado y 10 pruebas de emulador Android para GuestCloudIsolation/Sync; no representan fallos.
+- `npm test`: 18 archivos / 491 pruebas; `npm run lint`: pasó. Gate de Functions con Firestore Emulator: 9/9. Recursos ES/EN: 686 strings + 14 plurals por idioma, claves iguales. El guard de textos no encontró texto de UI hardcodeado; la única coincidencia fue la etiqueta de animación Compose `waveform-bar`. `git diff --check`: pasó.
+- El test instrumentado mixto de entitlement usó `cuentivoAiExpectedDecision=AI_ENTITLEMENT_REQUIRED`, que es la respuesta actual de la cuenta del teléfono.
 
-- **Play.** `v41` / `1.21.0` en **producción**; `v42` / `1.22.0` subida. `versionCode` hasta 42
-  gastados: el próximo es **43**. AAB en `dist/Cuentivo-v42-1.22.0.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
-- **Functions:** `extractLedgerPage(us-south1)` **desplegado desde `81194a7`** el 2026-09-17, con
-  contrato **v5** (y v3/v4 idénticos), `gemini-3.5-flash`, `thinkingBudget: 0` y
-  `maxOutputTokens: 32768`. **Probado contra la API real** con el v40 de Play: tres libretas leídas,
-  sin fallos del proveedor en los registros. Versión anterior, para volver atrás: `6629485`.
-- **Ruta de salida de la v41 (decidida):** interna → unos días de uso real → **cerrada** →
-  producción, **promoviendo el mismo AAB**. No directo a producción: la v41 cambió el núcleo del
-  registro y su parte propia (v5, página entera, objeciones) **nunca ha corrido en un teléfono real**.
-- La política de privacidad de la web está actualizada.
+**AAB listo:** `dist/Cuentivo-v44-1.23.0.aab` (dist está ignorado por Git). `jarsigner -verify`: jar verified. SHA1: `25:05:8A:9C:F3:1F:D7:B4:1E:8E:B3:2D:9A:AB:8F:9F:7A:E8:1D:BF`. SHA256: `2141122797D6079AACB91509DCBD16C29CF442872F770F355AEC3728DA15F62E`; coincide con el AAB de `app/build/outputs/bundle/release/`.
 
-**Reparto de agentes, cambiado el 2026-09-16:** Claude orquesta y verifica. **OpenCode con DeepSeek
-V4.1 Flash implementa** (en modo Orchestrator su subagente `fixer` entregó a medias tres rondas
-seguidas; pedirle que **no delegue**). **AGY con Gemini 3.8 Flash (High) es la segunda opinión**, sólo
-lectura. **Codex/Sol quedó fuera** por sus límites de tokens. A los dos se les pide el reporte en un
-archivo de `C:/tmp/`, porque sus pantallas no guardan historial.
+**Siguiente paso:** esperar la instrucción explícita de Diego antes de subir la rama o crear/publicar una etiqueta. No hacer push ni publicar a Play antes de eso.
 
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 

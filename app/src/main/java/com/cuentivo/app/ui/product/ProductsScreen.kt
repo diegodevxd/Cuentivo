@@ -40,6 +40,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -115,6 +116,12 @@ fun ProductsScreen(
      * which is the double-tap guard.
      */
     isSaving: Boolean = false,
+    /**
+     * Bumped by the host when the bar is tapped on the tab already showing: back to the root of the
+     * tab, which means no search and no selection mode. 0 means "never tapped", so the first
+     * composition is not treated as a reset.
+     */
+    resetToken: Int = 0,
 ) {
     val productsAddDescription = stringResource(R.string.products_add_description)
     var query by remember { mutableStateOf("") }
@@ -127,6 +134,17 @@ fun ProductsScreen(
     var archiving by remember { mutableStateOf<ProductEntity?>(null) }
     val context = LocalContext.current
     val imageStore = remember(context) { ProductImageStore(context) }
+    // Tapping the tab you are already on returns to the root: no search, no selection, no dialogs.
+    // Guarded on > 0 so the very first composition is not treated as a tap.
+    LaunchedEffect(resetToken) {
+        if (resetToken > 0) {
+            query = ""
+            editing = null
+            selectedIds = emptySet()
+            confirmBulkDelete = false
+            archiving = null
+        }
+    }
 
     // Wide-open MIME list: phones and cloud drives label .csv and .xlsx inconsistently, and a
     // strict filter greys out the very file the person came to pick.

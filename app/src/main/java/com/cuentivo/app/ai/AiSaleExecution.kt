@@ -111,7 +111,17 @@ data class AiLedgerSaleConfirmationRequest(
 }
 
 sealed interface AiSaleExecutionResult {
-    data class Recorded(val saleId: String, val paymentId: String?) : AiSaleExecutionResult
+    /**
+     * La venta quedó escrita. [customerName] y [balanceAfterCents] los adjunta el host tras leer el
+     * libro mayor: el servicio ejecuta, pero el saldo resultante lo conoce quien tiene el DAO. Son
+     * opcionales para no romper a quien construya este resultado sin ellos.
+     */
+    data class Recorded(
+        val saleId: String,
+        val paymentId: String?,
+        val customerName: String? = null,
+        val balanceAfterCents: Long? = null,
+    ) : AiSaleExecutionResult
     data object StalePreview : AiSaleExecutionResult
     data object Rejected : AiSaleExecutionResult
     data object Unavailable : AiSaleExecutionResult

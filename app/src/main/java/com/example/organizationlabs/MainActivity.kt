@@ -33,7 +33,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -275,6 +277,14 @@ class MainActivity : ComponentActivity() {
 
     /** The one temporary customer statement currently exposed to the selected share target. */
     private val statementImageShareStore by lazy { StatementImageShareStore(applicationContext) }
+
+    /**
+     * La marca durable de un borrado de cuenta a medias (v44). Vive en SharedPreferences para que
+     * sobreviva a la muerte del proceso: es lo que permite retomar el borrado de Auth al volver.
+     */
+    private val pendingAccountDeletionStore by lazy {
+        com.cuentivo.app.auth.PendingAccountDeletionStore(applicationContext)
+    }
 
     /**
      * Pro and AI prices as Play formats them, null until Play answers. Held here rather than read on demand
@@ -812,6 +822,10 @@ class MainActivity : ComponentActivity() {
                 // Set alongside the token above, and for the same reason: only a write that reached
                 // Room may send anyone into a cart for that customer.
                 var pendingSaleCustomerId by remember { mutableStateOf<String?>(null) }
+                // The customer the last successful create actually wrote, whatever the intent. Used
+                // by the "Agregar cliente" shortcut inside Nueva venta: the form was opened from the
+                // sale, so any save is the signal to return there with that customer selected.
+                var lastCreatedCustomerId by remember { mutableStateOf<String?>(null) }
                 var isImportingBalances by remember { mutableStateOf(false) }
                 var balancesImportedToken by remember { mutableIntStateOf(0) }
                 var isSavingProduct by remember { mutableStateOf(false) }
@@ -832,6 +846,12 @@ class MainActivity : ComponentActivity() {
                 // loaders below would otherwise hand back the previous person's business in the
                 // instant before it gets wiped, which is the two-accounts-one-ledger bug.
                 var sessionReady by remember(currentUserId) { mutableStateOf(false) }
+                // v44: si este uid tiene un borrado de cuenta a medias (la marca durable), no se crea
+                // ni se adopta ningún negocio: lo único que falta es terminar de borrar el usuario de
+                // Auth. Mientras se reintenta, la pantalla de carga tapa todo lo que pueda crear algo.
+                var pendingDeletionResume by remember(currentUserId) {
+                    mutableStateOf(pendingAccountDeletionStore.isPendingFor(currentUserId))
+                }
                 LaunchedEffect(currentUserId) {
                     // The effective session drops to FREE the instant the account changes, before
                     // anything else runs. Whatever Play said about the previous account stops
@@ -853,6 +873,51 @@ class MainActivity : ComponentActivity() {
                     // change. Idempotent: disabled cancels, enabled re-schedules at the right hour.
                     CollectionReminderScheduler.sync(this@MainActivity)
                     sessionReady = true
+                }
+
+                // v44: retomar un borrado de cuenta que quedó a medias. Si la marca durable apunta a
+                // este uid, la parte destructiva ya ocurrió (o el proceso murió a mitad): se reintenta
+                // el borrado de Auth —re-autenticando si hace falta— y, salga o no, se sale de la
+                // sesión. Nunca se crea un negocio nuevo para una cuenta que ya perdió sus datos.
+                LaunchedEffect(currentUserId, sessionReady) {
+                    if (!sessionReady) return@LaunchedEffect
+                    val resumeStep = com.cuentivo.app.domain.AccountDeletionPlan.resumeStep(
+                        hasPendingDeletion = pendingAccountDeletionStore.isPendingFor(currentUserId),
+                    ) ?: return@LaunchedEffect
+                    if (resumeStep != com.cuentivo.app.domain.AccountDeletionPlan.Step.DELETE_AUTH) return@LaunchedEffect
+
+                    // Re-autenticar primero: el borrado de Auth que falló pudo ser por sesión vieja.
+                    if (!authenticationGateway.isAnonymous) {
+                        val reauth = reauthenticateWithGoogle(authenticationGateway)
+                        if (reauth !is GoogleAuthenticationResult.SignedIn) {
+                            // No se pudo confirmar: se sale igualmente y se dice la verdad. La marca
+                            // queda puesta para el siguiente intento.
+                            authenticationGateway.signOut()
+                            authenticationGateway.clearGoogleCredentialState { }
+                            CollectionReminderScheduler.cancel(this@MainActivity)
+                            authenticatedUserId = null
+                            showManualAuthentication = true
+                            uiMessage = getString(R.string.message_account_delete_data_gone_auth_failed)
+                            return@LaunchedEffect
+                        }
+                    }
+                    deleteAccountAndAwait(authenticationGateway).onSuccess {
+                        pendingAccountDeletionStore.clear()
+                        authenticationGateway.clearGoogleCredentialState { }
+                        CollectionReminderScheduler.cancel(this@MainActivity)
+                        authenticatedUserId = null
+                        showManualAuthentication = true
+                    }.onFailure {
+                        // Sigue sin poder cerrarse la cuenta: se sale de la sesión igualmente y la
+                        // marca queda para el próximo arranque.
+                        authenticationGateway.signOut()
+                        authenticationGateway.clearGoogleCredentialState { }
+                        CollectionReminderScheduler.cancel(this@MainActivity)
+                        authenticatedUserId = null
+                        showManualAuthentication = true
+                        uiMessage = getString(R.string.message_account_delete_data_gone_auth_failed)
+                    }
+                    pendingDeletionResume = false
                 }
 
                 // Restoring is keyed on the tier, not on sign-in, because Play answers asynchronously
@@ -978,7 +1043,9 @@ class MainActivity : ComponentActivity() {
 
                 // The claim gates the whole screen, not just the restore. While it is unresolved
                 // nothing that can mint a business is reachable — that is the point of it.
-                if (!sessionReady || isRestoring || waitingForEntitlement || claim == null) {
+                // v44: un borrado de cuenta a medias también tapa la pantalla: no se crea ni se
+                // adopta nada mientras se termina de borrar el usuario de Auth.
+                if (!sessionReady || isRestoring || waitingForEntitlement || claim == null || pendingDeletionResume) {
                     CuentivoLoadingScreen()
                 } else if (claim == BusinessClaim.Blocked) {
                     // The lookup failed, so whether this account owns a business is unknown. The
@@ -1154,6 +1221,11 @@ class MainActivity : ComponentActivity() {
                         .mapValues { (_, lines) ->
                             SaleLineSummary.describe(lines.map { SoldLine(it.productNameSnapshot, it.quantity) })
                         }
+                    // Which of this customer's charges are really the debt they already had before
+                    // the app. Read once for the whole statement, not per row.
+                    val priorDebtSaleIds = financialDao
+                        .priorDebtSaleIdsForCustomer(businessId, row.customer.id)
+                        .toSet()
                     statementEntries = financialDao.customerMovements(businessId, row.customer.id)
                         .asReversed()
                         .map { movement ->
@@ -1167,6 +1239,7 @@ class MainActivity : ComponentActivity() {
                                 paymentId = movement.paymentId,
                                 saleId = movement.saleId,
                                 detail = movement.saleId?.let(soldLines::get),
+                                isPriorDebt = movement.saleId?.let(priorDebtSaleIds::contains) == true,
                             )
                         }
                     val sales = financialDao.cancelableSalesForCustomer(businessId, row.customer.id)
@@ -1524,6 +1597,7 @@ class MainActivity : ComponentActivity() {
                     customerSavedToken = customerSavedToken,
                     pendingSaleCustomerId = pendingSaleCustomerId,
                     onPendingSaleConsumed = { pendingSaleCustomerId = null },
+                    lastCreatedCustomerId = lastCreatedCustomerId,
                     isImportingBalances = isImportingBalances,
                     balancesImportedToken = balancesImportedToken,
                     isSavingProduct = isSavingProduct,
@@ -1557,45 +1631,56 @@ class MainActivity : ComponentActivity() {
                         val dao = database.financialDao()
                         val repository = com.cuentivo.app.domain.SaleRepository(dao)
                         val today = java.time.LocalDate.now().toEpochDay()
-                        com.cuentivo.app.domain.LedgerBatchCoordinator.confirm(
-                            businessId = businessId,
-                            userId = currentUserId,
-                            importSessionId = importSessionId,
-                            operations = operations,
-                            blockedLineIndices = blockedLineIndices,
-                            modelSaysTextMayBeMissing = modelSaysTextMayBeMissing,
-                            isPageCompletenessConfirmed = isPageCompletenessConfirmed,
-                            pageDateEpochDay = pageDateEpochDay,
-                            dueDateDays = dueDateDays,
-                            todayEpochDay = today,
-                            nowEpochMillis = System.currentTimeMillis(),
-                            alreadyRecorded = { key -> dao.operationResultId(key) != null },
-                            loadCustomersByNormalizedName = {
-                                database.customerDao().activeWithBalances(businessId)
-                                    .associate { row -> row.customer.normalizedName to row.customer }
+                        // v44: confirmar y, si hubo escritura, refrescar. La conducta vive en el
+                        // objeto puro `LedgerConfirmAndRefresh` (probado con lambdas), no incrustada
+                        // aquí: sin el refresco la hoja quedaba escrita y la pantalla seguía mostrando
+                        // el estado anterior, y la persona volvía a registrar la misma página (el
+                        // duplicado de Laura). El callback corre en Dispatchers.IO, así que el
+                        // refresco se pide al hilo principal.
+                        com.cuentivo.app.domain.LedgerConfirmAndRefresh.confirmAndRefresh(
+                            confirm = {
+                                com.cuentivo.app.domain.LedgerBatchCoordinator.confirm(
+                                    businessId = businessId,
+                                    userId = currentUserId,
+                                    importSessionId = importSessionId,
+                                    operations = operations,
+                                    blockedLineIndices = blockedLineIndices,
+                                    modelSaysTextMayBeMissing = modelSaysTextMayBeMissing,
+                                    isPageCompletenessConfirmed = isPageCompletenessConfirmed,
+                                    pageDateEpochDay = pageDateEpochDay,
+                                    dueDateDays = dueDateDays,
+                                    todayEpochDay = today,
+                                    nowEpochMillis = System.currentTimeMillis(),
+                                    alreadyRecorded = { key -> dao.operationResultId(key) != null },
+                                    loadCustomersByNormalizedName = {
+                                        database.customerDao().activeWithBalances(businessId)
+                                            .associate { row -> row.customer.normalizedName to row.customer }
+                                    },
+                                    loadOutstandingByCustomerId = {
+                                        database.customerDao().activeWithBalances(businessId).associate { row ->
+                                            row.customer.id to dao.outstandingSalesForCustomer(businessId, row.customer.id)
+                                                .map { com.cuentivo.app.domain.OutstandingSale(it.id, it.outstandingCents, it.dueDateEpochDay, it.saleDateEpochDay) }
+                                        }
+                                    },
+                                    write = { plan -> repository.registerLedgerBatch(plan) },
+                                    enqueue = { plan ->
+                                        // Best effort, exactly like the rest of this app: a row already
+                                        // committed must not be reported as failed because the outbox
+                                        // hiccuped. The known cost is the structural gap CLAUDE.md documents.
+                                        val stamp = plan.nowEpochMillis
+                                        runCatching {
+                                            plan.newCustomers.forEach { syncQueue.enqueue(it.businessId, "CUSTOMER", it.id, stamp, SyncPayloads.customer(it)) }
+                                            plan.sales.forEach { syncQueue.enqueue(it.businessId, "SALE", it.id, stamp, SyncPayloads.sale(it)) }
+                                            plan.saleItems.forEach { syncQueue.enqueue(businessId, "SALE_ITEM", it.id, stamp, SyncPayloads.saleItem(it)) }
+                                            plan.chargeMovements.forEach { syncQueue.enqueue(it.businessId, "MOVEMENT", it.id, stamp, SyncPayloads.movement(it)) }
+                                            plan.payments.forEach { syncQueue.enqueue(it.businessId, "PAYMENT", it.id, stamp, SyncPayloads.payment(it)) }
+                                            plan.paymentAllocations.forEach { syncQueue.enqueue(businessId, "PAYMENT_ALLOCATION", it.id, stamp, SyncPayloads.allocation(it)) }
+                                            plan.paymentMovements.forEach { syncQueue.enqueue(it.businessId, "MOVEMENT", it.id, stamp, SyncPayloads.movement(it)) }
+                                        }
+                                    },
+                                )
                             },
-                            loadOutstandingByCustomerId = {
-                                database.customerDao().activeWithBalances(businessId).associate { row ->
-                                    row.customer.id to dao.outstandingSalesForCustomer(businessId, row.customer.id)
-                                        .map { com.cuentivo.app.domain.OutstandingSale(it.id, it.outstandingCents, it.dueDateEpochDay, it.saleDateEpochDay) }
-                                }
-                            },
-                            write = { plan -> repository.registerLedgerBatch(plan) },
-                            enqueue = { plan ->
-                                // Best effort, exactly like the rest of this app: a row already
-                                // committed must not be reported as failed because the outbox
-                                // hiccuped. The known cost is the structural gap CLAUDE.md documents.
-                                val stamp = plan.nowEpochMillis
-                                runCatching {
-                                    plan.newCustomers.forEach { syncQueue.enqueue(it.businessId, "CUSTOMER", it.id, stamp, SyncPayloads.customer(it)) }
-                                    plan.sales.forEach { syncQueue.enqueue(it.businessId, "SALE", it.id, stamp, SyncPayloads.sale(it)) }
-                                    plan.saleItems.forEach { syncQueue.enqueue(businessId, "SALE_ITEM", it.id, stamp, SyncPayloads.saleItem(it)) }
-                                    plan.chargeMovements.forEach { syncQueue.enqueue(it.businessId, "MOVEMENT", it.id, stamp, SyncPayloads.movement(it)) }
-                                    plan.payments.forEach { syncQueue.enqueue(it.businessId, "PAYMENT", it.id, stamp, SyncPayloads.payment(it)) }
-                                    plan.paymentAllocations.forEach { syncQueue.enqueue(businessId, "PAYMENT_ALLOCATION", it.id, stamp, SyncPayloads.allocation(it)) }
-                                    plan.paymentMovements.forEach { syncQueue.enqueue(it.businessId, "MOVEMENT", it.id, stamp, SyncPayloads.movement(it)) }
-                                }
-                            },
+                            onRefresh = { withContext(Dispatchers.Main) { refreshKey++ } },
                         )
                     },
                     ledgerBalancesResolver = { businessId ->
@@ -1688,8 +1773,17 @@ class MainActivity : ComponentActivity() {
                                 val result = aiSaleExecutionService.confirm(request)
                                 if (result is AiSaleExecutionResult.Recorded) {
                                     refreshKey++
+                                    // El saldo que quedó, para que el "Venta registrada con éxito"
+                                    // diga cuánto debe ahora (v44). El nombre puede venir del estado
+                                    // cargado o del cliente recién creado por la misma venta.
+                                    val name = customers.firstOrNull { it.customer.id == request.customerId }?.customer?.name
+                                        ?: request.newCustomer?.displayName
+                                    val balance = database.financialDao()
+                                        .customerBalanceCents(request.businessId, request.customerId)
+                                    result.copy(customerName = name, balanceAfterCents = balance)
+                                } else {
+                                    result
                                 }
-                                result
                             }
                         }
                     },
@@ -1793,6 +1887,9 @@ class MainActivity : ComponentActivity() {
                                         amountCents = amountCents,
                                         todayEpochDay = LocalDate.now().toEpochDay(),
                                         nowEpochMillis = now,
+                                        // El plazo que la persona eligió en el formulario. Sin él la
+                                        // deuda anterior nacía sin fecha y nunca vencía (v44).
+                                        dueInDays = newCustomer.openingBalanceDueInDays,
                                     )
                                 }
                                 val saved = try {
@@ -1875,6 +1972,7 @@ class MainActivity : ComponentActivity() {
                                     customerSavedToken++
                                     // Same rule, same place: the hand-off into Nueva venta only
                                     // happens for a customer that actually reached Room.
+                                    lastCreatedCustomerId = customer.id
                                     if (newCustomer.continueToSale) pendingSaleCustomerId = customer.id
                                 }
                             } finally {
@@ -2191,7 +2289,17 @@ class MainActivity : ComponentActivity() {
                                 }
                                 syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, SyncPayloads.movement(charge))
                                 refreshKey++
-                                uiMessage = getString(R.string.message_sale_registered, Money.format(draft.totalCents))
+                                // El saldo real, leído del libro mayor —no calculado en la UI— y
+                                // con él el aviso: sin esto el formulario se vaciaba en la misma
+                                // pantalla y no había nada visible de que la venta se registró.
+                                val balanceCents = database.financialDao().customerBalanceCents(businessId, customer.customer.id)
+                                uiMessage = getString(
+                                    R.string.message_sale_registered_balance,
+                                    balancePhrase(customer.customer.name, balanceCents),
+                                )
+                                // Y se lleva al detalle de esa clienta, que es donde la persona ve
+                                // cómo quedó la deuda.
+                                loadStatement(businessId, customer)
                             }
                         }
                     }
@@ -2218,15 +2326,14 @@ class MainActivity : ComponentActivity() {
                         }
                         syncQueue.enqueue(businessId, "MOVEMENT", movement.id, now, SyncPayloads.movement(movement))
                         refreshKey++
-                        uiMessage = when {
-                             allocations.isEmpty() -> getString(R.string.message_payment_registered_as_credit)
-                             allocationResult.creditCents > 0 -> getString(
-                                 R.string.message_payment_applied_with_credit,
-                                 allocations.size,
-                                 Money.format(allocationResult.creditCents),
-                             )
-                             else -> getString(R.string.message_payment_applied, allocations.size)
-                         }
+                        // "Abono aplicado a 2 venta(s)" no le dice nada a la persona, que lo que
+                        // quiere saber es cuánto le queda debiendo. El saldo sale del libro mayor.
+                        val balanceCents = database.financialDao().customerBalanceCents(businessId, customer.customer.id)
+                        uiMessage = getString(
+                            R.string.message_payment_registered_balance,
+                            balancePhrase(customer.customer.name, balanceCents),
+                        )
+                        loadStatement(businessId, customer)
                     }
                 }, statementCustomer = statementCustomer, statement = statementEntries, cancelables = cancelables, suggestedCreditLimitCents = suggestedCreditLimitCents, onCancelSale = { item ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
@@ -2497,24 +2604,34 @@ class MainActivity : ComponentActivity() {
                         // Both payloads are built from this one customer's already-scoped statement.
                         // The pure image builder receives today's date at this Android boundary, never
                         // reads a clock itself, so its content remains deterministic in JVM tests.
-                        shareStatementImage(
-                            subject = getString(R.string.share_statement_subject, row.customer.name),
-                            text = DebtorShareText.forCustomer(
-                                shareTier,
-                                businessName,
-                                row.customer.name,
-                                row.balanceCents,
-                                statementEntries,
-                            ),
-                            content = StatementImage.build(
-                                businessName = businessName,
-                                customerName = row.customer.name,
-                                balanceCents = row.balanceCents,
-                                entries = statementEntries,
-                                tier = shareTier,
-                                statementDateIso = LocalDate.now().toString(),
-                            ),
+                        //
+                        // v44: con imagen, el texto va corto (los movimientos ya van en la imagen).
+                        // Si la imagen falla, se comparte el texto completo de siempre: la persona
+                        // pierde la imagen, no el estado de cuenta. La elección vive en el objeto
+                        // puro `StatementShareTextChoice`, no aquí.
+                        val subject = getString(R.string.share_statement_subject, row.customer.name)
+                        val shortText = DebtorShareText.forCustomerWithImage(
+                            shareTier,
+                            businessName,
+                            row.customer.name,
+                            row.balanceCents,
                         )
+                        val fullText = DebtorShareText.forCustomer(
+                            shareTier,
+                            businessName,
+                            row.customer.name,
+                            row.balanceCents,
+                            statementEntries,
+                        )
+                        val content = StatementImage.build(
+                            businessName = businessName,
+                            customerName = row.customer.name,
+                            balanceCents = row.balanceCents,
+                            entries = statementEntries,
+                            tier = shareTier,
+                            statementDateIso = LocalDate.now().toString(),
+                        )
+                        shareStatementImage(subject = subject, shortText = shortText, fullText = fullText, content = content)
                     }
                 }, onShareDebtorList = {
                     val debtors = customers.map { Debtor(it.customer.name, it.balanceCents) }
@@ -2549,50 +2666,111 @@ class MainActivity : ComponentActivity() {
                 }, onDeleteAccount = {
                     val businessToErase = (state as? DashboardUiState.Content)?.businessId
                     lifecycleScope.launch {
-                        // The remote erasure is the gate everything else hangs on. The flag write is
-                        // awaited, then the cascade deletes every subcollection (children first,
-                        // batches of at most 500) and the business document last. Only when the cloud
-                        // copy is verifiably gone does the phone wipe itself; a remote failure leaves
-                        // local data, session, entitlement and the Auth account untouched so the
-                        // person can retry with everything intact.
-                        val remoteErased = withContext(Dispatchers.IO) {
-                            if (businessToErase == null) {
-                                // Nothing ever reached the cloud; nothing to erase remotely.
-                                true
-                            } else {
-                                val requested = firestoreGateway.requestBusinessDeletion(businessToErase, System.currentTimeMillis())
-                                requested.isSuccess && deletionGateway.deleteBusiness(businessToErase).isSuccess
-                            }
-                        }
-                        if (!AccountDeletionFailure.mayWipeLocal(remoteErased)) {
-                            uiMessage = getString(R.string.message_account_delete_cloud_failed)
-                            return@launch
-                        }
-                        // clearAllTables() is a blocking Room call and Room refuses to run one on the
-                        // main thread; lifecycleScope launches on Main, so this used to crash the app
-                        // the moment the button was confirmed.
-                        withContext(Dispatchers.IO) { database.clearAllTables() }
-                        sessionGuard.forget()
-                        // The entitlement dies with the account it belonged to; leaving it behind
-                        // would hand Pro to whoever signs up next on this phone.
-                        entitlementStore.forget()
-                        authenticationGateway.deleteAccount { result ->
-                            result.onSuccess {
-                                authenticationGateway.clearGoogleCredentialState { }
-                                // A deleted account must not leave a reminder job for it behind.
-                                CollectionReminderScheduler.cancel(this@MainActivity)
-                                authenticatedUserId = null
-                            }.onFailure { error ->
-                                val messageKey = AccountDeletionFailure.messageKeyForAuth(
-                                    (error as? FirebaseAuthException)?.errorCode
-                                )
-                                uiMessage = when (messageKey) {
-                                    AccountDeletionFailure.MessageKey.RECENT_LOGIN_REQUIRED ->
-                                        getString(R.string.message_account_delete_recent_login)
-                                    else ->
-                                        getString(R.string.message_account_delete_failed)
+                        // v44: el orden es re-autenticar → nube → local → Auth, y la Activity
+                        // **despacha por el `Step`** del plan puro en vez de codificar los pasos
+                        // aparte, para que la prueba del plan pruebe lo que de verdad corre.
+                        //
+                        // Antes se borraba la nube y Room y **al final** se intentaba borrar el
+                        // usuario de Auth; con una sesión vieja Firebase lo rechazaba y la persona
+                        // quedaba con sesión abierta y sin datos (el estado raro de Diego). Y aunque
+                        // la re-autenticación baje la probabilidad, `delete()` todavía puede fallar
+                        // por red **después** de borrar: por eso hay una marca durable y una salida
+                        // segura (cerrar sesión igualmente) para ese caso.
+                        val uid = authenticationGateway.currentUserId
+                        var step = com.cuentivo.app.domain.AccountDeletionPlan.firstStep(authenticationGateway.isAnonymous)
+
+                        while (step != com.cuentivo.app.domain.AccountDeletionPlan.Step.DONE) {
+                            when (step) {
+                                com.cuentivo.app.domain.AccountDeletionPlan.Step.REAUTHENTICATE -> {
+                                    val reauth = reauthenticateWithGoogle(authenticationGateway)
+                                    if (reauth !is GoogleAuthenticationResult.SignedIn) {
+                                        uiMessage = when (reauth) {
+                                            GoogleAuthenticationResult.Cancelled ->
+                                                getString(R.string.message_account_delete_reauth_cancelled)
+                                            else ->
+                                                getString(R.string.message_account_delete_reauth_failed)
+                                        }
+                                        return@launch
+                                    }
                                 }
+
+                                com.cuentivo.app.domain.AccountDeletionPlan.Step.ERASE_REMOTE -> {
+                                    // La marca durable va ANTES de la parte destructiva: si el proceso
+                                    // muere a mitad, es lo que permite retomar al siguiente arranque.
+                                    if (uid != null) pendingAccountDeletionStore.mark(uid)
+                                    val remoteErased = withContext(Dispatchers.IO) {
+                                        if (businessToErase == null) {
+                                            // Nothing ever reached the cloud; nothing to erase remotely.
+                                            true
+                                        } else {
+                                            val requested = firestoreGateway.requestBusinessDeletion(businessToErase, System.currentTimeMillis())
+                                            requested.isSuccess && deletionGateway.deleteBusiness(businessToErase).isSuccess
+                                        }
+                                    }
+                                    if (!AccountDeletionFailure.mayWipeLocal(remoteErased)) {
+                                        // Nada destructivo ocurrió todavía: se puede reintentar con todo
+                                        // intacto, así que la marca se retira.
+                                        pendingAccountDeletionStore.clear()
+                                        uiMessage = getString(R.string.message_account_delete_cloud_failed)
+                                        return@launch
+                                    }
+                                }
+
+                                com.cuentivo.app.domain.AccountDeletionPlan.Step.WIPE_LOCAL -> {
+                                    // clearAllTables() is a blocking Room call and Room refuses to run
+                                    // one on the main thread; lifecycleScope launches on Main, so this
+                                    // used to crash the app the moment the button was confirmed.
+                                    withContext(Dispatchers.IO) { database.clearAllTables() }
+                                    sessionGuard.forget()
+                                    // The entitlement dies with the account it belonged to; leaving it
+                                    // behind would hand Pro to whoever signs up next on this phone.
+                                    entitlementStore.forget()
+                                }
+
+                                com.cuentivo.app.domain.AccountDeletionPlan.Step.DELETE_AUTH -> {
+                                    // Se detecta por TIPO, no por el texto del código: en Android la
+                                    // excepción es `FirebaseAuthRecentLoginRequiredException` y el
+                                    // código `ERROR_REQUIRES_RECENT_LOGIN` (el `requires-recent-login`
+                                    // es el formato web, y comparar contra él hacía que el aviso nunca
+                                    // se mostrara).
+                                    val outcome = deleteAccountAndAwait(authenticationGateway)
+                                    outcome.onSuccess {
+                                        pendingAccountDeletionStore.clear()
+                                        authenticationGateway.clearGoogleCredentialState { }
+                                        // A deleted account must not leave a reminder job for it behind.
+                                        CollectionReminderScheduler.cancel(this@MainActivity)
+                                        authenticatedUserId = null
+                                        // Fuera de la sesión y a la pantalla de inicio de sesión, sin
+                                        // reiniciar la app.
+                                        showManualAuthentication = true
+                                    }.onFailure { error ->
+                                        val action = com.cuentivo.app.domain.AccountDeletionPlan.onFailure(
+                                            step = com.cuentivo.app.domain.AccountDeletionPlan.Step.DELETE_AUTH,
+                                            authErrorCode = (error as? FirebaseAuthException)?.errorCode,
+                                        )
+                                        // Los datos YA se borraron. Nunca se puede quedar la app con
+                                        // sesión abierta y sin datos: se cierra la sesión igualmente y
+                                        // se dice la verdad. La marca durable queda puesta para que al
+                                        // volver a entrar se termine el borrado de Auth.
+                                        authenticationGateway.signOut()
+                                        authenticationGateway.clearGoogleCredentialState { }
+                                        CollectionReminderScheduler.cancel(this@MainActivity)
+                                        authenticatedUserId = null
+                                        showManualAuthentication = true
+                                        uiMessage = when {
+                                            error is com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException ->
+                                                getString(R.string.message_account_delete_recent_login)
+                                            action == com.cuentivo.app.domain.AccountDeletionPlan.FailureAction.ASK_RECENT_LOGIN ->
+                                                getString(R.string.message_account_delete_recent_login)
+                                            else ->
+                                                getString(R.string.message_account_delete_data_gone_auth_failed)
+                                        }
+                                    }
+                                }
+
+                                com.cuentivo.app.domain.AccountDeletionPlan.Step.DONE -> Unit
                             }
+                            step = com.cuentivo.app.domain.AccountDeletionPlan.nextStepAfterSuccess(step)
                         }
                     }
                 }, reminderEnabled = reminderEnabled, reminderHour = reminderHour,
@@ -2635,9 +2813,77 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")))
     }
 
-    /** Shares one temporary PNG and removes it after the Sharesheet returns to this Activity. */
-    private fun shareStatementImage(subject: String, text: String, content: com.cuentivo.app.domain.StatementImageContent) {
-        val intent = statementImageShareStore.createShareIntent(subject, text, content)
+    /**
+     * "Rosa ahora debe $125" / "ya no debe nada" / "tiene $50 a favor", desde el saldo real.
+     *
+     * El signo decide la frase: mostrar "ahora debe -$50" sería una resta que nadie pidió. El saldo
+     * llega del libro mayor (`customerBalanceCents`) y la presentación la decide `BalancePresenter`,
+     * la misma que usa el archivo de clientes.
+     */
+    private fun balancePhrase(customerName: String, balanceCents: Long): String {
+        val presentation = com.cuentivo.app.ui.customer.BalancePresenter.from(balanceCents)
+        return when (presentation.kind) {
+            com.cuentivo.app.ui.customer.BalanceKind.OWED ->
+                getString(R.string.message_balance_owes, customerName, Money.format(presentation.amountCents))
+            com.cuentivo.app.ui.customer.BalanceKind.CUSTOMER_CREDIT ->
+                getString(R.string.message_balance_credit, customerName, Money.format(presentation.amountCents))
+            com.cuentivo.app.ui.customer.BalanceKind.SETTLED ->
+                getString(R.string.message_balance_settled, customerName)
+        }
+    }
+
+    /**
+     * Pide la credencial de Google y re-autentica la sesión, para el borrado de cuenta (v44).
+     *
+     * `suspendCancellableCoroutine` porque el gateway habla con callbacks: así el flujo de borrado
+     * se lee de arriba abajo y la re-autenticación ocurre **antes** de borrar nada. La cancelación
+     * del selector llega como [GoogleAuthenticationResult.Cancelled], no como excepción.
+     */
+    private suspend fun reauthenticateWithGoogle(
+        gateway: com.cuentivo.app.auth.AuthenticationGateway,
+    ): GoogleAuthenticationResult =
+        suspendCancellableCoroutine { continuation ->
+            gateway.reauthenticateWithGoogle(this@MainActivity) { result ->
+                if (continuation.isActive) continuation.resume(result)
+            }
+        }
+
+    /**
+     * Borra el usuario de Auth y espera el callback, para que el flujo de borrado pueda decidir qué
+     * hacer con el resultado (cerrar sesión igualmente si falla) en vez de dejarlo en un callback
+     * suelto que sólo muestra un mensaje.
+     */
+    private suspend fun deleteAccountAndAwait(
+        gateway: com.cuentivo.app.auth.AuthenticationGateway,
+    ): Result<Unit> =
+        suspendCancellableCoroutine { continuation ->
+            gateway.deleteAccount { result ->
+                if (continuation.isActive) continuation.resume(result)
+            }
+        }
+
+    /**
+     * Shares one temporary PNG and removes it after the Sharesheet returns to this Activity.
+     *
+     * v44: si el PNG no se puede escribir (`createShareIntent` lanza: sin espacio, error de disco),
+     * se comparte el **texto completo** por la ruta de texto en vez de dejar caer la app. La persona
+     * pierde la imagen, no el estado de cuenta. Qué texto va en cada caso lo decide el objeto puro
+     * `StatementShareTextChoice`.
+     */
+    private fun shareStatementImage(
+        subject: String,
+        shortText: String,
+        fullText: String,
+        content: com.cuentivo.app.domain.StatementImageContent,
+    ) {
+        // Las DOS ramas pasan por `choose`, para que la prueba pura cubra lo que de verdad corre:
+        // con imagen → texto corto; sin imagen (el PNG no se pudo escribir) → texto completo.
+        val textWithImage = com.cuentivo.app.domain.StatementShareTextChoice.choose(true, shortText, fullText)
+        val intent = runCatching { statementImageShareStore.createShareIntent(subject, textWithImage, content) }.getOrNull()
+        if (intent == null) {
+            share(subject, com.cuentivo.app.domain.StatementShareTextChoice.choose(false, shortText, fullText))
+            return
+        }
         @Suppress("DEPRECATION")
         startActivityForResult(Intent.createChooser(intent, subject), REQUEST_SHARE_STATEMENT_IMAGE)
     }

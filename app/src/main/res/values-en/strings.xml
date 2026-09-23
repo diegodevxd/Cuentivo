@@ -15,7 +15,7 @@
     <string name="dashboard_receivable_total">Total receivable</string>
     <string name="dashboard_due_today">Due today</string>
     <string name="dashboard_overdue">Overdue</string>
-    <string name="dashboard_critical_customers">Critical customers</string>
+    <string name="dashboard_critical_customers">Who owes you the most</string>
     <string name="dashboard_see_all">See all</string>
     <string name="dashboard_no_urgent_title">No urgent collections</string>
     <string name="dashboard_no_urgent_detail">Nobody has an overdue payment today.</string>
@@ -51,12 +51,13 @@
     <string name="customers_form_edit_title">Edit customer</string>
     <string name="customers_form_name_label">Customer name</string>
     <string name="customers_form_phone_label">Phone (optional)</string>
-    <string name="customers_form_credit_limit_label">Credit limit (optional)</string>
+    <string name="customers_form_credit_limit_label">How much do you lend them? (optional)</string>
     <string name="customers_form_credit_limit_none">No credit limit</string>
     <string name="customers_form_credit_limit_invalid">Invalid amount</string>
     <string name="customers_form_credit_limit_hint">You will be warned if the balance goes over %1$s</string>
     <string name="customers_form_edit_note">Fixing the name does not change their sales or balance.</string>
-    <string name="opening_import_action">Bring in debts from my notebook</string>
+    <string name="opening_import_action">Write debts by hand</string>
+    <string name="opening_import_photo_action">Photograph my notebook</string>
     <string name="opening_import_title">Debts from your notebook</string>
     <string name="opening_import_hint">Write each name and how much they owe. If that person is already here, the debt is added to what they already owe.</string>
     <string name="opening_import_select_customer">Select an existing customer</string>
@@ -215,6 +216,11 @@
     <string name="message_payment_registered_as_credit">Payment recorded as customer credit</string>
     <string name="message_payment_applied_with_credit">Payment applied to %1$d sale(s); %2$s remains as credit</string>
     <string name="message_payment_applied">Payment applied to %1$d sale(s)</string>
+    <string name="message_sale_registered_balance">Sale registered. %1$s</string>
+    <string name="message_payment_registered_balance">Payment registered. %1$s</string>
+    <string name="message_balance_owes">%1$s now owes %2$s</string>
+    <string name="message_balance_settled">%1$s does not owe anything</string>
+    <string name="message_balance_credit">%1$s has %2$s in credit</string>
     <string name="message_sale_not_cancelable">That sale can no longer be cancelled</string>
     <string name="message_sale_canceled">Sale cancelled; %1$s was deducted</string>
     <string name="message_sale_cancel_failed">The sale could not be cancelled</string>
@@ -223,6 +229,9 @@
     <string name="message_account_delete_cloud_failed">We could not delete your information in the cloud, so nothing on your phone was erased. Check your connection and try again.</string>
     <string name="message_account_delete_failed">The account could not be deleted. Try again.</string>
     <string name="message_account_delete_recent_login">Your session is too old to delete the account. Sign out, sign in again and repeat the deletion.</string>
+    <string name="message_account_delete_reauth_cancelled">You cancelled the Google confirmation, so nothing was erased. You can try again whenever you want.</string>
+    <string name="message_account_delete_reauth_failed">We could not confirm your account with Google, so nothing was erased. Check your connection and try again.</string>
+    <string name="message_account_delete_data_gone_auth_failed">Your data was erased, but we could not close your account. Sign in again to finish.</string>
 
     <!-- Alerts (AlertsSheet) -->
     <string name="alerts_title">Alerts</string>
@@ -315,7 +324,7 @@
     <!-- Customer detail (CustomerDetailSheet) -->
     <string name="detail_title">Customer detail</string>
     <string name="detail_back">Back</string>
-    <string name="detail_balance_total">TOTAL BALANCE</string>
+    <string name="detail_balance_total">You are owed</string>
     <string name="detail_balance_pending">Balance due</string>
     <string name="detail_balance_settled">Balance settled</string>
     <string name="detail_balance_credit">Customer credit</string>
@@ -326,7 +335,8 @@
     <string name="detail_register_payment">Register payment</string>
     <string name="detail_share">Share</string>
     <string name="detail_share_summary">Share summary</string>
-    <string name="detail_share_csv">Share CSV</string>
+    <string name="detail_share_csv">Share as Excel (CSV)</string>
+    <string name="detail_movement_prior_debt">Previous debt</string>
     <string name="detail_history">Movement history</string>
     <string name="detail_no_movements_title">No movements</string>
     <string name="detail_no_movements_detail">Sales and payments for this customer will show up here.</string>
@@ -534,6 +544,7 @@
     <string name="ai_sale_confirm_action">Confirm sale</string>
     <string name="ai_sale_confirm_cancel">Cancel</string>
     <string name="ai_sale_recorded_success">Sale recorded successfully.</string>
+    <string name="ai_sale_recorded_success_balance">Sale recorded successfully. %1$s</string>
     <string name="ai_sale_stale_message">The customer or product data changed while reviewing this draft. Please request the sale again with updated data.</string>
     <string name="ai_sale_rejected_message">Could not record the sale because local validation failed (for example: inactive product or invalid customer). Check your registered products and customers.</string>
     <string name="ai_sale_limit_reached_message">You reached your plan limit. Upgrade to Pro or CuentivoAI to continue recording.</string>
@@ -676,7 +687,7 @@
     <string name="ai_ledger_badge_uncertain">Uncertain</string>
     <string name="ai_ledger_unresolved_notice">Row with unresolved fields</string>
     <string name="ai_ledger_error_zero_operations">No operations ready to register. Resolve uncertain or unreadable fields.</string>
-    <string name="ai_ledger_error_rows_need_review">Gemini read %1$d rows with doubts. Check them against the photo so they can be registered.</string>
+    <string name="ai_ledger_error_rows_need_review">CuentivoAI read %1$d rows with doubts. Check them against the photo so they can be registered.</string>
     <plurals name="ai_ledger_action_review_uncertain">
         <item quantity="one">Review %1$d row with doubts</item>
         <item quantity="other">Review %1$d rows with doubts</item>
@@ -721,7 +732,22 @@
     <string name="ai_ledger_objection_price_mismatch">Price does not match your registered product</string>
     <string name="ai_ledger_objection_unusual_cents">Unusual cents on this page</string>
     <string name="ai_ledger_objection_customer_confirmation">This customer already exists, confirm before registering</string>
+    <string name="ai_ledger_objection_implausible_date">This row date does not look possible (different year than the page, too old, or in the future): check the year before continuing</string>
     <string name="ai_ledger_action_confirm_objection">Yes, it is correct</string>
+    <string name="ai_ledger_action_confirm_duplicate">Yes, it is another sale</string>
+    <string name="ai_ledger_action_change_year">Change to %1$d</string>
+    <string name="ai_ledger_action_change_all">Change all</string>
+    <plurals name="ai_ledger_year_bulk_question">
+        <item quantity="one">%1$d row says %2$d. Change it to %3$d?</item>
+        <item quantity="other">%1$d rows say %2$d. Change them to %3$d?</item>
+    </plurals>
+    <plurals name="ai_ledger_year_bulk_question_mixed">
+        <item quantity="one">%1$d row has a different year than the page. Change it to %2$d?</item>
+        <item quantity="other">%1$d rows have a different year than the page. Change them to %2$d?</item>
+    </plurals>
+    <string name="ai_ledger_pending_in_doubt">+ %1$s to review</string>
+    <string name="ai_ledger_action_show_details">See why</string>
+    <string name="ai_ledger_action_hide_details">Hide details</string>
     <string name="message_account_wiped">This phone had data from another account and it was deleted</string>
     <string name="message_cloud_restored">Restored %1$d customers from the cloud</string>
     <string name="message_cloud_restore_failed">We could not bring your information from the cloud. Check your connection and reopen the app (%1$s/%2$s)</string>

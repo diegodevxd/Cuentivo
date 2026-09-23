@@ -19,6 +19,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,11 +67,25 @@ fun PaymentScreen(
     modifier: Modifier = Modifier,
     initialCustomer: CustomerBalanceRow? = null,
     onCreatePayment: (CustomerBalanceRow, Long) -> Unit = { _, _ -> },
+    /**
+     * Bumped by the host when the bar is tapped on the tab already showing: back to the root of the
+     * tab, which means the amount field empty and nobody selected. 0 means "never tapped", so the
+     * first composition is not treated as a reset.
+     */
+    resetToken: Int = 0,
 ) {
     var customer by remember(initialCustomer?.customer?.id) {
         mutableStateOf(preselectedCustomer(initialCustomer, customers))
     }
     var amountText by remember { mutableStateOf("") }
+    // Tapping Abonos while already on Abonos starts the form over instead of leaving the last
+    // amount typed. Guarded on > 0 so the first composition keeps the preselected customer.
+    LaunchedEffect(resetToken) {
+        if (resetToken > 0) {
+            customer = preselectedCustomer(initialCustomer, customers)
+            amountText = ""
+        }
+    }
     val cents = pesosToCents(amountText)
     // Whoever owes most first, so the common case is one tap away.
     val ordered = customers.sortedByDescending { it.balanceCents }
@@ -94,7 +109,6 @@ fun PaymentScreen(
         ) {
             item {
                 NeoTaskHeader(
-                    eyebrow = stringResource(R.string.payment_eyebrow),
                     title = stringResource(R.string.payment_title),
                 )
             }

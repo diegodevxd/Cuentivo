@@ -69,6 +69,17 @@ interface AuthenticationGateway {
     fun deleteAccount(onComplete: (Result<Unit>) -> Unit)
 
     /**
+     * Re-authenticates the signed-in session with Google, through the same Credential Manager flow
+     * as sign-in.
+     *
+     * Firebase refuses to delete a user whose session is not recent (`ERROR_REQUIRES_RECENT_LOGIN`).
+     * The fix is to prove the person is still there: ask for the Google credential again and
+     * `reauthenticate` with it, before deleting anything. A cancellation or failure means nothing is
+     * deleted and the caller says so.
+     */
+    fun reauthenticateWithGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit)
+
+    /**
      * Google sign-in for a signed-out screen, through AndroidX Credential Manager.
      *
      * [GoogleAuthenticationResult] is the only vocabulary the UI ever sees — a silent cancellation,
@@ -274,6 +285,33 @@ class FirebaseAuthenticationGateway(
                         if (task.isSuccessful) {
                             val userId = task.result?.user?.uid
                             AuthenticationFlowPolicy.resolveGoogleLinkResult(expectedUid, userId)
+                        } else {
+                            GoogleAuthenticationResult.fromFirebaseErrorCode(
+                                (task.exception as? FirebaseAuthException)?.errorCode,
+                                email = googleEmail,
+                            )
+                        }
+                    )
+                }
+        }
+    }
+
+    override fun reauthenticateWithGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit) {
+        googleIdToken(activity, onComplete = onComplete) { idToken, googleEmail ->
+            val user = auth.currentUser
+            if (user == null) {
+                onComplete(GoogleAuthenticationResult.Failed)
+                return@googleIdToken
+            }
+            user.reauthenticate(GoogleAuthProvider.getCredential(idToken, null))
+                .addOnCompleteListener { task ->
+                    onComplete(
+                        if (task.isSuccessful) {
+                            // `reauthenticate` returns Task<Void>: no user in the result. The session
+                            // is the same one, so its uid is the confirmation that it is still there.
+                            val userId = auth.currentUser?.uid
+                            if (userId != null) GoogleAuthenticationResult.SignedIn(userId)
+                            else GoogleAuthenticationResult.Failed
                         } else {
                             GoogleAuthenticationResult.fromFirebaseErrorCode(
                                 (task.exception as? FirebaseAuthException)?.errorCode,

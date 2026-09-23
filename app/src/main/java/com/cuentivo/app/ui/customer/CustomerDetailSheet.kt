@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -307,7 +308,9 @@ private fun BalanceHero(balanceCents: Long, status: CustomerStatus, score: Custo
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(vertical = NeoSpacing.md),
+            // Horizontal padding, not just vertical: the score line is a long sentence and, with
+            // the card edge as its only bound, it ran flush against the border (v44).
+            modifier = Modifier.fillMaxWidth().padding(horizontal = NeoSpacing.lg, vertical = NeoSpacing.md),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -370,6 +373,7 @@ private fun ScoreLine(score: CustomerScore?) {
         ).joinToString(" · "),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
     )
 }
 
@@ -600,7 +604,7 @@ private fun IdentityCard(customer: CustomerBalanceRow, onCall: (String) -> Unit)
 
 @Composable
 private fun MovementRow(entry: StatementEntry, balanceAfterCents: Long, isCanceled: Boolean) {
-    val visual = CustomerLedgerPresentation.from(entry.type, entry.direction)
+    val visual = CustomerLedgerPresentation.from(entry.type, entry.direction, entry.isPriorDebt)
     val accent = when (visual.tone) {
         LedgerTone.DEBT -> MaterialTheme.colorScheme.error
         LedgerTone.CREDIT -> MaterialTheme.colorScheme.secondary
@@ -621,13 +625,13 @@ private fun MovementRow(entry: StatementEntry, balanceAfterCents: Long, isCancel
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh, NeoShapes.row),
                 contentAlignment = Alignment.Center,
             ) {
-                // material-icons-core only: a cart stands in for anything that grows the debt, a
-                // tick for anything that pays it down.
+                // material-icons-core only: a cart stands in for a sale, a list for a debt written
+                // in the notebook before the app existed, and a tick for anything that pays down.
                 Icon(
-                    imageVector = if (visual.tone == LedgerTone.DEBT) {
-                        Icons.Filled.ShoppingCart
-                    } else {
-                        Icons.Filled.Check
+                    imageVector = when {
+                        visual.isPriorDebt -> Icons.AutoMirrored.Filled.List
+                        visual.tone == LedgerTone.DEBT -> Icons.Filled.ShoppingCart
+                        else -> Icons.Filled.Check
                     },
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -636,7 +640,11 @@ private fun MovementRow(entry: StatementEntry, balanceAfterCents: Long, isCancel
             }
             Column(Modifier.weight(1f).padding(start = NeoSpacing.md)) {
                 Text(
-                    text = visual.label,
+                    text = if (visual.isPriorDebt) {
+                        stringResource(R.string.detail_movement_prior_debt)
+                    } else {
+                        visual.label
+                    },
                     style = MaterialTheme.typography.titleMedium.copy(
                         textDecoration = if (isCanceled) TextDecoration.LineThrough else TextDecoration.None,
                     ),

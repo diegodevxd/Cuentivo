@@ -426,7 +426,12 @@ object AiLedgerBatchPlanner {
                         todayEpochDay = todayEpochDay,
                         nowEpochMillis = nowEpochMillis,
                         dueDateEpochDay = LedgerDueDatePolicy.dueDateEpochDay(effectiveDate, dueDateDays),
-                        notes = null,
+                        // La deuda anterior se marca igual que la que crea `OpeningBalance` al dar de
+                        // alta a una clienta. Sin el marcador, los lectores que ya existen no la
+                        // reconocían: el historial la pintaba como "Venta", `getRegisteredOperationsInRange`
+                        // la clasificaba como SALE y "Vendido del mes" la sumaba como venta nueva.
+                        // Es el mismo texto almacenado y no traducido que usa `OpeningBalance`.
+                        notes = OpeningBalance.NOTES_MARKER,
                         lineNameSnapshot = lineDescription,
                     )
                     sales.add(uncataloged.sale)

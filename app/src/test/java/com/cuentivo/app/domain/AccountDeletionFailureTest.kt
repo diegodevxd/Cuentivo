@@ -29,7 +29,22 @@ class AccountDeletionFailureTest {
     }
 
     @Test
-    fun `requires-recent-login gets its own message`() {
+    fun `the real Android code for a stale session gets its own message`() {
+        // En Android el código es ERROR_REQUIRES_RECENT_LOGIN; `requires-recent-login` es el de la
+        // web. Comparar contra el de la web hacía que este aviso NUNCA se mostrara.
+        assertEquals(
+            MessageKey.RECENT_LOGIN_REQUIRED,
+            AccountDeletionFailure.messageKeyForAuth(AccountDeletionFailure.ERROR_REQUIRES_RECENT_LOGIN),
+        )
+        assertEquals(
+            "el código de Android es el que importa",
+            "ERROR_REQUIRES_RECENT_LOGIN",
+            AccountDeletionFailure.ERROR_REQUIRES_RECENT_LOGIN,
+        )
+    }
+
+    @Test
+    fun `the web spelling still maps, for safety`() {
         assertEquals(
             MessageKey.RECENT_LOGIN_REQUIRED,
             AccountDeletionFailure.messageKeyForAuth("requires-recent-login"),

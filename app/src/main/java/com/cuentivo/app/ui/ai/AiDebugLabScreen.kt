@@ -87,6 +87,7 @@ import com.cuentivo.app.ai.AiSaleBlockReason
 import com.cuentivo.app.ai.AiSaleConfirmationRequest
 import com.cuentivo.app.ai.AiSaleExecutionResult
 import com.cuentivo.app.ai.AiSalePreviewResult
+import com.cuentivo.app.ai.AiResolvedSalePreview
 import com.cuentivo.app.ai.BusinessQueryProposal
 import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.CreateSaleProposal
@@ -94,6 +95,8 @@ import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.capture.AiCameraCaptureStore
 import com.cuentivo.app.ai.capture.AiCapturePolicy
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
+import com.cuentivo.app.ui.transaction.DueOption
+import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
 import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
 import com.cuentivo.app.ai.ledger.LedgerImagePreparer
@@ -211,6 +214,13 @@ fun AiDebugLabScreen(
      * metrics are diagnostics, and their absence must never be a reason the import fails.
      */
     ledgerImportMetricDao: com.cuentivo.app.data.local.AiLedgerImportMetricDao? = null,
+    /**
+     * Opened from "Tomar foto de mi libreta": the lab skips the chat and goes straight to the
+     * camera/gallery chooser, because the person already said what they came to do. Consumed once
+     * the chooser is shown, through [onStartLedgerImportConsumed].
+     */
+    startLedgerImport: Boolean = false,
+    onStartLedgerImportConsumed: () -> Unit = {},
 ) {
     var model by remember { mutableStateOf(AiDebugLabModel()) }
     var voiceModel by remember { mutableStateOf(VoiceCaptureModel()) }
@@ -250,6 +260,19 @@ fun AiDebugLabScreen(
     // LedgerReviewing state already froze.
     var ledgerReviewContext by remember {
         mutableStateOf<com.cuentivo.app.ui.ai.LedgerReviewContext?>(null)
+    }
+
+    // "Tomar foto de mi libreta" arrives with the intent already declared: open the camera/gallery
+    // chooser as soon as there is a business to write to, instead of making the person find the
+    // small link inside the chat. The same session-naming rule as the in-chat entry applies, so a
+    // late result cannot land on a different review.
+    LaunchedEffect(startLedgerImport, activeBusinessId, extractLedgerPage) {
+        if (!startLedgerImport) return@LaunchedEffect
+        if (extractLedgerPage == null || activeBusinessId.isNullOrBlank()) return@LaunchedEffect
+        ledgerSessionId = java.util.UUID.randomUUID().toString()
+        ledgerBusinessId = activeBusinessId
+        showLedgerSourceSelector = true
+        onStartLedgerImportConsumed()
     }
 
     DisposableEffect(effectiveVoiceRecognizer) {
@@ -377,6 +400,7 @@ fun AiDebugLabScreen(
             resolver = ledgerRegisteredResolver,
             businessId = businessId,
             operations = saved.operations,
+            pageDateEpochDay = saved.pageDateEpochDay,
         )
         ledgerReviewContext = LedgerReviewContext(
             existingCustomerBalances = balances,
@@ -762,11 +786,35 @@ fun AiDebugLabScreen(
 
     val ledgerReviewing = model.state as? AiDebugLabState.LedgerReviewing
     if (ledgerReviewing != null) {
+        // v44: la consulta a Room se hizo una vez al extraer/restaurar, con la ventana de fechas que
+        // había entonces. Si durante la revisión cambia la fecha de un renglón o la de la página, esa
+        // ventana deja de cubrir lo que el detector compara (una página de 2023 sin fechas por renglón
+        // consultaba 2026 y no encontraba nada). Se vuelve a consultar cuando cambia la firma de fechas
+        // efectivas, con la MISMA definición de ventana que usa el detector (`LedgerEffectiveDate`).
+        val effectiveDateSignature = ledgerReviewing.review.operations.joinToString("|") { op ->
+            "${op.lineIndex}:${com.cuentivo.app.domain.LedgerEffectiveDate.of(op, ledgerReviewing.review.pageDateEpochDay, ledgerReviewing.review.todayEpochDay)}"
+        } + "|page:${ledgerReviewing.review.pageDateEpochDay}"
+        LaunchedEffect(effectiveDateSignature, ledgerReviewing.sessionId) {
+            if (ledgerRegisteredResolver == null) return@LaunchedEffect
+            val refreshed = loadRegisteredAround(
+                resolver = ledgerRegisteredResolver,
+                businessId = ledgerReviewing.businessId,
+                operations = ledgerReviewing.review.operations,
+                pageDateEpochDay = ledgerReviewing.review.pageDateEpochDay,
+            )
+            model = AiDebugLabMachine.onUpdateLedgerRegisteredOperations(
+                model = model,
+                sessionId = ledgerReviewing.sessionId,
+                registeredOperations = refreshed,
+            )
+        }
         val deterministicObjections = com.cuentivo.app.domain.LedgerDeterministicObjections.evaluate(
             operations = ledgerReviewing.review.operations,
             existingCustomerCandidates = ledgerReviewing.customerCandidates,
             catalogProducts = ledgerReviewing.productCandidates,
             pageTotals = ledgerReviewing.review.pageTotals,
+            pageDateEpochDay = ledgerReviewing.review.pageDateEpochDay,
+            todayEpochDay = ledgerReviewing.review.todayEpochDay,
         )
         val cancelLedger = {
             // Stage 2 of the metric: the person discarded this page, so the import ended
@@ -874,7 +922,15 @@ fun AiDebugLabScreen(
                         // máquina: así la prueba de `onConfirmLedger` cubre el valor que de verdad
                         // se escribe, no una copia paralela tomada de la clausura.
                         val dueDateDays = (outcome.model.state as AiDebugLabState.LedgerConfirming).dueDateDays
-                        val blockedLineIndices = deterministicObjections.mapTo(LinkedHashSet()) { it.lineIndex }
+                        // El posible duplicado frena el renglón igual que una objeción determinista
+                        // (v44): hasta que la persona confirme "Sí, es otra venta", no se escribe.
+                        // Se calcula con el mismo objeto puro que usa la pantalla, para que lo que
+                        // se ve bloqueado y lo que se escribe bloqueado no puedan discrepar.
+                        val blockedLineIndices = com.cuentivo.app.domain.LedgerDuplicateBlocking.blockedLineIndices(
+                            operations = operations,
+                            duplicateMatches = ledgerReviewing.duplicateMatches,
+                            deterministicBlockedLineIndices = deterministicObjections.mapTo(LinkedHashSet()) { it.lineIndex },
+                        )
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
                                 runCatching { write(businessId, sessionId, operations, pageDateEpochDay, dueDateDays, blockedLineIndices, com.cuentivo.app.domain.LedgerPageCompleteness.modelSaysTextMayBeMissing(ledgerReviewing.review), ledgerReviewing.isPageCompletenessConfirmed) }.getOrNull()
@@ -997,7 +1053,12 @@ fun AiDebugLabScreen(
                         } else null,
                         onConfirmSale = if (isCurrentSalePreview && isHydrated && confirmSale != null && activeBusinessId?.isNotBlank() == true) {
                             {
-                                val outcome = AiDebugLabMachine.onConfirmSale(model, activeBusinessId)
+                                // El plazo elegido en el borrador se resuelve contra hoy al confirmar.
+                                val outcome = AiDebugLabMachine.onConfirmSale(
+                                    model,
+                                    activeBusinessId,
+                                    todayEpochDay = java.time.LocalDate.now().toEpochDay(),
+                                )
                                 if (outcome is AiSaleConfirmOutcome.Started) {
                                     model = outcome.model
                                     val token = outcome.generation
@@ -1083,6 +1144,10 @@ fun AiDebugLabScreen(
                             { model = AiDebugLabMachine.onCancel(model) }
                         } else null,
                         onOpenPaywall = onOpenPaywall,
+                        saleDueDateDays = (model.state as? AiDebugLabState.SaleConfirmation)?.dueDateDays,
+                        onUpdateSaleDueDateDays = if (isCurrentSalePreview && isHydrated) {
+                            { days -> model = AiDebugLabMachine.onUpdateSaleDueDateDays(model, days) }
+                        } else null,
                         isConfirming = isConfirming,
                     )
                 }
@@ -1470,6 +1535,9 @@ private fun ChatMessageRow(
     onSelectProductCandidate: ((productName: String, choice: com.cuentivo.app.ai.AiEntityChoice) -> Unit)? = null,
     onSelectQueryCustomerCandidate: ((customerId: String) -> Unit)? = null,
     onOpenPaywall: (() -> Unit)? = null,
+    /** El plazo del borrador de venta y su cambio. Null cuando no hay borrador vivo. */
+    saleDueDateDays: Long? = null,
+    onUpdateSaleDueDateDays: ((Long?) -> Unit)? = null,
     isConfirming: Boolean = false,
 ) {
     when (message) {
@@ -1675,106 +1743,14 @@ private fun ChatMessageRow(
             text = stringResource(R.string.ai_payment_rejected_message),
             style = MaterialTheme.typography.bodyMedium,
         )
-        is AiChatMessage.AssistantSalePreview -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = stringResource(R.string.ai_debug_chat_draft_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-            val customerBadge = stringResource(
-                if (message.preview.customerMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
-                    R.string.ai_entity_badge_new
-                } else {
-                    R.string.ai_entity_badge_existing
-                },
-            )
-            Text(
-                text = stringResource(
-                    R.string.ai_sale_preview_customer_format,
-                    message.preview.customerName,
-                    customerBadge,
-                ),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            message.preview.lines.forEach { line ->
-                val productBadge = stringResource(
-                    if (line.resolutionMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
-                        R.string.ai_entity_badge_new
-                    } else {
-                        R.string.ai_entity_badge_existing
-                    },
-                )
-                Text(
-                    text = stringResource(
-                        R.string.ai_debug_lab_line_format,
-                        line.productName + " (" + productBadge + ")",
-                        line.quantity,
-                        formatCents(line.lineTotalCents),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                if (line.resolutionMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
-                    Text(
-                        text = stringResource(
-                            R.string.ai_sale_preview_new_product_habitual_price,
-                            formatCents(line.sourceDeclaredPriceCents),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-            Text(
-                text = stringResource(
-                    R.string.ai_sale_preview_total,
-                    formatCents(message.preview.totalCents),
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (message.preview.initialPaymentCents > 0L) {
-                Text(
-                    text = stringResource(
-                        R.string.ai_sale_preview_initial_payment,
-                        formatCents(message.preview.initialPaymentCents),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    text = stringResource(
-                        R.string.ai_sale_preview_remainder,
-                        formatCents(message.preview.remainderCents),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            message.preview.promisedPaymentCandidate?.let { promise ->
-                val date = promise as? com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate
-                if (date != null) {
-                    Text(
-                        stringResource(R.string.ai_debug_lab_promised_date, "${date.year}-${date.month}-${date.day}"),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-            if (onConfirmSale != null && onCancelSale != null) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = onConfirmSale,
-                        enabled = !isConfirming,
-                    ) {
-                        Text(stringResource(R.string.ai_sale_confirm_action))
-                    }
-                    TextButton(
-                        onClick = onCancelSale,
-                        enabled = !isConfirming,
-                    ) {
-                        Text(stringResource(R.string.ai_sale_confirm_cancel))
-                    }
-                }
-            }
-        }
+        is AiChatMessage.AssistantSalePreview -> AiSalePreviewContent(
+            preview = message.preview,
+            onConfirmSale = onConfirmSale,
+            onCancelSale = onCancelSale,
+            saleDueDateDays = saleDueDateDays,
+            onUpdateSaleDueDateDays = onUpdateSaleDueDateDays,
+            isConfirming = isConfirming,
+        )
         is AiChatMessage.AssistantSaleCustomerSelection -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(R.string.ai_sale_preview_customer_selection_prompt),
@@ -1875,10 +1851,28 @@ private fun ChatMessageRow(
                 )
             }
         }
-        is AiChatMessage.AssistantSaleRecorded -> Text(
-            text = stringResource(R.string.ai_sale_recorded_success),
-            style = MaterialTheme.typography.bodyMedium,
-        )
+        is AiChatMessage.AssistantSaleRecorded -> {
+            val balance = message.balanceAfterCents
+            val name = message.customerName
+            // La venta por CuentivoAI también dice en qué quedó la deuda (v44): "Venta registrada
+            // con éxito" a secas dejaba a la persona sin saber cuánto debe ahora.
+            val text = if (balance != null && !name.isNullOrBlank()) {
+                stringResource(
+                    R.string.ai_sale_recorded_success_balance,
+                    when {
+                        balance > 0L -> stringResource(R.string.message_balance_owes, name, formatCents(balance))
+                        balance < 0L -> stringResource(R.string.message_balance_credit, name, formatCents(-balance))
+                        else -> stringResource(R.string.message_balance_settled, name)
+                    },
+                )
+            } else {
+                stringResource(R.string.ai_sale_recorded_success)
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
         AiChatMessage.AssistantSaleStale -> Text(
             text = stringResource(R.string.ai_sale_stale_message),
             style = MaterialTheme.typography.bodyMedium,
@@ -2009,6 +2003,144 @@ private fun ChatMessageRow(
     }
 }
 
+/**
+ * La vista previa de una venta del borrador de CuentivoAI, extraída de [ChatMessageRow] para que una
+ * prueba Compose pueda renderizar exactamente el mismo camino de producción que ve la persona.
+ *
+ * Un producto que la persona acaba de nombrar (`resolutionMode == NEW`) no tiene precio habitual,
+ * así que esta vista nunca imprime la fila "Precio habitual": anunciarla inventaba una historia que
+ * el producto no tiene. Si esa fila volviera a este composable, la prueba conductual se pondría roja.
+ */
+@Composable
+fun AiSalePreviewContent(
+    preview: AiResolvedSalePreview,
+    onConfirmSale: (() -> Unit)? = null,
+    onCancelSale: (() -> Unit)? = null,
+    saleDueDateDays: Long? = null,
+    onUpdateSaleDueDateDays: ((Long?) -> Unit)? = null,
+    isConfirming: Boolean = false,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = stringResource(R.string.ai_debug_chat_draft_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+        val customerBadge = stringResource(
+            if (preview.customerMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
+                R.string.ai_entity_badge_new
+            } else {
+                R.string.ai_entity_badge_existing
+            },
+        )
+        Text(
+            text = stringResource(
+                R.string.ai_sale_preview_customer_format,
+                preview.customerName,
+                customerBadge,
+            ),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        preview.lines.forEach { line ->
+            val productBadge = stringResource(
+                if (line.resolutionMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
+                    R.string.ai_entity_badge_new
+                } else {
+                    R.string.ai_entity_badge_existing
+                },
+            )
+            Text(
+                text = stringResource(
+                    R.string.ai_debug_lab_line_format,
+                    line.productName + " (" + productBadge + ")",
+                    line.quantity,
+                    formatCents(line.lineTotalCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            // No "Precio habitual" line for a product the person just named. A brand-new product
+            // has no habitual price, and the number the draft carries is the one they said — so
+            // announcing it as habitual was inventing a history the product does not have.
+        }
+        Text(
+            text = stringResource(
+                R.string.ai_sale_preview_total,
+                formatCents(preview.totalCents),
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (preview.initialPaymentCents > 0L) {
+            Text(
+                text = stringResource(
+                    R.string.ai_sale_preview_initial_payment,
+                    formatCents(preview.initialPaymentCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    R.string.ai_sale_preview_remainder,
+                    formatCents(preview.remainderCents),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        preview.promisedPaymentCandidate?.let { promise ->
+            val date = promise as? com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate
+            if (date != null) {
+                Text(
+                    stringResource(R.string.ai_debug_lab_promised_date, "${date.year}-${date.month}-${date.day}"),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+        // El plazo del borrador, antes de confirmar. Antes la venta por CuentivoAI nacía sin
+        // fecha límite salvo que la persona la dijera en el texto, así que nunca vencía ni
+        // entraba al recordatorio (v44). Mismo selector que la venta manual.
+        if (onUpdateSaleDueDateDays != null) {
+            Text(
+                text = stringResource(R.string.new_sale_due_question),
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                DueOption.entries.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        pair.forEach { option ->
+                            NeoChoiceChip(
+                                label = stringResource(option.labelRes),
+                                isSelected = saleDueDateDays == option.days,
+                                onClick = { onUpdateSaleDueDateDays(option.days) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("ai-sale-due-option-" + option.name),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (onConfirmSale != null && onCancelSale != null) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = onConfirmSale,
+                    enabled = !isConfirming,
+                ) {
+                    Text(stringResource(R.string.ai_sale_confirm_action))
+                }
+                TextButton(
+                    onClick = onCancelSale,
+                    enabled = !isConfirming,
+                ) {
+                    Text(stringResource(R.string.ai_sale_confirm_cancel))
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ProposalPreviewContent(proposal: AiProposal) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2105,24 +2237,26 @@ private fun VoiceWaveformBars(
 /**
  * What is already registered around the days this page talks about.
  *
- * The range is taken from the rows themselves, widened by a couple of weeks on each side so a sheet
- * re-photographed after a correction still lines up. A page with no dated row falls back to today,
- * which is the only date anybody knows in that case.
+ * The range is taken from the **effective** date of each row — the row's own date, or the page date
+ * when the row has none — widened by a couple of weeks on each side so a sheet re-photographed after
+ * a correction still lines up. That definition lives in `LedgerEffectiveDate`, shared with the
+ * detector, so the query and the comparison cannot disagree (v44). Only when no row has any usable
+ * date does it fall back to today, which is the only date anybody knows in that case.
  */
 private suspend fun loadRegisteredAround(
     resolver: (suspend (businessId: String, minEpochDay: Long, maxEpochDay: Long) -> List<com.cuentivo.app.domain.RegisteredOperationProjection>)?,
     businessId: String,
     operations: List<com.cuentivo.app.ai.ledger.LedgerOperation>,
+    pageDateEpochDay: Long? = null,
 ): List<com.cuentivo.app.domain.RegisteredOperationProjection> {
     if (resolver == null) return emptyList()
-    val days = operations.mapNotNull { op ->
-        op.date?.let { date ->
-            runCatching { java.time.LocalDate.of(date.year, date.month, date.day).toEpochDay() }.getOrNull()
-        }
-    }
     val today = java.time.LocalDate.now().toEpochDay()
-    val min = (days.minOrNull() ?: today) - DUPLICATE_WINDOW_DAYS
-    val max = (days.maxOrNull() ?: today) + DUPLICATE_WINDOW_DAYS
+    val (min, max) = com.cuentivo.app.domain.LedgerEffectiveDate.queryWindow(
+        operations = operations,
+        pageDateEpochDay = pageDateEpochDay,
+        todayEpochDay = today,
+        windowDays = DUPLICATE_WINDOW_DAYS,
+    )
     return runCatching { resolver(businessId, min, max) }.getOrDefault(emptyList())
 }
 

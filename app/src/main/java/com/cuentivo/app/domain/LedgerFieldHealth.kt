@@ -118,7 +118,7 @@ object LedgerFieldHealth {
         }
 
         // 4. Date Health
-        val dateHealth = when {
+        var dateHealth = when {
             op.unreadableFields.contains(UnreadableLedgerField.DATE) -> FieldHealthColor.RED
             op.uncertainFields.contains(UncertainLedgerField.DATE) -> FieldHealthColor.YELLOW
             else -> {
@@ -156,11 +156,19 @@ object LedgerFieldHealth {
         // Price discrepancy, decimal shift, or unusual cents demotes Amount to YELLOW
         if (rowObjections.any {
             it.type == LedgerDeterministicObjectionType.SUSPECT_DECIMAL_SHIFT ||
-            it.type == LedgerDeterministicObjectionType.PRICE_MISMATCH_SUSPECT ||
-            it.type == LedgerDeterministicObjectionType.UNUSUAL_CENTS
+                it.type == LedgerDeterministicObjectionType.PRICE_MISMATCH_SUSPECT ||
+                it.type == LedgerDeterministicObjectionType.UNUSUAL_CENTS
         }) {
             if (amountHealth == FieldHealthColor.GREEN) {
                 amountHealth = FieldHealthColor.YELLOW
+            }
+        }
+
+        // An impossible date demotes the Date chip: the year (or the age) of this row needs
+        // a second look before it becomes "overdue since three years ago" (v44).
+        if (rowObjections.any { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }) {
+            if (dateHealth == FieldHealthColor.GREEN) {
+                dateHealth = FieldHealthColor.YELLOW
             }
         }
 

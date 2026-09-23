@@ -710,4 +710,56 @@ class AiLedgerBatchPlannerTest {
         assertTrue("no debe crear ningun cliente", plan.newCustomers.isEmpty())
         assertEquals("cust-real", plan.sales.single().customerId)
     }
+
+    @Test
+    fun prior_debt_carries_the_persisted_marker_and_a_normal_sale_does_not() {
+        val ops = listOf(
+            LedgerOperation(
+                lineIndex = 1,
+                proposedKind = ProposedLedgerKind.PRIOR_DEBT,
+                customerName = "Rosa Martinez",
+                amountCents = "15000",
+                description = "Saldo anterior",
+                date = SafeDateCandidate(2026, 9, 1),
+            ),
+            LedgerOperation(
+                lineIndex = 2,
+                proposedKind = ProposedLedgerKind.SALE,
+                customerName = "Rosa Martinez",
+                amountCents = "2500",
+                description = "Cuaderno",
+                date = SafeDateCandidate(2026, 9, 2),
+            ),
+        )
+
+        val result = AiLedgerBatchPlanner.plan(
+            businessId = businessId,
+            userId = userId,
+            importSessionId = "session-prior-debt-marker",
+            operations = ops,
+            blockedLineIndices = emptySet(),
+            existingCustomerMap = emptyMap(),
+            existingOutstandingSalesByCustomerId = emptyMap(),
+            pageDateEpochDay = null,
+            todayEpochDay = todayEpochDay,
+            nowEpochMillis = nowEpochMillis,
+        )
+
+        assertTrue(result is BatchPlanningResult.Success)
+        val plan = (result as BatchPlanningResult.Success).plan
+        assertEquals(2, plan.sales.size)
+        // The prior debt is labelled exactly like the one `OpeningBalance` writes when a customer is
+        // created, so the readers that already exist — the history, `getRegisteredOperationsInRange`,
+        // `salesTotalCents` — can tell it apart from a real sale. A normal sale keeps no marker.
+        val priorDebtSale = plan.sales.first { it.saleNumber == "SA-$nowEpochMillis-1" }
+        assertEquals(OpeningBalance.NOTES_MARKER, priorDebtSale.notes)
+        val normalSale = plan.sales.first { it.saleNumber == "V-$nowEpochMillis-2" }
+        assertEquals(null, normalSale.notes)
+        // The charge movement carries the same marker, because the builder copies `notes` onto it.
+        assertEquals(
+            OpeningBalance.NOTES_MARKER,
+            plan.chargeMovements.first { it.saleId == priorDebtSale.id }.notes,
+        )
+        assertEquals(null, plan.chargeMovements.first { it.saleId == normalSale.id }.notes)
+    }
 }

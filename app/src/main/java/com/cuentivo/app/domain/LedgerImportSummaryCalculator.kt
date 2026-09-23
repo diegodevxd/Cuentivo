@@ -38,11 +38,16 @@ object LedgerImportSummaryCalculator {
         review: LedgerReview,
         objections: List<LedgerDeterministicObjection>,
         isPageCompletenessConfirmed: Boolean = false,
+        /**
+         * Renglones que un posible duplicado deja sin resolver (v44). Se suman a los de las
+         * objeciones: el duplicado frena igual que una objeción hasta que la persona lo confirme.
+         */
+        duplicateBlockedLineIndices: Set<Int> = emptySet(),
     ): LedgerImportSummaryResult {
         val detectedCount = review.operations.size
         val pageDateEpochDay = review.pageDateEpochDay
         val todayEpochDay = review.todayEpochDay
-        val objectionLineIndices = objections.map { it.lineIndex }.toSet()
+        val objectionLineIndices = objections.map { it.lineIndex }.toSet() + duplicateBlockedLineIndices
         val unresolvedCount = LedgerPageResolution.unresolvedLineIndices(review.operations, objectionLineIndices).size
 
         val readyOps = review.operations.filter { op ->

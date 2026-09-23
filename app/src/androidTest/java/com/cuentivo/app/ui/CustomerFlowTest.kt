@@ -86,7 +86,7 @@ class CustomerFlowTest {
         composeRule.onNodeWithText("Juan Pérez").performClick()
 
         composeRule.onNodeWithText("Detalle de Cliente").assertIsDisplayed()
-        composeRule.onNodeWithText("BALANCE TOTAL").assertIsDisplayed()
+        composeRule.onNodeWithText("Te debe").assertIsDisplayed()
         composeRule.onNodeWithText("Historial de Movimientos").assertIsDisplayed()
         // The top header steps aside, the bottom bar stays. Asserted against the account label the
         // header actually shows: it used to look for "Cuentivo", and once the wordmark left that
@@ -102,6 +102,20 @@ class CustomerFlowTest {
         composeRule.onNodeWithText("Juan Pérez").performClick()
 
         composeRule.onNodeWithContentDescription("Volver").performClick()
+
+        composeRule.onNodeWithText("Cartera").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Detalle de Cliente").assertCountEquals(0)
+    }
+
+    @Test fun tapping_the_current_tab_from_the_detail_returns_to_the_directory() {
+        composeRule.setContent { Harness() }
+        openCustomers()
+        composeRule.onNodeWithText("Juan Pérez").performClick()
+        composeRule.onNodeWithText("Detalle de Cliente").assertIsDisplayed()
+
+        // Clientes is already the current tab, so the tap has nowhere to navigate: it goes back to
+        // the root of that tab, which is the list. Before, it left the detail open and did nothing.
+        composeRule.onNodeWithContentDescription("Clientes").performClick()
 
         composeRule.onNodeWithText("Cartera").assertIsDisplayed()
         composeRule.onAllNodesWithText("Detalle de Cliente").assertCountEquals(0)
@@ -126,7 +140,7 @@ class CustomerFlowTest {
         composeRule.onNodeWithText("Compartir").performClick()
 
         composeRule.onNodeWithText("Compartir resumen").assertIsDisplayed()
-        composeRule.onNodeWithText("Compartir CSV").assertIsDisplayed()
+        composeRule.onNodeWithText("Compartir en Excel (CSV)").assertIsDisplayed()
     }
 
     @Test fun corrections_are_reachable_and_never_claim_data_is_deleted() {
@@ -215,7 +229,7 @@ class CustomerFlowTest {
         composeRule.onNodeWithText("Compartir").performClick()
         composeRule.onNodeWithText("Compartir resumen").performClick()
         composeRule.onNodeWithText("Compartir").performClick()
-        composeRule.onNodeWithText("Compartir CSV").performClick()
+        composeRule.onNodeWithText("Compartir en Excel (CSV)").performClick()
 
         composeRule.runOnIdle { assertEquals(listOf("text", "csv"), shared) }
     }

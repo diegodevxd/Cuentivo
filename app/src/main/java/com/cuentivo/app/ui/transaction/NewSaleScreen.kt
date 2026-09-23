@@ -126,6 +126,12 @@ fun NewSaleScreen(
      */
     initialDraft: SaleDraft? = null,
     onCreateSale: (CustomerBalanceRow, SaleDraft) -> Unit = { _, _ -> },
+    /**
+     * Opens the new-customer form without leaving the sale. Without it an empty customer list was a
+     * dead end: the selector said to go to the Clientes tab, and the sale being built was lost on
+     * the way. The host returns here with the created customer already selected.
+     */
+    onAddCustomer: () -> Unit = {},
     onExit: () -> Unit = {},
 ) {
     val correcting = initialDraft != null
@@ -185,7 +191,6 @@ fun NewSaleScreen(
         ) {
             item {
                 NeoTaskHeader(
-                    eyebrow = stringResource(R.string.new_sale_eyebrow),
                     title = stringResource(if (correcting) R.string.new_sale_correct_title else R.string.new_sale_title),
                     onBack = onExit,
                     backDescription = stringResource(R.string.new_sale_back_description),
@@ -207,6 +212,19 @@ fun NewSaleScreen(
                     // The section header above already says CLIENTE.
                     showLabel = false,
                 )
+            }
+            // A way out of the empty-selector dead end, right where the person notices they have no
+            // customers. Creating one is a detour, not a different task: the sale in progress is
+            // kept and the new customer comes back selected.
+            if (customers.isEmpty()) {
+                item {
+                    NeoAction(
+                        label = stringResource(R.string.customers_add_action),
+                        onClick = onAddCustomer,
+                        modifier = Modifier.fillMaxWidth(),
+                        primary = false,
+                    )
+                }
             }
             item { NeoSectionHeader(stringResource(R.string.new_sale_section_products)) }
             item {

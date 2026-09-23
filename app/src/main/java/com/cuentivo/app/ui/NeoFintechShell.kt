@@ -98,7 +98,40 @@ object MainNavigationPolicy {
     )
 
     fun destinationAfterNewSale(current: MainDestination): MainDestination = current
+
+    /**
+     * Which destination the bottom bar marks as current.
+     *
+     * Nueva venta is an action, not a destination, but it still owns the screen while it is open.
+     * Marking the tab the person came from read as "you are here" over a screen they were not on;
+     * with the sale open the bar marks the sale action instead and no destination. A customer's
+     * account is the same trap: it is a task, but it belongs to Clientes, so it marks that tab and
+     * not whichever one it was opened from.
+     */
+    fun barSelection(
+        destination: MainDestination,
+        newSaleActive: Boolean,
+        detailOpen: Boolean = false,
+    ): MainDestination? = when {
+        newSaleActive -> null
+        detailOpen -> MainDestination.CUSTOMERS
+        else -> destination
+    }
+
+    /**
+     * What tapping the bar does. `currentSelection` is the tab that the bar actually marks, not the
+     * destination underneath an open task. Tapping that tab returns it to its root; tapping another
+     * opens it. A sale marks no destination, while a customer detail marks Clientes.
+     */
+    fun tabTapAction(
+        currentSelection: MainDestination?,
+        selected: MainDestination,
+    ): TabTapAction =
+        if (selected == currentSelection) TabTapAction.RESET_ROOT else TabTapAction.OPEN
 }
+
+/** The two outcomes of a tap on the bottom bar. */
+enum class TabTapAction { OPEN, RESET_ROOT }
 
 @Composable
 fun NeoFintechShell(
@@ -110,6 +143,16 @@ fun NeoFintechShell(
     onOpenAlerts: () -> Unit,
     /** Debug-only AI lab entry; null hides it entirely (release builds). */
     onOpenAi: (() -> Unit)? = null,
+    /**
+     * True while the Nueva venta task owns the screen. The bar marks the sale action as current and
+     * marks no destination, instead of leaving the previous tab lit under a screen it does not own.
+     */
+    newSaleActive: Boolean = false,
+    /**
+     * True while a customer's account owns the screen. It is a task, but it belongs to Clientes, so
+     * the bar marks that tab rather than the one the detail was opened from.
+     */
+    detailOpen: Boolean = false,
     snackbarHost: @Composable () -> Unit = {},
     /**
      * A dedicated task that owns the whole viewport — customer detail, for instance — brings its
@@ -210,6 +253,8 @@ fun NeoFintechShell(
                 destination = destination,
                 onDestination = onDestination,
                 onNewSale = onNewSale,
+                newSaleActive = newSaleActive,
+                detailOpen = detailOpen,
             )
         },
         // Screens arrive instead of appearing: a short lift and fade whenever the destination
@@ -247,6 +292,8 @@ private fun CompactBottomNavigation(
     destination: MainDestination,
     onDestination: (MainDestination) -> Unit,
     onNewSale: () -> Unit,
+    newSaleActive: Boolean,
+    detailOpen: Boolean,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -261,9 +308,11 @@ private fun CompactBottomNavigation(
             // The width that actually reaches the bar and the system font scale the user asked
             // for decide together whether every label can keep its own line. When either runs out,
             // the shell falls back to a compact column that gives Nueva venta the whole width.
+            // The selection is resolved here, once: a sale in progress marks the action, not a tab.
+            val selected = MainNavigationPolicy.barSelection(destination, newSaleActive, detailOpen)
             when (NavigationLayoutPolicy.modeFor(maxWidth, LocalDensity.current.fontScale)) {
-                NavigationLayoutMode.LABELLED -> LabelledNavigationRow(destination, onDestination, onNewSale)
-                NavigationLayoutMode.COMPACT -> CompactNavigationColumn(destination, onDestination, onNewSale)
+                NavigationLayoutMode.LABELLED -> LabelledNavigationRow(selected, onDestination, onNewSale, newSaleActive)
+                NavigationLayoutMode.COMPACT -> CompactNavigationColumn(selected, onDestination, onNewSale, newSaleActive)
             }
         }
     }
@@ -271,9 +320,10 @@ private fun CompactBottomNavigation(
 
 @Composable
 private fun LabelledNavigationRow(
-    destination: MainDestination,
+    destination: MainDestination?,
     onDestination: (MainDestination) -> Unit,
     onNewSale: () -> Unit,
+    newSaleActive: Boolean,
 ) {
     Row(
         modifier = Modifier
@@ -293,7 +343,7 @@ private fun LabelledNavigationRow(
     ) {
         ShellDestination.HOME.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
         ShellDestination.CUSTOMERS.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
-        NewSaleNavigationAction(onClick = onNewSale, modifier = Modifier.weight(1f))
+        NewSaleNavigationAction(onClick = onNewSale, modifier = Modifier.weight(1f), isActive = newSaleActive)
         ShellDestination.PRODUCTS.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
         ShellDestination.PAYMENTS.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
     }
@@ -301,9 +351,10 @@ private fun LabelledNavigationRow(
 
 @Composable
 private fun CompactNavigationColumn(
-    destination: MainDestination,
+    destination: MainDestination?,
     onDestination: (MainDestination) -> Unit,
     onNewSale: () -> Unit,
+    newSaleActive: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -318,7 +369,7 @@ private fun CompactNavigationColumn(
     ) {
         // Nueva venta keeps the whole bar width so its label can stay on one line even at the
         // font scales that forced the compact layout in the first place.
-        NewSaleNavigationAction(onClick = onNewSale, modifier = Modifier.fillMaxWidth())
+        NewSaleNavigationAction(onClick = onNewSale, modifier = Modifier.fillMaxWidth(), isActive = newSaleActive)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -349,7 +400,7 @@ private enum class ShellDestination(
 
     @Composable
     fun item(
-        selectedDestination: MainDestination,
+        selectedDestination: MainDestination?,
         onDestination: (MainDestination) -> Unit,
         modifier: Modifier,
         showLabel: Boolean,
@@ -410,16 +461,46 @@ private enum class ShellDestination(
 }
 
 @Composable
-private fun NewSaleNavigationAction(onClick: () -> Unit, modifier: Modifier) {
+private fun NewSaleNavigationAction(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    isActive: Boolean = false,
+) {
     val label = stringResource(R.string.nav_new_sale)
+    // The sale owns the screen while it is open, so the action gets the same sunken treatment the
+    // destinations use when selected: the bar says where you are, and here that is not a tab.
+    val pressedAlpha by animateFloatAsState(
+        targetValue = if (isActive) 1f else 0f,
+        animationSpec = tween(NeoMotion.STANDARD_MS),
+        label = "navigation press depth",
+    )
+    val shadeColor = MaterialTheme.colorScheme.onSurface
+    val contentColor by animateColorAsState(
+        targetValue = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        animationSpec = tween(NeoMotion.STANDARD_MS),
+        label = "navigation content color",
+    )
     Column(
         modifier = modifier
             .heightIn(min = 56.dp)
+            .testTag("main-action-new-sale")
             // The description lives on the clickable parent, exactly once, so TalkBack announces
-            // the action instead of its chrome.
+            // the action instead of its chrome. `selected` is what lets a test — and a screen
+            // reader — tell that the sale screen is the current one.
             .semantics(mergeDescendants = true) {
+                selected = isActive
                 contentDescription = label
             }
+            .padding(horizontal = 2.dp, vertical = NeoSpacing.xs)
+            .clip(NeoClay.tabShape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        shadeColor.copy(alpha = NeoClay.PRESSED_TOP_ALPHA * pressedAlpha),
+                        shadeColor.copy(alpha = NeoClay.PRESSED_BOTTOM_ALPHA * pressedAlpha),
+                    ),
+                ),
+            )
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -434,6 +515,6 @@ private fun NewSaleNavigationAction(onClick: () -> Unit, modifier: Modifier) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
             }
         }
-        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, color = contentColor)
     }
 }

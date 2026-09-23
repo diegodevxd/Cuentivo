@@ -25,6 +25,12 @@ data class StatementEntry(
      * per row: the statement is built once and read by the sheet, the CSV and the shared message.
      */
     val detail: String? = null,
+    /**
+     * True when this charge is a debt the customer already had before the app, recorded as a sale
+     * for the ledger's sake. The arithmetic is identical to a sale; only the wording differs, so the
+     * history does not claim a sale nobody made. Set by the caller that reads the ledger.
+     */
+    val isPriorDebt: Boolean = false,
 )
 
 /**

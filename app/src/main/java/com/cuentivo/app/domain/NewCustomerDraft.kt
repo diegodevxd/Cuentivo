@@ -24,6 +24,14 @@ data class NewCustomerDraft(
      */
     val openingBalanceCents: Long? = null,
     /**
+     * El plazo acordado para la deuda anterior, en días desde hoy, o `null` para "Sin fecha".
+     *
+     * Una deuda anterior sin fecha no vence, no entra al recordatorio ni cuenta para la
+     * calificación; el recorrido "Doña Mary" la encontró naciendo sin fecha (v44). Se usa el mismo
+     * selector de la venta ([com.cuentivo.app.ui.transaction.DueOption]), con 15 marcado.
+     */
+    val openingBalanceDueInDays: Long? = null,
+    /**
      * Whether the person asked to continue into Nueva venta with this customer already selected.
      *
      * The quick sale on this form holds exactly one product, and a real order is five or more.

@@ -29,11 +29,20 @@ object AccountDeletionFailure {
     fun mayWipeLocal(remoteDeletion: Boolean): Boolean = remoteDeletion
 
     /**
-     * Maps a Firebase Auth error code to the message the UI should show. `requires-recent-login` is
-     * the one failure the person can actually fix from the phone, so it gets its own message; any
-     * other failure (or a missing code, e.g. a network drop) is a plain "try again".
+     * Maps a Firebase Auth error code to the message the UI should show.
+     *
+     * En Android el código real es `ERROR_REQUIRES_RECENT_LOGIN` (el formato `requires-recent-login`
+     * es el de la web). Comparar contra el de la web hacía que el aviso de "vuelve a iniciar sesión"
+     * **nunca se mostrara**: el error caía en el genérico. Se aceptan los dos por si el SDK cambia,
+     * pero el que importa es el de Android.
      */
     fun messageKeyForAuth(errorCode: String?): MessageKey =
-        if (errorCode == "requires-recent-login") MessageKey.RECENT_LOGIN_REQUIRED
-        else MessageKey.AUTH_DELETION_FAILED
+        if (errorCode == ERROR_REQUIRES_RECENT_LOGIN || errorCode == "requires-recent-login") {
+            MessageKey.RECENT_LOGIN_REQUIRED
+        } else {
+            MessageKey.AUTH_DELETION_FAILED
+        }
+
+    /** El código de error de Android para "hace falta un inicio de sesión reciente". */
+    const val ERROR_REQUIRES_RECENT_LOGIN = "ERROR_REQUIRES_RECENT_LOGIN"
 }

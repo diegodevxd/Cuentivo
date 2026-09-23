@@ -43,8 +43,13 @@ data class LedgerDuplicateMatch(
  *   4. Same operation type (SALE, PAYMENT, PRIOR_DEBT).
  * - Canceled entries from Room do NOT count.
  * - The description field does NOT create a match by itself; it enriches the warning message.
- * - Flagging as possible duplicate NEVER blocks or disables registration.
- * - Two identical rows on the same page are both flagged, but neither is blocked.
+ * - Flagging as possible duplicate BLOCKS the row until a person confirms it is another sale
+ *   (v44, decisión de Diego 2026-09-22). It is treated exactly like a deterministic objection:
+ *   the row stays unresolved until the human says "Sí, es otra venta", and a legitimate repeat
+ *   purchase (same customer, same thing, twice in the week) is still registerable after that.
+ *   The confirmation reuses [LedgerObjectionConfirmation]'s fingerprint, so correcting the row
+ *   until it no longer matches clears the doubt on its own.
+ * - Two identical rows on the same page are both flagged, and both stay blocked until confirmed.
  * - Zero Android Context, zero Room DAOs, zero network.
  */
 object LedgerDuplicateDetector {
@@ -134,16 +139,9 @@ object LedgerDuplicateDetector {
         pageDateEpochDay: Long?,
         todayEpochDay: Long?,
     ): Long? {
-        if (dateCandidate != null) {
-            val candidateEpoch = runCatching {
-                java.time.LocalDate.of(dateCandidate.year, dateCandidate.month, dateCandidate.day).toEpochDay()
-            }.getOrNull() ?: return null
-            if (candidateEpoch <= 0 || (todayEpochDay != null && candidateEpoch > todayEpochDay)) return null
-            return candidateEpoch
-        }
-        if (pageDateEpochDay != null && pageDateEpochDay > 0 && (todayEpochDay == null || pageDateEpochDay <= todayEpochDay)) {
-            return pageDateEpochDay
-        }
-        return null
+        // La definición de "fecha efectiva" vive en `LedgerEffectiveDate`, que la consulta a Room usa
+        // también: el detector y la ventana de consulta no pueden discrepar (v44).
+        val op = LedgerOperation(lineIndex = 0, date = dateCandidate)
+        return LedgerEffectiveDate.of(op, pageDateEpochDay, todayEpochDay)
     }
 }

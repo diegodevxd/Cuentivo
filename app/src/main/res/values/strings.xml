@@ -15,7 +15,7 @@
     <string name="dashboard_receivable_total">Saldo total por cobrar</string>
     <string name="dashboard_due_today">Vence hoy</string>
     <string name="dashboard_overdue">Vencido</string>
-    <string name="dashboard_critical_customers">Clientes críticos</string>
+    <string name="dashboard_critical_customers">Quién te debe más</string>
     <string name="dashboard_see_all">Ver todos</string>
     <string name="dashboard_no_urgent_title">Sin cobros urgentes</string>
     <string name="dashboard_no_urgent_detail">Nadie tiene un pago vencido hoy.</string>
@@ -51,12 +51,13 @@
     <string name="customers_form_edit_title">Editar cliente</string>
     <string name="customers_form_name_label">Nombre del cliente</string>
     <string name="customers_form_phone_label">Teléfono (opcional)</string>
-    <string name="customers_form_credit_limit_label">Cupo de crédito (opcional)</string>
+    <string name="customers_form_credit_limit_label">¿Hasta cuánto le fías? (opcional)</string>
     <string name="customers_form_credit_limit_none">Sin límite de crédito</string>
     <string name="customers_form_credit_limit_invalid">Monto no válido</string>
     <string name="customers_form_credit_limit_hint">Se avisará si el saldo pasa de %1$s</string>
     <string name="customers_form_edit_note">Corregir el nombre no cambia sus ventas ni su saldo.</string>
-    <string name="opening_import_action">Traer deudas de mi libreta</string>
+    <string name="opening_import_action">Anotar deudas a mano</string>
+    <string name="opening_import_photo_action">Tomar foto de mi libreta</string>
     <string name="opening_import_title">Deudas de tu libreta</string>
     <string name="opening_import_hint">Escribe el nombre y cuánto te debe cada quien. Si ya tienes a esa persona, la deuda se le suma a la que ya está.</string>
     <string name="opening_import_select_customer">Seleccionar cliente existente</string>
@@ -215,6 +216,11 @@
     <string name="message_payment_registered_as_credit">Abono registrado como saldo a favor</string>
     <string name="message_payment_applied_with_credit">Abono aplicado a %1$d venta(s); %2$s queda a favor</string>
     <string name="message_payment_applied">Abono aplicado a %1$d venta(s)</string>
+    <string name="message_sale_registered_balance">Venta registrada. %1$s</string>
+    <string name="message_payment_registered_balance">Abono registrado. %1$s</string>
+    <string name="message_balance_owes">%1$s ahora debe %2$s</string>
+    <string name="message_balance_settled">%1$s ya no debe nada</string>
+    <string name="message_balance_credit">%1$s tiene %2$s a favor</string>
     <string name="message_sale_not_cancelable">Esa venta ya no se puede cancelar</string>
     <string name="message_sale_canceled">Venta cancelada; se descontaron %1$s</string>
     <string name="message_sale_cancel_failed">No fue posible cancelar la venta</string>
@@ -223,6 +229,9 @@
     <string name="message_account_delete_cloud_failed">No pudimos borrar tu información en la nube, así que no se borró nada de tu teléfono. Revisa tu conexión y vuelve a intentarlo.</string>
     <string name="message_account_delete_failed">No se pudo eliminar la cuenta. Inténtalo de nuevo.</string>
     <string name="message_account_delete_recent_login">Tu sesión es demasiado antigua para eliminar la cuenta. Cierra sesión, vuelve a entrar y repite el borrado.</string>
+    <string name="message_account_delete_reauth_cancelled">Cancelaste la confirmación con Google, así que no se borró nada. Puedes intentarlo de nuevo cuando quieras.</string>
+    <string name="message_account_delete_reauth_failed">No pudimos confirmar tu cuenta con Google, así que no se borró nada. Revisa tu conexión y vuelve a intentarlo.</string>
+    <string name="message_account_delete_data_gone_auth_failed">Tus datos se borraron, pero no pudimos cerrar tu cuenta. Vuelve a entrar para terminar.</string>
 
     <!-- Alerts (AlertsSheet) -->
     <string name="alerts_title">Avisos</string>
@@ -315,7 +324,7 @@
     <!-- Customer detail (CustomerDetailSheet) -->
     <string name="detail_title">Detalle de Cliente</string>
     <string name="detail_back">Volver</string>
-    <string name="detail_balance_total">BALANCE TOTAL</string>
+    <string name="detail_balance_total">Te debe</string>
     <string name="detail_balance_pending">Saldo pendiente</string>
     <string name="detail_balance_settled">Saldo en cero</string>
     <string name="detail_balance_credit">Saldo a favor</string>
@@ -326,7 +335,8 @@
     <string name="detail_register_payment">Registrar abono</string>
     <string name="detail_share">Compartir</string>
     <string name="detail_share_summary">Compartir resumen</string>
-    <string name="detail_share_csv">Compartir CSV</string>
+    <string name="detail_share_csv">Compartir en Excel (CSV)</string>
+    <string name="detail_movement_prior_debt">Deuda anterior</string>
     <string name="detail_history">Historial de Movimientos</string>
     <string name="detail_no_movements_title">Sin movimientos</string>
     <string name="detail_no_movements_detail">Las ventas y los abonos de este cliente aparecerán aquí.</string>
@@ -534,6 +544,7 @@
     <string name="ai_sale_confirm_action">Confirmar venta</string>
     <string name="ai_sale_confirm_cancel">Cancelar</string>
     <string name="ai_sale_recorded_success">Venta registrada con éxito.</string>
+    <string name="ai_sale_recorded_success_balance">Venta registrada con éxito. %1$s</string>
     <string name="ai_sale_stale_message">Los datos del cliente o producto cambiaron mientras revisabas este borrador. Solicita la venta nuevamente para obtener los datos actualizados.</string>
     <string name="ai_sale_rejected_message">No se pudo registrar la venta porque no pasó la validación local (por ejemplo: producto inactivo o cliente no válido). Revisa tus productos y clientes registrados.</string>
     <string name="ai_sale_limit_reached_message">Alcanzaste el límite de tu plan. Actualiza a Pro o CuentivoAI para continuar registrando.</string>
@@ -676,7 +687,7 @@
     <string name="ai_ledger_badge_uncertain">Dudoso</string>
     <string name="ai_ledger_unresolved_notice">Renglón con datos pendientes de resolver</string>
     <string name="ai_ledger_error_zero_operations">No hay operaciones listas para registrar. Resuelve los campos dudosos o ilegibles.</string>
-    <string name="ai_ledger_error_rows_need_review">Gemini leyó %1$d renglones con dudas. Revísalos contra la foto para poder registrarlos.</string>
+    <string name="ai_ledger_error_rows_need_review">CuentivoAI leyó %1$d renglones con dudas. Revísalos contra la foto para poder registrarlos.</string>
     <plurals name="ai_ledger_action_review_uncertain">
         <item quantity="one">Revisar %1$d renglón con dudas</item>
         <item quantity="other">Revisar %1$d renglones con dudas</item>
@@ -721,7 +732,22 @@
     <string name="ai_ledger_objection_price_mismatch">El precio no coincide con tu producto registrado</string>
     <string name="ai_ledger_objection_unusual_cents">Centavos inusuales en esta página</string>
     <string name="ai_ledger_objection_customer_confirmation">Este cliente ya existe, confírmalo antes de registrar</string>
+    <string name="ai_ledger_objection_implausible_date">La fecha de este renglón no parece posible (año distinto al de la página, demasiado vieja o futura): revisa el año antes de continuar</string>
     <string name="ai_ledger_action_confirm_objection">Sí, es correcto</string>
+    <string name="ai_ledger_action_confirm_duplicate">Sí, es otra venta</string>
+    <string name="ai_ledger_action_change_year">Cambiar a %1$d</string>
+    <string name="ai_ledger_action_change_all">Cambiar todos</string>
+    <plurals name="ai_ledger_year_bulk_question">
+        <item quantity="one">%1$d renglón dice %2$d. ¿Lo cambio a %3$d?</item>
+        <item quantity="other">%1$d renglones dicen %2$d. ¿Los cambio a %3$d?</item>
+    </plurals>
+    <plurals name="ai_ledger_year_bulk_question_mixed">
+        <item quantity="one">%1$d renglón trae un año distinto al de la hoja. ¿Lo cambio a %2$d?</item>
+        <item quantity="other">%1$d renglones traen un año distinto al de la hoja. ¿Los cambio a %2$d?</item>
+    </plurals>
+    <string name="ai_ledger_pending_in_doubt">+ %1$s por revisar</string>
+    <string name="ai_ledger_action_show_details">Ver por qué</string>
+    <string name="ai_ledger_action_hide_details">Ocultar detalle</string>
     <string name="message_account_wiped">Este teléfono tenía datos de otra cuenta y se borraron</string>
     <string name="message_cloud_restored">Se restauraron %1$d clientes de la nube</string>
     <string name="message_cloud_restore_failed">No pudimos traer tu información de la nube. Revisa tu conexión y vuelve a abrir la app (%1$s/%2$s)</string>

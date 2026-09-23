@@ -1,6 +1,7 @@
 package com.cuentivo.app.domain
 
 import com.cuentivo.app.ai.ledger.LedgerOperation
+import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
@@ -109,7 +110,7 @@ class LedgerDuplicateDetectorTest {
     }
 
     @Test
-    fun `flagged duplicate row STILL IS registerable`() {
+    fun `flagged duplicate row is blocked until confirmed and registerable after`() {
         val op = LedgerOperation(
             lineIndex = 0,
             customerName = "Rosa",
@@ -135,8 +136,20 @@ class LedgerDuplicateDetectorTest {
         )
 
         assertEquals(1, matches.size)
-        // Verify operation is still valid / registerable
-        assertTrue(isRegisterableLedgerOperation(op))
+        // v44: el duplicado frena el renglón hasta que la persona confirme que es otra venta.
+        assertEquals(
+            "un duplicado sin confirmar deja el renglón sin resolver",
+            setOf(0),
+            LedgerDuplicateBlocking.blockedLineIndices(listOf(op), matches),
+        )
+
+        // Confirmar ("Sí, es otra venta") reutiliza la huella de las objeciones y lo desbloquea.
+        val confirmed = LedgerReviewEdits.confirmObjection(listOf(op), 0)
+        assertTrue(
+            "tras confirmar, el renglón deja de estar bloqueado",
+            LedgerDuplicateBlocking.blockedLineIndices(confirmed, matches).isEmpty(),
+        )
+        assertTrue(isRegisterableLedgerOperation(confirmed.single()))
     }
 
     @Test
@@ -159,7 +172,7 @@ class LedgerDuplicateDetectorTest {
     }
 
     @Test
-    fun `two identical rows on same page flag both rows as intra page duplicates without blocking`() {
+    fun `two identical rows on same page flag both rows as intra page duplicates and both stay blocked`() {
         val op1 = LedgerOperation(
             lineIndex = 0,
             customerName = "Rosa",
@@ -185,9 +198,11 @@ class LedgerDuplicateDetectorTest {
         assertEquals(1, matches[0]?.matchedLineIndex)
         assertEquals(0, matches[1]?.matchedLineIndex)
 
-        // Neither row is blocked
-        assertTrue(isRegisterableLedgerOperation(op1))
-        assertTrue(isRegisterableLedgerOperation(op2))
+        // v44: los dos quedan frenados hasta que la persona confirme cada uno.
+        assertEquals(
+            setOf(0, 1),
+            LedgerDuplicateBlocking.blockedLineIndices(listOf(op1, op2), matches),
+        )
     }
 
     @Test

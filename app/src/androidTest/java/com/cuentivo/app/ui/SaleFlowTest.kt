@@ -9,6 +9,8 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -54,8 +56,8 @@ class SaleFlowTest {
         composeRule.onNodeWithContentDescription("Nueva venta").performClick()
 
         // "Nueva venta" is also the bottom bar's own label, so the title alone cannot identify the
-        // task: the eyebrow and the close affordance are what only this screen has.
-        composeRule.onNodeWithText("CAPTURA GUIADA").assertIsDisplayed()
+        // task. The close affordance is what only this screen has: the old "CAPTURA GUIADA" eyebrow
+        // was removed in v44 T5, and this assertion outlived it (found red on the baseline, T6).
         composeRule.onNodeWithContentDescription("Cerrar nueva venta").assertIsDisplayed()
     }
 
@@ -71,6 +73,32 @@ class SaleFlowTest {
         composeRule.onAllNodesWithContentDescription("Cerrar nueva venta").assertCountEquals(0)
         // Closing the task returns to the destination underneath, never to a blank screen.
         composeRule.onNodeWithContentDescription("Inicio").assertIsDisplayed()
+    }
+
+    @Test fun closing_the_detail_after_registering_a_sale_does_not_reopen_the_empty_form() {
+        // El host real abre el detalle de la clienta cuando la venta se registra; el harness lo
+        // reproduce en su `onCreateSale`, no arranca con el detalle abierto.
+        composeRule.setContent { Harness(openDetailOnSale = true) }
+
+        openSale()
+        chooseCustomer("Juan Pérez")
+        chooseProduct("Café molido 500 g")
+        addToCart()
+        register()
+
+        // El registro exitoso lleva al detalle de esa clienta, donde se ve cómo quedó la deuda.
+        composeRule.onNodeWithText("Detalle de Cliente").assertIsDisplayed()
+
+        // Cerrar el detalle (la flecha de volver) no puede caer en un formulario de venta vacío: la
+        // venta ya se registró y la tarea terminó. Antes quedaba el formulario debajo y reaparecía.
+        composeRule.onNodeWithContentDescription("Volver").performClick()
+
+        composeRule.onAllNodesWithText("Detalle de Cliente").assertCountEquals(0)
+        // "Cerrar nueva venta" vive sólo en el formulario de venta: si sigue en cero, no reapareció
+        // el formulario vacío que antes quedaba debajo del detalle.
+        composeRule.onAllNodesWithContentDescription("Cerrar nueva venta").assertCountEquals(0)
+        composeRule.onNodeWithTag("main-destination-home").assertIsSelected()
+        composeRule.onNodeWithTag("main-action-new-sale").assertIsNotSelected()
     }
 
     @Test fun opening_from_a_customer_preselects_that_customer() {
@@ -320,7 +348,15 @@ class SaleFlowTest {
     private val createdSales = mutableListOf<Pair<CustomerBalanceRow, SaleDraft>>()
 
     @Composable
-    private fun Harness(openCustomer: CustomerBalanceRow? = null) {
+    private fun Harness(
+        openCustomer: CustomerBalanceRow? = null,
+        /**
+         * When true the harness's `onCreateSale` reproduces what production does after a successful
+         * registration: it opens that customer's detail. `statementCustomer` is host-owned, so the
+         * harness owns it exactly as MainActivity does.
+         */
+        openDetailOnSale: Boolean = false,
+    ) {
         var open by remember { mutableStateOf(openCustomer) }
         CuentivoApp(
             state = DashboardUiState.Content("business-1", "Mi negocio", 480_050, 0, 0, 0, 1),
@@ -329,7 +365,10 @@ class SaleFlowTest {
             statementCustomer = open,
             onShowStatement = { open = it },
             onDismissStatement = { open = null },
-            onCreateSale = { customer, draft -> createdSales += customer to draft },
+            onCreateSale = { customer, draft ->
+                createdSales += customer to draft
+                if (openDetailOnSale) open = customer
+            },
         )
     }
 
