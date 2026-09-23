@@ -313,7 +313,23 @@ interface FinancialDao {
     @Query("SELECT COUNT(*) FROM (SELECT customerId FROM account_movements WHERE businessId = :businessId GROUP BY customerId HAVING SUM(CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END) > 0)")
     suspend fun customersWithDebtCount(businessId: String): Long
 
-    @Query("SELECT COALESCE(SUM(totalCents), 0) FROM sales WHERE businessId = :businessId AND isCanceled = 0 AND saleDateEpochDay BETWEEN :startEpochDay AND :endEpochDay")
+    /**
+     * "Vendido" de un periodo. **Sin las deudas anteriores**: una deuda que ya existía antes de la
+     * app no es una venta del mes (el recorrido "Doña Mary" vio $250 donde había $100 de ventas y
+     * $150 previos). Sigue contando en "por cobrar", que sale de `businessReceivableCents`, no de
+     * aquí (v44).
+     *
+     * Se excluye por dos señales: el marcador de `notes` que ahora escribe
+     * [com.cuentivo.app.domain.OpeningBalance], y —para las filas ya guardadas antes de este cambio,
+     * que nadie puede editar— el renglón sin producto llamado "Saldo anterior".
+     */
+    @Query(
+        "SELECT COALESCE(SUM(s.totalCents), 0) FROM sales AS s " +
+            "WHERE s.businessId = :businessId AND s.isCanceled = 0 " +
+            "AND s.saleDateEpochDay BETWEEN :startEpochDay AND :endEpochDay " +
+            "AND (s.notes IS NULL OR s.notes <> 'ALTA_CLIENTE_SALDO_ANTERIOR') " +
+            "AND NOT EXISTS (SELECT 1 FROM sale_items AS i WHERE i.saleId = s.id AND i.productId IS NULL AND i.productNameSnapshot = 'Saldo anterior')"
+    )
     suspend fun salesTotalCents(businessId: String, startEpochDay: Long, endEpochDay: Long): Long
 
     @Query("SELECT COALESCE(SUM(amountCents), 0) FROM payments WHERE businessId = :businessId AND canceledAtEpochMillis IS NULL AND paymentDateEpochDay BETWEEN :startEpochDay AND :endEpochDay")

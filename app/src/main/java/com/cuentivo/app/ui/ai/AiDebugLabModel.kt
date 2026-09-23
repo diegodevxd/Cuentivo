@@ -64,6 +64,13 @@ sealed interface AiDebugLabState {
         val preview: AiResolvedSalePreview,
         val proposal: CreateSaleProposal? = null,
         val choices: com.cuentivo.app.ai.AiSaleResolutionChoices = com.cuentivo.app.ai.AiSaleResolutionChoices(),
+        /**
+         * El plazo de pago del borrador, en días, o `null` para "Sin fecha". Arranca en 15 —lo mismo
+         * que la venta manual— porque una venta fiada sin fecha no vence, no entra al recordatorio
+         * ni cuenta para la calificación (recorrido "Doña Mary", v44). Es elección de la persona, y
+         * lo que se registra es lo que este borrador muestra.
+         */
+        val dueDateDays: Long? = com.cuentivo.app.ui.transaction.DueOption.FIFTEEN.days,
     ) : AiDebugLabState
     data class SaleConfirming(val preview: AiResolvedSalePreview) : AiDebugLabState
 
@@ -363,7 +370,12 @@ sealed interface AiChatMessage {
         val reason: AiSaleBlockReason,
         val preview: AiResolvedSalePreview?,
     ) : AiChatMessage
-    data class AssistantSaleRecorded(val saleId: String, val paymentId: String?) : AiChatMessage
+    data class AssistantSaleRecorded(
+        val saleId: String,
+        val paymentId: String?,
+        val customerName: String? = null,
+        val balanceAfterCents: Long? = null,
+    ) : AiChatMessage
     data object AssistantSaleStale : AiChatMessage
     data object AssistantSaleRejected : AiChatMessage
     data object AssistantSaleLimitReached : AiChatMessage
@@ -853,7 +865,16 @@ object AiDebugLabMachine {
      * the active preview, and the business ID is non-blank. Transitions to [AiDebugLabState.SaleConfirming]
      * with an incremented generation token. Fail-closed: any mismatch returns [AiSaleConfirmOutcome.Ignored].
      */
-    fun onConfirmSale(model: AiDebugLabModel, businessId: String): AiSaleConfirmOutcome {
+    fun onConfirmSale(
+        model: AiDebugLabModel,
+        businessId: String,
+        /**
+         * Hoy, en epoch day, para resolver el plazo elegido en el borrador (15 días por defecto).
+         * Opcional para no romper a quien confirme sin reloj: sin él, un borrador sin fecha pactada
+         * se registra sin fecha, como antes.
+         */
+        todayEpochDay: Long? = null,
+    ): AiSaleConfirmOutcome {
         if (businessId.isBlank()) return AiSaleConfirmOutcome.Ignored
         val state = model.state as? AiDebugLabState.SaleConfirmation ?: return AiSaleConfirmOutcome.Ignored
         val preview = state.preview
@@ -866,7 +887,11 @@ object AiDebugLabMachine {
             generation = nextGeneration,
         )
         val promisedDay: Long? = when (val promise = preview.promisedPaymentCandidate) {
-            null -> null
+            // La fecha que la persona dijo en el texto manda. Si no dijo ninguna, vale el plazo del
+            // borrador; y si el plazo es "Sin fecha", la venta nace sin fecha límite, como se pidió.
+            null -> todayEpochDay?.let { today ->
+                state.dueDateDays?.let { days -> today + days }
+            }
             is PromisedPaymentCandidate.DateCandidate -> {
                 try {
                     LocalDate.of(promise.year, promise.month, promise.day).toEpochDay()
@@ -904,6 +929,16 @@ object AiDebugLabMachine {
     }
 
     /**
+     * Cambia el plazo del borrador de venta. Sólo tiene sentido en [AiDebugLabState.SaleConfirmation]:
+     * una vez confirmando, el plazo ya viajó en la petición y no puede cambiar por debajo.
+     */
+    fun onUpdateSaleDueDateDays(model: AiDebugLabModel, dueDateDays: Long?): AiDebugLabModel {
+        val state = model.state as? AiDebugLabState.SaleConfirmation ?: return model
+        if (state.dueDateDays == dueDateDays) return model
+        return model.copy(state = state.copy(dueDateDays = dueDateDays))
+    }
+
+    /**
      * Applies the result of a confirmed sale execution.
      *
      * Accepts only matching [generation] and [AiDebugLabState.SaleConfirming] where the last
@@ -921,7 +956,12 @@ object AiDebugLabMachine {
         if (lastMessage.preview != state.preview) return model
 
         val assistantMessage: AiChatMessage = when (result) {
-            is AiSaleExecutionResult.Recorded -> AiChatMessage.AssistantSaleRecorded(result.saleId, result.paymentId)
+            is AiSaleExecutionResult.Recorded -> AiChatMessage.AssistantSaleRecorded(
+                saleId = result.saleId,
+                paymentId = result.paymentId,
+                customerName = result.customerName,
+                balanceAfterCents = result.balanceAfterCents,
+            )
             is AiSaleExecutionResult.StalePreview -> AiChatMessage.AssistantSaleStale
             is AiSaleExecutionResult.Rejected -> AiChatMessage.AssistantSaleRejected
             is AiSaleExecutionResult.Unavailable -> AiChatMessage.AssistantUnavailable

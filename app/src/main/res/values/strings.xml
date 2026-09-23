@@ -215,6 +215,11 @@
     <string name="message_payment_registered_as_credit">Abono registrado como saldo a favor</string>
     <string name="message_payment_applied_with_credit">Abono aplicado a %1$d venta(s); %2$s queda a favor</string>
     <string name="message_payment_applied">Abono aplicado a %1$d venta(s)</string>
+    <string name="message_sale_registered_balance">Venta registrada. %1$s</string>
+    <string name="message_payment_registered_balance">Abono registrado. %1$s</string>
+    <string name="message_balance_owes">%1$s ahora debe %2$s</string>
+    <string name="message_balance_settled">%1$s ya no debe nada</string>
+    <string name="message_balance_credit">%1$s tiene %2$s a favor</string>
     <string name="message_sale_not_cancelable">Esa venta ya no se puede cancelar</string>
     <string name="message_sale_canceled">Venta cancelada; se descontaron %1$s</string>
     <string name="message_sale_cancel_failed">No fue posible cancelar la venta</string>
@@ -537,6 +542,7 @@
     <string name="ai_sale_confirm_action">Confirmar venta</string>
     <string name="ai_sale_confirm_cancel">Cancelar</string>
     <string name="ai_sale_recorded_success">Venta registrada con éxito.</string>
+    <string name="ai_sale_recorded_success_balance">Venta registrada con éxito. %1$s</string>
     <string name="ai_sale_stale_message">Los datos del cliente o producto cambiaron mientras revisabas este borrador. Solicita la venta nuevamente para obtener los datos actualizados.</string>
     <string name="ai_sale_rejected_message">No se pudo registrar la venta porque no pasó la validación local (por ejemplo: producto inactivo o cliente no válido). Revisa tus productos y clientes registrados.</string>
     <string name="ai_sale_limit_reached_message">Alcanzaste el límite de tu plan. Actualiza a Pro o CuentivoAI para continuar registrando.</string>
@@ -679,7 +685,7 @@
     <string name="ai_ledger_badge_uncertain">Dudoso</string>
     <string name="ai_ledger_unresolved_notice">Renglón con datos pendientes de resolver</string>
     <string name="ai_ledger_error_zero_operations">No hay operaciones listas para registrar. Resuelve los campos dudosos o ilegibles.</string>
-    <string name="ai_ledger_error_rows_need_review">Gemini leyó %1$d renglones con dudas. Revísalos contra la foto para poder registrarlos.</string>
+    <string name="ai_ledger_error_rows_need_review">CuentivoAI leyó %1$d renglones con dudas. Revísalos contra la foto para poder registrarlos.</string>
     <plurals name="ai_ledger_action_review_uncertain">
         <item quantity="one">Revisar %1$d renglón con dudas</item>
         <item quantity="other">Revisar %1$d renglones con dudas</item>
@@ -727,6 +733,15 @@
     <string name="ai_ledger_objection_implausible_date">La fecha de este renglón no parece posible (año distinto al de la página, demasiado vieja o futura): revisa el año antes de continuar</string>
     <string name="ai_ledger_action_confirm_objection">Sí, es correcto</string>
     <string name="ai_ledger_action_confirm_duplicate">Sí, es otra venta</string>
+    <string name="ai_ledger_action_change_year">Cambiar a %1$d</string>
+    <string name="ai_ledger_action_change_all">Cambiar todos</string>
+    <plurals name="ai_ledger_year_bulk_question">
+        <item quantity="one">%1$d renglón dice %2$d. ¿Lo cambio a %3$d?</item>
+        <item quantity="other">%1$d renglones dicen %2$d. ¿Los cambio a %3$d?</item>
+    </plurals>
+    <string name="ai_ledger_pending_in_doubt">+ %1$s por revisar</string>
+    <string name="ai_ledger_action_show_details">Ver por qué</string>
+    <string name="ai_ledger_action_hide_details">Ocultar detalle</string>
     <string name="message_account_wiped">Este teléfono tenía datos de otra cuenta y se borraron</string>
     <string name="message_cloud_restored">Se restauraron %1$d clientes de la nube</string>
     <string name="message_cloud_restore_failed">No pudimos traer tu información de la nube. Revisa tu conexión y vuelve a abrir la app (%1$s/%2$s)</string>

@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -67,9 +69,12 @@ import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.domain.FieldHealthColor
+import com.cuentivo.app.domain.LedgerDeterministicObjectionType
 import com.cuentivo.app.domain.LedgerDueDatePolicy
 import com.cuentivo.app.domain.LedgerFieldHealth
 import com.cuentivo.app.domain.LedgerImportSummaryCalculator
+import com.cuentivo.app.domain.LedgerYearBulkCorrection
+import com.cuentivo.app.domain.LedgerYearCorrection
 import com.cuentivo.app.domain.ProductCandidate
 import com.cuentivo.app.ui.transaction.DueOption
 import com.cuentivo.app.ui.transaction.NeoChoiceChip
@@ -172,6 +177,18 @@ fun LedgerReviewContent(
     }
 
     val summaryResult = LedgerImportSummaryCalculator.calculate(review, objections, isPageCompletenessConfirmed, duplicateBlockedLineIndices)
+    // El año mal leído en toda la hoja (v44): con dos o más renglones que dicen un año distinto al
+    // de la página, se ofrece corregirlos de golpe. La decisión —qué renglones, de qué año a qué
+    // año, y que no se toque ninguno sin objeción— vive en `LedgerYearCorrection`.
+    val yearBulkPlan = remember(review.operations, objections, review.pageDateEpochDay, review.todayEpochDay) {
+        val today = review.todayEpochDay
+        if (today == null) null else LedgerYearCorrection.plan(
+            operations = review.operations,
+            objectionLineIndices = objectionLineIndices,
+            pageDateEpochDay = review.pageDateEpochDay,
+            todayEpochDay = today,
+        )
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -221,6 +238,23 @@ fun LedgerReviewContent(
                 )
 
                 }
+            }
+            if (yearBulkPlan != null) item(key = "ledger-review-year-bulk") {
+                YearBulkCard(
+                    plan = yearBulkPlan,
+                    onApply = {
+                        val today = review.todayEpochDay ?: return@YearBulkCard
+                        // Se corrige renglón por renglón con el mismo `applyDate` de siempre, así
+                        // que la objeción desaparece sola cuando la fecha ya es plausible y nunca se
+                        // marca como confirmada a mano.
+                        for (op in review.operations) {
+                            if (op.lineIndex !in yearBulkPlan.lineIndices) continue
+                            val corrected = LedgerYearCorrection.correctedDateFor(op, yearBulkPlan.targetYear) ?: continue
+                            onUpdateDate(op.lineIndex, corrected)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
             if (hasRowsWithoutDate) item(key = "ledger-review-page-date") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -438,6 +472,8 @@ fun LedgerReviewContent(
             EditLedgerOperationDialog(
                 operation = op,
                 captureFile = captureFile,
+                pageDateEpochDay = review.pageDateEpochDay,
+                todayEpochDay = review.todayEpochDay,
                 customerMatch = customerMatches[op.lineIndex],
                 productMatch = productMatches[op.lineIndex],
                 duplicateMatch = duplicateMatches[op.lineIndex],
@@ -656,6 +692,57 @@ private fun PageDateCard(
 private const val LOW_PAGE_DATE_CONFIDENCE = 0.5
 
 /**
+ * "N renglones dicen 2023. ¿Los cambio a 2026?" — la corrección del año en toda la hoja.
+ *
+ * El botón de un renglón resuelve un renglón; con doce renglones mal leídos eso es doce diálogos.
+ * Esta tarjeta existe para el caso real del recorrido (una hoja de 2026 leída como 2023) y sólo
+ * aparece cuando el objeto puro lo pide: dos o más renglones con la objeción de fecha.
+ */
+@Composable
+private fun YearBulkCard(
+    plan: LedgerYearBulkCorrection,
+    onApply: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.testTag("ledger-year-bulk-card"),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        ),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = pluralStringResource(
+                    R.plurals.ai_ledger_year_bulk_question,
+                    plan.lineIndices.size,
+                    plan.lineIndices.size,
+                    plan.readYear,
+                    plan.targetYear,
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Button(
+                onClick = onApply,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("ledger-year-bulk-button"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary,
+                ),
+            ) {
+                Text(stringResource(R.string.ai_ledger_action_change_all))
+            }
+        }
+    }
+}
+
+/**
  * El plazo de pago de la página entera: Sin fecha / 7 / 15 / 30 días, con 15 marcado.
  *
  * Reutiliza [DueOption] y sus textos —la misma pregunta y las mismas etiquetas de la venta
@@ -769,6 +856,10 @@ private fun FinancialErrorBanner(
         color = MaterialTheme.colorScheme.errorContainer,
         shape = RoundedCornerShape(8.dp),
     ) {
+        // Una hoja dudosa mostraba tres avisos rojos seguidos —el resumen, el botón y una frase por
+        // cada tipo de objeción—, y el detalle ahogaba lo único que la persona tiene que hacer:
+        // revisar. El resumen se queda a la vista y el porqué vive dentro, a un toque (v44).
+        var detailsExpanded by remember { mutableStateOf(false) }
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -802,14 +893,31 @@ private fun FinancialErrorBanner(
                 }
             }
             // POR QUÉ no se puede registrar todavía, en palabras. Se deduplica por tipo —cinco
-            // renglones con el mismo aviso son un aviso, no cinco— para no ahogar el resto del banner.
-            for (objection in objections.distinctBy { it.type }) {
-                Text(
-                    text = ledgerObjectionMessage(objection),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.testTag("ledger-banner-objection"),
-                )
+            // renglones con el mismo aviso son un aviso, no cinco— y se esconde tras el resumen para
+            // no ahogar el resto del banner.
+            if (objections.isNotEmpty()) {
+                TextButton(
+                    onClick = { detailsExpanded = !detailsExpanded },
+                    modifier = Modifier.testTag("ledger-banner-details-toggle"),
+                ) {
+                    Text(
+                        text = stringResource(
+                            if (detailsExpanded) R.string.ai_ledger_action_hide_details else R.string.ai_ledger_action_show_details,
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+                if (detailsExpanded) {
+                    for (objection in objections.distinctBy { it.type }) {
+                        Text(
+                            text = ledgerObjectionMessage(objection),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.testTag("ledger-banner-objection"),
+                        )
+                    }
+                }
             }
             if (hasMissingDates && diagnostics.isEmpty() && !hasZeroOps) {
                 Text(
@@ -897,6 +1005,18 @@ private fun CustomerGroupCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            // "Saldo: $0.00 → $0.00" con un renglón de $999 en duda parece decir que no se anotará
+            // nada. Este renglón dice lo que está esperando a resolverse, aparte del saldo.
+            val pendingInDoubtCents = com.cuentivo.app.domain.LedgerPendingInDoubt.chargeCents(group)
+            if (pendingInDoubtCents > 0L) {
+                Text(
+                    text = stringResource(R.string.ai_ledger_pending_in_doubt, formatCents(pendingInDoubtCents)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.testTag("ledger-group-pending-in-doubt"),
+                )
+            }
 
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 2.dp),
@@ -1168,10 +1288,13 @@ private fun RowCropThumbnail(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EditLedgerOperationDialog(
     operation: LedgerOperation,
     captureFile: File?,
+    pageDateEpochDay: Long? = null,
+    todayEpochDay: Long? = null,
     customerMatch: com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>? = null,
     productMatch: com.cuentivo.app.domain.EntityMatchResult<ProductCandidate>? = null,
     duplicateMatch: com.cuentivo.app.domain.LedgerDuplicateMatch? = null,
@@ -1205,21 +1328,25 @@ private fun EditLedgerOperationDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(stringResource(R.string.ai_ledger_dialog_edit_title, operation.lineIndex))
+            Text(stringResource(R.string.ai_ledger_dialog_edit_title, operation.lineIndex + 1))
         },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                // Crop thumbnail inside dialog to facilitate visual check
-                RowCropThumbnail(
-                    captureFile = captureFile,
-                    operation = operation,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(80.dp),
-                )
+                // El recorte se dibuja SÓLO si existe. Antes se reservaba un hueco de 80 dp de alto
+                // aunque no hubiera región: un vacío grande que empujaba abajo todo lo demás sin
+                // decir nada (recorrido "Doña Mary", v44).
+                if (captureFile != null && operation.region != null) {
+                    RowCropThumbnail(
+                        captureFile = captureFile,
+                        operation = operation,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp),
+                    )
+                }
 
                 // Deterministic objections banner
                 val rowObjections = objections.filter { it.lineIndex == operation.lineIndex }
@@ -1241,21 +1368,68 @@ private fun EditLedgerOperationDialog(
                         }
                     }
                 }
-                if (rowObjections.isNotEmpty() && !com.cuentivo.app.domain.LedgerObjectionConfirmation.isConfirmed(operation)) {
-                    Button(
-                        onClick = onConfirmObjection,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("ledger-edit-confirm-objection-button"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.tertiary,
-                            contentColor = MaterialTheme.colorScheme.onTertiary,
-                        ),
+                val objectionConfirmed = com.cuentivo.app.domain.LedgerObjectionConfirmation.isConfirmed(operation)
+                if (rowObjections.isNotEmpty() && !objectionConfirmed) {
+                    val implausibleDate = rowObjections.any { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }
+                    // El año al que se corrige: el de la página, o el de hoy si la hoja no trae
+                    // fecha. La fecha conserva mes y día; el 29 de febrero cae al último día del mes.
+                    val correctedYearDate = if (implausibleDate && todayEpochDay != null) {
+                        val targetYear = LedgerYearCorrection.targetYear(pageDateEpochDay, todayEpochDay)
+                        operation.date?.let { LedgerYearCorrection.correctedDate(it, targetYear) }
+                    } else {
+                        null
+                    }
+                    val chosenKindForYear = kind
+                    val amountCentsForYear = amountCents
+                    if (correctedYearDate != null &&
+                        correctedYearDate != operation.date &&
+                        chosenKindForYear != null &&
+                        amountCentsForYear != null &&
+                        !dateIsWrong
                     ) {
-                        Text(
-                            text = stringResource(R.string.ai_ledger_action_confirm_objection),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
+                        // El botón fácil corrige el año en vez de aceptar la fecha imposible (v44):
+                        // con prisa, "Sí, es correcto" confirmaba 2023 en toda la hoja.
+                        Button(
+                            onClick = { onSave(name, amountCentsForYear, chosenKindForYear, correctedYearDate) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("ledger-edit-correct-year-button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.tertiary,
+                                contentColor = MaterialTheme.colorScheme.onTertiary,
+                            ),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.ai_ledger_action_change_year, correctedYearDate.year),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                        // "Sí, es correcto" pasa a salida secundaria: sigue existiendo para la fecha
+                        // que de verdad era rara, pero deja de ser el botón grande.
+                        TextButton(
+                            onClick = onConfirmObjection,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("ledger-edit-confirm-objection-button"),
+                        ) {
+                            Text(stringResource(R.string.ai_ledger_action_confirm_objection))
+                        }
+                    } else {
+                        Button(
+                            onClick = onConfirmObjection,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("ledger-edit-confirm-objection-button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.tertiary,
+                                contentColor = MaterialTheme.colorScheme.onTertiary,
+                            ),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.ai_ledger_action_confirm_objection),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
                     }
                 }
 
@@ -1385,27 +1559,31 @@ private fun EditLedgerOperationDialog(
                     singleLine = true,
                 )
 
-                Row(
+                // Tres fichas ("Venta", "Abono", "Deuda anterior") en una fila con `weight(1f)`: a
+                // 360 dp "Deuda anterior" no cabía y se partía letra por letra ("Deud/a/anteri/or").
+                // Ahora fluyen y, si no caben, bajan enteras, sin partir ninguna palabra.
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     KindChoiceButton(
                         text = stringResource(R.string.ai_ledger_kind_sale),
                         selected = kind == ProposedLedgerKind.SALE,
                         onClick = { kind = ProposedLedgerKind.SALE },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.testTag("ledger-kind-SALE"),
                     )
                     KindChoiceButton(
                         text = stringResource(R.string.ai_ledger_kind_payment),
                         selected = kind == ProposedLedgerKind.PAYMENT,
                         onClick = { kind = ProposedLedgerKind.PAYMENT },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.testTag("ledger-kind-PAYMENT"),
                     )
                     KindChoiceButton(
                         text = stringResource(R.string.ai_ledger_kind_prior_debt),
                         selected = kind == ProposedLedgerKind.PRIOR_DEBT,
                         onClick = { kind = ProposedLedgerKind.PRIOR_DEBT },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.testTag("ledger-kind-PRIOR_DEBT"),
                     )
                 }
             }
@@ -1451,14 +1629,14 @@ private fun KindChoiceButton(
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ),
         ) {
-            Text(text = text, style = MaterialTheme.typography.labelSmall)
+            Text(text = text, style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false)
         }
     } else {
         OutlinedButton(
             onClick = onClick,
             modifier = modifier,
         ) {
-            Text(text = text, style = MaterialTheme.typography.labelSmall)
+            Text(text = text, style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false)
         }
     }
 }

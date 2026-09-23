@@ -184,6 +184,47 @@ class LedgerReviewScreenTest {
     }
 
     /**
+     * Las tres fichas de tipo dentro del diálogo, a 360 dp —el ancho de un teléfono normal—. Antes
+     * iban en una fila con `weight(1f)` y "Deuda anterior" no cabía: se partía letra por letra
+     * ("Deud/a/anteri/or"). Ahora fluyen y bajan enteras si hace falta; esta prueba fija que las
+     * tres siguen alcanzables y con su texto íntegro.
+     */
+    @Test fun at_360_dp_the_dialog_type_chips_are_all_reachable() {
+        val review = LedgerReviewEngine.build(operations = listOf(sale(0, "Rosa", "25000")))
+
+        composeRule.setContent {
+            Box(Modifier.requiredWidth(360.dp)) {
+                LedgerReviewContent(
+                    review = review,
+                    captureFile = null,
+                    onUpdateAmount = { _, _ -> },
+                    onUpdateCustomer = { _, _ -> },
+                    onUpdateKind = { _, _ -> },
+                    onUpdateDate = { _, _ -> },
+                    onUpdatePageDate = { },
+                    onRemoveRow = { },
+                    onConfirmObjection = { },
+                    isPageCompletenessConfirmed = false,
+                    onConfirmPageCompleteness = { },
+                    customerMatches = emptyMap(),
+                    productMatches = emptyMap(),
+                    duplicateMatches = emptyMap(), objections = emptyList(),
+                    isRegistrationBlockedByLegacySave = false,
+                    onConfirm = { },
+                    onCancel = { },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("ledger-op-row-0").performClick()
+
+        composeRule.onNodeWithTag("ledger-kind-SALE", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger-kind-SALE").assertTextContains("Venta", substring = true)
+        composeRule.onNodeWithTag("ledger-kind-PAYMENT").assertTextContains("Abono", substring = true)
+        composeRule.onNodeWithTag("ledger-kind-PRIOR_DEBT").assertTextContains("Deuda anterior", substring = true)
+    }
+
+    /**
      * Con un solo renglón dudoso la frase decía "Revisar 1 renglones". Es un `<plurals>`: la cadena
      * depende de la cantidad y hay que leerla con `pluralStringResource` —sobre un plurals,
      * `stringResource` no compila—, así que la prueba resuelve el recurso **con cantidad 1** y compara

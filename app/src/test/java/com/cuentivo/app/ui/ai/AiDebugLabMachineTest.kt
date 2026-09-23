@@ -993,6 +993,19 @@ class AiDebugLabMachineTest {
         sourceCustomerFingerprint = "cust-1:10000",
     )
 
+    /** El mismo borrador, pero sin fecha dicha en el texto: el caso del plazo por defecto. */
+    private val sampleSalePreviewNoPromise = com.cuentivo.app.ai.AiResolvedSalePreview(
+        confirmationKey = "sale-key-1",
+        customerId = "cust-1",
+        customerName = "María Gómez",
+        rawLines = sampleSalePreview.lines,
+        totalCents = 10000L,
+        initialPaymentCents = 3000L,
+        remainderCents = 7000L,
+        promisedPaymentCandidate = null,
+        sourceCustomerFingerprint = "cust-1:10000",
+    )
+
     private fun saleProposalModel(generation: Long = 2L): AiDebugLabModel = AiDebugLabModel(
         state = AiDebugLabState.ProposalPreview(validSaleProposal),
         generation = generation,
@@ -2102,6 +2115,58 @@ class AiDebugLabMachineTest {
             "duplicateSuggestedCount must be 1 even after restore",
             1,
             params.duplicateSuggestedCount,
+        )
+    }
+
+    /**
+     * El borrador de venta por CuentivoAI nace con 15 días y ese plazo se resuelve contra hoy al
+     * confirmar. Antes nacía sin fecha salvo que la persona la dijera en el texto, así que la venta
+     * no vencía ni entraba al recordatorio (v44).
+     */
+    @Test
+    fun `el borrador de venta propone 15 dias y los aplica al confirmar`() {
+        val noPromise = sampleSalePreviewNoPromise
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleConfirmation(noPromise),
+            generation = 4L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSalePreview(noPromise),
+            ),
+        )
+        assertEquals(15L, (model.state as AiDebugLabState.SaleConfirmation).dueDateDays)
+
+        val today = java.time.LocalDate.of(2026, 9, 23).toEpochDay()
+        val started = AiDebugLabMachine.onConfirmSale(model, "biz-123", todayEpochDay = today) as AiSaleConfirmOutcome.Started
+        assertEquals(today + 15L, started.request.promisedPaymentEpochDay)
+    }
+
+    @Test
+    fun `elegir sin fecha en el borrador deja la venta sin fecha limite`() {
+        val noPromise = sampleSalePreviewNoPromise
+        val model = AiDebugLabModel(
+            state = AiDebugLabState.SaleConfirmation(noPromise),
+            generation = 4L,
+            messages = listOf(
+                AiChatMessage.UserText("Venta a María"),
+                AiChatMessage.AssistantSalePreview(noPromise),
+            ),
+        )
+        val updated = AiDebugLabMachine.onUpdateSaleDueDateDays(model, null)
+        assertEquals(null, (updated.state as AiDebugLabState.SaleConfirmation).dueDateDays)
+
+        val today = java.time.LocalDate.of(2026, 9, 23).toEpochDay()
+        val started = AiDebugLabMachine.onConfirmSale(updated, "biz-123", todayEpochDay = today) as AiSaleConfirmOutcome.Started
+        org.junit.Assert.assertNull(started.request.promisedPaymentEpochDay)
+    }
+
+    @Test
+    fun `la fecha dicha en el texto manda sobre el plazo del borrador`() {
+        val today = java.time.LocalDate.of(2026, 9, 23).toEpochDay()
+        val started = AiDebugLabMachine.onConfirmSale(saleConfirmationModel(), "biz-123", todayEpochDay = today) as AiSaleConfirmOutcome.Started
+        assertEquals(
+            java.time.LocalDate.of(2026, 8, 30).toEpochDay(),
+            started.request.promisedPaymentEpochDay,
         )
     }
 }

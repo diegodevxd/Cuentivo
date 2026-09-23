@@ -1762,8 +1762,17 @@ class MainActivity : ComponentActivity() {
                                 val result = aiSaleExecutionService.confirm(request)
                                 if (result is AiSaleExecutionResult.Recorded) {
                                     refreshKey++
+                                    // El saldo que quedó, para que el "Venta registrada con éxito"
+                                    // diga cuánto debe ahora (v44). El nombre puede venir del estado
+                                    // cargado o del cliente recién creado por la misma venta.
+                                    val name = customers.firstOrNull { it.customer.id == request.customerId }?.customer?.name
+                                        ?: request.newCustomer?.displayName
+                                    val balance = database.financialDao()
+                                        .customerBalanceCents(request.businessId, request.customerId)
+                                    result.copy(customerName = name, balanceAfterCents = balance)
+                                } else {
+                                    result
                                 }
-                                result
                             }
                         }
                     },
@@ -1867,6 +1876,9 @@ class MainActivity : ComponentActivity() {
                                         amountCents = amountCents,
                                         todayEpochDay = LocalDate.now().toEpochDay(),
                                         nowEpochMillis = now,
+                                        // El plazo que la persona eligió en el formulario. Sin él la
+                                        // deuda anterior nacía sin fecha y nunca vencía (v44).
+                                        dueInDays = newCustomer.openingBalanceDueInDays,
                                     )
                                 }
                                 val saved = try {
@@ -2265,7 +2277,17 @@ class MainActivity : ComponentActivity() {
                                 }
                                 syncQueue.enqueue(businessId, "MOVEMENT", charge.id, now, SyncPayloads.movement(charge))
                                 refreshKey++
-                                uiMessage = getString(R.string.message_sale_registered, Money.format(draft.totalCents))
+                                // El saldo real, leído del libro mayor —no calculado en la UI— y
+                                // con él el aviso: sin esto el formulario se vaciaba en la misma
+                                // pantalla y no había nada visible de que la venta se registró.
+                                val balanceCents = database.financialDao().customerBalanceCents(businessId, customer.customer.id)
+                                uiMessage = getString(
+                                    R.string.message_sale_registered_balance,
+                                    balancePhrase(customer.customer.name, balanceCents),
+                                )
+                                // Y se lleva al detalle de esa clienta, que es donde la persona ve
+                                // cómo quedó la deuda.
+                                loadStatement(businessId, customer)
                             }
                         }
                     }
@@ -2292,15 +2314,14 @@ class MainActivity : ComponentActivity() {
                         }
                         syncQueue.enqueue(businessId, "MOVEMENT", movement.id, now, SyncPayloads.movement(movement))
                         refreshKey++
-                        uiMessage = when {
-                             allocations.isEmpty() -> getString(R.string.message_payment_registered_as_credit)
-                             allocationResult.creditCents > 0 -> getString(
-                                 R.string.message_payment_applied_with_credit,
-                                 allocations.size,
-                                 Money.format(allocationResult.creditCents),
-                             )
-                             else -> getString(R.string.message_payment_applied, allocations.size)
-                         }
+                        // "Abono aplicado a 2 venta(s)" no le dice nada a la persona, que lo que
+                        // quiere saber es cuánto le queda debiendo. El saldo sale del libro mayor.
+                        val balanceCents = database.financialDao().customerBalanceCents(businessId, customer.customer.id)
+                        uiMessage = getString(
+                            R.string.message_payment_registered_balance,
+                            balancePhrase(customer.customer.name, balanceCents),
+                        )
+                        loadStatement(businessId, customer)
                     }
                 }, statementCustomer = statementCustomer, statement = statementEntries, cancelables = cancelables, suggestedCreditLimitCents = suggestedCreditLimitCents, onCancelSale = { item ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
@@ -2778,6 +2799,25 @@ class MainActivity : ComponentActivity() {
      */
     private fun dial(phone: String) {
         startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")))
+    }
+
+    /**
+     * "Rosa ahora debe $125" / "ya no debe nada" / "tiene $50 a favor", desde el saldo real.
+     *
+     * El signo decide la frase: mostrar "ahora debe -$50" sería una resta que nadie pidió. El saldo
+     * llega del libro mayor (`customerBalanceCents`) y la presentación la decide `BalancePresenter`,
+     * la misma que usa el archivo de clientes.
+     */
+    private fun balancePhrase(customerName: String, balanceCents: Long): String {
+        val presentation = com.cuentivo.app.ui.customer.BalancePresenter.from(balanceCents)
+        return when (presentation.kind) {
+            com.cuentivo.app.ui.customer.BalanceKind.OWED ->
+                getString(R.string.message_balance_owes, customerName, Money.format(presentation.amountCents))
+            com.cuentivo.app.ui.customer.BalanceKind.CUSTOMER_CREDIT ->
+                getString(R.string.message_balance_credit, customerName, Money.format(presentation.amountCents))
+            com.cuentivo.app.ui.customer.BalanceKind.SETTLED ->
+                getString(R.string.message_balance_settled, customerName)
+        }
     }
 
     /**

@@ -126,6 +126,17 @@ object OpeningBalance {
     const val LINE_NAME = "Saldo anterior"
     const val MAX_DESCRIPTION_LENGTH = UncatalogedSaleBuilder.MAX_DESCRIPTION_LENGTH
 
+    /**
+     * Marca persistida que distingue esta venta de una venta real.
+     *
+     * `FinancialDao` ya clasificaba como `PRIOR_DEBT` lo que llevara este `notes`, pero nada lo
+     * escribía: la consulta de clasificación nunca casaba. Se escribe aquí para que el marcador y su
+     * lector vuelvan a coincidir, y para que el "Vendido del mes" pueda excluirla —una deuda que ya
+     * existía no es una venta del mes (v44). Es texto almacenado, nunca traducido, por la misma razón
+     * que [LINE_NAME].
+     */
+    const val NOTES_MARKER = "ALTA_CLIENTE_SALDO_ANTERIOR"
+
     fun entry(
         saleId: String,
         itemId: String,
@@ -138,7 +149,7 @@ object OpeningBalance {
         nowEpochMillis: Long,
         /** Days from today the two of them agreed on, or null when there was never a date. */
         dueInDays: Long? = null,
-        notes: String? = null,
+        notes: String? = NOTES_MARKER,
         /**
          * The date of the sale as recorded in the notebook, defaulting to todayEpochDay.
          * Defaulted to today rather than guessed for new customer onboarding: nobody knows when

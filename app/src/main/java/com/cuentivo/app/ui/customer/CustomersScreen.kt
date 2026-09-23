@@ -457,6 +457,9 @@ private fun CustomerFormDialog(
             creditLimitCents = creditLimitCents,
             quickSale = quickSale,
             openingBalanceCents = openingBalanceCents,
+            // La deuda anterior usa el mismo plazo que la venta rápida: una deuda sin fecha no
+            // vence ni entra al recordatorio (v44).
+            openingBalanceDueInDays = openingBalanceCents?.let { dueOption.days },
             continueToSale = continueToSale,
         )
     }

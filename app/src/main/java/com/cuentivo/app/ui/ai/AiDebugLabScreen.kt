@@ -94,6 +94,8 @@ import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.capture.AiCameraCaptureStore
 import com.cuentivo.app.ai.capture.AiCapturePolicy
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
+import com.cuentivo.app.ui.transaction.DueOption
+import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
 import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
 import com.cuentivo.app.ai.ledger.LedgerImagePreparer
@@ -1030,7 +1032,12 @@ fun AiDebugLabScreen(
                         } else null,
                         onConfirmSale = if (isCurrentSalePreview && isHydrated && confirmSale != null && activeBusinessId?.isNotBlank() == true) {
                             {
-                                val outcome = AiDebugLabMachine.onConfirmSale(model, activeBusinessId)
+                                // El plazo elegido en el borrador se resuelve contra hoy al confirmar.
+                                val outcome = AiDebugLabMachine.onConfirmSale(
+                                    model,
+                                    activeBusinessId,
+                                    todayEpochDay = java.time.LocalDate.now().toEpochDay(),
+                                )
                                 if (outcome is AiSaleConfirmOutcome.Started) {
                                     model = outcome.model
                                     val token = outcome.generation
@@ -1116,6 +1123,10 @@ fun AiDebugLabScreen(
                             { model = AiDebugLabMachine.onCancel(model) }
                         } else null,
                         onOpenPaywall = onOpenPaywall,
+                        saleDueDateDays = (model.state as? AiDebugLabState.SaleConfirmation)?.dueDateDays,
+                        onUpdateSaleDueDateDays = if (isCurrentSalePreview && isHydrated) {
+                            { days -> model = AiDebugLabMachine.onUpdateSaleDueDateDays(model, days) }
+                        } else null,
                         isConfirming = isConfirming,
                     )
                 }
@@ -1503,6 +1514,9 @@ private fun ChatMessageRow(
     onSelectProductCandidate: ((productName: String, choice: com.cuentivo.app.ai.AiEntityChoice) -> Unit)? = null,
     onSelectQueryCustomerCandidate: ((customerId: String) -> Unit)? = null,
     onOpenPaywall: (() -> Unit)? = null,
+    /** El plazo del borrador de venta y su cambio. Null cuando no hay borrador vivo. */
+    saleDueDateDays: Long? = null,
+    onUpdateSaleDueDateDays: ((Long?) -> Unit)? = null,
     isConfirming: Boolean = false,
 ) {
     when (message) {
@@ -1788,6 +1802,31 @@ private fun ChatMessageRow(
                     )
                 }
             }
+            // El plazo del borrador, antes de confirmar. Antes la venta por CuentivoAI nacía sin
+            // fecha límite salvo que la persona la dijera en el texto, así que nunca vencía ni
+            // entraba al recordatorio (v44). Mismo selector que la venta manual.
+            if (onUpdateSaleDueDateDays != null) {
+                Text(
+                    text = stringResource(R.string.new_sale_due_question),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DueOption.entries.chunked(2).forEach { pair ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            pair.forEach { option ->
+                                NeoChoiceChip(
+                                    label = stringResource(option.labelRes),
+                                    isSelected = saleDueDateDays == option.days,
+                                    onClick = { onUpdateSaleDueDateDays(option.days) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("ai-sale-due-option-" + option.name),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             if (onConfirmSale != null && onCancelSale != null) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1908,10 +1947,28 @@ private fun ChatMessageRow(
                 )
             }
         }
-        is AiChatMessage.AssistantSaleRecorded -> Text(
-            text = stringResource(R.string.ai_sale_recorded_success),
-            style = MaterialTheme.typography.bodyMedium,
-        )
+        is AiChatMessage.AssistantSaleRecorded -> {
+            val balance = message.balanceAfterCents
+            val name = message.customerName
+            // La venta por CuentivoAI también dice en qué quedó la deuda (v44): "Venta registrada
+            // con éxito" a secas dejaba a la persona sin saber cuánto debe ahora.
+            val text = if (balance != null && !name.isNullOrBlank()) {
+                stringResource(
+                    R.string.ai_sale_recorded_success_balance,
+                    when {
+                        balance > 0L -> stringResource(R.string.message_balance_owes, name, formatCents(balance))
+                        balance < 0L -> stringResource(R.string.message_balance_credit, name, formatCents(-balance))
+                        else -> stringResource(R.string.message_balance_settled, name)
+                    },
+                )
+            } else {
+                stringResource(R.string.ai_sale_recorded_success)
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
         AiChatMessage.AssistantSaleStale -> Text(
             text = stringResource(R.string.ai_sale_stale_message),
             style = MaterialTheme.typography.bodyMedium,
