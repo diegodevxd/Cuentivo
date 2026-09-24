@@ -11,15 +11,11 @@ Manda, en este orden:
 
 **Última actualización: 2026-09-23.** v44 (`1.23.0`, code 44) está integrada y subida en `diegodevxd/feature-cuentivo-ai`, commit de merge `2c5e5c5`; etiqueta anotada `v1.23.0-44`. La rama `diegodevxd/v44-libreta` también está en origin. El AAB verificado está en `dist/Cuentivo-v44-1.23.0.aab`.
 
-**v45 implementada localmente, sin release:** rama `diegodevxd/v45-prueba-interna`, basada en `diegodevxd/v44-libreta` (`4f8cff2`). `versionCode = 45`; `versionName` sigue `1.23.0` porque Diego no ha confirmado el nombre de parche. El detalle de clienta relee `FinancialDao.customerBalanceCents` por negocio/clienta al abrirse tras venta o abono; la prueba JVM ejercita ese seam y conserva el dato descriptivo de la fila.
+**v46 (`1.23.2`)** en `diegodevxd/v46-negocio-y-fechas`, subida (`25d39c3`): el negocio se crea solo cuando la cuenta ya resolvió su claim y no tiene ninguno (idempotente, en transacción); el aviso "primero crea tu negocio" se dibuja dentro del formulario, no en un snackbar que queda detrás; y `IMPLAUSIBLE_DATE` distingue motivo (año / vieja / futura) con "Confirmar todos" para las viejas.
 
-También están implementados los detalles de prueba interna: la barra reserva más ancho para «Nueva venta»; Inicio identifica deuda anterior; el selector vacío ofrece «Agregar cliente»; la confirmación de cuenta Google reutiliza el idToken ya obtenido; y el plazo de Nuevo cliente se muestra junto a la deuda anterior. Se corrigió además la acción pendiente de correo/contraseña (`onConfirm`) que faltaba en `PendingAccountSwitch`.
+**v47 en curso, sin commit:** rama `diegodevxd/v47-giro-congelado` (desde `25d39c3`). Las tarjetas "Cambiar todos" (año) y "Confirmar todos" (viejas) ya no pueden salir juntas: el motivo del año usa la MISMA referencia que el plan de corrección (`LedgerYearCorrection.expectedYearOrNull`), así que sin fecha de página un renglón de 2023 deja de contarse como viejo. Antes, pulsar "Confirmar todos" primero aceptaba las fechas de 2023.
 
-**Evidencia v45 local:** rojo TDD por `StatementCustomerRefresh.fromLedger` ausente; verde al implementarlo. `testDebugUnitTest`: **1,369**, 0 fallos, 0 errores. `compileDebugAndroidTestKotlin` y `assembleDebug` pasaron. ES/EN: 686/686 claves. No se corrieron instrumentadas: A059P (`00170157R000160`) conserva v44 de Play y no se tocó. No se consultó ni modificó Firestore/Auth de producción.
-
-El caso de sync Gratis/Firestore sigue sin confirmar: no hay evidencia local de si «Rosa Martinez» llegó a la nube; no afirmarlo. No hubo bundle, tag, commit, push ni publicación.
-
-**Siguiente:** auditar la tanda y, sólo con autorización y un emulador seguro, completar gate v45/instrumentadas. Antes de bundle/push/publicación, confirmar `versionName` y autorización expresa de Diego.
+**Pendiente vigilado — el cuelgue al girar (v47).** `LedgerReviewRotationTest` se colgó **1 de 4 veces** (CPU 85 %, GC sostenido) y **no es un bucle de recomposición** (menos de 40 composiciones en el cuelgue). No reproduce de forma fiable —ni corriendo 11 clases de libreta antes, ni arrancando en horizontal— y **no se toca**. La pila del hilo principal no se pudo capturar: el emulador no es rooteable. Detalle y qué falta en `C:/tmp/oc-v47-reporte.md`.
 
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 

@@ -266,7 +266,8 @@ object LedgerDeterministicObjections {
             //     se convierte en "vencido hace 3 años". Sólo añade duda: la persona confirma
             //     el renglón o corrige la fecha, igual que con el resto de objeciones.
             //     Reglas (cualquiera de las tres basta):
-            //       1. el año del renglón difiere del año de la página, o
+            //       1. el año del renglón difiere del año esperado (el de la página, o el de hoy
+            //          cuando la hoja no trae fecha — la misma regla que usa "Cambiar todos"), o
             //       2. es más de 180 días anterior a hoy, o
             //       3. es futura.
             val rowDate = op.date
@@ -274,19 +275,31 @@ object LedgerDeterministicObjections {
                 val rowEpoch = runCatching {
                     java.time.LocalDate.of(rowDate.year, rowDate.month, rowDate.day).toEpochDay()
                 }.getOrNull()
-                val pageYear = pageDateEpochDay?.let { runCatching { java.time.LocalDate.ofEpochDay(it).year }.getOrNull() }
-                val yearDiffersFromPage = pageYear != null && rowDate.year != pageYear
                 // Un renglón sin año utilizable no se juzga por antigüedad/futuridad aquí:
                 // el planificador ya lo rechaza como fecha no resoluble.
                 val tooOld = rowEpoch != null && todayEpochDay != null && rowEpoch < todayEpochDay - MAX_PLAUSIBLE_AGE_DAYS
                 val isFuture = rowEpoch != null && todayEpochDay != null && rowEpoch > todayEpochDay
-                // Precedencia (v46): el año manda sobre los otros dos. Si el año difiere del de la
-                // hoja, ése es el defecto accionable y el que corrige "Cambiar todos"; una fecha de
-                // 2023 en una hoja de 2026 también es "vieja", pero decir "hace más de 6 meses" no
-                // ayuda a nadie cuando lo que está mal es el año. Futura antes que vieja porque una
-                // fecha que todavía no llega nunca es una deuda de hace meses.
+                // ¿El año del renglón es el que debería tener? La referencia es la MISMA que usa
+                // "Cambiar todos": el año de la página, o el de hoy cuando la hoja no trae fecha.
+                // Comparar sólo contra la página dejaba a un renglón de 2023 en una hoja sin fecha
+                // clasificado como "viejo" mientras la tarjeta de año lo contaba para corregirlo: las
+                // dos tarjetas salían juntas por los mismos renglones y "Confirmar todos" aceptaba
+                // las fechas de 2023 (v47).
+                val expectedYear = LedgerYearCorrection.expectedYearOrNull(pageDateEpochDay, todayEpochDay)
+                val yearDiffers = expectedYear != null && rowDate.year != expectedYear
+                // Cuando la hoja trae fecha, su año es la referencia y una diferencia siempre es del
+                // año. Cuando no la trae, la única señal de año mal leído es que la fecha no sea
+                // plausible: el 31 de diciembre visto el 5 de enero tiene cinco días, no un año mal.
+                val plausibleByAge = todayEpochDay != null && rowEpoch != null &&
+                    rowEpoch >= todayEpochDay - MAX_PLAUSIBLE_AGE_DAYS && rowEpoch <= todayEpochDay
+                val yearIsTheProblem = yearDiffers && (pageDateEpochDay != null || !plausibleByAge)
+                // Precedencia (v46): el año manda sobre los otros dos. Si el año no es el esperado,
+                // ése es el defecto accionable y el que corrige "Cambiar todos"; una fecha de 2023 en
+                // una hoja de 2026 también es "vieja", pero decir "hace más de 6 meses" no ayuda a
+                // nadie cuando lo que está mal es el año. Futura antes que vieja porque una fecha que
+                // todavía no llega nunca es una deuda de hace meses.
                 val reason = when {
-                    yearDiffersFromPage -> LedgerImplausibleDateReason.YEAR_MISMATCH
+                    yearIsTheProblem -> LedgerImplausibleDateReason.YEAR_MISMATCH
                     isFuture -> LedgerImplausibleDateReason.FUTURE
                     tooOld -> LedgerImplausibleDateReason.TOO_OLD
                     else -> null

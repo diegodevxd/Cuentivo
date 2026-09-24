@@ -97,8 +97,19 @@ class LedgerImplausibleDateReasonTest {
     }
 
     @Test
-    fun `sin fecha de pagina la antiguedad sigue midiendose y el motivo es TOO_OLD`() {
+    fun `sin fecha de pagina el anio se compara contra hoy, no contra nada`() {
+        // v47: con la hoja sin fecha, la tarjeta de año corrige contra el año de hoy. El motivo tiene
+        // que decir lo mismo, o el renglón sale como "hace más de 6 meses" Y cuenta para "Cambiar
+        // todos", y las dos tarjetas aparecen juntas por los mismos renglones.
         val resultado = reasons(listOf(row(0, SafeDateCandidate(2023, 3, 1))), pageDateEpochDay = null)
+
+        assertEquals(1, resultado.size)
+        assertEquals(LedgerImplausibleDateReason.YEAR_MISMATCH, resultado.single().dateReason)
+    }
+
+    @Test
+    fun `sin fecha de pagina una fecha vieja del mismo anio sigue siendo TOO_OLD`() {
+        val resultado = reasons(listOf(row(0, candidate(hoy.minusDays(181)))), pageDateEpochDay = null)
 
         assertEquals(1, resultado.size)
         assertEquals(LedgerImplausibleDateReason.TOO_OLD, resultado.single().dateReason)

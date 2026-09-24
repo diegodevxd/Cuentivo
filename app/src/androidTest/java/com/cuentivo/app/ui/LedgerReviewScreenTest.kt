@@ -30,10 +30,14 @@ import com.cuentivo.app.R
 import com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic
 import com.cuentivo.app.ai.ledger.LedgerDiscardReason
 import com.cuentivo.app.ai.ledger.LedgerOperation
+import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
+import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.UnreadableLedgerField
+import com.cuentivo.app.domain.LedgerDeterministicObjections
 import com.cuentivo.app.ui.ai.LedgerReviewContent
+import java.time.LocalDate
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -747,5 +751,66 @@ class LedgerReviewScreenTest {
 
         composeRule.onNodeWithTag("ledger-due-option-NONE").assertIsDisplayed()
         composeRule.onNodeWithTag("ledger-due-born-overdue-warning").assertDoesNotExist()
+    }
+
+    /**
+     * v47: con la hoja real salían **las dos** tarjetas por los mismos doce renglones ("dicen 2023,
+     * ¿los cambio a 2026?" y "son de hace más de 6 meses, ¿son correctos?"), y pulsar "Confirmar
+     * todos" primero aceptaba las fechas de 2023 — justo lo que la tarjeta de año impide.
+     *
+     * Un renglón de año distinto pertenece a la tarjeta de año; sólo pasa a la de viejos cuando su año
+     * ya es el correcto. Aquí se pulsa el botón real de "Cambiar todos".
+     */
+    @Test fun las_dos_tarjetas_de_fecha_nunca_salen_juntas() {
+        // La hoja real llegó SIN fecha de página aceptada (el campo vacío, la oferta sin pulsar), que
+        // es justo el caso en que el motivo no comparaba el año y caía a "viejo".
+        val today = LocalDate.of(2026, 9, 22).toEpochDay()
+        var operations by mutableStateOf(
+            (0 until 12).map { sale(it, "Rosa $it", "25000", SafeDateCandidate(2023, 3, 1)) },
+        )
+
+        composeRule.setContent {
+            val current = operations
+            val review = LedgerReviewEngine.build(current, todayEpochDay = today)
+            val objections = LedgerDeterministicObjections.evaluate(
+                operations = current,
+                existingCustomerCandidates = emptyList(),
+                catalogProducts = emptyList(),
+                pageDateEpochDay = null,
+                todayEpochDay = today,
+            )
+            Box(Modifier.requiredWidth(360.dp).requiredHeight(800.dp)) {
+                LedgerReviewContent(
+                    review = review,
+                    captureFile = null,
+                    onUpdateAmount = { _, _ -> },
+                    onUpdateCustomer = { _, _ -> },
+                    onUpdateKind = { _, _ -> },
+                    onUpdateDate = { lineIndex, date ->
+                        operations = LedgerReviewEdits.applyDate(operations, lineIndex, date, today)
+                    },
+                    onUpdatePageDate = { },
+                    onRemoveRow = { },
+                    onConfirmObjection = { },
+                    isPageCompletenessConfirmed = false,
+                    onConfirmPageCompleteness = { },
+                    customerMatches = emptyMap(),
+                    productMatches = emptyMap(),
+                    duplicateMatches = emptyMap(),
+                    objections = objections,
+                    isRegistrationBlockedByLegacySave = false,
+                    onConfirm = { },
+                    onCancel = { },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("ledger-year-bulk-card", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger-old-dates-bulk-card", useUnmergedTree = true).assertDoesNotExist()
+
+        composeRule.onNodeWithTag("ledger-year-bulk-button").performClick()
+
+        composeRule.onNodeWithTag("ledger-old-dates-bulk-card", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger-year-bulk-card", useUnmergedTree = true).assertDoesNotExist()
     }
 }
