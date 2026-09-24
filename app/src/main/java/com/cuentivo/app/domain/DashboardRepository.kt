@@ -12,6 +12,12 @@ data class DashboardActivity(
     val direction: String,
     val amountCents: Long,
     val occurredAtEpochMillis: Long,
+    /**
+     * True when this charge is the debt the customer already had before the app (v45). Inicio must
+     * call it "Deuda anterior", the same word the customer's own history uses, instead of "Nueva
+     * venta" — the same ledger row cannot read two different ways on two screens.
+     */
+    val isPriorDebt: Boolean = false,
 )
 
 data class DashboardSnapshot(
@@ -75,6 +81,7 @@ class DashboardRepository(
                 direction = it.direction,
                 amountCents = it.amountCents,
                 occurredAtEpochMillis = it.occurredAtEpochMillis,
+                isPriorDebt = it.isPriorDebt,
             )
         }
 

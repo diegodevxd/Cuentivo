@@ -169,7 +169,7 @@
     <string name="new_sale_back_description">Cerrar nueva venta</string>
     <string name="new_sale_customer_label">Cliente</string>
     <string name="new_sale_customer_placeholder">Toca para elegir al cliente</string>
-    <string name="new_sale_customer_empty">Primero agrega un cliente en la pestaña Clientes</string>
+    <string name="new_sale_customer_empty">Todavía no tienes clientes. Usa Agregar cliente para crear el primero.</string>
     <string name="new_sale_customer_balance">Saldo: %1$s</string>
     <string name="new_sale_section_customer">Cliente</string>
     <string name="new_sale_section_products">Productos</string>

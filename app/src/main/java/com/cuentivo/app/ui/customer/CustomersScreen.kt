@@ -576,6 +576,10 @@ private fun CustomerFormDialog(
                 shape = NeoShapes.row,
                 modifier = Modifier.fillMaxWidth().testTag("opening-balance-field"),
             )
+            // "¿Cuándo debe pagar?" va junto a "¿Ya te debía de antes?" (v45): el plazo aplica a la
+            // deuda anterior y a la venta rápida por igual, y al fondo del formulario quedaba lejos
+            // de la pregunta que lo justifica. Se dibuja una sola vez, aquí.
+            DueDateQuestion(dueOption = dueOption, onSelect = { dueOption = it })
             NeoSectionHeader(title = stringResource(R.string.customers_form_quick_sale_title))
             Text(
                 stringResource(R.string.customers_form_quick_sale_hint),
@@ -697,25 +701,6 @@ private fun CustomerFormDialog(
             ) {
                 Text(stringResource(R.string.customers_form_quick_sale_add_line))
             }
-            Text(
-                stringResource(R.string.new_sale_due_question),
-                style = MaterialTheme.typography.labelMedium,
-            )
-            // Two by two, same as Nueva venta: four chips in one row truncate "Sin fecha" at 320 dp.
-            Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.xs)) {
-                DueOption.entries.chunked(2).forEach { pair ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
-                        pair.forEach { option ->
-                            NeoChoiceChip(
-                                label = stringResource(option.labelRes),
-                                isSelected = dueOption == option,
-                                onClick = { dueOption = option },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
-            }
             quickSale?.let {
                 Text(
                     stringResource(R.string.customers_form_quick_sale_total, Money.format(it.totalCents)),
@@ -742,6 +727,35 @@ private fun CustomerFormDialog(
             }
         }
         note?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+    }
+}
+
+/**
+ * "¿Cuándo debe pagar?" con sus cuatro plazos (v45).
+ *
+ * Se dibuja junto a "¿Ya te debía de antes?" porque el plazo aplica tanto a la deuda anterior como a
+ * la venta rápida; al fondo del formulario quedaba lejos de la pregunta que lo justifica. Dos por
+ * fila, igual que Nueva venta: cuatro chips en una fila truncan "Sin fecha" a 320 dp.
+ */
+@Composable
+private fun DueDateQuestion(dueOption: DueOption, onSelect: (DueOption) -> Unit) {
+    Text(
+        stringResource(R.string.new_sale_due_question),
+        style = MaterialTheme.typography.labelMedium,
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.xs)) {
+        DueOption.entries.chunked(2).forEach { pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
+                pair.forEach { option ->
+                    NeoChoiceChip(
+                        label = stringResource(option.labelRes),
+                        isSelected = dueOption == option,
+                        onClick = { onSelect(option) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
     }
 }
 

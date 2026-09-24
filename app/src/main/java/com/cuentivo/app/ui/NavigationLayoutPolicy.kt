@@ -32,4 +32,27 @@ object NavigationLayoutPolicy {
         NavigationLayoutMode.LABELLED -> 104.dp
         NavigationLayoutMode.COMPACT -> 128.dp
     }
+
+    /**
+     * Cuánto ancho relativo recibe cada ítem de la barra etiquetada (v45).
+     *
+     * El defecto que cierra: "Nueva venta" es la etiqueta más larga de la barra y, repartida a
+     * partes iguales entre cinco ítems, quedaba cortada ("\ueva", la N mocha) en el rango de 360 a
+     * 411 dp. La v43 la mostraba completa porque el ítem central no competía con cuatro etiquetas
+     * del mismo ancho.
+     *
+     * La acción central recibe una porción mayor que las cuatro pestañas: su etiqueta es la única
+     * que no cabe en el ancho de una pestaña, y las pestañas —Inicio, Clientes, Productos, Abonos—
+     * son más cortas. El reparto se expone aquí, puro y sin Compose, para que una prueba JVM lo
+     * compruebe sin emulador.
+     */
+    const val LABELLED_DESTINATION_WEIGHT = 1f
+    const val LABELLED_SALE_ACTION_WEIGHT = 1.4f
+
+    /**
+     * El ancho mínimo que necesita la etiqueta "Nueva venta" a `labelSmall` (11 sp) para no
+     * truncarse, con un margen. Se usa en la prueba de regresión; el layout real lo resuelve el
+     * peso de arriba.
+     */
+    const val SALE_LABEL_MIN_WIDTH_DP = 74
 }

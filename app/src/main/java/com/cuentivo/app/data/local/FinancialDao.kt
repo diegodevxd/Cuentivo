@@ -109,6 +109,15 @@ data class DashboardActivityRow(
     val direction: String,
     val amountCents: Long,
     val occurredAtEpochMillis: Long,
+    /**
+     * True when this charge is really the debt the customer already had before the app (v45).
+     *
+     * Inicio used to call it "Nueva venta" while the customer's own history called the same movement
+     * "Deuda anterior": the same ledger row read two different ways on two screens. The signal is the
+     * same one `priorDebtSaleIdsForCustomer` uses — the persisted marker, or the uncataloged line
+     * named "Saldo anterior" for rows written before the marker existed.
+     */
+    val isPriorDebt: Boolean = false,
 )
 
 /** A sale as offered for correction on screen: what it was worth and what is still unpaid. */
@@ -295,7 +304,17 @@ interface FinancialDao {
         "SELECT movement.id AS id, movement.customerId AS customerId, " +
             "customer.name AS customerName, movement.type AS type, " +
             "movement.direction AS direction, movement.amountCents AS amountCents, " +
-            "movement.occurredAtEpochMillis AS occurredAtEpochMillis " +
+            "movement.occurredAtEpochMillis AS occurredAtEpochMillis, " +
+            // La deuda anterior se marca con las mismas dos señales que el historial del detalle:
+            // el marcador persistido en `sales.notes`, o —para filas escritas antes del marcador—
+            // el renglón sin producto llamado "Saldo anterior". Sin esto, Inicio llamaba "Nueva
+            // venta" a la misma fila que el detalle llama "Deuda anterior" (v45).
+            "CASE WHEN movement.saleId IS NOT NULL AND EXISTS (" +
+            "SELECT 1 FROM sales AS s WHERE s.id = movement.saleId " +
+            "AND (s.notes = 'ALTA_CLIENTE_SALDO_ANTERIOR' " +
+            "OR EXISTS (SELECT 1 FROM sale_items AS i WHERE i.saleId = s.id " +
+            "AND i.productId IS NULL AND i.productNameSnapshot = 'Saldo anterior'))) " +
+            "THEN 1 ELSE 0 END AS isPriorDebt " +
             "FROM account_movements AS movement " +
             "INNER JOIN customers AS customer ON customer.id = movement.customerId " +
             "AND customer.businessId = movement.businessId " +

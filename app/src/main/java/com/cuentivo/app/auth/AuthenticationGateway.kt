@@ -95,6 +95,15 @@ interface AuthenticationGateway {
     fun linkGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit)
 
     /**
+     * Completes a Google sign-in with an idToken already obtained (v45).
+     *
+     * Exists so confirming a guest account switch does not re-open the Google account picker: the
+     * token from the failed link attempt is reused for `signInWithCredential`. The token is never
+     * logged or shown.
+     */
+    fun signInWithGoogleIdToken(idToken: String, onComplete: (GoogleAuthenticationResult) -> Unit)
+
+    /**
      * Forgets the credential the last Google flow left in Credential Manager. Called after every
      * sign-out so the next account picker is not pre-selected for a session that no longer exists.
      */
@@ -289,11 +298,31 @@ class FirebaseAuthenticationGateway(
                             GoogleAuthenticationResult.fromFirebaseErrorCode(
                                 (task.exception as? FirebaseAuthException)?.errorCode,
                                 email = googleEmail,
+                                // El token ya está en la mano: se devuelve para que confirmar el
+                                // cambio de cuenta no vuelva a abrir el selector (v45).
+                                idToken = idToken,
                             )
                         }
                     )
                 }
         }
+    }
+
+    override fun signInWithGoogleIdToken(idToken: String, onComplete: (GoogleAuthenticationResult) -> Unit) {
+        auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null))
+            .addOnCompleteListener { task ->
+                onComplete(
+                    if (task.isSuccessful) {
+                        val userId = task.result?.user?.uid
+                        if (userId != null) GoogleAuthenticationResult.SignedIn(userId)
+                        else GoogleAuthenticationResult.Failed
+                    } else {
+                        GoogleAuthenticationResult.fromFirebaseErrorCode(
+                            (task.exception as? FirebaseAuthException)?.errorCode,
+                        )
+                    }
+                )
+            }
     }
 
     override fun reauthenticateWithGoogle(activity: Activity, onComplete: (GoogleAuthenticationResult) -> Unit) {

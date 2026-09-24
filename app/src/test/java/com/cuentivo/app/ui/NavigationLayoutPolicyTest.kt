@@ -38,4 +38,32 @@ class NavigationLayoutPolicyTest {
         // The reserved clearance must clear that taller bar.
         assertTrue(NavigationLayoutPolicy.bottomBarClearanceFor(NavigationLayoutMode.COMPACT) >= 120.dp)
     }
+
+    /**
+     * Regresión del hallazgo v45: "Nueva venta" quedaba cortada en la barra etiquetada entre 360 y
+     * 411 dp. La acción central debe recibir más ancho que cada pestaña, y ese ancho debe alcanzar
+     * para la etiqueta más larga.
+     */
+    @Test fun la_accion_central_recibe_mas_ancho_que_una_pestana() {
+        assertTrue(
+            NavigationLayoutPolicy.LABELLED_SALE_ACTION_WEIGHT >
+                NavigationLayoutPolicy.LABELLED_DESTINATION_WEIGHT,
+        )
+    }
+
+    @Test fun el_ancho_de_la_accion_central_alcanza_para_la_etiqueta_mas_larga() {
+        // El ancho útil de la barra a 360 dp: 360 − 2×10 (inset) − 2×4 (padding) = 332 dp.
+        val barWidthDp = 360f - 2 * 10f - 2 * 4f
+        val totalWeight = 4 * NavigationLayoutPolicy.LABELLED_DESTINATION_WEIGHT +
+            NavigationLayoutPolicy.LABELLED_SALE_ACTION_WEIGHT
+        val saleItemWidthDp = barWidthDp * NavigationLayoutPolicy.LABELLED_SALE_ACTION_WEIGHT / totalWeight
+        // Menos el padding horizontal del ítem (2 dp por lado).
+        val saleLabelWidthDp = saleItemWidthDp - 2 * 2f
+
+        assertTrue(
+            "la etiqueta 'Nueva venta' necesita al menos " +
+                "${NavigationLayoutPolicy.SALE_LABEL_MIN_WIDTH_DP} dp y recibe $saleLabelWidthDp dp",
+            saleLabelWidthDp >= NavigationLayoutPolicy.SALE_LABEL_MIN_WIDTH_DP,
+        )
+    }
 }

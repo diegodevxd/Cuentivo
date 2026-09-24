@@ -169,7 +169,7 @@
     <string name="new_sale_back_description">Close new sale</string>
     <string name="new_sale_customer_label">Customer</string>
     <string name="new_sale_customer_placeholder">Tap to pick the customer</string>
-    <string name="new_sale_customer_empty">Add a customer first, on the Customers tab</string>
+    <string name="new_sale_customer_empty">You have no customers yet. Use Add customer to create the first one.</string>
     <string name="new_sale_customer_balance">Balance: %1$s</string>
     <string name="new_sale_section_customer">Customer</string>
     <string name="new_sale_section_products">Products</string>

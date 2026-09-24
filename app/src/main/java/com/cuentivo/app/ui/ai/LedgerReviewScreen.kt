@@ -287,15 +287,20 @@ fun LedgerReviewContent(
 
                 }
             }
-            item(key = "ledger-review-notices") {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // A page that did not fit, or whose text the model could not finish reading, must say so
-                // here. Confirming a partial import silently is how a notebook ends up half migrated with
-                // nobody aware which half is missing.
-                // Cuando además hay que confirmar la hoja, la frase va dentro de esa tarjeta, junto al botón:
-                // dos bloques seguidos diciendo lo mismo se comían el espacio de la lista de renglones.
-                val incompleteCardShown = summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed
-                if ((review.pageIncomplete || review.unreadTextRemaining) && !incompleteCardShown) {
+            // Cada aviso en su propio elemento de la lista, nunca dos dentro del mismo. El encabezado
+            // se partió en bloques en la v43 por esto mismo: un elemento que junta tarjetas y avisos
+            // crece por encima del alto de la pantalla y, en horizontal, la lista se queda recalculando
+            // en bucle (LedgerReviewRotationTest colgado). Éste era el último que aún los juntaba.
+            // Mismo orden y mismas condiciones que cuando compartían un solo elemento.
+            //
+            // A page that did not fit, or whose text the model could not finish reading, must say so
+            // here. Confirming a partial import silently is how a notebook ends up half migrated with
+            // nobody aware which half is missing.
+            // Cuando además hay que confirmar la hoja, la frase va dentro de esa tarjeta, junto al botón:
+            // dos bloques seguidos diciendo lo mismo se comían el espacio de la lista de renglones.
+            val incompleteCardShown = summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed
+            if ((review.pageIncomplete || review.unreadTextRemaining) && !incompleteCardShown) {
+                item(key = "ledger-review-incomplete-warning") {
                     Text(
                         text = stringResource(R.string.ai_ledger_page_incomplete_warning),
                         style = MaterialTheme.typography.bodySmall,
@@ -305,10 +310,12 @@ fun LedgerReviewContent(
                             .testTag("ledger-page-incomplete-warning"),
                     )
                 }
+            }
 
-                // Estos avisos van DENTRO de la columna. Estuvieron fuera de ella y se dibujaban flotando
-                // encima del título, con el texto transparente sobre la pantalla: parecía un error.
-                if (isRegistrationBlockedByLegacySave) {
+            // Estos avisos van DENTRO de la lista. Estuvieron fuera de ella y se dibujaban flotando
+            // encima del título, con el texto transparente sobre la pantalla: parecía un error.
+            if (isRegistrationBlockedByLegacySave) {
+                item(key = "ledger-review-legacy-save-blocked") {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(stringResource(R.string.ai_ledger_legacy_save_blocked))
@@ -316,8 +323,10 @@ fun LedgerReviewContent(
                         }
                     }
                 }
+            }
 
-                if (incompleteCardShown) {
+            if (incompleteCardShown) {
+                item(key = "ledger-review-page-completeness") {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -364,15 +373,15 @@ fun LedgerReviewContent(
                             }
                         }
                     }
-                } else if (summaryResult.pageIncompleteNoticeRequired) {
+                }
+            } else if (summaryResult.pageIncompleteNoticeRequired) {
+                item(key = "ledger-review-page-completeness-confirmed") {
                     Text(
                         stringResource(R.string.ai_ledger_page_completeness_confirmed),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.testTag("ledger-page-completeness-confirmed"),
                     )
-                }
-
                 }
             }
             item(key = "ledger-review-banner") {

@@ -209,6 +209,10 @@ fun NewSaleScreen(
                     optionDetail = { balanceFormat.format(Money.format(it.balanceCents)) },
                     emptyText = stringResource(R.string.new_sale_customer_empty),
                     onSelect = { customer = it },
+                    // La hoja vacía ofrece "Agregar cliente" en vez de mandar a la pestaña Clientes,
+                    // que ya no es la ruta para crear una clienta desde la venta (v45).
+                    emptyActionLabel = stringResource(R.string.customers_add_action),
+                    onEmptyAction = onAddCustomer,
                     // The section header above already says CLIENTE.
                     showLabel = false,
                 )
