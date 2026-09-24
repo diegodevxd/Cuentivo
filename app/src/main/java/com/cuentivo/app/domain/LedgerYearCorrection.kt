@@ -19,6 +19,22 @@ import java.time.LocalDate
 object LedgerYearCorrection {
 
     /**
+     * El año que un renglón **debería** tener: el de la página si la hay; si no, el de hoy. `null`
+     * sólo cuando no se conoce ninguno de los dos.
+     *
+     * Es la **única** definición de "el año correcto", y la usan las dos partes que tienen que estar
+     * de acuerdo: el plan de "Cambiar todos" ([targetYear]) y el motivo de la objeción de fecha.
+     * Antes sólo el plan usaba el respaldo de hoy, así que un renglón de 2023 en una hoja sin fecha
+     * se comparaba contra 2026 para la tarjeta de año y contra nada para el motivo: salía como "hace
+     * más de 6 meses" *y* contaba para "Cambiar todos", y las dos tarjetas aparecían juntas por los
+     * mismos doce renglones (v47). "Confirmar todos" aceptaba entonces las fechas de 2023.
+     */
+    fun expectedYearOrNull(pageDateEpochDay: Long?, todayEpochDay: Long?): Int? =
+        pageDateEpochDay
+            ?.let { runCatching { LocalDate.ofEpochDay(it).year }.getOrNull() }
+            ?: todayEpochDay?.let { runCatching { LocalDate.ofEpochDay(it).year }.getOrNull() }
+
+    /**
      * El año de la página si la hay; si no, el de hoy. Es el año al que se corrige un renglón con
      * `IMPLAUSIBLE_DATE`: la hoja misma es la mejor referencia, y hoy es el respaldo cuando la
      * página no trae fecha.
@@ -26,8 +42,7 @@ object LedgerYearCorrection {
      * La fecha de página que llega aquí ya pasó el filtro de "no futura", así que no se revalida.
      */
     fun targetYear(pageDateEpochDay: Long?, todayEpochDay: Long): Int =
-        pageDateEpochDay
-            ?.let { runCatching { LocalDate.ofEpochDay(it).year }.getOrNull() }
+        expectedYearOrNull(pageDateEpochDay, todayEpochDay)
             ?: LocalDate.ofEpochDay(todayEpochDay).year
 
     /**
