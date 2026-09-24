@@ -362,6 +362,12 @@ private fun CriticalCustomerRow(
 @Composable
 private fun ActivityRow(activity: DashboardActivity) {
     val visual = DashboardActivityPresentation.from(activity.type, activity.direction)
+    // Use the same localized label as the customer ledger; activity labels are rendered text too.
+    val label = if (activity.isPriorDebt) {
+        stringResource(R.string.detail_movement_prior_debt)
+    } else {
+        visual.label
+    }
     val accent = when (visual.accent) {
         DashboardActivityAccent.PAYMENT -> MaterialTheme.colorScheme.secondary
         DashboardActivityAccent.REFUND -> MaterialTheme.colorScheme.error
@@ -387,7 +393,7 @@ private fun ActivityRow(activity: DashboardActivity) {
                 .padding(horizontal = NeoSpacing.md),
         ) {
             Text(
-                text = visual.label,
+                text = label,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

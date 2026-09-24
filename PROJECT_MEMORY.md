@@ -9,24 +9,17 @@ Manda, en este orden:
 3. El código y sus pruebas para el comportamiento real.
 4. `CLAUDE.md` — arquitectura del repo y trampas del entorno; contrástalo con el código.
 
-**Última actualización: 2026-09-23.** v43 (`1.22.1`, code 43) sigue en Play. La v44 (`1.23.0`, code 44) está preparada localmente en `diegodevxd/v44-libreta`; **no se ha hecho push, tag ni publicación**.
+**Última actualización: 2026-09-23.** v44 (`1.23.0`, code 44) está integrada y subida en `diegodevxd/feature-cuentivo-ai`, commit de merge `2c5e5c5`; etiqueta anotada `v1.23.0-44`. La rama `diegodevxd/v44-libreta` también está en origin. El AAB verificado está en `dist/Cuentivo-v44-1.23.0.aab`.
 
-**v44 — commits locales:**
-- `ebcc161` — cierra los huecos de auditoría de la tanda 6.
-- `45e4ddd` — fija versión 44 / 1.23.0 y repara el ancla de la captura de abonos.
-- Tanda 6: “Cambiar todos” recibe sólo líneas con objeción `IMPLAUSIBLE_DATE`; una prueba mixta comprueba que una objeción de precio queda fuera. La vista previa de “Precio habitual” se verifica renderizando el composable real de producción. Al cerrar el detalle tras registrar, Inicio/Clientes queda visible y no reaparece la venta vacía.
-- Las tandas anteriores cubren refresco de Inicio/Clientes, fechas imposibles, posibles duplicados, borrado de cuenta con reautenticación, captura de hoja y restauración de la revisión.
+**v45 implementada localmente, sin release:** rama `diegodevxd/v45-prueba-interna`, basada en `diegodevxd/v44-libreta` (`4f8cff2`). `versionCode = 45`; `versionName` sigue `1.23.0` porque Diego no ha confirmado el nombre de parche. El detalle de clienta relee `FinancialDao.customerBalanceCents` por negocio/clienta al abrirse tras venta o abono; la prueba JVM ejercita ese seam y conserva el dato descriptivo de la fila.
 
-**Verificación completada:**
-- `testDebugUnitTest --rerun-tasks`: 1,358 casos desde XML, 0 fallos.
-- Gate Android release: `assembleDebug`, `compileDebugAndroidTestKotlin`, `assembleRelease`, `lintDebug`, `bundleRelease`; pasó. `bundleRelease --rerun-tasks` se reconstruyó después del commit local y pasó.
-- Suite conectada A059P (`00170157R000160`, Android 17 / API 37), con `leaveApksInstalledAfterRun=true`: 385 casos, 374 pasaron, 0 fallos/errores, 11 omitidos. Las omisiones son 1 prueba que requiere token App Check registrado y 10 pruebas de emulador Android para GuestCloudIsolation/Sync; no representan fallos.
-- `npm test`: 18 archivos / 491 pruebas; `npm run lint`: pasó. Gate de Functions con Firestore Emulator: 9/9. Recursos ES/EN: 686 strings + 14 plurals por idioma, claves iguales. El guard de textos no encontró texto de UI hardcodeado; la única coincidencia fue la etiqueta de animación Compose `waveform-bar`. `git diff --check`: pasó.
-- El test instrumentado mixto de entitlement usó `cuentivoAiExpectedDecision=AI_ENTITLEMENT_REQUIRED`, que es la respuesta actual de la cuenta del teléfono.
+También están implementados los detalles de prueba interna: la barra reserva más ancho para «Nueva venta»; Inicio identifica deuda anterior; el selector vacío ofrece «Agregar cliente»; la confirmación de cuenta Google reutiliza el idToken ya obtenido; y el plazo de Nuevo cliente se muestra junto a la deuda anterior. Se corrigió además la acción pendiente de correo/contraseña (`onConfirm`) que faltaba en `PendingAccountSwitch`.
 
-**AAB listo:** `dist/Cuentivo-v44-1.23.0.aab` (dist está ignorado por Git). `jarsigner -verify`: jar verified. SHA1: `25:05:8A:9C:F3:1F:D7:B4:1E:8E:B3:2D:9A:AB:8F:9F:7A:E8:1D:BF`. SHA256: `2141122797D6079AACB91509DCBD16C29CF442872F770F355AEC3728DA15F62E`; coincide con el AAB de `app/build/outputs/bundle/release/`.
+**Evidencia v45 local:** rojo TDD por `StatementCustomerRefresh.fromLedger` ausente; verde al implementarlo. `testDebugUnitTest`: **1,369**, 0 fallos, 0 errores. `compileDebugAndroidTestKotlin` y `assembleDebug` pasaron. ES/EN: 686/686 claves. No se corrieron instrumentadas: A059P (`00170157R000160`) conserva v44 de Play y no se tocó. No se consultó ni modificó Firestore/Auth de producción.
 
-**Siguiente paso:** esperar la instrucción explícita de Diego antes de subir la rama o crear/publicar una etiqueta. No hacer push ni publicar a Play antes de eso.
+El caso de sync Gratis/Firestore sigue sin confirmar: no hay evidencia local de si «Rosa Martinez» llegó a la nube; no afirmarlo. No hubo bundle, tag, commit, push ni publicación.
+
+**Siguiente:** auditar la tanda y, sólo con autorización y un emulador seguro, completar gate v45/instrumentadas. Antes de bundle/push/publicación, confirmar `versionName` y autorización expresa de Diego.
 
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 

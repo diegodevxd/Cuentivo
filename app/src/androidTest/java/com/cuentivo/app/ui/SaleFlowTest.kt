@@ -3,6 +3,7 @@ package com.cuentivo.app.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
@@ -31,9 +32,11 @@ import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.domain.SaleDraft
+import com.cuentivo.app.domain.StatementCustomerRefresh
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.transaction.NEW_SALE_LIST_TAG
 import com.cuentivo.app.ui.transaction.SALE_TOTAL_TAG
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -99,6 +102,29 @@ class SaleFlowTest {
         composeRule.onAllNodesWithContentDescription("Cerrar nueva venta").assertCountEquals(0)
         composeRule.onNodeWithTag("main-destination-home").assertIsSelected()
         composeRule.onNodeWithTag("main-action-new-sale").assertIsNotSelected()
+    }
+
+    /**
+     * Regresión del hallazgo bloqueante de la v45: tras registrar una venta, el detalle de la
+     * clienta mostraba el saldo viejo ("Te debe $150" después de vender $75 sobre $150).
+     *
+     * El harness controla el resultado que devolvería el ledger después de la venta; el refresco usa
+     * `StatementCustomerRefresh.fromLedger` de producción y el detalle Compose real. MainActivity
+     * conecta ese mismo método a `FinancialDao.customerBalanceCents`.
+     */
+    @Test fun el_detalle_tras_registrar_una_venta_muestra_el_saldo_nuevo() {
+        composeRule.setContent { Harness(openDetailOnSale = true, ledgerBalanceAfterSale = 22_500) }
+
+        openSale()
+        chooseCustomer("Juan Pérez")
+        chooseProduct("Café molido 500 g")
+        addToCart()
+        register()
+
+        // El detalle se abre con el saldo releído del libro mayor, no con el de la fila capturada.
+        composeRule.onNodeWithText("Detalle de Cliente").assertIsDisplayed()
+        composeRule.onAllNodesWithText(Money.format(22_500), substring = true)[0].assertIsDisplayed()
+        composeRule.onAllNodesWithText(Money.format(480_050), substring = true).assertCountEquals(0)
     }
 
     @Test fun opening_from_a_customer_preselects_that_customer() {
@@ -356,8 +382,13 @@ class SaleFlowTest {
          * harness owns it exactly as MainActivity does.
          */
         openDetailOnSale: Boolean = false,
+        /**
+         * Saldo controlado que representa la lectura posterior a la venta.
+         */
+        ledgerBalanceAfterSale: Long? = null,
     ) {
         var open by remember { mutableStateOf(openCustomer) }
+        val statementScope = rememberCoroutineScope()
         CuentivoApp(
             state = DashboardUiState.Content("business-1", "Mi negocio", 480_050, 0, 0, 0, 1),
             customers = CUSTOMERS,
@@ -367,7 +398,15 @@ class SaleFlowTest {
             onDismissStatement = { open = null },
             onCreateSale = { customer, draft ->
                 createdSales += customer to draft
-                if (openDetailOnSale) open = customer
+                if (openDetailOnSale) {
+                    statementScope.launch {
+                        open = StatementCustomerRefresh.fromLedger(
+                            row = customer,
+                            businessId = customer.customer.businessId,
+                            customerBalanceCents = { _, _ -> ledgerBalanceAfterSale ?: customer.balanceCents },
+                        )
+                    }
+                }
             },
         )
     }

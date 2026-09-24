@@ -63,6 +63,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
+import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.R
 import com.cuentivo.app.ui.NeoShapes
@@ -167,6 +168,16 @@ internal fun <T> NeoSelectorField(
      * mistake rather than as emphasis.
      */
     showLabel: Boolean = true,
+    /**
+     * Acción ofrecida dentro de la hoja cuando no hay opciones (v45).
+     *
+     * El selector de clientas vacío decía "Primero agrega un cliente en la pestaña Clientes", pero
+     * esa pestaña ya no es la ruta: el formulario de Nueva venta tiene su propio "Agregar cliente".
+     * Mandar a otra pestaña era un callejón. Cuando se pasa esta acción, la hoja la ofrece en su
+     * lugar y la persona crea la clienta sin salir de la venta.
+     */
+    emptyActionLabel: String? = null,
+    onEmptyAction: (() -> Unit)? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     Card(
@@ -255,6 +266,15 @@ internal fun <T> NeoSelectorField(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // La hoja vacía ofrece la ruta real en vez de mandar a otra pestaña (v45).
+                    if (options.isEmpty() && emptyActionLabel != null && onEmptyAction != null) {
+                        NeoAction(
+                            label = emptyActionLabel,
+                            onClick = { open = false; onEmptyAction() },
+                            modifier = Modifier.fillMaxWidth(),
+                            primary = false,
+                        )
+                    }
                 }
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),

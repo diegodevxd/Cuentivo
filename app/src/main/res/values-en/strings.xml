@@ -169,7 +169,7 @@
     <string name="new_sale_back_description">Close new sale</string>
     <string name="new_sale_customer_label">Customer</string>
     <string name="new_sale_customer_placeholder">Tap to pick the customer</string>
-    <string name="new_sale_customer_empty">Add a customer first, on the Customers tab</string>
+    <string name="new_sale_customer_empty">You have no customers yet. Use Add customer to create the first one.</string>
     <string name="new_sale_customer_balance">Balance: %1$s</string>
     <string name="new_sale_section_customer">Customer</string>
     <string name="new_sale_section_products">Products</string>
@@ -732,9 +732,12 @@
     <string name="ai_ledger_objection_price_mismatch">Price does not match your registered product</string>
     <string name="ai_ledger_objection_unusual_cents">Unusual cents on this page</string>
     <string name="ai_ledger_objection_customer_confirmation">This customer already exists, confirm before registering</string>
-    <string name="ai_ledger_objection_implausible_date">This row date does not look possible (different year than the page, too old, or in the future): check the year before continuing</string>
+    <string name="ai_ledger_objection_implausible_date">This row date does not look possible: check the year before continuing</string>
+    <string name="ai_ledger_objection_date_old">This date is more than 6 months old. Is it correct?</string>
+    <string name="ai_ledger_objection_date_future">This date is still in the future. Check the day and the month.</string>
     <string name="ai_ledger_action_confirm_objection">Yes, it is correct</string>
     <string name="ai_ledger_action_confirm_duplicate">Yes, it is another sale</string>
+    <string name="ai_ledger_action_confirm_all_old_dates">Confirm all</string>
     <string name="ai_ledger_action_change_year">Change to %1$d</string>
     <string name="ai_ledger_action_change_all">Change all</string>
     <plurals name="ai_ledger_year_bulk_question">
@@ -744,6 +747,10 @@
     <plurals name="ai_ledger_year_bulk_question_mixed">
         <item quantity="one">%1$d row has a different year than the page. Change it to %2$d?</item>
         <item quantity="other">%1$d rows have a different year than the page. Change them to %2$d?</item>
+    </plurals>
+    <plurals name="ai_ledger_old_dates_bulk_question">
+        <item quantity="one">%1$d row is more than 6 months old. Is it correct?</item>
+        <item quantity="other">%1$d rows are more than 6 months old. Are they correct?</item>
     </plurals>
     <string name="ai_ledger_pending_in_doubt">+ %1$s to review</string>
     <string name="ai_ledger_action_show_details">See why</string>

@@ -7,6 +7,8 @@ import com.cuentivo.app.domain.OpeningBalance
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -111,6 +113,10 @@ class PriorDebtSalesTotalTest {
         assertEquals(10_000L, dao.salesTotalCents("biz", day, day))
         // Y sí cuenta en "por cobrar": la deuda existe, sólo no es venta del mes.
         assertEquals(25_000L, dao.businessReceivableCents("biz"))
+
+        val activity = dao.recentDashboardActivity("biz", limit = 10).associateBy { it.id }
+        assertTrue(activity.getValue("charge-prior").isPriorDebt)
+        assertFalse(activity.getValue("charge-real").isPriorDebt)
     }
 
     @Test fun una_deuda_anterior_vieja_sin_marcador_tambien_se_excluye() = runBlocking {

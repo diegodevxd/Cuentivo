@@ -3,6 +3,7 @@ package com.cuentivo.app.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
@@ -23,11 +24,13 @@ import androidx.compose.ui.test.performTextInput
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.domain.Money
+import com.cuentivo.app.domain.StatementCustomerRefresh
 import com.cuentivo.app.R
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.transaction.PAYMENT_BALANCE_TAG
 import com.cuentivo.app.ui.transaction.PAYMENT_LIST_TAG
 import com.cuentivo.app.ui.transaction.PAYMENT_RESULT_TAG
+import kotlinx.coroutines.launch
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -86,6 +89,27 @@ class PaymentFlowTest {
 
         // 480_050 − 20_050.
         composeRule.onNodeWithTag(PAYMENT_RESULT_TAG).assertTextEquals(Money.format(460_000))
+    }
+
+    /**
+     * Regresión del hallazgo bloqueante de la v45, camino del abono: tras registrar $100 sobre una
+     * deuda de $225, el detalle mostraba "Te debe $225" en vez de $125.
+     *
+     * El harness controla el resultado que devolvería el ledger después del abono; el refresco usa
+     * `StatementCustomerRefresh.fromLedger` de producción y el detalle Compose real. MainActivity
+     * conecta ese mismo método a `FinancialDao.customerBalanceCents`.
+     */
+    @Test fun el_detalle_tras_registrar_un_abono_muestra_el_saldo_nuevo() {
+        composeRule.setContent { Harness(openDetailOnPayment = true, ledgerBalanceAfterPayment = 12_500) }
+        openPayments()
+        choose("Juan Pérez")
+        typeAmount("100")
+
+        save()
+
+        composeRule.onNodeWithText("Detalle de Cliente").assertIsDisplayed()
+        composeRule.onAllNodesWithText(Money.format(12_500), substring = true)[0].assertIsDisplayed()
+        composeRule.onAllNodesWithText(Money.format(480_050), substring = true).assertCountEquals(0)
     }
 
     @Test fun the_callback_receives_the_exact_cents() {
@@ -189,15 +213,36 @@ class PaymentFlowTest {
     private val payments = mutableListOf<Pair<String, Long>>()
 
     @Composable
-    private fun Harness() {
+    private fun Harness(
+        /**
+         * Cuando es true, el `onCreatePayment` del harness reproduce lo que hace producción tras un
+         * abono exitoso: abre el detalle de esa clienta. `statementCustomer` es del host, así que el
+         * harness lo posee igual que `MainActivity`.
+         */
+        openDetailOnPayment: Boolean = false,
+        /** Saldo controlado que representa la lectura posterior al abono. */
+        ledgerBalanceAfterPayment: Long? = null,
+    ) {
         var open by remember { mutableStateOf<CustomerBalanceRow?>(null) }
+        val statementScope = rememberCoroutineScope()
         CuentivoApp(
             state = DashboardUiState.Content("business-1", "Mi negocio", 570_050, 0, 0, 0, 2),
             customers = CUSTOMERS,
             statementCustomer = open,
             onShowStatement = { open = it },
             onDismissStatement = { open = null },
-            onCreatePayment = { customer, cents -> payments += customer.customer.id to cents },
+            onCreatePayment = { customer, cents ->
+                payments += customer.customer.id to cents
+                if (openDetailOnPayment) {
+                    statementScope.launch {
+                        open = StatementCustomerRefresh.fromLedger(
+                            row = customer,
+                            businessId = customer.customer.businessId,
+                            customerBalanceCents = { _, _ -> ledgerBalanceAfterPayment ?: customer.balanceCents },
+                        )
+                    }
+                }
+            },
         )
     }
 

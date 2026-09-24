@@ -73,6 +73,7 @@ import com.cuentivo.app.domain.LedgerDeterministicObjectionType
 import com.cuentivo.app.domain.LedgerDueDatePolicy
 import com.cuentivo.app.domain.LedgerFieldHealth
 import com.cuentivo.app.domain.LedgerImportSummaryCalculator
+import com.cuentivo.app.domain.LedgerOldDatesBulkCorrection
 import com.cuentivo.app.domain.LedgerYearBulkCorrection
 import com.cuentivo.app.domain.LedgerYearCorrection
 import com.cuentivo.app.domain.ProductCandidate
@@ -190,6 +191,12 @@ fun LedgerReviewContent(
             todayEpochDay = today,
         )
     }
+    // Las fechas simplemente viejas (v46): con deudas de hace meses el año ya está bien, y
+    // confirmarlas una por una son doce diálogos por algo que no es un error. Sólo se ofrecen en
+    // bloque desde dos, y la lista de índices la decide el objeto puro, no la pantalla.
+    val oldDatesBulkLineIndices = remember(objections) {
+        LedgerOldDatesBulkCorrection.lineIndices(objections)
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -257,6 +264,15 @@ fun LedgerReviewContent(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            if (oldDatesBulkLineIndices.isNotEmpty()) item(key = "ledger-review-old-dates-bulk") {
+                OldDatesBulkCard(
+                    count = oldDatesBulkLineIndices.size,
+                    // Mismo `onConfirmObjection` que el diálogo del renglón: la confirmación lleva la
+                    // huella de fecha y tipo, así que si después cambian la fecha vuelve a objetar.
+                    onApply = { oldDatesBulkLineIndices.forEach { lineIndex -> onConfirmObjection(lineIndex) } },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (hasRowsWithoutDate) item(key = "ledger-review-page-date") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Page date selector: shown ONLY when at least one registrable operation lacks a date
@@ -287,15 +303,20 @@ fun LedgerReviewContent(
 
                 }
             }
-            item(key = "ledger-review-notices") {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // A page that did not fit, or whose text the model could not finish reading, must say so
-                // here. Confirming a partial import silently is how a notebook ends up half migrated with
-                // nobody aware which half is missing.
-                // Cuando además hay que confirmar la hoja, la frase va dentro de esa tarjeta, junto al botón:
-                // dos bloques seguidos diciendo lo mismo se comían el espacio de la lista de renglones.
-                val incompleteCardShown = summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed
-                if ((review.pageIncomplete || review.unreadTextRemaining) && !incompleteCardShown) {
+            // Cada aviso en su propio elemento de la lista, nunca dos dentro del mismo. El encabezado
+            // se partió en bloques en la v43 por esto mismo: un elemento que junta tarjetas y avisos
+            // crece por encima del alto de la pantalla y, en horizontal, la lista se queda recalculando
+            // en bucle (LedgerReviewRotationTest colgado). Éste era el último que aún los juntaba.
+            // Mismo orden y mismas condiciones que cuando compartían un solo elemento.
+            //
+            // A page that did not fit, or whose text the model could not finish reading, must say so
+            // here. Confirming a partial import silently is how a notebook ends up half migrated with
+            // nobody aware which half is missing.
+            // Cuando además hay que confirmar la hoja, la frase va dentro de esa tarjeta, junto al botón:
+            // dos bloques seguidos diciendo lo mismo se comían el espacio de la lista de renglones.
+            val incompleteCardShown = summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed
+            if ((review.pageIncomplete || review.unreadTextRemaining) && !incompleteCardShown) {
+                item(key = "ledger-review-incomplete-warning") {
                     Text(
                         text = stringResource(R.string.ai_ledger_page_incomplete_warning),
                         style = MaterialTheme.typography.bodySmall,
@@ -305,10 +326,12 @@ fun LedgerReviewContent(
                             .testTag("ledger-page-incomplete-warning"),
                     )
                 }
+            }
 
-                // Estos avisos van DENTRO de la columna. Estuvieron fuera de ella y se dibujaban flotando
-                // encima del título, con el texto transparente sobre la pantalla: parecía un error.
-                if (isRegistrationBlockedByLegacySave) {
+            // Estos avisos van DENTRO de la lista. Estuvieron fuera de ella y se dibujaban flotando
+            // encima del título, con el texto transparente sobre la pantalla: parecía un error.
+            if (isRegistrationBlockedByLegacySave) {
+                item(key = "ledger-review-legacy-save-blocked") {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(stringResource(R.string.ai_ledger_legacy_save_blocked))
@@ -316,8 +339,10 @@ fun LedgerReviewContent(
                         }
                     }
                 }
+            }
 
-                if (incompleteCardShown) {
+            if (incompleteCardShown) {
+                item(key = "ledger-review-page-completeness") {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -364,15 +389,15 @@ fun LedgerReviewContent(
                             }
                         }
                     }
-                } else if (summaryResult.pageIncompleteNoticeRequired) {
+                }
+            } else if (summaryResult.pageIncompleteNoticeRequired) {
+                item(key = "ledger-review-page-completeness-confirmed") {
                     Text(
                         stringResource(R.string.ai_ledger_page_completeness_confirmed),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.testTag("ledger-page-completeness-confirmed"),
                     )
-                }
-
                 }
             }
             item(key = "ledger-review-banner") {
@@ -756,6 +781,59 @@ private fun YearBulkCard(
 }
 
 /**
+ * "N renglones son de hace más de 6 meses. ¿Son correctos?" (v46).
+ *
+ * El gemelo de [YearBulkCard] para el caso que no es un error: una libreta con deudas de meses. El
+ * año ya está bien y lo único que falta es que alguien diga "sí, esa deuda es de verdad". Sin esto
+ * eran doce aperturas de renglón para confirmar lo mismo doce veces.
+ *
+ * El conteo y los índices vienen de `LedgerOldDatesBulkCorrection`; aquí sólo se dibuja, y el botón
+ * usa el mismo `onConfirmObjection` del diálogo del renglón —con la huella de fecha y tipo, que
+ * caduca si la fecha cambia—.
+ */
+@Composable
+private fun OldDatesBulkCard(
+    count: Int,
+    onApply: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.testTag("ledger-old-dates-bulk-card"),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        ),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = pluralStringResource(
+                    R.plurals.ai_ledger_old_dates_bulk_question,
+                    count,
+                    count,
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Button(
+                onClick = onApply,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("ledger-old-dates-bulk-button"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary,
+                ),
+            ) {
+                Text(stringResource(R.string.ai_ledger_action_confirm_all_old_dates))
+            }
+        }
+    }
+}
+
+/**
  * El plazo de pago de la página entera: Sin fecha / 7 / 15 / 30 días, con 15 marcado.
  *
  * Reutiliza [DueOption] y sus textos —la misma pregunta y las mismas etiquetas de la venta
@@ -851,7 +929,17 @@ private fun ledgerObjectionMessage(objection: com.cuentivo.app.domain.LedgerDete
         com.cuentivo.app.domain.LedgerDeterministicObjectionType.PAGE_TOTAL_MISMATCH ->
             stringResource(R.string.ai_ledger_objection_page_total_mismatch, objection.declaredCents ?: 0L, objection.expectedCents ?: 0L)
         com.cuentivo.app.domain.LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE ->
-            stringResource(R.string.ai_ledger_objection_implausible_date)
+            // El motivo decide la frase (v46): mandar a "revisa el año" a quien tiene una deuda real
+            // de hace meses era el defecto — el año ya estaba bien y el aviso pedía lo mismo doce veces.
+            when (objection.dateReason) {
+                com.cuentivo.app.domain.LedgerImplausibleDateReason.TOO_OLD ->
+                    stringResource(R.string.ai_ledger_objection_date_old)
+                com.cuentivo.app.domain.LedgerImplausibleDateReason.FUTURE ->
+                    stringResource(R.string.ai_ledger_objection_date_future)
+                // YEAR_MISMATCH, y `null` por si una objeción vieja no trae motivo: el texto del año
+                // es el más prudente, porque el año es lo que la tarjeta grande sabe corregir.
+                else -> stringResource(R.string.ai_ledger_objection_implausible_date)
+            }
     }
 
 @Composable
@@ -1383,7 +1471,10 @@ private fun EditLedgerOperationDialog(
                 }
                 val objectionConfirmed = com.cuentivo.app.domain.LedgerObjectionConfirmation.isConfirmed(operation)
                 if (rowObjections.isNotEmpty() && !objectionConfirmed) {
-                    val implausibleDate = rowObjections.any { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }
+                    val implausibleDate = rowObjections.any {
+                        it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE &&
+                            it.dateReason == com.cuentivo.app.domain.LedgerImplausibleDateReason.YEAR_MISMATCH
+                    }
                     // El año al que se corrige: el de la página, o el de hoy si la hoja no trae
                     // fecha. La fecha conserva mes y día; el 29 de febrero cae al último día del mes.
                     val correctedYearDate = if (implausibleDate && todayEpochDay != null) {

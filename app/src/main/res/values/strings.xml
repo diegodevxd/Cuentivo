@@ -169,7 +169,7 @@
     <string name="new_sale_back_description">Cerrar nueva venta</string>
     <string name="new_sale_customer_label">Cliente</string>
     <string name="new_sale_customer_placeholder">Toca para elegir al cliente</string>
-    <string name="new_sale_customer_empty">Primero agrega un cliente en la pestaña Clientes</string>
+    <string name="new_sale_customer_empty">Todavía no tienes clientes. Usa Agregar cliente para crear el primero.</string>
     <string name="new_sale_customer_balance">Saldo: %1$s</string>
     <string name="new_sale_section_customer">Cliente</string>
     <string name="new_sale_section_products">Productos</string>
@@ -732,9 +732,12 @@
     <string name="ai_ledger_objection_price_mismatch">El precio no coincide con tu producto registrado</string>
     <string name="ai_ledger_objection_unusual_cents">Centavos inusuales en esta página</string>
     <string name="ai_ledger_objection_customer_confirmation">Este cliente ya existe, confírmalo antes de registrar</string>
-    <string name="ai_ledger_objection_implausible_date">La fecha de este renglón no parece posible (año distinto al de la página, demasiado vieja o futura): revisa el año antes de continuar</string>
+    <string name="ai_ledger_objection_implausible_date">La fecha de este renglón no parece posible: revisa el año antes de continuar</string>
+    <string name="ai_ledger_objection_date_old">Esta fecha es de hace más de 6 meses. ¿Es correcta?</string>
+    <string name="ai_ledger_objection_date_future">Esta fecha todavía no llega. Revisa el día y el mes.</string>
     <string name="ai_ledger_action_confirm_objection">Sí, es correcto</string>
     <string name="ai_ledger_action_confirm_duplicate">Sí, es otra venta</string>
+    <string name="ai_ledger_action_confirm_all_old_dates">Confirmar todos</string>
     <string name="ai_ledger_action_change_year">Cambiar a %1$d</string>
     <string name="ai_ledger_action_change_all">Cambiar todos</string>
     <plurals name="ai_ledger_year_bulk_question">
@@ -744,6 +747,10 @@
     <plurals name="ai_ledger_year_bulk_question_mixed">
         <item quantity="one">%1$d renglón trae un año distinto al de la hoja. ¿Lo cambio a %2$d?</item>
         <item quantity="other">%1$d renglones traen un año distinto al de la hoja. ¿Los cambio a %2$d?</item>
+    </plurals>
+    <plurals name="ai_ledger_old_dates_bulk_question">
+        <item quantity="one">%1$d renglón es de hace más de 6 meses. ¿Es correcto?</item>
+        <item quantity="other">%1$d renglones son de hace más de 6 meses. ¿Son correctos?</item>
     </plurals>
     <string name="ai_ledger_pending_in_doubt">+ %1$s por revisar</string>
     <string name="ai_ledger_action_show_details">Ver por qué</string>

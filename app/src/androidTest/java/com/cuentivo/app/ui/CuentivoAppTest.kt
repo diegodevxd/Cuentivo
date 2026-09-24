@@ -1,10 +1,14 @@
 package com.cuentivo.app.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertAny
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
@@ -15,22 +19,83 @@ import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
+import com.cuentivo.app.domain.DashboardActivity
+import com.cuentivo.app.ui.transaction.SELECTOR_SHEET_TAG
 import com.cuentivo.app.ui.dashboard.DashboardUiState
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
 class CuentivoAppTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun sale_navigation_label_fits_at_narrow_and_labelled_widths() {
+        val widthDp = mutableIntStateOf(360)
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
+                Box(Modifier.width(widthDp.intValue.dp)) {
+                    CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0))
+                }
+            }
+        }
+
+        listOf(360, 390, 411).forEach { targetWidthDp ->
+            composeRule.runOnIdle { widthDp.intValue = targetWidthDp }
+            composeRule.waitForIdle()
+
+            if (targetWidthDp == 360) {
+                // Safe insets can put a 360 dp root into compact mode; the sale action still spans
+                // the row and must keep its complete label there too.
+                composeRule.onNodeWithContentDescription("Inicio").assertIsDisplayed()
+                composeRule.onAllNodesWithText("Inicio").assertCountEquals(0)
+            } else {
+                // At 390 and 411 dp the labelled row is in use, so its destination label is visible.
+                composeRule.onNodeWithText("Inicio").assertIsDisplayed()
+            }
+            val saleAction = composeRule.onNodeWithContentDescription("Nueva venta")
+            saleAction.assertIsDisplayed()
+            saleAction.assertTextEquals("Nueva venta")
+            val allocatedWidth = saleAction.fetchSemanticsNode().boundsInRoot.width
+            assertTrue("a $targetWidthDp dp label should have at least 74 dp", allocatedWidth >= 74f)
+        }
+    }
+
+    @Test fun dashboard_uses_the_localized_prior_debt_label_from_the_customer_ledger() {
+        val priorDebt = DashboardActivity(
+            id = "movement-prior-debt",
+            customerId = "rosa",
+            customerName = "Rosa Martinez",
+            type = "CHARGE",
+            direction = "DEBIT",
+            amountCents = 15_000,
+            occurredAtEpochMillis = 1,
+            isPriorDebt = true,
+        )
+        composeRule.setContent {
+            CuentivoApp(
+                DashboardUiState.Content(
+                    "business-1", "Mi negocio", 15_000, 0, 0, 0, 1,
+                    recentActivity = listOf(priorDebt),
+                ),
+            )
+        }
+
+        composeRule.onNodeWithText("Deuda anterior").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Nueva venta").assertCountEquals(1)
+    }
 
     @Test fun empty_dashboard_explains_how_to_start() {
         composeRule.setContent { CuentivoApp(DashboardUiState.NoBusiness) }
@@ -152,9 +217,16 @@ class CuentivoAppTest {
         }
 
         composeRule.onNodeWithContentDescription("Nueva venta").performClick()
-        // The empty selector is not a dead end any more: the way to create the first customer is
-        // right here, and it opens the same form the Clientes tab owns.
-        composeRule.onNodeWithText("Agregar cliente").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("selector-cliente").performClick()
+        val customerSheet = composeRule.onNodeWithTag(SELECTOR_SHEET_TAG)
+        customerSheet.assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "Todavía no tienes clientes. Usa Agregar cliente para crear el primero.",
+        ).assertIsDisplayed()
+        // Scope the action to the open selector sheet; the sale form also has an Add customer
+        // action behind it, so a global text match would let that unrelated button hide a regression.
+        customerSheet.onChildren().assertAny(hasText("Agregar cliente"))
+        customerSheet.onChildren().filterToOne(hasText("Agregar cliente")).performClick()
         composeRule.onNodeWithText("Nuevo cliente").assertIsDisplayed()
     }
 

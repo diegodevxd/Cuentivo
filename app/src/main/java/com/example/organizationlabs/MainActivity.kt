@@ -95,10 +95,13 @@ import com.cuentivo.app.domain.OpeningBalance
 import com.cuentivo.app.domain.OpeningBalancePlanner
 import com.cuentivo.app.domain.SaleLineSummary
 import com.cuentivo.app.domain.SoldLine
+import com.cuentivo.app.domain.StatementCustomerRefresh
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.StatementImage
 import com.cuentivo.app.domain.BusinessClaim
 import com.cuentivo.app.domain.BusinessClaimPolicy
+import com.cuentivo.app.domain.DefaultBusinessCreationPolicy
+import com.cuentivo.app.domain.DefaultBusinessDecision
 import com.cuentivo.app.BuildConfig
 import com.cuentivo.app.domain.ShareTier
 import com.cuentivo.app.domain.SubscriptionTier
@@ -121,6 +124,7 @@ import com.cuentivo.app.ui.share.StatementImageShareStore
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.dashboard.DashboardViewModel
 import com.cuentivo.app.auth.FirebaseAuthenticationGateway
+import com.cuentivo.app.auth.GoogleAccountSwitchAction
 import com.cuentivo.app.auth.GoogleAuthenticationResult
 import com.cuentivo.app.notifications.CollectionReminderScheduler
 import com.cuentivo.app.observability.CrashEvent
@@ -206,6 +210,19 @@ private const val TAG = "MainActivity"
  * genuinely on the free plan does not think the app hung.
  */
 private const val ENTITLEMENT_WAIT_MILLIS = 8_000L
+
+/**
+ * Un cambio de cuenta de Google pendiente de confirmación (v45).
+ *
+ * Lleva el idToken que dejó el intento de enlace fallido para que, al confirmar, se complete el
+ * inicio de sesión sin volver a abrir el selector de Google. El token nunca se registra ni se
+ * muestra.
+ */
+private data class PendingAccountSwitch(
+    val targetEmail: String?,
+    val idToken: String? = null,
+    val onConfirm: (() -> Unit)? = null,
+)
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -800,6 +817,10 @@ class MainActivity : ComponentActivity() {
                 // recreate() refresh, which flashed the whole Activity and lost the active tab.
                 var refreshKey by remember { mutableStateOf(0) }
                 var uiMessage by remember { mutableStateOf<String?>(null) }
+                // El aviso "primero crea tu negocio" no puede ir sólo al snackbar: con el formulario
+                // de Nuevo cliente abierto, ese snackbar queda detrás del diálogo y la persona no ve
+                // por qué "Guardar" no hizo nada (v46). Este texto viaja al propio formulario.
+                var customerFormNotice by remember { mutableStateOf<String?>(null) }
                 var statementCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
                 var statementEntries by remember { mutableStateOf<List<StatementEntry>>(emptyList()) }
                 var saleCorrection by remember { mutableStateOf<SaleCorrection?>(null) }
@@ -994,6 +1015,44 @@ class MainActivity : ComponentActivity() {
                         )
                         database.businessDao().upsert(adopted)
                         membershipBootstrap.ensure(adopted)
+                        refreshKey++
+                    }
+                }
+
+                // El negocio se crea solo (v46). Una cuenta con sesión, sin negocio, se quedaba
+                // atorada: "Guardar" en Nuevo cliente no hacía nada y la foto de la libreta abría el
+                // chat sin cámara ni importar, porque el atajo sólo existe con negocio activo. La
+                // decisión —crear, esperar o no hacer nada— vive en el objeto puro; aquí sólo se
+                // ejecuta, y nunca antes de que el claim haya respondido ni después de que falle.
+                val defaultBusinessDecision = DefaultBusinessCreationPolicy.decide(
+                    claim = claim,
+                    hasLocalBusiness = hasLocalBusiness == true,
+                    waitingForEntitlement = waitingForEntitlement,
+                )
+                LaunchedEffect(currentUserId, defaultBusinessDecision) {
+                    if (defaultBusinessDecision != DefaultBusinessDecision.Create) return@LaunchedEffect
+                    val now = System.currentTimeMillis()
+                    // Idempotente de verdad: la comprobación y la escritura van en la misma
+                    // transacción, así que dos arranques seguidos —o dos recomposiciones que lleguen
+                    // a la vez— no crean dos negocios. Ese es el defecto que ya costó una cuenta con
+                    // nueve, y la razón de que el objeto puro sea tan estricto con el claim.
+                    val created = database.withTransaction {
+                        if (database.businessDao().firstOwnedBy(currentUserId) != null) {
+                            null
+                        } else {
+                            val business = BusinessEntity(
+                                UUID.randomUUID().toString(), BusinessName.DEFAULT, currentUserId,
+                                "MXN", "America/Mexico_City", now, now,
+                            )
+                            database.businessDao().insert(business)
+                            business
+                        }
+                    }
+                    if (created != null) {
+                        // Best effort pasado este punto, igual que la creación manual: la fila ya está
+                        // en Room y un fallo del outbox no puede ocultarla.
+                        syncQueue.enqueue(created.id, "BUSINESS", created.id, now, SyncPayloads.business(created))
+                        membershipBootstrap.ensure(created)
                         refreshKey++
                     }
                 }
@@ -1257,7 +1316,19 @@ class MainActivity : ComponentActivity() {
                         financialDao.correctionPaymentsForCustomer(businessId, row.customer.id),
                     )
                     cancelables = sales + payments
-                    statementCustomer = row
+                    // El saldo se relee del libro mayor, nunca se reusa el de la fila capturada al
+                    // navegar. Tras registrar una venta o un abono, el host llama a `loadStatement`
+                    // con la fila que tenía en la mano —la de antes de la escritura—, así que
+                    // confiar en `row.balanceCents` dejaba el detalle mostrando el saldo viejo
+                    // ("Te debe $150" tras una venta de $75 sobre $150) hasta salir y volver a
+                    // entrar. La regla de `CLAUDE.md` es explícita: el saldo se deriva, nunca de un
+                    // valor viejo. Se conserva el resto de la fila (nombre, teléfono, límite) y sólo
+                    // se refresca el monto, que es lo único que la escritura pudo mover.
+                    statementCustomer = StatementCustomerRefresh.fromLedger(
+                        row = row,
+                        businessId = businessId,
+                        customerBalanceCents = financialDao::customerBalanceCents,
+                    )
                     // "Cumplido en los últimos 6 meses", not "cumplido alguna vez": a payment that
                     // was late a year ago should stop weighing against the customer eventually.
                     val sinceEpochDay = LocalDate.now().minusMonths(6).toEpochDay()
@@ -1291,7 +1362,7 @@ class MainActivity : ComponentActivity() {
 
                 if (showAccountLinking) {
                     BackHandler { showAccountLinking = false }
-                    var pendingAccountSwitchAction by remember { mutableStateOf<Pair<String?, () -> Unit>?>(null) }
+                    var pendingAccountSwitchAction by remember { mutableStateOf<PendingAccountSwitch?>(null) }
                     val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
                     val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
                     val emailInUseMessage = stringResource(R.string.auth_email_in_use)
@@ -1337,6 +1408,37 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // Completa el cambio de cuenta reutilizando el idToken ya obtenido, sin volver a
+                    // abrir el selector de Google (v45). Si no hay token, cae al flujo completo.
+                    val completeGoogleSwitch: (String?) -> Unit = { idToken ->
+                        when (GoogleAccountSwitchAction.route(idToken)) {
+                            GoogleAccountSwitchAction.Route.REUSE_TOKEN -> {
+                                isAuthenticating = true
+                                authenticationMessage = null
+                                authenticationGateway.signInWithGoogleIdToken(requireNotNull(idToken)) { result ->
+                                    isAuthenticating = false
+                                    when (result) {
+                                        is GoogleAuthenticationResult.SignedIn -> {
+                                            authenticatedUserId = result.userId
+                                            showAccountLinking = false
+                                            verificationKey++
+                                        }
+                                        GoogleAuthenticationResult.ManualAccountNeedsPassword ->
+                                            authenticationMessage = googleManualPasswordMessage
+                                        is GoogleAuthenticationResult.AccountAlreadyExists ->
+                                            authenticationMessage = emailInUseMessage
+                                        GoogleAuthenticationResult.Failed -> {
+                                            authenticationMessage = googleFailedMessage
+                                            crashReporter.report(CrashEvent.AUTH_FAILURE)
+                                        }
+                                        GoogleAuthenticationResult.Cancelled -> Unit
+                                    }
+                                }
+                            }
+                            GoogleAccountSwitchAction.Route.RELAUNCH_PICKER -> performGoogleSignIn()
+                        }
+                    }
+
                     val handleGoogleResult: (GoogleAuthenticationResult) -> Unit = { result ->
                         isAuthenticating = false
                         when (result) {
@@ -1357,9 +1459,14 @@ class MainActivity : ComponentActivity() {
                                 )
                                 when (decision) {
                                     is AccountSwitchDecision.Confirm -> {
-                                        pendingAccountSwitchAction = Pair(targetEmail, performGoogleSignIn)
+                                        // El token viaja con la confirmación: al aceptar se reutiliza
+                                        // en vez de pedir la cuenta otra vez (v45).
+                                        pendingAccountSwitchAction = PendingAccountSwitch(
+                                            targetEmail = targetEmail,
+                                            idToken = result.idToken,
+                                        )
                                     }
-                                    AccountSwitchDecision.Direct -> performGoogleSignIn()
+                                    AccountSwitchDecision.Direct -> completeGoogleSwitch(result.idToken)
                                 }
                             }
                             GoogleAuthenticationResult.Failed -> {
@@ -1371,8 +1478,9 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (pendingAccountSwitchAction != null) {
-                        val targetEmail = pendingAccountSwitchAction?.first
-                        val action = pendingAccountSwitchAction?.second
+                        val targetEmail = pendingAccountSwitchAction?.targetEmail
+                        val pendingToken = pendingAccountSwitchAction?.idToken
+                        val pendingConfirm = pendingAccountSwitchAction?.onConfirm
                         val count = customers.size
                         val messageText = if (!targetEmail.isNullOrBlank()) {
                             when (count) {
@@ -1395,7 +1503,10 @@ class MainActivity : ComponentActivity() {
                                 TextButton(
                                     onClick = {
                                         pendingAccountSwitchAction = null
-                                        action?.invoke()
+                                        // Google reutiliza el token ya obtenido; correo/contraseña
+                                        // reintenta su propio inicio de sesión.
+                                        if (pendingConfirm != null) pendingConfirm()
+                                        else completeGoogleSwitch(pendingToken)
                                     },
                                 ) {
                                     Text(
@@ -1425,7 +1536,10 @@ class MainActivity : ComponentActivity() {
                             )
                             when (decision) {
                                 is AccountSwitchDecision.Confirm -> {
-                                    pendingAccountSwitchAction = Pair(email) { performSignIn(email, password) }
+                                    pendingAccountSwitchAction = PendingAccountSwitch(
+                                        targetEmail = email,
+                                        onConfirm = { performSignIn(email, password) },
+                                    )
                                 }
                                 AccountSwitchDecision.Direct -> performSignIn(email, password)
                             }
@@ -1452,7 +1566,10 @@ class MainActivity : ComponentActivity() {
                                             )
                                             when (decision) {
                                                 is AccountSwitchDecision.Confirm -> {
-                                                    pendingAccountSwitchAction = Pair(email) { performSignIn(email, password) }
+                                                    pendingAccountSwitchAction = PendingAccountSwitch(
+                                                        targetEmail = email,
+                                                        onConfirm = { performSignIn(email, password) },
+                                                    )
                                                 }
                                                 AccountSwitchDecision.Direct -> performSignIn(email, password)
                                             }
@@ -1804,11 +1921,15 @@ class MainActivity : ComponentActivity() {
                     val creditLimitCents = newCustomer.creditLimitCents
                     val quickSale = newCustomer.quickSale
                     val openingBalanceCents = newCustomer.openingBalanceCents
+                    // Cada intento empieza limpio: el aviso de abajo sólo vale para el intento que lo puso.
+                    customerFormNotice = null
                     val businessId = (state as? DashboardUiState.Content)?.businessId
                     if (businessId == null) {
-                        // The old return@CuentivoApp here was silent: the form had already closed
-                        // on the tap, and nothing told the person why nothing happened.
-                        uiMessage = getString(R.string.message_create_business_first)
+                        // Al snackbar y al propio formulario: con el diálogo abierto, el snackbar queda
+                        // detrás del diálogo y "Guardar" parece no hacer nada (v46).
+                        val notice = getString(R.string.message_create_business_first)
+                        uiMessage = notice
+                        customerFormNotice = notice
                         return@CuentivoApp
                     }
                     // Plan limit checked before writing: refusing after the insert would leave a
@@ -2794,7 +2915,9 @@ class MainActivity : ComponentActivity() {
                     CollectionReminderScheduler.sync(this@MainActivity)
                 }, openOverdueCustomers = openOverdueCustomersState.value,
                 onOpenOverdueCustomersConsumed = { openOverdueCustomersState.value = false },
-                message = uiMessage ?: accountMessageState.value, onMessageShown = {
+                message = uiMessage ?: accountMessageState.value,
+                customerFormNotice = customerFormNotice,
+                onMessageShown = {
                     uiMessage = null
                     accountMessageState.value = null
                 })

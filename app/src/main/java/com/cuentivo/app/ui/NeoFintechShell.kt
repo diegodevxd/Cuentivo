@@ -341,11 +341,17 @@ private fun LabelledNavigationRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        ShellDestination.HOME.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
-        ShellDestination.CUSTOMERS.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
-        NewSaleNavigationAction(onClick = onNewSale, modifier = Modifier.weight(1f), isActive = newSaleActive)
-        ShellDestination.PRODUCTS.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
-        ShellDestination.PAYMENTS.item(destination, onDestination, Modifier.weight(1f), showLabel = true)
+        ShellDestination.HOME.item(destination, onDestination, Modifier.weight(NavigationLayoutPolicy.LABELLED_DESTINATION_WEIGHT), showLabel = true)
+        ShellDestination.CUSTOMERS.item(destination, onDestination, Modifier.weight(NavigationLayoutPolicy.LABELLED_DESTINATION_WEIGHT), showLabel = true)
+        // La acción central pesa más que las pestañas: "Nueva venta" es la etiqueta más larga y a
+        // partes iguales quedaba cortada entre 360 y 411 dp (v45).
+        NewSaleNavigationAction(
+            onClick = onNewSale,
+            modifier = Modifier.weight(NavigationLayoutPolicy.LABELLED_SALE_ACTION_WEIGHT),
+            isActive = newSaleActive,
+        )
+        ShellDestination.PRODUCTS.item(destination, onDestination, Modifier.weight(NavigationLayoutPolicy.LABELLED_DESTINATION_WEIGHT), showLabel = true)
+        ShellDestination.PAYMENTS.item(destination, onDestination, Modifier.weight(NavigationLayoutPolicy.LABELLED_DESTINATION_WEIGHT), showLabel = true)
     }
 }
 

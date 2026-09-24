@@ -34,8 +34,30 @@ enum class LedgerDeterministicObjectionType {
      * es más de 180 días anterior a hoy, o es futura. En la práctica casi siempre es un
      * AÑO MAL LEÍDO por el modelo — una hoja fotografiada en 2026 leída como 2023 se
      * convierte, con el plazo, en "vencido hace 3 años" sin que nada lo frenara (v44).
+     *
+     * El **motivo** viaja aparte, en [LedgerDeterministicObjection.dateReason], porque los tres se
+     * arreglan distinto (v46): el año se corrige de golpe, la fecha vieja se confirma, y la futura
+     * es un día o mes mal leído. Un solo texto para los tres mandaba a "revisa el año" a quien tenía
+     * una deuda real de hace meses.
      */
     IMPLAUSIBLE_DATE,
+}
+
+/**
+ * Por qué una fecha resultó implausible (v46).
+ *
+ * Sin esto, los doce renglones de una libreta con deudas viejas seguían diciendo "revisa el año"
+ * después de que el año ya estaba bien, y la única salida era "Sí, es correcto" renglón por renglón.
+ */
+enum class LedgerImplausibleDateReason {
+    /** El año del renglón no es el de la página: casi siempre el modelo leyó mal el año. */
+    YEAR_MISMATCH,
+
+    /** Es más de [LedgerDeterministicObjections.MAX_PLAUSIBLE_AGE_DAYS] días anterior a hoy. Normal en una libreta de deudas viejas. */
+    TOO_OLD,
+
+    /** Todavía no llega: el día o el mes están mal. */
+    FUTURE,
 }
 
 data class LedgerDeterministicObjection(
@@ -44,6 +66,11 @@ data class LedgerDeterministicObjection(
     val detail: String? = null,
     val declaredCents: Long? = null,
     val expectedCents: Long? = null,
+    /**
+     * Sólo para [LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE]: cuál de los tres motivos fue.
+     * `null` en cualquier otra objeción.
+     */
+    val dateReason: LedgerImplausibleDateReason? = null,
 )
 
 object LedgerDeterministicObjections {
@@ -253,11 +280,23 @@ object LedgerDeterministicObjections {
                 // el planificador ya lo rechaza como fecha no resoluble.
                 val tooOld = rowEpoch != null && todayEpochDay != null && rowEpoch < todayEpochDay - MAX_PLAUSIBLE_AGE_DAYS
                 val isFuture = rowEpoch != null && todayEpochDay != null && rowEpoch > todayEpochDay
-                if (yearDiffersFromPage || tooOld || isFuture) {
+                // Precedencia (v46): el año manda sobre los otros dos. Si el año difiere del de la
+                // hoja, ése es el defecto accionable y el que corrige "Cambiar todos"; una fecha de
+                // 2023 en una hoja de 2026 también es "vieja", pero decir "hace más de 6 meses" no
+                // ayuda a nadie cuando lo que está mal es el año. Futura antes que vieja porque una
+                // fecha que todavía no llega nunca es una deuda de hace meses.
+                val reason = when {
+                    yearDiffersFromPage -> LedgerImplausibleDateReason.YEAR_MISMATCH
+                    isFuture -> LedgerImplausibleDateReason.FUTURE
+                    tooOld -> LedgerImplausibleDateReason.TOO_OLD
+                    else -> null
+                }
+                if (reason != null) {
                     objections.add(
                         LedgerDeterministicObjection(
                             lineIndex = lineIndex,
                             type = LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE,
+                            dateReason = reason,
                         ),
                     )
                 }
