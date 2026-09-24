@@ -9,13 +9,48 @@ Manda, en este orden:
 3. El código y sus pruebas para el comportamiento real.
 4. `CLAUDE.md` — arquitectura del repo y trampas del entorno; contrástalo con el código.
 
-**Última actualización: 2026-09-23.** v44 (`1.23.0`, code 44) está integrada y subida en `diegodevxd/feature-cuentivo-ai`, commit de merge `2c5e5c5`; etiqueta anotada `v1.23.0-44`. La rama `diegodevxd/v44-libreta` también está en origin. El AAB verificado está en `dist/Cuentivo-v44-1.23.0.aab`.
+**Última actualización: 2026-09-23 (noche).** **v47 (`1.23.3`, versionCode 47) está en PRODUCCIÓN.**
+`diegodevxd/feature-cuentivo-ai` = `a451f47` (merge de v47), en origin. Etiquetas `v1.23.0-44`, `v1.23.1-45`,
+`v1.23.2-46`, `v1.23.3-47`. AABs en `dist/Cuentivo-v4{4..7}-*.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
+**El próximo versionCode es 48.**
 
-**v46 (`1.23.2`)** en `diegodevxd/v46-negocio-y-fechas`, subida (`25d39c3`): el negocio se crea solo cuando la cuenta ya resolvió su claim y no tiene ninguno (idempotente, en transacción); el aviso "primero crea tu negocio" se dibuja dentro del formulario, no en un snackbar que queda detrás; y `IMPLAUSIBLE_DATE` distingue motivo (año / vieja / futura) con "Confirmar todos" para las viejas.
+**Qué trajo cada versión (todas probadas por Claude en el teléfono con la versión de Play):**
+- **v44 `1.23.0`**: libreta que refresca tras registrar, objeción de fecha imposible, posible duplicado
+  frena hasta "Sí, es otra venta", eliminar cuenta con reautenticación y marca durable, texto corto con
+  imagen, diálogo de revisión sin arrastrar datos, y el recorrido "Doña Mary" (plazo en deuda anterior y
+  en CuentivoAI, "Vendido" sin deuda anterior, navegación y lenguaje de tiendita).
+- **v45 `1.23.1`**: el detalle de la clienta muestra el saldo nuevo tras registrar venta/abono; elegir la
+  cuenta de Google una sola vez; "Nueva venta" sin recortar; deuda anterior en la actividad de Inicio.
+- **v46 `1.23.2`**: el negocio se crea solo (`DefaultBusinessCreationPolicy`); el aviso ya no queda tapado;
+  las fechas viejas tienen su propio mensaje y "Confirmar todos".
+- **v47 `1.23.3`**: "Cambiar todos" (año) y "Confirmar todos" (viejas) nunca salen juntas
+  (`LedgerYearCorrection.expectedYearOrNull`, una sola referencia de año).
 
-**v47 en curso, sin commit:** rama `diegodevxd/v47-giro-congelado` (desde `25d39c3`). Las tarjetas "Cambiar todos" (año) y "Confirmar todos" (viejas) ya no pueden salir juntas: el motivo del año usa la MISMA referencia que el plan de corrección (`LedgerYearCorrection.expectedYearOrNull`), así que sin fecha de página un renglón de 2023 deja de contarse como viejo. Antes, pulsar "Confirmar todos" primero aceptaba las fechas de 2023.
+**Pendientes, por prioridad:**
+1. **Revisión de libreta pesada**: tras corregir fechas quedan N renglones "con dudas" porque la IA duda
+   del **tipo**; hay que abrir y guardar cada uno. Idea: mostrar el tipo propuesto y confirmar en bloque,
+   o un "Siguiente" más rápido. Es comodidad, no error.
+2. **Cuelgue al girar (pendiente vigilado, baja prioridad).** `LedgerReviewRotationTest` se cuelga a veces
+   (~1 de 4, CPU 85-96 %, no es recomposición). Codex (`gpt-6-sol`) analizó: la `MainActivity` tiene
+   `configChanges="orientation|screenSize"`, así que **la recreación por giro que se cuelga sólo ocurre en
+   la Activity de laboratorio de la prueba**, no en la app real. Hipótesis principal: la tarjeta de una
+   clienta con varios renglones es un solo ítem más alto que la pantalla en horizontal. Siguiente paso
+   barato: marcas de tiempo en la prueba para saber en qué paso se atora. Análisis completo en
+   `C:/tmp/codex-analisis-congelamiento.md`; intento de OpenCode en `C:/tmp/oc-v47-reporte.md`. Si Diego o
+   su mamá lo ven en el teléfono real, pasa a prioridad.
+3. Idea de Laya: mover el borrado de cuenta a una Cloud Function con Admin SDK (más robusto que la marca
+   durable). Requiere deploy autorizado.
 
-**Pendiente vigilado — el cuelgue al girar (v47).** `LedgerReviewRotationTest` se colgó **1 de 4 veces** (CPU 85 %, GC sostenido) y **no es un bucle de recomposición** (menos de 40 composiciones en el cuelgue). No reproduce de forma fiable —ni corriendo 11 clases de libreta antes, ni arrancando en horizontal— y **no se toca**. La pila del hilo principal no se pudo capturar: el emulador no es rooteable. Detalle y qué falta en `C:/tmp/oc-v47-reporte.md`.
+**Cómo se trabajó (vigente):** Claude orquesta y prueba en el teléfono como "Doña Mary";
+**OpenCode con DeepSeek v4.1 Flash** implementa (sin delegar); **Codex `gpt-6-sol`** audita y analiza sólo
+lectura. Encargos en `docs/superpowers/encargos/2026-09-2*-v4*.md`.
+
+**Trampas del entorno aprendidas:** las suscripciones de prueba de Play de Diego (tester de licencias)
+**caducan en minutos**: para probar CuentivoAI hay que comprar justo antes. Correr instrumentadas en el
+teléfono con `leaveApksInstalledAfterRun=true` deja la app de debug, con otra firma: **desinstalarla**
+(`adb uninstall com.cuentivo.app` y `.test`) antes de instalar desde Play, o Play dice "No se puede
+instalar". La suite completa en el emulador se degrada tras ~230 pruebas ("System has crashed"): correrla
+por partes y arrancar el emulador en frío.
 
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 
