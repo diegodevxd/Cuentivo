@@ -162,6 +162,13 @@ fun CustomersScreen(
      * first composition is not treated as a reset.
      */
     resetToken: Int = 0,
+    /**
+     * Aviso que se dibuja dentro del formulario de Nuevo cliente (v46).
+     *
+     * Existe porque el snackbar del host queda detrás del diálogo: "primero crea tu negocio" era
+     * invisible justo cuando hacía falta, con el formulario abierto y "Guardar" sin hacer nada.
+     */
+    createFormNotice: String? = null,
 ) {
     val customersNewCustomerDescription = stringResource(R.string.customers_new_customer_description)
     var query by remember { mutableStateOf("") }
@@ -336,6 +343,7 @@ fun CustomersScreen(
             onConfirm = onCreateCustomer,
             onDismiss = { onShowFormChange(false) },
             isSaving = isSaving,
+            blockedNotice = createFormNotice,
         )
     }
     if (importingBalances) {
@@ -418,6 +426,11 @@ private fun CustomerFormDialog(
     formKey: Any? = Unit,
     note: String? = null,
     isSaving: Boolean = false,
+    /**
+     * Aviso por el que Guardar no puede proceder, dibujado aquí y no en un snackbar (v46): el
+     * snackbar vive detrás de este diálogo, así que la persona pulsaba Guardar y no veía nada.
+     */
+    blockedNotice: String? = null,
     /** Non-null only when creating: enables the optional "took something with them" section. */
     quickSaleTargetId: String? = null,
     /** Empty while editing, and empty for a shop that keeps no catalog. */
@@ -511,6 +524,16 @@ private fun CustomerFormDialog(
             onDismiss()
         },
     ) {
+        // Arriba y no al final: al fondo de un formulario largo el aviso queda fuera de la pantalla,
+        // que es la misma forma de "tapado" que el snackbar detrás del diálogo (v46).
+        blockedNotice?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth().testTag("customer-form-blocked-notice"),
+            )
+        }
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },

@@ -100,6 +100,8 @@ import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.StatementImage
 import com.cuentivo.app.domain.BusinessClaim
 import com.cuentivo.app.domain.BusinessClaimPolicy
+import com.cuentivo.app.domain.DefaultBusinessCreationPolicy
+import com.cuentivo.app.domain.DefaultBusinessDecision
 import com.cuentivo.app.BuildConfig
 import com.cuentivo.app.domain.ShareTier
 import com.cuentivo.app.domain.SubscriptionTier
@@ -815,6 +817,10 @@ class MainActivity : ComponentActivity() {
                 // recreate() refresh, which flashed the whole Activity and lost the active tab.
                 var refreshKey by remember { mutableStateOf(0) }
                 var uiMessage by remember { mutableStateOf<String?>(null) }
+                // El aviso "primero crea tu negocio" no puede ir sólo al snackbar: con el formulario
+                // de Nuevo cliente abierto, ese snackbar queda detrás del diálogo y la persona no ve
+                // por qué "Guardar" no hizo nada (v46). Este texto viaja al propio formulario.
+                var customerFormNotice by remember { mutableStateOf<String?>(null) }
                 var statementCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
                 var statementEntries by remember { mutableStateOf<List<StatementEntry>>(emptyList()) }
                 var saleCorrection by remember { mutableStateOf<SaleCorrection?>(null) }
@@ -1009,6 +1015,44 @@ class MainActivity : ComponentActivity() {
                         )
                         database.businessDao().upsert(adopted)
                         membershipBootstrap.ensure(adopted)
+                        refreshKey++
+                    }
+                }
+
+                // El negocio se crea solo (v46). Una cuenta con sesión, sin negocio, se quedaba
+                // atorada: "Guardar" en Nuevo cliente no hacía nada y la foto de la libreta abría el
+                // chat sin cámara ni importar, porque el atajo sólo existe con negocio activo. La
+                // decisión —crear, esperar o no hacer nada— vive en el objeto puro; aquí sólo se
+                // ejecuta, y nunca antes de que el claim haya respondido ni después de que falle.
+                val defaultBusinessDecision = DefaultBusinessCreationPolicy.decide(
+                    claim = claim,
+                    hasLocalBusiness = hasLocalBusiness == true,
+                    waitingForEntitlement = waitingForEntitlement,
+                )
+                LaunchedEffect(currentUserId, defaultBusinessDecision) {
+                    if (defaultBusinessDecision != DefaultBusinessDecision.Create) return@LaunchedEffect
+                    val now = System.currentTimeMillis()
+                    // Idempotente de verdad: la comprobación y la escritura van en la misma
+                    // transacción, así que dos arranques seguidos —o dos recomposiciones que lleguen
+                    // a la vez— no crean dos negocios. Ese es el defecto que ya costó una cuenta con
+                    // nueve, y la razón de que el objeto puro sea tan estricto con el claim.
+                    val created = database.withTransaction {
+                        if (database.businessDao().firstOwnedBy(currentUserId) != null) {
+                            null
+                        } else {
+                            val business = BusinessEntity(
+                                UUID.randomUUID().toString(), BusinessName.DEFAULT, currentUserId,
+                                "MXN", "America/Mexico_City", now, now,
+                            )
+                            database.businessDao().insert(business)
+                            business
+                        }
+                    }
+                    if (created != null) {
+                        // Best effort pasado este punto, igual que la creación manual: la fila ya está
+                        // en Room y un fallo del outbox no puede ocultarla.
+                        syncQueue.enqueue(created.id, "BUSINESS", created.id, now, SyncPayloads.business(created))
+                        membershipBootstrap.ensure(created)
                         refreshKey++
                     }
                 }
@@ -1877,11 +1921,15 @@ class MainActivity : ComponentActivity() {
                     val creditLimitCents = newCustomer.creditLimitCents
                     val quickSale = newCustomer.quickSale
                     val openingBalanceCents = newCustomer.openingBalanceCents
+                    // Cada intento empieza limpio: el aviso de abajo sólo vale para el intento que lo puso.
+                    customerFormNotice = null
                     val businessId = (state as? DashboardUiState.Content)?.businessId
                     if (businessId == null) {
-                        // The old return@CuentivoApp here was silent: the form had already closed
-                        // on the tap, and nothing told the person why nothing happened.
-                        uiMessage = getString(R.string.message_create_business_first)
+                        // Al snackbar y al propio formulario: con el diálogo abierto, el snackbar queda
+                        // detrás del diálogo y "Guardar" parece no hacer nada (v46).
+                        val notice = getString(R.string.message_create_business_first)
+                        uiMessage = notice
+                        customerFormNotice = notice
                         return@CuentivoApp
                     }
                     // Plan limit checked before writing: refusing after the insert would leave a
@@ -2867,7 +2915,9 @@ class MainActivity : ComponentActivity() {
                     CollectionReminderScheduler.sync(this@MainActivity)
                 }, openOverdueCustomers = openOverdueCustomersState.value,
                 onOpenOverdueCustomersConsumed = { openOverdueCustomersState.value = false },
-                message = uiMessage ?: accountMessageState.value, onMessageShown = {
+                message = uiMessage ?: accountMessageState.value,
+                customerFormNotice = customerFormNotice,
+                onMessageShown = {
                     uiMessage = null
                     accountMessageState.value = null
                 })

@@ -303,6 +303,13 @@ fun CuentivoApp(
     ledgerImportMetricDao: com.cuentivo.app.data.local.AiLedgerImportMetricDao? = null,
     businessQueryResolver: (suspend (businessId: String, proposal: com.cuentivo.app.ai.BusinessQueryProposal, choice: com.cuentivo.app.ai.AiEntityChoice?) -> com.cuentivo.app.ai.AiBusinessQueryResult)? = null,
     message: String? = null,
+    /**
+     * Aviso que debe verse **dentro** del formulario de Nuevo cliente (v46).
+     *
+     * El snackbar de [message] queda detrás del diálogo, así que "primero crea tu negocio" era
+     * invisible justo cuando hacía falta: con el formulario abierto y "Guardar" sin hacer nada.
+     */
+    customerFormNotice: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
     var destination by remember { mutableStateOf(MainDestination.HOME) }
@@ -650,6 +657,7 @@ fun CuentivoApp(
                 isSaving = isSavingCustomer,
                 initialFilter = if (pendingOverdueFilter) CustomerFilter.OVERDUE else null,
                 resetToken = customersResetToken,
+                createFormNotice = customerFormNotice,
             )
             MainDestination.PRODUCTS -> ProductsScreen(
                 products = products,
