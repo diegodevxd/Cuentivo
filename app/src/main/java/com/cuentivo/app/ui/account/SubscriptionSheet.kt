@@ -56,6 +56,9 @@ internal fun SubscriptionContent(
      * figure: see the parameter of the same name on `BillingGateway`.
      */
     aiPrice: String? = null,
+    /** Whole free-trial months Play offers for each plan; 0 = none. */
+    proTrialMonths: Int = 0,
+    aiTrialMonths: Int = 0,
     /** Whether the current session is an anonymous guest session. */
     isAnonymous: Boolean = false,
     /** Customer count used to contextualise the Pro cloud-backup value proposition. */
@@ -82,7 +85,7 @@ internal fun SubscriptionContent(
         PlanCard(
             name = stringResource(R.string.subscription_plan_pro),
             headline = stringResource(R.string.subscription_pro_limits),
-            price = proPrice?.let { stringResource(R.string.subscription_price_per_month, it) }
+            price = proPrice?.let { planPriceText(it, proTrialMonths) }
                 ?: stringResource(R.string.subscription_price_unknown),
             isCurrent = isPro,
         ) {
@@ -108,7 +111,7 @@ internal fun SubscriptionContent(
         PlanCard(
             name = stringResource(R.string.subscription_plan_ai),
             headline = stringResource(R.string.subscription_ai_limits),
-            price = aiPrice?.let { stringResource(R.string.subscription_price_per_month, it) }
+            price = aiPrice?.let { planPriceText(it, aiTrialMonths) }
                 ?: stringResource(R.string.subscription_price_unknown),
             isCurrent = isAi,
         ) {

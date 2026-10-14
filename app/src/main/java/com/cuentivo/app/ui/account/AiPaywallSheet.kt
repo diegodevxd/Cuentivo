@@ -50,6 +50,7 @@ fun AiPaywallSheet(
     modifier: Modifier = Modifier,
     /** AI's price as Play formats it, or null while not loaded. */
     aiPrice: String? = null,
+    aiTrialMonths: Int = 0,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -123,7 +124,7 @@ fun AiPaywallSheet(
             }
 
             // Price loaded from Play or fallback
-            val formattedPrice = aiPrice?.let { stringResource(R.string.subscription_price_per_month, it) }
+            val formattedPrice = aiPrice?.let { planPriceText(it, aiTrialMonths) }
                 ?: stringResource(R.string.subscription_price_unknown)
             Text(
                 text = formattedPrice,

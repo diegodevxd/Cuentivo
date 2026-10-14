@@ -67,6 +67,11 @@ class BillingGateway(
      */
     private val onPriceLoaded: (productId: String, formattedPrice: String?) -> Unit = { _, _ -> },
     /**
+     * Whole free-trial months Play offers this user for a product (0 = none, or already used).
+     * [onPriceLoaded] always carries the price *after* the trial.
+     */
+    private val onTrialLoaded: (productId: String, freeTrialMonths: Int) -> Unit = { _, _ -> },
+    /**
      * Dispatches captured purchase tokens for backend verification.
      * **Project Rule 4:** NEVER log or expose this token.
      */
@@ -211,7 +216,7 @@ class BillingGateway(
             onMessage(context.getString(com.cuentivo.app.R.string.billing_subscriptions_unavailable))
             return
         }
-        val offerToken = product.subscriptionOfferDetails?.firstOrNull()?.offerToken
+        val offerToken = selectOffer(product)?.offerToken
         if (offerToken == null) {
             onMessage(context.getString(com.cuentivo.app.R.string.billing_plan_not_available))
             return
@@ -362,18 +367,25 @@ class BillingGateway(
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                 details.productDetailsList.forEach { product ->
                     products[product.productId] = product
-                    val formattedPrice = product
-                        .subscriptionOfferDetails
-                        ?.firstOrNull()
-                        ?.pricingPhases
-                        ?.pricingPhaseList
-                        ?.firstOrNull()
-                        ?.formattedPrice
-                    onPriceLoaded(product.productId, formattedPrice)
+                    val offer = selectOffer(product)
+                    onPriceLoaded(product.productId, offer?.recurringPrice)
+                    onTrialLoaded(product.productId, offer?.freeTrialMonths ?: 0)
                 }
             }
         }
     }
+
+    private fun selectOffer(product: ProductDetails): SelectedOffer? =
+        SubscriptionOfferSelector.select(
+            product.subscriptionOfferDetails.orEmpty().map { details ->
+                OfferCandidate(
+                    offerToken = details.offerToken,
+                    phases = details.pricingPhases.pricingPhaseList.map {
+                        OfferPhase(it.priceAmountMicros, it.formattedPrice, it.billingPeriod)
+                    },
+                )
+            },
+        )
 
     /**
      * @param request the query this answer belongs to. Passed in rather than read from a field, so a

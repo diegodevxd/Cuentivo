@@ -266,6 +266,9 @@ fun CuentivoApp(
     proPrice: String? = null,
     /** AI's price as Play formats it, or null while it has not loaded. */
     aiPrice: String? = null,
+    /** Whole free-trial months Play offers for Pro / AI; 0 = none. */
+    proTrialMonths: Int = 0,
+    aiTrialMonths: Int = 0,
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
     /** Whether the current session is an anonymous guest session. */
@@ -765,6 +768,8 @@ fun CuentivoApp(
             },
             proPrice = proPrice,
             aiPrice = aiPrice,
+            proTrialMonths = proTrialMonths,
+            aiTrialMonths = aiTrialMonths,
             onSignOut = onSignOut,
             onDeleteAccount = onDeleteAccount,
             onDismiss = { showAccount = false },
@@ -789,6 +794,7 @@ fun CuentivoApp(
             },
             onDismiss = { showAiPaywall = false },
             aiPrice = aiPrice,
+            aiTrialMonths = aiTrialMonths,
         )
     }
     if (showLanguage) {

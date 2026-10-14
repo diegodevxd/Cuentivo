@@ -309,6 +309,8 @@ class MainActivity : ComponentActivity() {
      */
     private val proPriceState = mutableStateOf<String?>(null)
     private val aiPriceState = mutableStateOf<String?>(null)
+    private val proTrialMonthsState = mutableStateOf(0)
+    private val aiTrialMonthsState = mutableStateOf(0)
 
     /**
      * Whether Play has answered yet for the current account, which FREE alone cannot express.
@@ -429,6 +431,12 @@ class MainActivity : ComponentActivity() {
                 when (productId) {
                     SubscriptionTier.PRO_PRODUCT_ID -> proPriceState.value = formatted
                     SubscriptionTier.AI_PRODUCT_ID -> aiPriceState.value = formatted
+                }
+            },
+            onTrialLoaded = { productId, months ->
+                when (productId) {
+                    SubscriptionTier.PRO_PRODUCT_ID -> proTrialMonthsState.value = months
+                    SubscriptionTier.AI_PRODUCT_ID -> aiTrialMonthsState.value = months
                 }
             },
             onPurchaseTokenReceived = { token, productId, sessionUserId ->
@@ -1707,6 +1715,8 @@ class MainActivity : ComponentActivity() {
                         customerScores = customerScores,
                         proPrice = proPriceState.value,
                         aiPrice = aiPriceState.value,
+                        proTrialMonths = proTrialMonthsState.value,
+                        aiTrialMonths = aiTrialMonthsState.value,
                         accountLabel = authenticationGateway.currentUserEmail,
                         isAnonymous = authenticationGateway.isAnonymous,
                         onSignUp = { showAccountLinking = true },
