@@ -192,6 +192,28 @@ La única excepción a lo anterior es la **cancelación**: si el remoto trae una
 
 `RemoteMerger` lee el dinero con un lector que **rechaza `Double`** en vez de truncarlo — es exactamente por ahí por donde entraría dinero fraccionario a un sistema de centavos enteros. Un documento remoto malformado se descarta contando `rejected` sin abortar el lote.
 
+### CuentivoAI (`ai/` + `functions/`)
+
+Capacidad adicional y desactivable; `PROJECT.md` es la puerta de entrada y apunta al source of truth
+en `docs/superpowers/plans/2026-08-14-cuentivoai-source-of-truth.md`. La regla que condiciona todo
+el código de esta capa: **Gemini sólo propone intents y borradores tipados; nunca escribe dinero,
+Room, Firestore, inventario ni outbox.** La app resuelve datos reales, calcula, muestra una preview
+editable y ejecuta únicamente tras confirmación explícita e idempotente (`AiSaleExecution`,
+`AiPaymentExecution` → los mismos `*Idempotently` de `FinancialDao`). Por eso hay un `*Safety` /
+`*Policy` por cada salida del modelo (`AiDraftSafety`, `AiProposalSafety`, `AiBusinessScopePolicy`):
+son el filtro entre texto del modelo y el libro mayor.
+
+- **Cliente → servidor**: `FirebaseCallableAiGateway` llama Cloud Functions; el modelo nunca se
+  invoca desde el dispositivo. `FakeAiProvider` es el seam de pruebas.
+- **`functions/`** (Node/TS, Vitest): `interpretAiRequest`, `extractLedgerPage` (libreta por foto),
+  `authorizeAiAction`, `getAiAvailability`, `verifyAiSubscription` y
+  `handlePlayRtdnNotification` (suscripciones de Play). Los contratos viven en `contract.ts` y
+  `shared-fixtures/ledgerOperationFixtures.json` los comparte con las pruebas de la app: si cambias
+  un tipo de operación, cambia ambos lados.
+- Comandos de `functions/`: `npm test` (sin gate), `npm run test:firestore-emulator` (gate),
+  `npm run lint` (`tsc --noEmit`), `npm run release:check` (todo lo anterior, antes de desplegar).
+- Tablas propias en Room: `ai_daily_messages` (cupo diario) y `ai_ledger_import_metrics`.
+
 ### Roles y auditoría
 
 `domain/Permissions.kt` es el **espejo cliente** de las funciones de rol de `firestore.rules`. No es el punto de aplicación — el servidor decide. Existe porque esconder un botón no es un control de permisos: cualquier ruta que llegue a un DAO debe poder preguntar si el miembro actual puede hacer esto y recibir la misma respuesta que daría el servidor.
@@ -271,7 +293,7 @@ nadie, y el contenido mandado **al cliente** (`DebtorShareText`, `StatementImage
 `StatementLineFormat`, el CSV) se queda en español por decisión de Diego: sus clientes están en
 México.
 
-Y la paridad de claves debe seguir cuadrando (2026-09-22: 668 y 668; el 2026-09-06 eran 609). El
+Y la paridad de claves debe seguir cuadrando (2026-10-14: 689 y 689; el 2026-09-22 eran 668). El
 número envejece, así que cuenta, no confíes en esta línea:
 
 ```bash
