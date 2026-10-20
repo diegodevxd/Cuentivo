@@ -437,6 +437,52 @@ export type LedgerExtractionResult = Readonly<{
   pageTotals?: readonly LedgerPageTotal[];
 }>;
 
+/**
+ * Bloque OPCIONAL y ADITIVO de la verificación cruzada contra el Ledger de MexaLM.
+ *
+ * Aditivo es la palabra clave: cuando la bandera `MEXALM_LEDGER_CROSSCHECK` está apagada —que es
+ * como vive en producción— esta llave NO existe y la respuesta es byte a byte la de hoy. Cuando
+ * está encendida, la llave aparece y NO cambia ni una de las operaciones que Gemini devuelve: el
+ * desacuerdo se marca aquí adentro y el cliente Android decide después qué hacer con él.
+ *
+ * `agreed === true` es el único valor que significa "los dos lados dicen lo mismo". Un
+ * `agreed: false` significa "no se pudo afirmar que estén de acuerdo", y `ledgerStatus` dice si
+ * fue porque discrepan (`"OK"` con desacuerdos) o porque el Ledger no pudo veredicto.
+ */
+export type MexalmCrosscheckDisagreementField =
+  | "TYPE"
+  | "CUSTOMER"
+  | "AMOUNT"
+  | "MISSING_IN_LEDGER"
+  | "MISSING_IN_GEMINI";
+
+/**
+ * Lo que cada lado escribió del renglón. NUNCA lleva el `rawText`: el texto de la página no sale
+ * del servidor.
+ */
+export type MexalmCrosscheckOperationSummary = Readonly<{
+  proposedKind?: string;
+  customerName?: string;
+  amountCents?: string;
+}>;
+
+export type MexalmCrosscheckDisagreement = Readonly<{
+  /** Renglón de la página. Del lado de Gemini; si el renglón sólo existe en el Ledger, el suyo. */
+  lineIndex: number;
+  field: MexalmCrosscheckDisagreementField;
+  gemini?: MexalmCrosscheckOperationSummary;
+  ledger?: MexalmCrosscheckOperationSummary;
+}>;
+
+export type MexalmCrosscheckBlock = Readonly<{
+  agreed: boolean;
+  disagreements: readonly MexalmCrosscheckDisagreement[];
+  /** `status` del Ledger, verbatim. "OK" es el único que significa que hubo veredicto. */
+  ledgerStatus: string;
+  /** Ida y vuelta medida en el servidor. El del Ledger no se copia: se mide aquí. */
+  latencyMs: number;
+}>;
+
 export type ExtractLedgerPageResponseV3 = Readonly<{
   contractVersion: 3;
   requestId: string;
@@ -445,6 +491,7 @@ export type ExtractLedgerPageResponseV3 = Readonly<{
   discards: readonly LedgerDiscardDiagnostic[];
   unreadTextRemaining: boolean;
   pageIncomplete: boolean;
+  mexalmCrosscheck?: MexalmCrosscheckBlock;
 }>;
 
 export type ExtractLedgerPageResponseV4 = Readonly<{
@@ -456,6 +503,7 @@ export type ExtractLedgerPageResponseV4 = Readonly<{
   unreadTextRemaining: boolean;
   pageIncomplete: boolean;
   pageDate?: LedgerPageDate;
+  mexalmCrosscheck?: MexalmCrosscheckBlock;
 }>;
 
 export type ExtractLedgerPageResponseV5 = Omit<ExtractLedgerPageResponseV4, "contractVersion" | "operations"> & Readonly<{

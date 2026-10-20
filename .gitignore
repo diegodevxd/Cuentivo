@@ -51,3 +51,7 @@ backup-cuentivo-*/
 /functions/lib/
 /functions/node_modules/
 /functions/coverage/
+
+# Local env of the Functions emulator: it can hold the MexaLM ledger token. Never commit it.
+/functions/.env
+/functions/.env.*

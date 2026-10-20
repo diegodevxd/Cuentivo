@@ -1,0 +1,108 @@
+MEXALM_TEST_OUTPUT — verificación cruzada con el Ledger de MexaLM (TASK_CUENTIVO1)
+Fecha: 2026-10-20 10:24:47
+Worktree: C:/Users/pibed/Downloads/CUENTIVO_mexalm_ledger
+Rama: mexalm/ledger-crosscheck  Base: 76242e5
+Node: v24.18.0  npm: 11.16.0
+
+==============================================================================
+1) npm test  (vitest run) — suite completa: existentes + nuevas
+   Nota: vitest.config.ts sólo toma test/**/*.test.ts. El gate del emulador
+   NO va aquí; corre aparte en el punto 3.
+==============================================================================
+
+> functions@0.0.0 test
+> vitest run
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.10 C:/Users/pibed/Downloads/CUENTIVO_mexalm_ledger/functions
+
+
+ Test Files  19 passed (19)
+      Tests  519 passed (519)
+   Start at  10:24:48
+   Duration  1.34s (transform 2.33s, setup 0ms, import 4.46s, tests 1.44s, environment 3ms)
+
+
+==============================================================================
+2) npm run lint  (tsc -p tsconfig.json --noEmit)
+==============================================================================
+
+> functions@0.0.0 lint
+> tsc -p tsconfig.json --noEmit
+
+
+==============================================================================
+3) Gate del emulador de Firestore (npm run test:firestore-emulator)
+   El emulador se levantó aparte con el JAR cacheado de la máquina, en el puerto
+   8188 (el 8080 del firebase.json estaba ocupado por otro servicio):
+     java -jar ~/.cache/firebase/emulators/cloud-firestore-emulator-v1.22.0.jar \
+          --host=127.0.0.1 --port=8188
+   y luego, con FIRESTORE_EMULATOR_HOST=127.0.0.1:8188:
+==============================================================================
+
+> functions@0.0.0 test:firestore-emulator
+> node scripts/runFirestoreEmulatorTests.js
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.gate.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.10 C:/Users/pibed/Downloads/CUENTIVO_mexalm_ledger/functions
+
+(node:40288) MetadataLookupWarning: received unexpected error = All promises were rejected code = UNKNOWN
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  10:25:11
+   Duration  13.16s (transform 120ms, setup 0ms, import 513ms, tests 12.44s, environment 0ms)
+
+
+==============================================================================
+4) Verificación independiente: la salida con la bandera apagada es byte a byte
+   la del código de ANTES del cambio.
+==============================================================================
+
+   Se copió el archivo original (git show HEAD:functions/src/extractLedgerPage.ts)
+   a un temporal, se corrieron los dos handlers con la misma extracción y se
+   comparó el JSON serializado, para v3, v4 y v5. Duró 3 pruebas, todas verdes.
+   Después se borraron el temporal y su archivo de prueba: no quedan en el repo.
+
+   (El paso 4 no puede quedar como prueba permanente, porque el archivo original
+   no existe después del commit. Lo que sí queda permanente es la prueba
+   equivalente dentro de test/mexalmCrosscheck.test.ts: la respuesta con la
+   bandera apagada es igual a la que devuelve el handler sin la dependencia de
+   crosscheck, y además hay un snapshot en línea con los bytes exactos.)
+
+==============================================================================
+RESUMEN DE RESULTADOS
+==============================================================================
+  npm test ........................... 519 pruebas, 519 pasan, 0 fallan (19 archivos)
+  npm run lint ....................... limpio (tsc --noEmit, 0 errores)
+  gate del emulador de Firestore ..... 9 de 9 (comando aparte, como manda CLAUDE.md)
+  identidad byte a byte .............. 3 de 3 (v3, v4, v5) contra el código anterior
+
+  Pruebas nuevas: 28 en total.
+    - functions/test/mexalmCrosscheck.test.ts ....... 23
+    - functions/test/index.test.ts (guardas nuevos) ...  5
+
+  Lo que NO se corrió y por qué:
+    - La app Android: esta tarea no la toca, y el encargo lo pide explícitamente.
+    - El gate de Android (JVM, instrumentadas, lintDebug): sin cambios en app/ no
+      aplica, y exige Gradle con el trust store de Norton.
+    - "firebase emulators:exec": la receta de la skill usa "npx -y
+      firebase-tools@latest" y eso baja de la red. Esta tarea prohíbe usar la
+      red, así que el emulador se levantó con el JAR que ya estaba cacheado en
+      la máquina (puerto 8188, porque el 8080 del firebase.json estaba ocupado
+      por otro servicio). El gate corrió igual.
+
+  Nota honesta sobre el primer arranque en frío: la PRIMERA corrida de la suite
+  en esta máquina dio timeout (5000 ms) en
+  test/index.test.ts > "exports interpretAiRequest...", que es la que importa
+  src/index.ts completo (tarda ~6 s en importar firebase-admin y
+  firebase-functions con el disco frío). En caliente la misma prueba pasa en
+  menos de 1 s. No se tapa: la salida de arriba es de una corrida en caliente,
+  y la causa es el import, no el código.

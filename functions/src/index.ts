@@ -1,7 +1,7 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onMessagePublished } from "firebase-functions/v2/pubsub";
 import * as logger from "firebase-functions/logger";
-import { defineSecret } from "firebase-functions/params";
+import { defineBoolean, defineSecret, defineString } from "firebase-functions/params";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createInterpretAiHandler } from "./interpretAiRequest.js";
@@ -14,6 +14,8 @@ import { createAiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import { createFirestoreControlPlaneRepository } from "./ai/firestoreControlPlane";
 import { createGeminiTextProvider } from "./ai/geminiTextProvider";
 import { createGeminiLedgerProvider } from "./ai/geminiLedgerProvider";
+import { createMexalmLedgerClient } from "./ai/mexalmLedgerClient";
+import { createMexalmLedgerCrosschecker } from "./ai/mexalmCrosscheck";
 import { createDefaultPlaySubscriptionApi } from "./ai/playSubscriptionVerifier";
 import { createFirestoreSubscriptionEntitlementRepository } from "./ai/subscriptionEntitlementRepository";
 
@@ -38,6 +40,31 @@ const geminiApiKey = defineSecret("CUENTIVOAI_GEMINI_API_KEY");
 // Server-only Google Play service account credential. Bound exclusively to verifyAiSubscription;
 // never available to Android, other callables, logs or the repository.
 const playServiceAccountKey = defineSecret("CUENTIVOAI_PLAY_SERVICE_ACCOUNT_KEY");
+
+/**
+ * Verificación cruzada contra el Ledger de MexaLM. APAGADA por defecto.
+ *
+ * La bandera es un parámetro de Functions, no un secreto: es pública, se cambia sin redeploy y su
+ * valor tiene que ser exactamente "true" para encenderla. Apagada —como vive hoy— la respuesta de
+ * `extractLedgerPage` es byte a byte la de siempre: no se llama al Ledger y no aparece la llave
+ * `mexalmCrosscheck` en la respuesta.
+ */
+const mexalmLedgerCrosscheck = defineBoolean("MEXALM_LEDGER_CROSSCHECK", { default: false });
+
+/**
+ * Dónde vive el Ledger de MexaLM. No es secreto: es una dirección. Sin ella, la verificación
+ * cruzada no se puede encender aunque la bandera esté en "true".
+ */
+const mexalmLedgerUrl = defineString("MEXALM_LEDGER_URL", { default: "" });
+
+/**
+ * Server-only bearer token del Ledger de MexaLM. Bound exclusively to extractLedgerPage; never
+ * available to Android, other callables, logs or the repository.
+ *
+ * OJO AL DESPLEGAR: un secreto declarado en `secrets` tiene que EXISTIR en Secret Manager antes
+ * del deploy, o el deploy falla. Crear antes: `firebase functions:secrets:set MEXALM_LEDGER_TOKEN`.
+ */
+const mexalmLedgerToken = defineSecret("MEXALM_LEDGER_TOKEN");
 
 /**
  * Process-level warm-instance edge guard: a bounded cost mitigation, NOT a durable security
@@ -113,7 +140,13 @@ export const interpretAiRequest = onCall(
  * Longer timeout and more memory than the text path: a page carries an image in the request body.
  */
 export const extractLedgerPage = onCall(
-  { ...AI_BOUNDARY, timeoutSeconds: 60, memory: "512MiB", concurrency: 1, secrets: [geminiApiKey] },
+  {
+    ...AI_BOUNDARY,
+    timeoutSeconds: 60,
+    memory: "512MiB",
+    concurrency: 1,
+    secrets: [geminiApiKey, mexalmLedgerToken],
+  },
   async (request) => {
     const apiKey = geminiApiKey.value();
     const provider = apiKey
@@ -128,6 +161,28 @@ export const extractLedgerPage = onCall(
           },
         })
       : null;
+    // La verificación cruzada se arma sólo si la bandera está encendida Y hay con quién hablar.
+    // Apagada, `crosscheck` es null y el handler devuelve la respuesta de siempre, sin una llave
+    // de más.
+    const ledgerUrl = mexalmLedgerUrl.value();
+    const ledgerToken = mexalmLedgerToken.value();
+    const crosscheck =
+      mexalmLedgerCrosscheck.value() && ledgerUrl.length > 0 && ledgerToken.length > 0
+        ? createMexalmLedgerCrosschecker({
+            client: createMexalmLedgerClient({
+              baseUrl: ledgerUrl,
+              token: ledgerToken,
+              onFailure: (failure) => {
+                // Categoría y código HTTP. NUNCA el texto de la página: son nombres de clientas
+                // y montos, y un log no es el lugar de eso.
+                logger.warn("MEXALM_LEDGER_FAILURE", {
+                  category: failure.category,
+                  status: failure.status,
+                });
+              },
+            }),
+          })
+        : null;
     const repository = controlPlaneRepository();
     const result = await createExtractLedgerPageHandler({
       authorize: (input) => repository.authorize(input),
@@ -135,6 +190,7 @@ export const extractLedgerPage = onCall(
       provider,
       guard: aiEdgeGuard,
       now: () => Date.now(),
+      crosscheck,
       onRejected: (reason) => {
         logger.warn("AI_REJECTED", { reason });
       },

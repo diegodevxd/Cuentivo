@@ -114,4 +114,58 @@ describe("regional callable gateway", () => {
     expect(SOURCE).toContain("durationMillis");
     expect(SOURCE).not.toMatch(/AI_PROVIDER_(INVOCATION|LATENCY)[^;]*(requestId|proposal|request\.data|auth\.uid|text|prompt)/s);
   });
+
+  /**
+   * La verificación cruzada contra el Ledger de MexaLM vive detrás de una bandera APAGADA por
+   * defecto. Estos guardas son la forma de que nadie la encienda por accidente ni la quite sin
+   * querer: la bandera es un parámetro con default `false`, la URL es un parámetro y el token es
+   * un secreto declarado y ligado SÓLO a la callable de la libreta.
+   */
+  test("declares the crosscheck flag off by default and the ledger url as a parameter", () => {
+    expect(SOURCE).toContain('defineBoolean("MEXALM_LEDGER_CROSSCHECK", { default: false })');
+    expect(SOURCE).toContain('defineString("MEXALM_LEDGER_URL", { default: "" })');
+    expect(SOURCE).toContain('defineSecret("MEXALM_LEDGER_TOKEN")');
+  });
+
+  test("binds the ledger secret only to extractLedgerPage", () => {
+    const interpretIndex = SOURCE.indexOf("export const interpretAiRequest");
+    const extractIndex = SOURCE.indexOf("export const extractLedgerPage");
+    const authorizeIndex = SOURCE.indexOf("export const authorizeAiAction");
+    expect(interpretIndex).toBeGreaterThanOrEqual(0);
+    expect(extractIndex).toBeGreaterThan(interpretIndex);
+    expect(authorizeIndex).toBeGreaterThan(extractIndex);
+
+    const interpretBlock = SOURCE.slice(interpretIndex, extractIndex);
+    const extractBlock = SOURCE.slice(extractIndex, authorizeIndex);
+
+    expect(interpretBlock).not.toContain("mexalmLedgerToken");
+    expect(extractBlock).toContain("mexalmLedgerToken");
+    expect(extractBlock).toContain("secrets: [geminiApiKey, mexalmLedgerToken]");
+    expect(extractBlock).not.toContain("playServiceAccountKey");
+  });
+
+  test("reads the ledger secret value only inside the extractLedgerPage handler", () => {
+    const extractIndex = SOURCE.indexOf("export const extractLedgerPage");
+    const authorizeIndex = SOURCE.indexOf("export const authorizeAiAction");
+    const valueIndex = SOURCE.indexOf("mexalmLedgerToken.value()");
+    expect(valueIndex).toBeGreaterThan(extractIndex);
+    expect(valueIndex).toBeLessThan(authorizeIndex);
+  });
+
+  test("the crosscheck is wired only where the flag is on and never logs page text", () => {
+    const extractIndex = SOURCE.indexOf("export const extractLedgerPage");
+    const authorizeIndex = SOURCE.indexOf("export const authorizeAiAction");
+    const extractBlock = SOURCE.slice(extractIndex, authorizeIndex);
+    expect(extractBlock).toContain("mexalmLedgerCrosscheck.value()");
+    expect(extractBlock).toContain("createMexalmLedgerCrosschecker");
+    expect(extractBlock).toContain("crosscheck,");
+    expect(SOURCE).toContain('logger.warn("MEXALM_LEDGER_FAILURE"');
+    // El texto de la página son nombres de clientas y montos: al log no llega.
+    expect(SOURCE).not.toMatch(/logger\.(warn|error|info|log)\([^)]*(rawText|ocrText|pageText|ledgerText)/);
+  });
+
+  test("the composition root keeps no literal provider url for the ledger", () => {
+    expect(SOURCE).not.toContain("mexalm-ledger");
+    expect(SOURCE).not.toContain("huggingface.co");
+  });
 });

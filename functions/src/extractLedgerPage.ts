@@ -8,9 +8,11 @@ import {
   type LedgerOperationV3,
   type LedgerOperationV4,
   type LedgerOperationV5,
+  type MexalmCrosscheckBlock,
 } from "./contract";
 import { computeReferenceDate } from "./ai/geminiTextProvider.js";
 import type { LedgerExtractionProvider } from "./ai/geminiLedgerProvider.js";
+import type { MexalmLedgerCrosschecker } from "./ai/mexalmCrosscheck.js";
 import type { AiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import type { AuthorizeAiInput, AuthorizeAiResult } from "./ai/controlPlane";
 import type { CallableFailure, CallableLikeRequest } from "./interpretAiRequest";
@@ -25,6 +27,14 @@ export type ExtractLedgerPageCallableDeps = Readonly<{
   provider: LedgerExtractionProvider | null;
   guard: AiEdgeRequestGuard;
   now: () => number;
+  /**
+   * Verificación cruzada contra el Ledger de MexaLM. `null` (o ausente) significa APAGADA: no se
+   * llama al Ledger y la respuesta no lleva el bloque, o sea que es byte a byte la de hoy.
+   *
+   * La bandera no se lee aquí: esto es el seam, la decisión de encenderla es del composition root
+   * (`src/index.ts`), que es donde viven los parámetros de Functions.
+   */
+  crosscheck?: MexalmLedgerCrosschecker | null;
   onRejected?: (reason: "ANONYMOUS_SESSION") => void;
   onProviderInvocation?: () => void;
   onProviderLatency?: (durationMillis: number) => void;
@@ -41,12 +51,17 @@ export type ExtractLedgerPageCallableDeps = Readonly<{
  *
  * Every branch goes through here, not only the successful one. A rate limit or an outage assembled
  * by hand somewhere else is the same leak with fewer eyes on it.
+ *
+ * `crosscheck` is the ONE thing here that is optional by design: it is added at the END and only
+ * when it exists, so with the feature flag off this function produces exactly the bytes it produced
+ * before. It never rewrites an operation: it is a comment next to the page, not an edit of it.
  */
 function buildExtractLedgerResponse(
   contractVersion: 3 | 4 | 5,
   requestId: string,
   status: InterpretAiStatus,
   extraction: LedgerExtractionResult | null,
+  crosscheck: MexalmCrosscheckBlock | null = null,
 ): ExtractLedgerPageResponse {
   if (contractVersion === 3) {
     const opsV3: LedgerOperationV3[] | null = extraction?.operations
@@ -71,6 +86,7 @@ function buildExtractLedgerResponse(
       discards: extraction ? extraction.discards : [],
       unreadTextRemaining: extraction ? extraction.unreadTextRemaining : false,
       pageIncomplete: extraction ? extraction.pageIncomplete : false,
+      ...(crosscheck ? { mexalmCrosscheck: crosscheck } : {}),
     };
   } else if (contractVersion === 4) {
     // Se construye campo por campo, igual que v3, y NO se pasa `extraction.operations` en crudo.
@@ -107,6 +123,7 @@ function buildExtractLedgerResponse(
       unreadTextRemaining: extraction ? extraction.unreadTextRemaining : false,
       pageIncomplete: extraction ? extraction.pageIncomplete : false,
       ...(extraction?.pageDate ? { pageDate: extraction.pageDate } : {}),
+      ...(crosscheck ? { mexalmCrosscheck: crosscheck } : {}),
     };
   } else {
     const opsV5: LedgerOperationV5[] | null = extraction?.operations
@@ -139,6 +156,7 @@ function buildExtractLedgerResponse(
       ...(extraction?.pageDate ? { pageDate: extraction.pageDate } : {}),
       ...(extraction?.pageType ? { pageType: extraction.pageType } : {}),
       ...(extraction?.pageTotals ? { pageTotals: extraction.pageTotals } : {}),
+      ...(crosscheck ? { mexalmCrosscheck: crosscheck } : {}),
     };
   }
 }
@@ -239,11 +257,45 @@ export function createExtractLedgerPageHandler(
       if (extraction === null) {
         return buildExtractLedgerResponse(contractVersion, requestId, "AI_UNAVAILABLE", null);
       }
-      return buildExtractLedgerResponse(contractVersion, requestId, "AI_PROPOSAL", extraction);
+      const crosscheck = await runCrosscheck(deps, extraction);
+      return buildExtractLedgerResponse(contractVersion, requestId, "AI_PROPOSAL", extraction, crosscheck);
     } catch {
       const durationMillis = Math.max(0, deps.now() - providerStartTime);
       deps.onProviderLatency?.(durationMillis);
       return buildExtractLedgerResponse(contractVersion, requestId, "AI_UNAVAILABLE", null);
     }
   };
+}
+
+/**
+ * Corre la verificación cruzada, si está encendida.
+ *
+ * Devuelve `null` cuando no hubo veredicto: la bandera apagada, la página sin texto que mandar,
+ * o el Ledger que no pudo contestar. En esos casos la respuesta sale EXACTAMENTE como sale hoy,
+ * sin una llave de más: la app no tiene por qué enterarse de que un servicio de terceros se cayó.
+ * La causa queda registrada en el log del servidor, con una categoría y sin el texto de la página.
+ *
+ * Un error del verificador NUNCA se propaga: una excepción aquí dejaría sin página una lectura que
+ * ya se pagó.
+ */
+async function runCrosscheck(
+  deps: ExtractLedgerPageCallableDeps,
+  extraction: LedgerExtractionResult,
+): Promise<MexalmCrosscheckBlock | null> {
+  const crosschecker = deps.crosscheck;
+  if (crosschecker === null || crosschecker === undefined) {
+    return null;
+  }
+  try {
+    // `knownCustomers` va en null a propósito: el contrato de `extract_ledger_page` no lleva la
+    // lista de clientes de la tienda —son cinco llaves exactas y el cliente Android no manda más—,
+    // así que hoy no hay lista que mandar. El hueco queda en el seam: cuando el flujo la traiga,
+    // se pasa aquí y no se toca nada más.
+    return await crosschecker.crosscheck({
+      operations: extraction.operations,
+      knownCustomers: null,
+    });
+  } catch {
+    return null;
+  }
 }
