@@ -726,6 +726,18 @@
         <item quantity="other">%1$d sales would be overdue as of today</item>
     </plurals>
     <string name="ai_ledger_duplicate_badge">Possible duplicate</string>
+    <string name="ai_ledger_crosscheck_summary_agreed">The MexaLM Ledger agrees</string>
+    <plurals name="ai_ledger_crosscheck_summary_disagreements">
+        <item quantity="one">The Ledger read %1$d row differently</item>
+        <item quantity="other">The Ledger read %1$d rows differently</item>
+    </plurals>
+    <string name="ai_ledger_crosscheck_summary_no_verdict">The Ledger could not confirm the page</string>
+    <string name="ai_ledger_crosscheck_summary_note">It only reports: it does not change what gets registered.</string>
+    <string name="ai_ledger_crosscheck_badge_amount">Ledger: amount</string>
+    <string name="ai_ledger_crosscheck_badge_customer">Ledger: customer</string>
+    <string name="ai_ledger_crosscheck_badge_type">Ledger: type</string>
+    <string name="ai_ledger_crosscheck_badge_missing_ledger">Ledger: did not see it</string>
+    <string name="ai_ledger_crosscheck_badge_missing_gemini">Ledger: saw one more</string>
     <string name="ai_ledger_duplicate_warning">There is already a similar transaction recorded: %1$s</string>
     <string name="ai_ledger_duplicate_detail_format">There is already a %1$s for %2$s of %3$s on %4$s%5$s</string>
     <string name="ai_ledger_objection_decimal_shift">Possible decimal point error in price</string>

@@ -247,6 +247,19 @@ fun LedgerReviewContent(
 
                 }
             }
+            // El veredicto del Ledger de MexaLM, si el servidor comparó la página con él. Va en su
+            // PROPIO elemento de la lista, como los demás avisos: dos avisos en el mismo elemento
+            // crecen por encima del alto de la pantalla.
+            //
+            // Sin bloque no hay nada que dibujar y la pantalla queda exactamente como estaba: el
+            // servidor con la bandera apagada no manda la llave, y esa es la respuesta normal.
+            val crosscheck = review.mexalmCrosscheck
+            if (crosscheck != null) item(key = "ledger-review-crosscheck") {
+                CrosscheckSummaryCard(
+                    crosscheck = crosscheck,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (yearBulkPlan != null) item(key = "ledger-review-year-bulk") {
                 YearBulkCard(
                     plan = yearBulkPlan,
@@ -434,12 +447,18 @@ fun LedgerReviewContent(
                     objections = objections,
                 )
             }
+            // Las diferencias del Ledger de MexaLM, agrupadas por renglón. Una insignia por
+            // DIFERENCIA, no una por renglón: un renglón puede diferir en el monto y en el cliente,
+            // y callarse uno de los dos escondería justo el detalle que hay que ver.
+            val crosscheckByLineIndex = review.mexalmCrosscheck?.disagreements?.groupBy { it.lineIndex }
+                ?: emptyMap()
             items(review.customerGroups) { group ->
                 CustomerGroupCard(
                     group = group,
                     captureFile = captureFile,
                     fieldHealth = fieldHealth,
                     duplicateMatches = duplicateMatches,
+                    crosscheckDisagreements = crosscheckByLineIndex,
                     onEditOperation = { op -> editingOperation = op },
                     onUpdateKind = onUpdateKind,
                     onRemoveRow = onRemoveRow,
@@ -1052,6 +1071,8 @@ private fun CustomerGroupCard(
     captureFile: File?,
     fieldHealth: Map<Int, com.cuentivo.app.domain.OperationFieldHealth>,
     duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch>,
+    /** The Ledger de MexaLM differences, by line index. Empty when the server sent no block. */
+    crosscheckDisagreements: Map<Int, List<com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreement>> = emptyMap(),
     onEditOperation: (LedgerOperation) -> Unit,
     onUpdateKind: (lineIndex: Int, kind: ProposedLedgerKind) -> Unit,
     onRemoveRow: (lineIndex: Int) -> Unit,
@@ -1131,6 +1152,7 @@ private fun CustomerGroupCard(
                     captureFile = captureFile,
                     health = fieldHealth[op.lineIndex],
                     duplicateMatch = duplicateMatches[op.lineIndex],
+                    crosscheckDisagreements = crosscheckDisagreements[op.lineIndex] ?: emptyList(),
                     onEdit = { onEditOperation(op) },
                     onUpdateKind = { kind -> onUpdateKind(op.lineIndex, kind) },
                     onRemove = { onRemoveRow(op.lineIndex) },
@@ -1147,6 +1169,8 @@ private fun LedgerOperationRow(
     captureFile: File?,
     health: com.cuentivo.app.domain.OperationFieldHealth? = null,
     duplicateMatch: com.cuentivo.app.domain.LedgerDuplicateMatch? = null,
+    /** What the Ledger de MexaLM read differently on this row. Empty when there is no block. */
+    crosscheckDisagreements: List<com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreement> = emptyList(),
     onEdit: () -> Unit,
     onUpdateKind: (ProposedLedgerKind) -> Unit,
     onRemove: () -> Unit,
@@ -1248,6 +1272,25 @@ private fun LedgerOperationRow(
                             attention.forEach { chip ->
                                 FieldHealthChip(chip.label, chip.color, chip.inherited)
                             }
+                        }
+                    }
+                }
+
+                // El Ledger de MexaLM leyó este renglón de otra manera.
+                //
+                // Es INFORMACIÓN, no un bloqueo: el renglón se registra igual que los demás, con lo
+                // que dijo la lectura de la página. Por eso no usa el color de error —el error es
+                // "esto está roto" y aquí nada está roto— ni cambia el color de fondo del renglón.
+                //
+                // Va en su propia fila y no junto al tipo porque una etiqueta larga se come el
+                // ancho, se parte en dos y empuja la tarjeta al alto del teléfono.
+                if (crosscheckDisagreements.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.testTag("ledger-crosscheck-" + operation.lineIndex),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        crosscheckDisagreements.forEach { disagreement ->
+                            CrosscheckBadge(disagreement)
                         }
                     }
                 }
@@ -1822,4 +1865,97 @@ private fun chipFor(
     val inherited = origin != com.cuentivo.app.domain.FieldOrigin.READ_HERE
     if (color == com.cuentivo.app.domain.FieldHealthColor.GREEN && !inherited) return null
     return FieldChip(label = label, color = color, inherited = inherited)
+}
+
+/**
+ * Lo que el Ledger de MexaLM dijo de la página, en una tarjeta.
+ *
+ * Es un RESUMEN, no una decisión: dice si las dos lecturas coinciden y, si no, cuántos renglones
+ * discrepan. No bloquea nada —el botón de registrar no consulta esta tarjeta— y la segunda línea
+ * lo dice explícitamente, porque una tarjeta que aparece de la nada encima de los renglones se lee
+ * como un aviso de que algo está mal y algo está mal: no.
+ *
+ * Sin bloque no se dibuja esta tarjeta, y la pantalla queda exactamente como estaba.
+ */
+@Composable
+private fun CrosscheckSummaryCard(
+    crosscheck: com.cuentivo.app.ai.ledger.MexalmCrosscheckPayload,
+    modifier: Modifier = Modifier,
+) {
+    // Cuántos RENGLONES discrepan, no cuántas diferencias: un renglón puede diferir en el monto y
+    // en el cliente, y "leyó 3 renglones distintos" con dos insignias en el mismo renglón se
+    // contradice.
+    val disagreeingRows = crosscheck.disagreeingLineIndices.size
+    val message = when {
+        crosscheck.agreed -> stringResource(R.string.ai_ledger_crosscheck_summary_agreed)
+        disagreeingRows > 0 -> pluralStringResource(
+            R.plurals.ai_ledger_crosscheck_summary_disagreements,
+            disagreeingRows,
+            disagreeingRows,
+        )
+        // `agreed` falso sin ninguna diferencia: el Ledger no dio veredicto. No es lo mismo que
+        // "están de acuerdo", y decirlo como si lo estuviera sería mentir.
+        else -> stringResource(R.string.ai_ledger_crosscheck_summary_no_verdict)
+    }
+    Card(
+        modifier = modifier.testTag("ledger-crosscheck-summary"),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = stringResource(R.string.ai_ledger_crosscheck_summary_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Una insignia por DIFERENCIA, no una por renglón.
+ *
+ * El color no es el de error: esto no bloquea el renglón ni cambia lo que se registra. Es la
+ * diferencia entre el Ledger y la lectura de la página, y lo que se registra sigue siendo lo que
+ * dijo la lectura.
+ *
+ * El color es el de la marca, y no el de las otras insignias de la fila —el rojo es "esto está
+ * roto" y el verde es "puede ser duplicado"— para que el ojo sepa que esto es otra cosa.
+ */
+@Composable
+private fun CrosscheckBadge(disagreement: com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreement) {
+    val label = when (disagreement.field) {
+        com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.AMOUNT ->
+            stringResource(R.string.ai_ledger_crosscheck_badge_amount)
+        com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.CUSTOMER ->
+            stringResource(R.string.ai_ledger_crosscheck_badge_customer)
+        com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.TYPE ->
+            stringResource(R.string.ai_ledger_crosscheck_badge_type)
+        com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.MISSING_IN_LEDGER ->
+            stringResource(R.string.ai_ledger_crosscheck_badge_missing_ledger)
+        com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.MISSING_IN_GEMINI ->
+            stringResource(R.string.ai_ledger_crosscheck_badge_missing_gemini)
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = RoundedCornerShape(4.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
 }

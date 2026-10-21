@@ -727,6 +727,18 @@
     </plurals>
     <string name="ai_ledger_duplicate_badge">Posible duplicado</string>
     <string name="ai_ledger_duplicate_warning">Ya hay un movimiento registrado igual o muy similar: %1$s</string>
+    <string name="ai_ledger_crosscheck_summary_agreed">El Ledger de MexaLM está de acuerdo</string>
+    <plurals name="ai_ledger_crosscheck_summary_disagreements">
+        <item quantity="one">El Ledger leyó %1$d renglón distinto</item>
+        <item quantity="other">El Ledger leyó %1$d renglones distintos</item>
+    </plurals>
+    <string name="ai_ledger_crosscheck_summary_no_verdict">El Ledger no pudo confirmar la página</string>
+    <string name="ai_ledger_crosscheck_summary_note">Sólo informa: no cambia lo que se registra.</string>
+    <string name="ai_ledger_crosscheck_badge_amount">Ledger: monto</string>
+    <string name="ai_ledger_crosscheck_badge_customer">Ledger: cliente</string>
+    <string name="ai_ledger_crosscheck_badge_type">Ledger: tipo</string>
+    <string name="ai_ledger_crosscheck_badge_missing_ledger">Ledger: no lo vio</string>
+    <string name="ai_ledger_crosscheck_badge_missing_gemini">Ledger: lo vio de más</string>
     <string name="ai_ledger_duplicate_detail_format">Ya hay una %1$s de %2$s por %3$s el %4$s%5$s</string>
     <string name="ai_ledger_objection_decimal_shift">Posible error de punto decimal en el precio</string>
     <string name="ai_ledger_objection_price_mismatch">El precio no coincide con tu producto registrado</string>
