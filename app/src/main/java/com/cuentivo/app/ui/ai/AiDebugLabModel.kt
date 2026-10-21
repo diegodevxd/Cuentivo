@@ -1112,6 +1112,13 @@ object AiDebugLabMachine {
         detectedPageDate: com.cuentivo.app.ai.ledger.LedgerDetectedPageDate? = null,
         pageType: com.cuentivo.app.ai.ledger.LedgerPageType? = null,
         pageTotals: List<com.cuentivo.app.ai.ledger.LedgerPageTotal> = emptyList(),
+        /**
+         * The cross-check against the Ledger de MexaLM, when the server sent one.
+         *
+         * It travels into the review as a comment: it says where the two readings disagree and
+         * nothing else. No transition below reads it to decide what gets registered.
+         */
+        mexalmCrosscheck: com.cuentivo.app.ai.ledger.MexalmCrosscheckPayload? = null,
     ): AiDebugLabModel {
         if (generation != model.generation) return model
         val state = model.state as? AiDebugLabState.LedgerExtracting ?: return model
@@ -1131,6 +1138,7 @@ object AiDebugLabMachine {
             detectedPageDate = detectedPageDate,
             pageType = pageType,
             pageTotals = pageTotals,
+            mexalmCrosscheck = mexalmCrosscheck,
         )
 
         return model.copy(
@@ -1232,6 +1240,7 @@ object AiDebugLabMachine {
             pageDateEpochDay = pageDateEpochDay,
             todayEpochDay = effectiveTodayEpochDay,
             detectedPageDate = state.review.detectedPageDate,
+            mexalmCrosscheck = state.review.mexalmCrosscheck,
         )
 
         return model.copy(
@@ -1291,6 +1300,7 @@ object AiDebugLabMachine {
             pageDateEpochDay = state.review.pageDateEpochDay,
             todayEpochDay = effectiveTodayEpochDay,
             detectedPageDate = state.review.detectedPageDate,
+            mexalmCrosscheck = state.review.mexalmCrosscheck,
         )
 
         return model.copy(

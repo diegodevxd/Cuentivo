@@ -1051,4 +1051,65 @@ class LedgerReviewTest {
         val state = restored.state as AiDebugLabState.LedgerReviewing
         assertEquals("1000", state.review.operations[0].amountCents)
     }
+
+    /**
+     * El bloque de la verificación cruzada pertenece a la PÁGINA, no a los renglones: cada edición
+     * rebuilda la revisión desde cero, y el bloque tiene que sobrevivir el rebuild igual que la
+     * fecha detectada. Sin esto, editar un renglón borraría las insignias del Ledger.
+     */
+    @Test
+    fun el_bloque_del_ledger_sobrevive_al_rebuild_de_la_revision() {
+        val op = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Toño",
+            amountCents = "3800",
+        )
+        val crosscheck = MexalmCrosscheckPayload(
+            agreed = false,
+            disagreements = listOf(
+                MexalmCrosscheckDisagreement(
+                    lineIndex = 0,
+                    field = MexalmCrosscheckDisagreementField.AMOUNT,
+                    gemini = MexalmCrosscheckOperationSummary(amountCents = 3800L),
+                    ledger = MexalmCrosscheckOperationSummary(amountCents = 3900L),
+                ),
+            ),
+            ledgerStatus = "OK",
+            latencyMs = 812L,
+        )
+
+        val review = LedgerReviewEngine.build(
+            operations = listOf(op),
+            mexalmCrosscheck = crosscheck,
+        )
+        assertEquals(crosscheck, review.mexalmCrosscheck)
+
+        // El rebuild que hace una edición tiene que conservar el bloque.
+        val rebuilt = LedgerReviewEngine.build(
+            operations = LedgerReviewEngine.setOperationAmount(listOf(op), 0, "4000"),
+            mexalmCrosscheck = review.mexalmCrosscheck,
+        )
+        assertEquals(crosscheck, rebuilt.mexalmCrosscheck)
+        assertEquals("4000", rebuilt.operations[0].amountCents)
+    }
+
+    /**
+     * Sin bloque no hay nada que mostrar, y la revisión se construye exactamente igual que antes.
+     */
+    @Test
+    fun sin_bloque_la_revision_es_la_de_siempre() {
+        val op = LedgerOperation(
+            lineIndex = 0,
+            proposedKind = ProposedLedgerKind.SALE,
+            customerName = "Rosa",
+            amountCents = "25000",
+        )
+
+        val review = LedgerReviewEngine.build(operations = listOf(op))
+
+        assertEquals(null, review.mexalmCrosscheck)
+        assertEquals(1, review.operations.size)
+        assertEquals("25000", review.operations[0].amountCents)
+    }
 }

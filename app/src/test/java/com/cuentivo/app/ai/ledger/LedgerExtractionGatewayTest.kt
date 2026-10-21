@@ -386,4 +386,214 @@ class LedgerExtractionGatewayTest {
         "unreadTextRemaining" to false,
         "pageIncomplete" to false,
     )
+
+    // ---- La verificación cruzada contra el Ledger de MexaLM (bloque `mexalmCrosscheck`) ----
+
+    /** El bloque tal como lo manda el servidor: una diferencia de monto en el renglón 0. */
+    private fun crosscheckBlock(
+        agreed: Any = false,
+        disagreements: Any = listOf(
+            mapOf(
+                "lineIndex" to 0,
+                "field" to "AMOUNT",
+                "gemini" to mapOf(
+                    "proposedKind" to "SALE",
+                    "customerName" to "Toño",
+                    "amountCents" to "3800",
+                ),
+                "ledger" to mapOf(
+                    "proposedKind" to "SALE",
+                    "customerName" to "Toño",
+                    "amountCents" to "3900",
+                ),
+            ),
+        ),
+        ledgerStatus: Any = "OK",
+        latencyMs: Any = 812,
+        extraRootKey: Any? = null,
+    ): Map<String, Any?> {
+        val block = mutableMapOf<String, Any?>(
+            "agreed" to agreed,
+            "disagreements" to disagreements,
+            "ledgerStatus" to ledgerStatus,
+            "latencyMs" to latencyMs,
+        )
+        if (extraRootKey != null) block["nota"] = extraRootKey
+        return block
+    }
+
+    private fun v4WithCrosscheck(block: Any?): Map<String, Any?> =
+        response(listOf(sale("25000")), contractVersion = 4) + ("mexalmCrosscheck" to block)
+
+    @Test fun `un bloque valido se lee entero`() {
+        val result = parseLedgerExtractionResponse(v4WithCrosscheck(crosscheckBlock()), REQUEST_ID)
+
+        assertTrue(result is LedgerExtractionCallResult.Extracted)
+        val crosscheck = (result as LedgerExtractionCallResult.Extracted).extraction.mexalmCrosscheck
+        assertEquals(false, crosscheck?.agreed)
+        assertEquals("OK", crosscheck?.ledgerStatus)
+        assertEquals(812L, crosscheck?.latencyMs)
+        assertEquals(1, crosscheck?.disagreements?.size)
+        val disagreement = crosscheck?.disagreements?.first()
+        assertEquals(0, disagreement?.lineIndex)
+        assertEquals(MexalmCrosscheckDisagreementField.AMOUNT, disagreement?.field)
+    }
+
+    @Test fun `el monto del resumen se lee como centavos enteros`() {
+        // El monto nunca es un número flotante: llega como cadena canónica y se guarda como Long.
+        val result = parseLedgerExtractionResponse(v4WithCrosscheck(crosscheckBlock()), REQUEST_ID)
+
+        val disagreement = (result as LedgerExtractionCallResult.Extracted)
+            .extraction.mexalmCrosscheck?.disagreements?.first()
+        assertEquals(3800L, disagreement?.gemini?.amountCents)
+        assertEquals(3900L, disagreement?.ledger?.amountCents)
+        assertEquals("Toño", disagreement?.gemini?.customerName)
+        assertEquals("SALE", disagreement?.ledger?.proposedKind)
+    }
+
+    @Test fun `un bloque que dice que si y lista diferencias se descarta`() {
+        // Decir "las dos lecturas dicen lo mismo" y listar diferencias al mismo tiempo no tiene
+        // arreglo: no hay forma de saber cual de las dos cosas queria decir el servidor.
+        val result = parseLedgerExtractionResponse(
+            v4WithCrosscheck(crosscheckBlock(agreed = true)),
+            REQUEST_ID,
+        )
+
+        val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+        assertEquals(null, payload.mexalmCrosscheck)
+        assertEquals(1, payload.operations.size)
+    }
+
+    @Test fun `sin bloque la pagina se lee EXACTAMENTE igual que antes`() {
+        // El servidor con la bandera apagada no manda la llave. Esa es la respuesta normal y tiene
+        // que ser indistinguible de la de siempre, bloque o no.
+        val sinBloque = response(listOf(sale("25000")), contractVersion = 4)
+        val conBloque = sinBloque + ("mexalmCrosscheck" to crosscheckBlock())
+
+        val sin = (parseLedgerExtractionResponse(sinBloque, REQUEST_ID) as LedgerExtractionCallResult.Extracted).extraction
+        val con = (parseLedgerExtractionResponse(conBloque, REQUEST_ID) as LedgerExtractionCallResult.Extracted).extraction
+
+        assertEquals(null, sin.mexalmCrosscheck)
+        // Todo lo demás —operaciones, descartes, fechas, flags— igualito.
+        assertEquals(sin.copy(mexalmCrosscheck = null), con.copy(mexalmCrosscheck = null))
+    }
+
+    @Test fun `un bloque malformado colapsa a null y la pagina sigue`() {
+        // El bloque es un comentario al lado de la pagina: un comentario malo no puede costar la
+        // pagina. Cada caso raro se lista aqui y todos tienen que dejar la pagina intacta.
+        val bloquesMalos: List<Any?> = listOf(
+            "no es un mapa",
+            42,
+            emptyList<Any>(),
+            // Llaves de mas o de menos en la raiz.
+            crosscheckBlock(extraRootKey = "x"),
+            mapOf(
+                "agreed" to false,
+                "disagreements" to emptyList<Any>(),
+                "ledgerStatus" to "OK",
+            ),
+            // Tipos que no son los del contrato.
+            crosscheckBlock(agreed = "false"),
+            crosscheckBlock(ledgerStatus = 7),
+            crosscheckBlock(latencyMs = "812"),
+            // Una latencia fraccionaria no es una latencia.
+            crosscheckBlock(latencyMs = 812.5),
+            crosscheckBlock(latencyMs = -1),
+            crosscheckBlock(latencyMs = 999_999_999_999_999L),
+            crosscheckBlock(ledgerStatus = ""),
+            // Diferencias que no se pueden leer.
+            crosscheckBlock(disagreements = "nada"),
+            crosscheckBlock(disagreements = listOf("nada")),
+            crosscheckBlock(disagreements = listOf(mapOf("field" to "AMOUNT"))),
+            crosscheckBlock(disagreements = listOf(mapOf("lineIndex" to 0))),
+            crosscheckBlock(disagreements = listOf(mapOf("lineIndex" to 0, "field" to "REFUND"))),
+            crosscheckBlock(disagreements = listOf(mapOf("lineIndex" to 0.5, "field" to "AMOUNT"))),
+            // Un renglón que no cabe en un Int se truncaría a OTRO renglón: la insignia caería
+            // donde no es.
+            crosscheckBlock(disagreements = listOf(mapOf("lineIndex" to 3_000_000_000L, "field" to "AMOUNT"))),
+            crosscheckBlock(disagreements = listOf(mapOf("lineIndex" to 0, "field" to "AMOUNT", "nota" to "x"))),
+            // Un monto como numero JSON: por ahi entraria dinero fraccionario.
+            crosscheckBlock(
+                disagreements = listOf(
+                    mapOf(
+                        "lineIndex" to 0,
+                        "field" to "AMOUNT",
+                        "gemini" to mapOf("amountCents" to 3800),
+                    ),
+                ),
+            ),
+            crosscheckBlock(
+                disagreements = listOf(
+                    mapOf(
+                        "lineIndex" to 0,
+                        "field" to "AMOUNT",
+                        "gemini" to mapOf("amountCents" to "03800"),
+                    ),
+                ),
+            ),
+            crosscheckBlock(
+                disagreements = listOf(
+                    mapOf(
+                        "lineIndex" to 0,
+                        "field" to "AMOUNT",
+                        "gemini" to mapOf("monto" to "3800"),
+                    ),
+                ),
+            ),
+        )
+
+        for (bloque in bloquesMalos) {
+            val result = parseLedgerExtractionResponse(v4WithCrosscheck(bloque), REQUEST_ID)
+            assertTrue("la pagina no puede caerse por un bloque malo: $bloque", result is LedgerExtractionCallResult.Extracted)
+            val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+            assertEquals("el bloque tiene que colapsar a null: $bloque", null, payload.mexalmCrosscheck)
+            assertEquals("la pagina sigue intacta: $bloque", 1, payload.operations.size)
+            assertEquals("25000", payload.operations[0].amountCents)
+        }
+    }
+
+    @Test fun `v3 no acepta el bloque`() {
+        // v3 exige el juego de llaves EXACTO, asi que una respuesta v3 con el bloque se rechaza
+        // como pagina entera. Es la unica version donde pasa, y no hay drama: esta app pide v5 y
+        // reintenta con v4, nunca pide v3.
+        val v3ConBloque = response(listOf(sale("25000")), contractVersion = 3) +
+            ("mexalmCrosscheck" to crosscheckBlock())
+
+        assertEquals(
+            LedgerExtractionCallResult.Unavailable,
+            parseLedgerExtractionResponse(v3ConBloque, REQUEST_ID),
+        )
+    }
+
+    @Test fun `una respuesta v3 sin bloque se lee como siempre`() {
+        val result = parseLedgerExtractionResponse(response(listOf(sale("25000")), contractVersion = 3), REQUEST_ID)
+
+        assertTrue(result is LedgerExtractionCallResult.Extracted)
+        val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+        assertEquals(null, payload.mexalmCrosscheck)
+        assertEquals(1, payload.operations.size)
+    }
+
+    @Test fun `el bloque tambien se lee en v5`() {
+        val v5Response = response(listOf(sale("25000")), contractVersion = 5) +
+            ("mexalmCrosscheck" to crosscheckBlock())
+
+        val result = parseLedgerExtractionResponse(v5Response, REQUEST_ID)
+
+        assertTrue(result is LedgerExtractionCallResult.Extracted)
+        val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+        assertEquals(5, payload.contractVersion)
+        assertEquals(1, payload.mexalmCrosscheck?.disagreements?.size)
+    }
+
+    @Test fun `una lista de diferencias que no es lista colapsa a null`() {
+        val result = parseLedgerExtractionResponse(
+            v4WithCrosscheck(crosscheckBlock(disagreements = "muchas")),
+            REQUEST_ID,
+        )
+
+        val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+        assertEquals(null, payload.mexalmCrosscheck)
+        assertEquals(1, payload.operations.size)
+    }
 }

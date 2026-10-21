@@ -62,6 +62,15 @@ data class LedgerExtractionPayload(
     val pageTotals: List<LedgerPageTotal> = emptyList(),
     /** Which contract version the server answered with, for the local import metrics. */
     val contractVersion: Int = 0,
+    /**
+     * The optional cross-check against the Ledger de MexaLM, when the server sent one.
+     *
+     * `null` in every answer that does not carry it: a server with the feature flag off sends the
+     * page exactly as it always did, and a block that arrived malformed is dropped whole rather
+     * than half understood. This is a comment next to the page — it changes nothing about what
+     * gets registered.
+     */
+    val mexalmCrosscheck: MexalmCrosscheckPayload? = null,
 )
 
 /**
@@ -117,9 +126,17 @@ fun parseLedgerExtractionResponse(
     )
     val rootKeys = root.keys.map { it.toString() }.toSet()
     if (version == 3) {
+        // v3 demands the EXACT key set, so a v3 answer carrying `mexalmCrosscheck` is refused as a
+        // whole page. That is deliberate and it is the only version where it happens: v3 is the
+        // contract of the published builds that predate the block, they ask for v3 themselves, and
+        // this app never does (it asks for v5 and retries with v4). The block is optional in v4/v5,
+        // where its absence is the normal case.
         if (rootKeys != baseKeys) return LedgerExtractionCallResult.Unavailable
     } else {
-        val allowedKeys = baseKeys + "pageDate" + if (version == 5) setOf("pageType", "pageTotals") else emptySet()
+        // `mexalmCrosscheck` is OPTIONAL: it is only there when the server compared the page with
+        // the Ledger de MexaLM, and its absence is the answer of every server with the flag off.
+        val allowedKeys = baseKeys + setOf("pageDate", "mexalmCrosscheck") +
+            if (version == 5) setOf("pageType", "pageTotals") else emptySet()
         if (!allowedKeys.containsAll(rootKeys) || !rootKeys.containsAll(baseKeys)) {
             return LedgerExtractionCallResult.Unavailable
         }
@@ -154,6 +171,12 @@ fun parseLedgerExtractionResponse(
             // be offered. Refusing the whole page over it would trade twenty-four readable rows
             // for an advisory field.
             val detectedPageDate = if (version >= 4) parseDetectedPageDateWire(root["pageDate"]) else null
+            // The cross-check block is read the same way the page date is read: strictly, but
+            // leniently about its PRESENCE. A block that is malformed collapses to null and the
+            // page is read anyway, because the block is a comment next to the page and a bad
+            // comment must never cost the page.
+            val mexalmCrosscheck =
+                if (version >= 4) parseMexalmCrosscheckWire(root["mexalmCrosscheck"]) else null
             LedgerExtractionCallResult.Extracted(
                 LedgerExtractionPayload(
                     operations = operations,
@@ -164,6 +187,7 @@ fun parseLedgerExtractionResponse(
                     contractVersion = version,
                     pageType = if (version == 5) parsePageTypeWire(root["pageType"]) else null,
                     pageTotals = if (version == 5) parsePageTotalsWire(root["pageTotals"], operations.map { it.lineIndex }.toSet()) else emptyList(),
+                    mexalmCrosscheck = mexalmCrosscheck,
                 ),
             )
         }
@@ -295,6 +319,119 @@ private fun parseDetectedPageDateWire(value: Any?): LedgerDetectedPageDate? {
     val confidence = (map["confidence"] as? Number)?.toDouble() ?: return null
     if (!confidence.isFinite() || confidence < 0.0 || confidence > 1.0) return null
     return LedgerDetectedPageDate(date = date, confidence = confidence)
+}
+
+/** The exact keys the cross-check block defines. One key more and it is not this block. */
+private val CROSSCHECK_ROOT_KEYS = setOf("agreed", "disagreements", "ledgerStatus", "latencyMs")
+private val CROSSCHECK_DISAGREEMENT_KEYS = setOf("lineIndex", "field", "gemini", "ledger")
+private val CROSSCHECK_SUMMARY_KEYS = setOf("proposedKind", "customerName", "amountCents")
+
+/**
+ * Reads the optional cross-check block: the server's comparison between the page that was read and
+ * the Ledger de MexaLM reading the same text, row by row.
+ *
+ * Strict about the SHAPE, lenient about the PRESENCE, and strict in the direction that loses
+ * information instead of gaining it: anything unexpected collapses the WHOLE BLOCK to null and the
+ * page is read anyway. The block is a comment next to the page, so a malformed comment must never
+ * cost the page — and the page is what the person came for.
+ *
+ * The money is read as whole centavos and only as whole centavos. A summary whose amount arrives
+ * as a JSON number is exactly how fractional money would enter a system of whole centavos, so the
+ * block is dropped rather than the number truncated.
+ */
+private fun parseMexalmCrosscheckWire(value: Any?): MexalmCrosscheckPayload? {
+    if (value == null) return null
+    val map = value as? Map<*, *> ?: return null
+    if (map.keys.map { it.toString() }.toSet() != CROSSCHECK_ROOT_KEYS) return null
+    val agreed = map["agreed"] as? Boolean ?: return null
+    val ledgerStatus = map["ledgerStatus"] as? String ?: return null
+    if (ledgerStatus.isBlank() || ledgerStatus.length > MAX_LEDGER_STATUS_WIRE) return null
+    val latency = (map["latencyMs"] as? Number) ?: return null
+    // A fractional latency is not a latency: truncating it would report a time nobody measured.
+    if (latency.toDouble() != latency.toLong().toDouble()) return null
+    val latencyMs = latency.toLong()
+    if (latencyMs < 0L || latencyMs > MAX_CROSSCHECK_LATENCY_WIRE) return null
+    val disagreements = parseCrosscheckDisagreementsWire(map["disagreements"]) ?: return null
+    // `agreed` and the differences have to agree with each other. Saying "both sides say the same"
+    // while listing differences would show a person "de acuerdo" on a page that carries badges,
+    // and there is no way to tell which of the two the server meant.
+    if (agreed && disagreements.isNotEmpty()) return null
+    return MexalmCrosscheckPayload(
+        agreed = agreed,
+        disagreements = disagreements,
+        ledgerStatus = ledgerStatus,
+        latencyMs = latencyMs,
+    )
+}
+
+private fun parseCrosscheckDisagreementsWire(value: Any?): List<MexalmCrosscheckDisagreement>? {
+    val list = value as? List<*> ?: return null
+    if (list.size > MAX_CROSSCHECK_DISAGREEMENTS_WIRE) return null
+    val parsed = ArrayList<MexalmCrosscheckDisagreement>(list.size)
+    for (raw in list) {
+        val map = raw as? Map<*, *> ?: return null
+        val keys = map.keys.map { it.toString() }.toSet()
+        if (!keys.containsAll(CROSSCHECK_DISAGREEMENT_REQUIRED_KEYS)) return null
+        if (!CROSSCHECK_DISAGREEMENT_KEYS.containsAll(keys)) return null
+        val rawLineIndex = map["lineIndex"] as? Number ?: return null
+        // The line index is the identity of the row. A fractional one would name a row that does
+        // not exist, and the badge would land nowhere.
+        if (rawLineIndex.toDouble() != rawLineIndex.toLong().toDouble()) return null
+        val lineIndexLong = rawLineIndex.toLong()
+        // And one that does not fit in an Int would be truncated into a DIFFERENT row: the same
+        // mistake as truncar un `lineIndex` de una operacion.
+        if (lineIndexLong > Int.MAX_VALUE.toLong() || lineIndexLong < Int.MIN_VALUE.toLong()) return null
+        val lineIndex = lineIndexLong.toInt()
+        val field = MexalmCrosscheckDisagreementField.entries.firstOrNull { it.name == map["field"] }
+            ?: return null
+        // La ausencia del resumen de un lado es una cosa, y un resumen que no se puede leer es
+        // otra. Si los dos dieran `null`, un monto que llega como número JSON se tomaría por "este
+        // lado no dijo nada" y el bloque se leería a medias. Aquí la diferencia se nota: lo que
+        // no se puede leer tumba el bloque entero.
+        val geminiRaw = map["gemini"]
+        val gemini = if (geminiRaw == null) {
+            null
+        } else {
+            parseCrosscheckSummaryWire(geminiRaw) ?: return null
+        }
+        val ledgerRaw = map["ledger"]
+        val ledger = if (ledgerRaw == null) {
+            null
+        } else {
+            parseCrosscheckSummaryWire(ledgerRaw) ?: return null
+        }
+        parsed += MexalmCrosscheckDisagreement(
+            lineIndex = lineIndex,
+            field = field,
+            gemini = gemini,
+            ledger = ledger,
+        )
+    }
+    return parsed
+}
+
+/**
+ * What ONE side wrote about a row. The text of the page never arrives here, and neither does
+ * anything that is not a number of cents, a name or a kind.
+ */
+private fun parseCrosscheckSummaryWire(value: Any?): MexalmCrosscheckOperationSummary? {
+    if (value == null) return null
+    val map = value as? Map<*, *> ?: return null
+    if (!CROSSCHECK_SUMMARY_KEYS.containsAll(map.keys.map { it.toString() }.toSet())) return null
+    val proposedKind = map["proposedKind"]?.let { it as? String ?: return null }
+    val customerName = map["customerName"]?.let { it as? String ?: return null }
+    if (proposedKind != null && proposedKind.length > MAX_CROSSCHECK_KIND_WIRE) return null
+    if (customerName != null && customerName.length > MAX_CROSSCHECK_CUSTOMER_NAME_WIRE) return null
+    val amountCents = map["amountCents"]?.let { raw ->
+        val text = raw as? String ?: return null
+        if (!CANONICAL_LEDGER_CENTS_WIRE_RE.matches(text)) return null
+        text.toLong()
+    }
+    return MexalmCrosscheckOperationSummary(
+        proposedKind = proposedKind,
+        customerName = customerName,
+        amountCents = amountCents,
+    )
 }
 
 private fun parseRegionWire(value: Any?): LedgerRegion? {
@@ -451,6 +588,24 @@ private const val MAX_ITEMS_WIRE = 25
 
 /** The closed enum has nine values, so a longer list is not a list of warnings. */
 private const val MAX_WARNINGS_WIRE = 16
+
+/** A page has at most 25 rows and a row can differ in three fields: 75 is already generous. */
+private const val MAX_CROSSCHECK_DISAGREEMENTS_WIRE = 100
+
+/** The Ledger's status is a short word, not a sentence. */
+private const val MAX_LEDGER_STATUS_WIRE = 64
+
+/** The kind of a movement is a word from a closed list. */
+private const val MAX_CROSSCHECK_KIND_WIRE = 40
+
+/** A customer's name is a name, not the text of the page. */
+private const val MAX_CROSSCHECK_CUSTOMER_NAME_WIRE = 120
+
+/** A round trip that took more than a day is not a round trip. */
+private const val MAX_CROSSCHECK_LATENCY_WIRE = 86_400_000L
+
+/** The keys a difference has to carry: which row, and which field of it. */
+private val CROSSCHECK_DISAGREEMENT_REQUIRED_KEYS = setOf("lineIndex", "field")
 
 /** Warnings are advice, but an unbounded list of them still lands in the saved state. */
 private fun parseWarningsWire(value: Any?): List<String>? {

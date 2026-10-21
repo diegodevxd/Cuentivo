@@ -660,6 +660,10 @@ fun AiDebugLabScreen(
                                 // The date the server read off the sheet, offered — never
                                 // applied — by the page date card.
                                 detectedPageDate = outcome.extraction.detectedPageDate,
+                                // The cross-check against the Ledger de MexaLM, when the server
+                                // sent one. It only says where two readings disagree; it never
+                                // changes what this page registers.
+                                mexalmCrosscheck = outcome.extraction.mexalmCrosscheck,
                             )
                         }
                         else -> {

@@ -295,6 +295,16 @@ data class LedgerReview(
     val detectedPageDate: LedgerDetectedPageDate? = null,
     val pageType: LedgerPageType? = null,
     val pageTotals: List<LedgerPageTotal> = emptyList(),
+    /**
+     * The cross-check against the Ledger de MexaLM, when the server sent one.
+     *
+     * Carried here — and not recomputed — because it belongs to the PAGE, not to the rows: every
+     * edit rebuilds this object from the operations, and the block has to survive the rebuild the
+     * same way the detected page date does.
+     *
+     * It is a comment next to the page. Nothing in the app reads it to change what gets registered.
+     */
+    val mexalmCrosscheck: MexalmCrosscheckPayload? = null,
 )
 
 enum class LedgerPageType { ACCOUNTS, COST_OR_PRICE_LIST, OTHER }
@@ -323,6 +333,7 @@ object LedgerReviewEngine {
         detectedPageDate: LedgerDetectedPageDate? = null,
         pageType: LedgerPageType? = null,
         pageTotals: List<LedgerPageTotal> = emptyList(),
+        mexalmCrosscheck: MexalmCrosscheckPayload? = null,
     ): LedgerReview {
         // Defensive copy: isolate snapshot from any caller modifications
         val frozenOps: List<LedgerOperation> = Collections.unmodifiableList(
@@ -502,6 +513,7 @@ object LedgerReviewEngine {
             detectedPageDate = detectedPageDate,
             pageType = pageType,
             pageTotals = pageTotals,
+            mexalmCrosscheck = mexalmCrosscheck,
         )
     }
 
