@@ -13,6 +13,8 @@ Manda, en este orden:
 `diegodevxd/feature-cuentivo-ai` = `a451f47` (merge de v47), en origin. Etiquetas `v1.23.0-44`, `v1.23.1-45`,
 `v1.23.2-46`, `v1.23.3-47`. AABs en `dist/Cuentivo-v4{4..7}-*.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
 **El próximo versionCode es 48.**
+*(2026-10-20: la verificación cruzada con el Ledger de MexaLM está construida en la rama
+`mexalm/ledger-crosscheck` — **fuera de producción, con la bandera apagada**. Abajo.)*
 
 **Qué trajo cada versión (todas probadas por Claude en el teléfono con la versión de Play):**
 - **v44 `1.23.0`**: libreta que refresca tras registrar, objeción de fecha imposible, posible duplicado
@@ -51,6 +53,31 @@ teléfono con `leaveApksInstalledAfterRun=true` deja la app de debug, con otra f
 (`adb uninstall com.cuentivo.app` y `.test`) antes de instalar desde Play, o Play dice "No se puede
 instalar". La suite completa en el emulador se degrada tras ~230 pruebas ("System has crashed"): correrla
 por partes y arrancar el emulador en frío.
+
+### 2026-10-20 — Verificación cruzada con el Ledger de MexaLM (en la rama; **NO en producción**)
+
+Rama `mexalm/ledger-crosscheck`, base `f43a0f9`. **La bandera `MEXALM_LEDGER_CROSSCHECK` sigue
+APAGADA**, que es como vive en producción: no hay push, ni deploy, ni release.
+
+- **Servidor (parte 1, `f43a0f9`):** `extractLedgerPage` compara la página con el Ledger de MexaLM y
+  manda un bloque **aditivo** `mexalmCrosscheck` (`agreed`, `disagreements`, `ledgerStatus`,
+  `latencyMs`). No toca ni una de las operaciones que Gemini devuelve.
+- **Cliente Android (parte 2, esta parte):** el parser acepta la llave en **v4/v5**, la parsea a
+  `MexalmCrosscheckPayload?` con parseo estricto y **colapsa a `null` sin tumbar la página**; la
+  pantalla "Revisar libreta" muestra un resumen y una insignia por renglón que discrepa. **v3 NO
+  acepta la llave** (exige el juego de llaves exacto) y queda documentado en el código.
+- **El bloqueo de la parte 1 (§6.1) está resuelto:** la app ya no rechaza la página cuando aparece
+  la llave. Evidencia: `MEXALM_TEST_OUTPUT_ANDROID.txt` (JVM **1411/1411**, `assembleDebug` en
+  verde, puertas de idioma vacías, paridad 697/697).
+- **NO cambia lo que se registra.** El renglón se anota con lo que dijo la lectura de la página; el
+  desacuerdo es información, no un bloqueo.
+- **Lo que sigue abierto:** (1) la decisión de producto **de Diego** —qué hace la app con un
+  desacuerdo—; (2) declarar el **flujo de datos nuevo** (la transcripción de la libreta hacia un
+  tercero) en la política de privacidad y en Play Data Safety; (3) **crear el secreto
+  `MEXALM_LEDGER_TOKEN` antes del primer deploy** o el deploy falla; (4) **no encender la bandera
+  antes de que los builds antiguos que piden v3 (`v37`/`v40`) dejen de circular**: su parser exige
+  el juego de llaves exacto y **rechazan la página** si la llave llega.
+- Detalle completo, con archivos y pruebas: `HANDOFF_CUENTIVO1.md`, sección **CUENTIVO2**.
 
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 

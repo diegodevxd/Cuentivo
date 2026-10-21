@@ -388,3 +388,224 @@ bandera apagada) sigue funcionando igual.
   tercero) que hay que declarar en la política de privacidad y en Play Data Safety.
 - `MEXALM_TEST_OUTPUT.txt` tiene los números reales: 519/519 pruebas, lint limpio, gate del
   emulador 9/9.
+
+---
+
+# CUENTIVO2 — la app Android acepta y muestra `mexalmCrosscheck`
+
+**Tarea:** `TASK_CUENTIVO2.md` · **Rama:** `mexalm/ledger-crosscheck` (base `f43a0f9`) ·
+**Worktree:** `C:\Users\pibed\Downloads\CUENTIVO_mexalm_ledger` · **Fecha:** 2026-10-20
+
+**Estado:** el bloque `mexalmCrosscheck` se **lee, se carga en el modelo y se muestra** en la
+pantalla "Revisar libreta". La app ya no rechaza la página cuando el servidor manda la llave, que
+era el bloqueo del §6.1 de la parte 1. **No cambia lo que se registra**: el renglón se sigue
+anotando con lo que dijo la lectura de la página.
+
+No se hizo push, no se hizo deploy, no se encendió la bandera, no se arrancó ningún emulador ni
+servidor, no se instaló nada y no se tocó ningún otro worktree.
+
+---
+
+## C1. Qué se construyó (los tres puntos del §8)
+
+### C1.1 El parser acepta la llave y la parsea a un tipo propio
+
+`LedgerExtractionGateway.kt` ahora acepta `mexalmCrosscheck` como llave **opcional** en **v4 y v5**
+— su ausencia es la respuesta normal de un servidor con la bandera apagada — y la parsea a
+`MexalmCrosscheckPayload?`, un tipo propio (no un `Map` suelto), en
+`app/src/main/java/com/cuentivo/app/ai/ledger/MexalmCrosscheck.kt`.
+
+El parseo es **estricto de la forma, tolerante de la presencia**, y estricto **en la dirección que
+pierde información en vez de ganarla**: si algo es inesperado, **el bloque entero colapsa a `null`
+y la página se lee igual**. El bloque es un comentario al lado de la página; un comentario malo no
+puede costar la página.
+
+Lo que se considera inesperado (y tumba el bloque, no la página):
+
+| Dónde | Qué |
+|---|---|
+| raíz | llaves de más o de menos que `{agreed, disagreements, ledgerStatus, latencyMs}` |
+| raíz | `agreed` que no es booleano, `ledgerStatus` que no es texto o está vacío, `latencyMs` que no es número, es fraccionario, es negativo o es absurdo |
+| raíz | `agreed: true` **con** diferencias listadas: se contradicen y no hay forma de saber cuál quería decir el servidor |
+| diferencia | sin `lineIndex` o sin `field`, con llaves de más, `field` que no es uno de los cinco, `lineIndex` fraccionario o que no cabe en un `Int` |
+| resumen de un lado | llaves de más, `proposedKind`/`customerName` que no son texto, `amountCents` que no es texto o que no es una cadena canónica de centavos |
+
+**El dinero se lee como centavos enteros y sólo como centavos enteros.** Un `amountCents` que llega
+como número JSON es exactamente por donde entraría dinero fraccionario a un sistema de centavos
+enteros, así que el bloque se tira en vez de truncar el número.
+
+> **Un hueco que hubo que tapar y conviene que quede escrito:** al principio, un resumen de un lado
+> que no se podía leer (`gemini: {amountCents: 3800}` como número) devolvía `null`, que es
+> **indistinguible** de "este lado no dijo nada". El bloque se leía a medias y la diferencia
+> aparecía como si no tuviera monto. Ahora la ausencia y lo ilegible se distinguen: lo ilegible
+> tumba el bloque entero. Lo encontró la propia suite (§C4).
+
+### C1.2 El modelo
+
+- `LedgerExtractionPayload` gana `mexalmCrosscheck: MexalmCrosscheckPayload? = null`.
+- `LedgerReview` gana `mexalmCrosscheck: MexalmCrosscheckPayload? = null`, y
+  `LedgerReviewEngine.build(...)` lo recibe.
+
+El bloque vive en la **revisión** y no en el estado de la pantalla porque pertenece a la **página**,
+no a los renglones: cada edición *rebuilda* la revisión desde cero, y el bloque tiene que
+sobrevivir el rebuild igual que la fecha detectada (mismo patrón que `detectedPageDate`). Si no,
+editar un renglón borraría las insignias del Ledger.
+
+### C1.3 La UI: mínima y honesta
+
+En la pantalla "Revisar libreta":
+
+- **Un resumen**, en su propio elemento de la lista (los avisos van separados: dos en el mismo
+  elemento crecen por encima del alto de la pantalla):
+  - "El Ledger de MexaLM está de acuerdo";
+  - "El Ledger leyó N renglones distintos" (N son **renglones**, no diferencias: un renglón puede
+    diferir en el monto y en el cliente);
+  - "El Ledger no pudo confirmar la página" — el tercer caso, que no es lo mismo que "están de
+    acuerdo": `agreed: false` sin ninguna diferencia significa que el Ledger no dio veredicto, y
+    decirlo como si lo hubiera dado sería mentir.
+- **Una insignia por diferencia** en cada renglón que discrepa, en su propia fila y con el color
+  de la marca: el rojo de la fila es "esto está roto", el verde es "puede ser duplicado" y esto es
+  una tercera cosa. Dice **qué** difiere (monto, cliente, tipo, no lo vio, lo vio de más) porque
+  una insignia que no dice dónde obliga a revisar el renglón entero.
+
+Textos en `strings.xml` ES y EN. Paridad: **697 `<string>` / 697**, **16 `<plurals>` / 16**, y el
+juego de claves ES vs EN es **idéntico**.
+
+## C2. Archivos exactos
+
+### Nuevos
+
+| Archivo | Qué hace |
+|---|---|
+| `app/src/main/java/com/cuentivo/app/ai/ledger/MexalmCrosscheck.kt` | Los tipos del bloque: `MexalmCrosscheckPayload`, `MexalmCrosscheckDisagreement`, `MexalmCrosscheckOperationSummary`, `MexalmCrosscheckDisagreementField`. |
+| `MEXALM_TEST_OUTPUT_ANDROID.txt` | Salida real de `testDebugUnitTest`, `assembleDebug`, las puertas de idioma y la regla del dinero. |
+
+### Modificados
+
+| Archivo | Qué cambió |
+|---|---|
+| `app/src/main/java/com/cuentivo/app/ai/ledger/LedgerExtractionGateway.kt` | La llave en las permitidas de v4/v5, el parser del bloque y `LedgerExtractionPayload.mexalmCrosscheck`. |
+| `app/src/main/java/com/cuentivo/app/ai/ledger/LedgerReview.kt` | `LedgerReview.mexalmCrosscheck` y el parámetro de `LedgerReviewEngine.build`. |
+| `app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt` | `onLedgerExtractionResult(mexalmCrosscheck = …)` y el bloque que sobrevive al rebuild en las dos ediciones. |
+| `app/src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt` | Pasa `outcome.extraction.mexalmCrosscheck` a la máquina. |
+| `app/src/main/java/com/cuentivo/app/ui/ai/LedgerReviewScreen.kt` | La tarjeta de resumen, la insignia por renglón y el `testTag` de cada una. |
+| `app/src/main/res/values/strings.xml` · `values-en/strings.xml` | 8 `<string>` y 1 `<plurals>` nuevos por idioma. |
+| `app/src/test/java/com/cuentivo/app/ai/ledger/LedgerExtractionGatewayTest.kt` | 9 pruebas nuevas del parser. |
+| `app/src/test/java/com/cuentivo/app/ai/ledger/LedgerReviewTest.kt` | 2 pruebas nuevas del modelo. |
+
+**Ningún archivo fuera de `app/` fue tocado.** `functions/` no se tocó: la pieza de servidor de la
+parte 1 sigue como estaba.
+
+## C3. Lo que NO hace (y por qué)
+
+- **No cambia lo que se registra.** Ninguna transición lee el bloque para decidir qué se anota. El
+  renglón se anota con lo que dijo la lectura de la página, el botón de registrar no consulta el
+  bloque, y el renglón no cambia de color, ni se bloquea, ni se marca como dudoso por un
+  desacuerdo. La insignia es **información adicional**, no una razón nueva para bloquear.
+- **No se tocó el dinero.** El bloque no lleva dinero: el servidor manda el monto de cada lado en
+  texto canónico y el cliente lo guarda como `Long`. Ni un `Double` nuevo (la puerta de la regla 1
+  sale limpia sobre los archivos tocados).
+- **No se encendió la bandera.** Sigue apagada, que es como vive en producción.
+- **No se guardó ni se escribió nada del bloque** en Room, en Firestore ni en la cola de
+  sincronización. El bloque es de lectura: viaja de la respuesta a la pantalla y ahí se queda.
+
+## C4. Las pruebas (números reales)
+
+`MEXALM_TEST_OUTPUT_ANDROID.txt` tiene la salida completa.
+
+| | |
+|---|---|
+| `testDebugUnitTest` | **1411 pruebas, 1411 pasan, 0 fallan, 0 errores, 0 omitidas** (151 clases) |
+| `assembleDebug` | **BUILD SUCCESSFUL** (APK de 67 MB; **no se instaló**) |
+| puertas de idioma de `CLAUDE.md` | las dos **vacías** |
+| paridad ES/EN | 697/697 `<string>`, 16/16 `<plurals>`, juego de claves **idéntico** |
+| regla 1 (dinero en enteros) | limpia en los archivos tocados |
+
+Las 11 pruebas nuevas:
+
+| Prueba | Qué garantiza |
+|---|---|
+| un bloque válido se lee entero | `agreed`, `disagreements`, `ledgerStatus` y `latencyMs` llegan al modelo |
+| el monto del resumen se lee como centavos enteros | `3800` → `3800L`; nunca decimal |
+| un bloque que dice que sí y lista diferencias se descarta | la contradicción tumba el bloque, no la página |
+| **sin bloque la página se lee EXACTAMENTE igual que antes** | la respuesta con bandera apagada es indistinguible de la de siempre |
+| un bloque malformado colapsa a null y la página sigue | 22 formas raras (llaves de más/de menos, tipos, latencia fraccionaria, `lineIndex` fraccionario o fuera de `Int`, monto como número JSON, monto no canónico) — **la página nunca se cae** |
+| v3 no acepta el bloque | una respuesta v3 con la llave se rechaza como página entera |
+| una respuesta v3 sin bloque se lee como siempre | v3 sin bloque sigue funcionando |
+| el bloque también se lee en v5 | la llave se acepta en v4 y en v5 |
+| una lista de diferencias que no es lista colapsa a null | la página sigue |
+| el bloque sobrevive al rebuild de la revisión | editar un renglón no borra las insignias |
+| sin bloque la revisión es la de siempre | `mexalmCrosscheck == null` y la revisión igual |
+
+**Lo que no se corrió y por qué:** las pruebas instrumentadas (`connectedDebugAndroidTest`) y
+`lintDebug` — esta tarea no pide instrumentadas y `lintDebug` no se corrió. No se levantó ningún
+emulador, ni el de Firestore, ni el de Functions: la tarea lo prohíbe y la parte 1 ya probó el
+servidor.
+
+## C5. Lo que sigue SIN decidirse (es de Diego, no de quien implemente)
+
+El §8.4 de la parte 1 sigue **abierto** y esta tarea **no lo tocó**:
+
+- ¿Qué hace la app con un desacuerdo? Lo mínimo sin tocar el dinero es **marcarlo para revisión**,
+  igual que un `uncertainFields`. Lo que **no** se debe hacer sin que él lo decida: descartar el
+  renglón, o cambiar el monto por el del Ledger.
+- Con la bandera encendida hay un **flujo de datos nuevo** (la transcripción de la libreta hacia un
+  tercero) que hay que declarar en la política de privacidad y en Play Data Safety (§6.2).
+- Antes del primer deploy hay que **crear el secreto `MEXALM_LEDGER_TOKEN`**, o el deploy falla.
+
+## C6. Riesgos y huecos que deja esta parte
+
+### C6.1 v3 no acepta la llave — y esto está documentado a propósito
+
+La rama de **v3** del parser exige el juego de llaves **exacto**, así que una respuesta v3 que
+traiga `mexalmCrosscheck` se rechaza **como página entera**. No hay drama en la práctica: **esta
+app nunca pide v3** (pide v5 y reintenta una vez con v4), y v3 es el contrato de las versiones
+publicadas que son anteriores al bloque.
+
+> **Ojo, esto es lo que hay que saber antes de encender la bandera:** los builds publicados que
+> piden v3 (`v37`/`v40`) **no conocen la llave** y su parser también exige el juego exacto. Si la
+> bandera se enciende en el servidor, **esos builds antiguos rechazan la página**. La mitigación
+> es de despliegue, no de código: encender la bandera **después** de que la versión con este
+> cambio esté amplia. Este trabajo no puede arreglarlo desde el cliente.
+
+### C6.2 El bloque no sobrevive la rotación de la Activity
+
+El bloque se guarda en la revisión en memoria, pero **no** en el `Bundle` que `LedgerReviewSaver`
+escribe para sobrevivir a la recreación de la Activity. Al rotar el teléfono, el resumen y las
+insignias **desaparecen**.
+
+Se dejó así a propósito: persistirlo exige serializar el bloque entero en el `Bundle` **y** tocar
+`LedgerReviewSchema.CURRENT`, que es la puerta que decide si una revisión guardada por una versión
+anterior todavía se puede registrar. Subirla rompería las revisiones a medio hacer de quien tiene
+la app publicada. Es información adicional, no dinero, y la opción más honesta era no romper la
+puerta por ella.
+
+### C6.3 Una diferencia sin renglón no tiene insignia
+
+El servidor empareja por `lineIndex`; una operación del Ledger sin renglón se reporta con
+`lineIndex: -1` (§1 de la parte 1). Esa diferencia **cuenta en el resumen** ("N renglones
+distintos") pero **no tiene renglón al que colgarse**, así que no hay insignia. Es el caso raro
+del emparejamiento por posición; queda anotado para que no se lea como un defecto de la insignia.
+
+### C6.4 El `agreed` del servidor manda, y la app no lo inventa
+
+`agreed: true` significa "los dos lados dicen lo mismo" y `agreed: false` significa "no se pudo
+afirmar". El `ledgerStatus` viaja verbatim en el modelo (el cliente lo guarda, no lo usa para la
+tarjeta) y `latencyMs` también. La app **no** interpreta el `status` del Ledger: cuenta
+diferencias y usa `agreed`, que es lo único que el contrato define.
+
+## C7. Lo que NO se hizo
+
+- **No se hizo push, ni deploy, ni build de release.** Todo es local, en la rama
+  `mexalm/ledger-crosscheck`.
+- **No se encendió la bandera** en ningún lado.
+- **No se arrancó ningún servidor ni emulador**, y **no se instaló** nada en ningún dispositivo.
+- **No se tocó ningún otro worktree.** Se copió `app/google-services.json` (que está en
+  `.gitignore`) del worktree hermano `feature-cuentivo-ai` porque el build lo exige y aquí no
+  estaba; el archivo es del mismo paquete (`com.cuentivo.app`) y **no se versiona**.
+- **No se tocaron llaves ni secretos**, ni `keystore.properties`, ni ningún `*.jks`.
+- **No se tocó `functions/`**, ni `CLAUDE.md`, ni `AGENTS.md`, ni `firestore.rules`, ni
+  `PROJECT_MEMORY.md`.
+- **No se corrieron las instrumentadas** ni `lintDebug`.
+- **No se hizo OCR independiente**: sigue siendo lo que dice §1 de la parte 1 — la verificación
+  compara dos interpretaciones del **mismo** texto de Gemini, no dos lecturas del papel.
