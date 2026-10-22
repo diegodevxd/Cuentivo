@@ -727,7 +727,7 @@
     </plurals>
     <string name="ai_ledger_duplicate_badge">Posible duplicado</string>
     <string name="ai_ledger_duplicate_warning">Ya hay un movimiento registrado igual o muy similar: %1$s</string>
-    <string name="ai_ledger_crosscheck_summary_agreed">El Ledger de MexaLM está de acuerdo</string>
+    <string name="ai_ledger_crosscheck_summary_agreed">✓ El Ledger de MexaLM está de acuerdo</string>
     <plurals name="ai_ledger_crosscheck_summary_disagreements">
         <item quantity="one">El Ledger leyó %1$d renglón distinto</item>
         <item quantity="other">El Ledger leyó %1$d renglones distintos</item>

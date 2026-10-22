@@ -726,7 +726,7 @@
         <item quantity="other">%1$d sales would be overdue as of today</item>
     </plurals>
     <string name="ai_ledger_duplicate_badge">Possible duplicate</string>
-    <string name="ai_ledger_crosscheck_summary_agreed">The MexaLM Ledger agrees</string>
+    <string name="ai_ledger_crosscheck_summary_agreed">✓ The MexaLM Ledger agrees</string>
     <plurals name="ai_ledger_crosscheck_summary_disagreements">
         <item quantity="one">The Ledger read %1$d row differently</item>
         <item quantity="other">The Ledger read %1$d rows differently</item>

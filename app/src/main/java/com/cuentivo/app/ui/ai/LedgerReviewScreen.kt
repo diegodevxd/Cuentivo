@@ -1,6 +1,7 @@
 package com.cuentivo.app.ui.ai
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -79,6 +80,7 @@ import com.cuentivo.app.domain.LedgerYearCorrection
 import com.cuentivo.app.domain.ProductCandidate
 import com.cuentivo.app.ui.transaction.DueOption
 import com.cuentivo.app.ui.transaction.NeoChoiceChip
+import com.cuentivo.app.ui.theme.NeoSlow
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -1290,7 +1292,7 @@ private fun LedgerOperationRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         crosscheckDisagreements.forEach { disagreement ->
-                            CrosscheckBadge(disagreement)
+                            CrosscheckBadge(disagreement, operation.lineIndex)
                         }
                     }
                 }
@@ -1897,6 +1899,10 @@ private fun CrosscheckSummaryCard(
         // "están de acuerdo", y decirlo como si lo estuviera sería mentir.
         else -> stringResource(R.string.ai_ledger_crosscheck_summary_no_verdict)
     }
+    // El acento de la app —el mismo borde que llevan las tarjetas del Inicio— para que esta
+    // tarjeta no se confunda con las otras tres grises de esta pantalla. El mismo 42 % de alfa
+    // que usa `NeoPanel` para un borde de acento.
+    val accent = MaterialTheme.colorScheme.primary
     Card(
         modifier = modifier.testTag("ledger-crosscheck-summary"),
         colors = CardDefaults.cardColors(
@@ -1904,15 +1910,26 @@ private fun CrosscheckSummaryCard(
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.42f)),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // La palabra dice qué pasó; el color sólo la refuerza:
+            //
+            // - de acuerdo: el color POSITIVO de la app (el mismo verde del dinero cobrado);
+            // - hay renglones que el Ledger leyó distinto: el color de aviso de la app;
+            // - sin veredicto: neutro, porque no hay nada que celebrar ni que lamentar.
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                color = when {
+                    crosscheck.agreed -> MaterialTheme.colorScheme.secondary
+                    disagreeingRows > 0 -> NeoSlow
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
             Text(
                 text = stringResource(R.string.ai_ledger_crosscheck_summary_note),
@@ -1932,9 +1949,15 @@ private fun CrosscheckSummaryCard(
  *
  * El color es el de la marca, y no el de las otras insignias de la fila —el rojo es "esto está
  * roto" y el verde es "puede ser duplicado"— para que el ojo sepa que esto es otra cosa.
+ *
+ * La insignia tiene que VERSE: es lo único que dice, en la fila, que el Ledger leyó otra cosa.
+ * Por eso va en el acento de la app, con su peso de etiqueta y con una marca de prueba propia.
  */
 @Composable
-private fun CrosscheckBadge(disagreement: com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreement) {
+private fun CrosscheckBadge(
+    disagreement: com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreement,
+    lineIndex: Int,
+) {
     val label = when (disagreement.field) {
         com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.AMOUNT ->
             stringResource(R.string.ai_ledger_crosscheck_badge_amount)
@@ -1950,10 +1973,12 @@ private fun CrosscheckBadge(disagreement: com.cuentivo.app.ai.ledger.MexalmCross
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
         shape = RoundedCornerShape(4.dp),
+        modifier = Modifier.testTag("ledger-crosscheck-badge-" + lineIndex),
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
         )
