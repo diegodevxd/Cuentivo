@@ -65,6 +65,10 @@ import com.cuentivo.app.ai.ledger.LedgerAmountInput
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReview
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
+import com.cuentivo.app.ai.ledger.MexalmCrosscheckOutcome
+import com.cuentivo.app.ai.ledger.MexalmCrosscheckUnreadReason
+import com.cuentivo.app.ai.ledger.MexalmCrosscheckVerdict
+import com.cuentivo.app.ai.ledger.MexalmCrosscheckVerdictCalculator
 import com.cuentivo.app.ai.ledger.OperationFinancialDiagnostic
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
@@ -255,10 +259,16 @@ fun LedgerReviewContent(
             //
             // Sin bloque no hay nada que dibujar y la pantalla queda exactamente como estaba: el
             // servidor con la bandera apagada no manda la llave, y esa es la respuesta normal.
-            val crosscheck = review.mexalmCrosscheck
-            if (crosscheck != null) item(key = "ledger-review-crosscheck") {
+            //
+            // El veredicto INTERPRETADO es lo que se dibuja: cuando el Ledger no leyó la página
+            // (`BLOCKED`, `REVIEW_REQUIRED`) se dice una sola vez, y los renglones no llevan la
+            // insignia de "no lo vio" —no la leyó la página, no le faltaron renglones.
+            val crosscheckVerdict = review.mexalmCrosscheck?.let {
+                MexalmCrosscheckVerdictCalculator.calculate(it)
+            }
+            if (crosscheckVerdict != null) item(key = "ledger-review-crosscheck") {
                 CrosscheckSummaryCard(
-                    crosscheck = crosscheck,
+                    verdict = crosscheckVerdict,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -452,7 +462,10 @@ fun LedgerReviewContent(
             // Las diferencias del Ledger de MexaLM, agrupadas por renglón. Una insignia por
             // DIFERENCIA, no una por renglón: un renglón puede diferir en el monto y en el cliente,
             // y callarse uno de los dos escondería justo el detalle que hay que ver.
-            val crosscheckByLineIndex = review.mexalmCrosscheck?.disagreements?.groupBy { it.lineIndex }
+            //
+            // Son las diferencias VISIBLES del veredicto: cuando el Ledger no leyó la página, las
+            // de "no lo vio" no van en ningún renglón, porque no son la diferencia de un renglón.
+            val crosscheckByLineIndex = crosscheckVerdict?.visibleDisagreements?.groupBy { it.lineIndex }
                 ?: emptyMap()
             items(review.customerGroups) { group ->
                 CustomerGroupCard(
@@ -1878,26 +1891,43 @@ private fun chipFor(
  * como un aviso de que algo está mal y algo está mal: no.
  *
  * Sin bloque no se dibuja esta tarjeta, y la pantalla queda exactamente como estaba.
+ *
+ * **El caso de "el Ledger no leyó la página"** (`BLOCKED`, `REVIEW_REQUIRED`) se dice UNA vez, con
+ * el motivo en lenguaje sencillo, y los renglones NO llevan la insignia de "no lo vio": no le
+ * faltaron renglones al Ledger, no pudo certificar la página. Ponerle la insignia a cada renglón
+ * hacía creer que había doce diferencias cuando no había ninguna.
  */
 @Composable
 private fun CrosscheckSummaryCard(
-    crosscheck: com.cuentivo.app.ai.ledger.MexalmCrosscheckPayload,
+    verdict: MexalmCrosscheckVerdict,
     modifier: Modifier = Modifier,
 ) {
     // Cuántos RENGLONES discrepan, no cuántas diferencias: un renglón puede diferir en el monto y
     // en el cliente, y "leyó 3 renglones distintos" con dos insignias en el mismo renglón se
     // contradice.
-    val disagreeingRows = crosscheck.disagreeingLineIndices.size
-    val message = when {
-        crosscheck.agreed -> stringResource(R.string.ai_ledger_crosscheck_summary_agreed)
-        disagreeingRows > 0 -> pluralStringResource(
+    val disagreeingRows = verdict.disagreeingRowCount
+    val message = when (verdict.outcome) {
+        MexalmCrosscheckOutcome.AGREED -> stringResource(R.string.ai_ledger_crosscheck_summary_agreed)
+        MexalmCrosscheckOutcome.DISAGREEMENTS -> pluralStringResource(
             R.plurals.ai_ledger_crosscheck_summary_disagreements,
             disagreeingRows,
             disagreeingRows,
         )
+        // El Ledger no leyó la página. Se dice una vez, y con el motivo.
+        MexalmCrosscheckOutcome.COULD_NOT_READ ->
+            stringResource(R.string.ai_ledger_crosscheck_summary_could_not_read)
         // `agreed` falso sin ninguna diferencia: el Ledger no dio veredicto. No es lo mismo que
         // "están de acuerdo", y decirlo como si lo estuviera sería mentir.
-        else -> stringResource(R.string.ai_ledger_crosscheck_summary_no_verdict)
+        MexalmCrosscheckOutcome.NO_VERDICT ->
+            stringResource(R.string.ai_ledger_crosscheck_summary_no_verdict)
+    }
+    // El motivo, en lenguaje sencillo: qué pasó exactamente, sin jerga de servidor.
+    val reason = when (verdict.unreadReason) {
+        MexalmCrosscheckUnreadReason.BLOCKED ->
+            stringResource(R.string.ai_ledger_crosscheck_reason_blocked)
+        MexalmCrosscheckUnreadReason.REVIEW_REQUIRED ->
+            stringResource(R.string.ai_ledger_crosscheck_reason_review_required)
+        null -> null
     }
     // El acento de la app —el mismo borde que llevan las tarjetas del Inicio— para que esta
     // tarjeta no se confunda con las otras tres grises de esta pantalla. El mismo 42 % de alfa
@@ -1920,17 +1950,25 @@ private fun CrosscheckSummaryCard(
             //
             // - de acuerdo: el color POSITIVO de la app (el mismo verde del dinero cobrado);
             // - hay renglones que el Ledger leyó distinto: el color de aviso de la app;
-            // - sin veredicto: neutro, porque no hay nada que celebrar ni que lamentar.
+            // - sin veredicto, o el Ledger no leyó la página: neutro, porque no hay nada que
+            //   celebrar ni que lamentar.
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = when {
-                    crosscheck.agreed -> MaterialTheme.colorScheme.secondary
-                    disagreeingRows > 0 -> NeoSlow
+                color = when (verdict.outcome) {
+                    MexalmCrosscheckOutcome.AGREED -> MaterialTheme.colorScheme.secondary
+                    MexalmCrosscheckOutcome.DISAGREEMENTS -> NeoSlow
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
+            if (reason != null) {
+                Text(
+                    text = reason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 text = stringResource(R.string.ai_ledger_crosscheck_summary_note),
                 style = MaterialTheme.typography.bodySmall,

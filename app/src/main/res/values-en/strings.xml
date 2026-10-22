@@ -732,6 +732,9 @@
         <item quantity="other">The Ledger read %1$d rows differently</item>
     </plurals>
     <string name="ai_ledger_crosscheck_summary_no_verdict">The Ledger could not confirm the page</string>
+    <string name="ai_ledger_crosscheck_summary_could_not_read">The MexaLM Ledger could not read this page</string>
+    <string name="ai_ledger_crosscheck_reason_blocked">It stopped before comparing: it could not certify one of the lines of the page.</string>
+    <string name="ai_ledger_crosscheck_reason_review_required">It read the page, but left it pending review.</string>
     <string name="ai_ledger_crosscheck_summary_note">It only reports: it does not change what gets registered.</string>
     <string name="ai_ledger_crosscheck_badge_amount">Ledger: amount</string>
     <string name="ai_ledger_crosscheck_badge_customer">Ledger: customer</string>

@@ -16,6 +16,17 @@ enum class MexalmCrosscheckDisagreementField {
     AMOUNT,
     MISSING_IN_LEDGER,
     MISSING_IN_GEMINI,
+    ;
+
+    /**
+     * ¿Es una diferencia de VALOR —el tipo, el cliente o el monto—?
+     *
+     * Las diferencias de PRESENCIA (el Ledger no vio el renglón, o lo vio de más) no son
+     * diferencias de un renglón cuando el Ledger no leyó la página: son la página entera sin
+     * certificar, y se dicen una sola vez. Las de valor sí son de un renglón concreto.
+     */
+    val isValueDifference: Boolean
+        get() = this == TYPE || this == CUSTOMER || this == AMOUNT
 }
 
 /**
