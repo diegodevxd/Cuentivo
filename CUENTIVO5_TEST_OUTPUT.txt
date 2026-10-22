@@ -1,0 +1,64 @@
+CUENTIVO5 — salida real de las pruebas
+Rama: mexalm/ledger-crosscheck  Base: 5bd98ec docs: CUENTIVO4 documenta el encabezado de la clienta en la verificacion cruzada
+Fecha: 2026-10-21
+
+==============================================================
+1) functions: npm --prefix functions test
+==============================================================
+> functions@0.0.0 test
+> vitest run
+ RUN  v4.1.10 C:/Users/pibed/Downloads/CUENTIVO_mexalm_ledger/functions
+ Test Files  20 passed (20)
+      Tests  546 passed (546)
+   Start at  21:27:30
+   Duration  992ms (transform 1.36s, setup 0ms, import 2.86s, tests 1.18s, environment 2ms)
+
+==============================================================
+2) functions: npm --prefix functions run lint (tsc --noEmit)
+==============================================================
+
+> functions@0.0.0 lint
+> tsc -p tsconfig.json --noEmit
+
+SIN ERRORES (salida vacía = lint limpio)
+
+==============================================================
+3) Android JVM: ./gradlew.bat testDebugUnitTest
+==============================================================
+> Task :app:compileDebugKotlin
+> Task :app:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :app:testDebugUnitTest
+BUILD SUCCESSFUL in 15s
+
+  Conteo desde los XML de app/build/test-results/testDebugUnitTest:
+  clases 153 · tests 1426 · fallos/errores 0 · omitidas 0
+  (antes de esta tarea: 1418 — +8 de MexalmCrosscheckVerdictTest)
+
+==============================================================
+4) Android: ./gradlew.bat assembleDebug
+==============================================================
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:packageDebug UP-TO-DATE
+> Task :app:assembleDebug UP-TO-DATE
+BUILD SUCCESSFUL in 8s
+
+==============================================================
+5) Puertas del repo (CLAUDE.md)
+==============================================================
+-- paridad de claves ES/EN --
+app/src/main/res/values/strings.xml:700
+app/src/main/res/values-en/strings.xml:700
+-- puerta del idioma 1: composables de ui/ (vacía) --
+(vacía: exit 1)
+-- puerta del idioma 2: avisos fuera de ui/ (vacía) --
+(vacía: exit 1)
+-- regla 1: dinero en Long (archivos tocados) --
+(vacía: exit 1)
+
+==============================================================
+6) Verificación por mutación (las pruebas tienen que CAER)
+==============================================================
+servidor: didNotRead = false                        -> 2 pruebas caen (BLOCKED y REVIEW_REQUIRED)
+servidor: el volcado escribe sin el emulador      -> 4 pruebas caen (las de 'nada se escribe')
+app:      se dejan las diferencias de presencia     -> 1 prueba cae (la del veredicto único)
+app:      COULD_NOT_READ nunca se alcanza           -> 4 pruebas caen

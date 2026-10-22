@@ -130,6 +130,40 @@ apagada** (no hay push, ni deploy, ni release, ni emulador, ni instalación).
   significando "no hubo desacuerdos", no "el Ledger confirmó cada renglón".
 - Detalle completo: `HANDOFF_CUENTIVO1.md`, sección **CUENTIVO4**.
 
+### 2026-10-21 — CUENTIVO5: cuando el Ledger bloquea la página, se dice UNA vez
+
+Rama `mexalm/ledger-crosscheck`, base `5bd98ec`. **Sigue fuera de producción, con la bandera
+apagada** (no hay push, ni deploy, ni release, ni emulador, ni instalación).
+
+- **El síntoma que lo destapó:** la libreta de una clienta, doce renglones, y **cada renglón** con
+  la insignia "Ledger: no lo vio". En el log **no** hubo `MEXALM_LEDGER_FAILURE`: el Ledger
+  respondió `BLOCKED` (no pudo certificar la página) y sin operaciones, y eso se traducía en doce
+  `MISSING_IN_LEDGER` que **no eran diferencias**: no le faltaron renglones al Ledger, no pudo leer
+  la página.
+- **Servidor:** `BLOCKED` y `REVIEW_REQUIRED` **sin operaciones** ya no reportan diferencias por
+  renglón: el bloque queda `agreed: false`, `disagreements: []` y `ledgerStatus` con el status del
+  Ledger. Con `OK` todo sigue igual (incluido el "no lo vio" de verdad), y `BLOCKED` **con**
+  operaciones se compara normal. **El contrato no cambió.**
+- **App:** el veredicto se interpreta en un objeto puro (`MexalmCrosscheckVerdictCalculator`, 8
+  pruebas JVM) y la tarjeta dice **una vez** "El Ledger de MexaLM no pudo leer esta página" con el
+  motivo en lenguaje sencillo. Las insignias de "no lo vio" **no** van en ningún renglón en ese
+  caso; las diferencias de valor (monto, cliente, tipo) sí se ven.
+- **Volcado de diagnóstico, SÓLO en el emulador:** el parámetro `MEXALM_LEDGER_DEBUG_DUMP`
+  (`defineBoolean`, apagado por defecto) escribe `functions/.mexalm-debug/<timestamp>.json` con el
+  texto exacto que se mandó, la respuesta completa del Ledger y el emparejamiento renglón por
+  renglón. **En producción el parámetro se ignora**: hacen falta el emulador
+  (`FUNCTIONS_EMULATOR === "true"`) y el parámetro, y la decisión vive en un solo lugar
+  (`isMexalmLedgerDebugDumpEnabled`). El directorio está en `.gitignore`.
+- Evidencia: `CUENTIVO5_TEST_OUTPUT.txt` (functions **546/546** —antes 529—, lint limpio, JVM
+  **1426/1426**, `assembleDebug` en verde, puertas de idioma vacías, paridad 700/700) y **cuatro
+  mutaciones cazadas** (comparar igual con `BLOCKED`, escribir el volcado sin el emulador, dejar las
+  diferencias de presencia, no llegar nunca a `COULD_NOT_READ`).
+- **Queda abierto:** la bandera sigue apagada y **nadie ha corrido esto contra el Ledger real** desde
+  este worktree; falta la prueba con la libreta de "Aurora" de verdad, con el volcado encendido en
+  el emulador, para ver el `rawText` que el Ledger no certifica. Y el **código de motivo** del
+  Ledger (`reasons`) no llega a la app: el bloque no creció y el parser de Android es estricto.
+- Detalle completo: `HANDOFF_CUENTIVO1.md`, sección **CUENTIVO5**.
+
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 
 **Fase 1 (`0bba4dc`, `82df2c0`).** El estado de la revisión vivía en `remember`: al recrearse la

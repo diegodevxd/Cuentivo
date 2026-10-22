@@ -1,0 +1,159 @@
+CUENTIVO5 — diagnóstico local de la verificación cruzada y mensaje claro cuando el Ledger bloquea
+=============================================================================================
+
+Rama:   mexalm/ledger-crosscheck   (base 5bd98ec)
+Worktree: C:\Users\pibed\Downloads\CUENTIVO_mexalm_ledger
+Fecha:  2026-10-21
+Estado: LOCAL. Sin push, sin deploy, sin release, sin emulador, sin servidor, sin instalación.
+
+
+1. EL SÍNTOMA Y LA CAUSA
+-------------------------
+La libreta de una sola clienta, doce renglones, y el resumen con "Ledger no lo vio" en CADA
+renglón. En el log NO hubo MEXALM_LEDGER_FAILURE: el Ledger respondió. Respondió
+
+    status: "BLOCKED"      (no pudo certificar la página)   operations: []
+
+"BLOCKED" no estaba en la lista de status "sin veredicto" (INVALID_OUTPUT, REFUSED), así que el
+cliente lo tomaba como un veredicto y comparaba. Con cero operaciones del Ledger y doce renglones
+de Gemini, la comparación sacaba doce MISSING_IN_LEDGER: doce diferencias que NO existían. No le
+faltaron doce renglones al Ledger — no pudo leer la página.
+
+
+2. EL VOLCADO DE DIAGNÓSTICO (SOLO EN EL EMULADOR)
+---------------------------------------------------
+Archivo nuevo: functions/src/ai/mexalmLedgerDebugDump.ts
+
+  Cuándo:   FUNCTIONS_EMULATOR === "true"  Y  MEXALM_LEDGER_DEBUG_DUMP === true
+  Dónde:    functions/.mexalm-debug/<timestamp>.json   (ignorado por Git)
+  Qué:      el texto EXACTO que se mandó al Ledger,
+            la respuesta COMPLETA del Ledger,
+            y el emparejamiento renglón por renglón
+  Producción: NADA. El parámetro se ignora.
+
+La decisión vive en UN solo lugar, isMexalmLedgerDebugDumpEnabled, que es el que usa el código de
+producción y el que ejercita la prueba. No es un `if` en el call site: es la regla.
+
+  - El texto de la página sale del servidor, pero a un ARCHIVO LOCAL DEL EMULADOR, no a un log.
+    Un log es un destino público; por eso /functions/.mexalm-debug/ está en .gitignore.
+  - El nombre del archivo lleva el momento de la llamada y SIN dos puntos: los dos puntos no valen
+    en un nombre de archivo de Windows.
+  - El directorio se busca subiendo desde el directorio de trabajo hasta encontrar el package.json
+    del paquete de Functions (el emulador puede arrancar el proceso desde otro sitio). Si no se
+    encuentra, el directorio de trabajo es el plan B.
+  - El volcado NUNCA tumba la callable: si el disco falla, la escritura falla y se sigue.
+  - El emparejamiento del volcado es el MISMO que usa la comparación (pairLedgerOperations +
+    summarize), no una copia que se parece.
+  - El cliente ahora guarda la respuesta cruda del Ledger en `raw`. Nunca se registra: sólo la usa
+    el volcado, y no llega a la respuesta de la app.
+
+Parámetro: MEXALM_LEDGER_DEBUG_DUMP — defineBoolean, APAGADO por defecto. Va en el entorno de la
+función del emulador (.env.<project_id> o el .env local).
+
+
+3. EL MENSAJE CLARO
+-------------------
+Servidor (functions/src/ai/mexalmCrosscheck.ts + mexalmLedgerClient.ts):
+  - BLOCKED y REVIEW_REQUIRED SIN operaciones  ->  disagreements: []  y  agreed: false.
+    El ledgerStatus viaja verbatim y es lo que dice que pasó.
+  - Con OK todo sigue igual: un Ledger que dice OK y no ve un renglón SÍ es un desacuerdo.
+  - BLOCKED CON operaciones se compara normal: lo que el Ledger sí leyó, se compara.
+
+App (app/.../ai/ledger/MexalmCrosscheckVerdict.kt, nuevo, objeto PURO):
+  El veredicto se interpreta fuera del Composable, para que la prueba lo pueda invocar sin
+  Android. La tarjeta sólo lo dibuja.
+
+    AGREED          ->  "✓ El Ledger de MexaLM está de acuerdo"            (como siempre)
+    DISAGREEMENTS   ->  "El Ledger leyó N renglones distintos"             (como siempre)
+    NO_VERDICT      ->  "El Ledger no pudo confirmar la página"            (como siempre)
+    COULD_NOT_READ  ->  "El Ledger de MexaLM no pudo leer esta página"
+                        + el motivo en lenguaje sencillo:
+                          BLOCKED         -> "Se detuvo antes de comparar: no pudo certificar
+                                                alguna línea de la hoja."
+                          REVIEW_REQUIRED -> "Leyó la hoja, pero la dejó pendiente de revisión."
+
+  Las insignias por renglón: cuando el Ledger no leyó la página, las diferencias de PRESENCIA
+  (MISSING_IN_LEDGER, MISSING_IN_GEMINI) NO van en ningún renglón — no son la diferencia de un
+  renglón, son la página entera sin certificar. Las diferencias de VALOR (monto, cliente, tipo) SÍ
+  se ven, porque ésas sí son de un renglón concreto.
+
+  Esto arregla el síntoma con el servidor viejo Y con el nuevo: el viejo mandaba las doce
+  MISSING_IN_LEDGER con ledgerStatus "BLOCKED", y la app las filtra igual.
+
+  El MODELO, el PARSER y el CONTRATO no se tocaron. El bloque sigue siendo
+  {agreed, disagreements, ledgerStatus, latencyMs}.
+
+
+4. LAS PRUEBAS
+--------------
+functions:  546/546 (antes 529)     npm test
+            npm run lint limpio
+Android:    1426/1426, 0 fallos, 0 errores, 0 omitidas (153 clases)   testDebugUnitTest
+            (antes 1418)
+assembleDebug: BUILD SUCCESSFUL (APK de 68 MB). NO SE INSTALÓ NADA.
+Puertas de idioma: las dos VACÍAS.   Paridad ES/EN: 700/700 <string>.
+
+Pruebas nuevas (17):
+  functions/test/mexalmLedgerDebugDump.test.ts (11, nuevo)
+  functions/test/mexalmCrosscheck.test.ts (+4)
+  functions/test/index.test.ts (+2)
+  app/src/test/.../MexalmCrosscheckVerdictTest.kt (8, nuevo)
+
+Verificación por mutación (las pruebas tienen que CAER):
+  servidor: didNotRead = false                     -> 2 pruebas caen
+  servidor: el volcado escribe sin el emulador     -> 4 pruebas caen
+  app:      se dejan las diferencias de presencia    -> 1 prueba cae
+  app:      COULD_NOT_READ nunca se alcanza          -> 4 pruebas caen
+
+
+5. ARCHIVOS
+-----------
+Modificados:
+  .gitignore
+  functions/src/ai/mexalmCrosscheck.ts
+  functions/src/ai/mexalmLedgerClient.ts
+  functions/src/index.ts
+  functions/test/mexalmCrosscheck.test.ts
+  functions/test/index.test.ts
+  app/src/main/java/com/cuentivo/app/ai/ledger/MexalmCrosscheck.kt
+  app/src/main/java/com/cuentivo/app/ui/ai/LedgerReviewScreen.kt
+  app/src/main/res/values/strings.xml
+  app/src/main/res/values-en/strings.xml
+  HANDOFF_CUENTIVO1.md (sección CUENTIVO5)
+  PROJECT_MEMORY.md
+Nuevos:
+  functions/src/ai/mexalmLedgerDebugDump.ts
+  functions/test/mexalmLedgerDebugDump.test.ts
+  app/src/main/java/com/cuentivo/app/ai/ledger/MexalmCrosscheckVerdict.kt
+  app/src/test/java/com/cuentivo/app/ai/ledger/MexalmCrosscheckVerdictTest.kt
+  CUENTIVO5_TEST_OUTPUT.txt
+  done_cuentivo5.txt
+
+
+6. LO QUE NO SE HIZO
+---------------------
+- No se hizo push, ni deploy, ni build de release.
+- No se arrancó ningún servidor ni emulador (el de Functions en el 5001 no se tocó).
+- No se instaló nada en ningún dispositivo.
+- No se corrieron las instrumentadas ni lintDebug (hacen falta emulador o teléfono).
+- No se corrió `npm --prefix functions run release:check`: ese script levanta el emulador de
+  Firestore, y esta tarea prohíbe arrancar emuladores. Se corrieron npm test y npm run lint.
+- No se tocaron llaves ni secretos, ni functions/.secret.local, ni keystore.properties, ni *.jks.
+- No se cambió el contrato (functions/src/contract.ts), ni el parser de Android, ni el modelo de
+  la app, ni la bandera MEXALM_LEDGER_CROSSCHECK (sigue APAGADA).
+- No se tocó CLAUDE.md, AGENTS.md ni firestore.rules.
+- .gitignore traía un cambio sin commitear de la parte 1 (/functions/.secret.local): al commitear
+  el .gitignore de esta parte se fue con él. Es una regla de ignore correcta.
+
+
+7. LO QUE QUEDA ABIERTO (es de Diego)
+-------------------------------------
+- La bandera MEXALM_LEDGER_CROSSCHECK sigue APAGADA y nadie ha corrido esto contra el Ledger real
+  desde este worktree. Falta la prueba con la libreta de "Aurora" de verdad, con
+  MEXALM_LEDGER_DEBUG_DUMP=true EN EL EMULADOR: el volcado dice qué rawText concreto no certificó
+  el Ledger, y eso es lo que hay que arreglar en la lectura de la página.
+- El código de motivo del Ledger (reasons, por ejemplo plan_uncertifiable_line) NO llega a la app:
+  el bloque no creció y el parser de Android es estricto. Está en el volcado. Si hace falta en la
+  pantalla, es un contrato nuevo y se decide aparte.
+- agreed sigue significando "no hubo desacuerdos", no "el Ledger confirmó cada renglón".
+- Antes del primer deploy hay que crear el secreto MEXALM_LEDGER_TOKEN, o el deploy falla.

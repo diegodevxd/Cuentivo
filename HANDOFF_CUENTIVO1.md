@@ -1004,3 +1004,233 @@ se rompió producción a propósito y se comprobó que las pruebas caen.
   Ledger que conteste `null` en todos los clientes deja `agreed: true` porque no discrepó de nada.
   El resumen lo dice en positivo ("está de acuerdo"), y esa diferencia entre "no discrepó" y
   "confirmó" es una decisión de producto que sigue siendo de Diego.
+
+---
+
+# CUENTIVO5 — diagnóstico local de la verificación cruzada y mensaje claro cuando el Ledger bloquea
+
+**Tarea:** `TASK_CUENTIVO5.md` · **Rama:** `mexalm/ledger-crosscheck` (base `5bd98ec`) ·
+**Worktree:** `C:\Users\pibed\Downloads\CUENTIVO_mexalm_ledger` · **Fecha:** 2026-10-21
+
+## C5.1 El síntoma, y lo que el log sí dice
+
+La libreta de una sola clienta, doce renglones, y el resumen con **"Ledger no lo vio" en cada
+renglón**. En el log **no** hay `MEXALM_LEDGER_FAILURE`: el Ledger respondió. Respondió
+`status: "BLOCKED"` —no pudo certificar la página— y **sin operaciones**.
+
+Lo que pasaba en el servidor: `BLOCKED` no está en la lista de status "sin veredicto"
+(`INVALID_OUTPUT`, `REFUSED`), así que el cliente lo tomaba como un veredicto y comparaba. Con
+cero operaciones del Ledger y doce renglones de Gemini, la comparación sacaba doce
+`MISSING_IN_LEDGER`: **doce diferencias que no existían**. No le faltaron doce renglones al
+Ledger; no pudo leer la página.
+
+En la app eso se veía como la insignia "Ledger: no lo vio" repetida en los doce renglones.
+
+## C5.2 Lo que cambió en el servidor
+
+### `BLOCKED` y `REVIEW_REQUIRED` sin operaciones no reportan diferencias por renglón
+
+`functions/src/ai/mexalmLedgerClient.ts` declara el vocabulario del Ledger:
+
+```ts
+export const LEDGER_STATUS_WITHOUT_READ = new Set(["BLOCKED", "REVIEW_REQUIRED"]);
+```
+
+`functions/src/ai/mexalmCrosscheck.ts` — `ledgerDidNotReadPage(status, operationCount)`:
+
+```ts
+return operationCount === 0 && LEDGER_STATUS_WITHOUT_READ.has(status);
+```
+
+Cuando eso es cierto, el bloque queda:
+
+- `agreed: false` — no se puede decir que los dos lados dicen lo mismo;
+- `disagreements: []` — no hay veredicto renglón por renglón, así que no hay diferencias por
+  renglón;
+- `ledgerStatus: "BLOCKED"` — **verbatim**, y es lo que dice que pasó.
+
+**El contrato no cambió.** El bloque sigue siendo `{agreed, disagreements, ledgerStatus, latencyMs}`
+y el parser de Android no se tocó. Con `OK` todo sigue igual: un Ledger que dice `OK` y no ve un
+renglón **sí** es un desacuerdo, y se reporta (`MISSING_IN_LEDGER`).
+
+Y si el Ledger devuelve `BLOCKED` **con** operaciones, se compara normal: lo que el Ledger sí leyó
+se compara. La regla es "no leyó la página" (status + cero operaciones), no "el status es raro".
+
+### El volcado de diagnóstico: sólo en el emulador
+
+`functions/src/ai/mexalmLedgerDebugDump.ts` (nuevo). Cuando el Ledger bloquea, el `ledgerStatus`
+dice que pasó pero no dice **por qué** ni **qué le mandamos**. Con el volcado, sí.
+
+| | |
+|---|---|
+| **Cuándo** | `FUNCTIONS_EMULATOR === "true"` **Y** `MEXALM_LEDGER_DEBUG_DUMP === true` |
+| **Dónde** | `functions/.mexalm-debug/<timestamp>.json` (ignorado por Git) |
+| **Qué** | el texto **exacto** que se mandó, la respuesta **completa** del Ledger y el emparejamiento renglón por renglón |
+| **En producción** | **nada**: el parámetro se ignora |
+
+La decisión vive en **un solo lugar**, `isMexalmLedgerDebugDumpEnabled`, que es el que usa el
+código de producción y el que ejercita la prueba. No es un `if` en el call site: es la regla.
+
+- El **texto de la página** sale del servidor, pero a un **archivo local del emulador**, no a un
+  log. Un log es un destino público; un archivo local ignorado por Git, no. Por eso
+  `/functions/.mexalm-debug/` está en `.gitignore`.
+- El archivo se llama con el momento de la llamada y **sin dos puntos**: los dos puntos no valen en
+  un nombre de archivo de Windows, y este volcado se escribe en la máquina de quien desarrolla.
+- El **directorio** se busca subiendo desde el directorio de trabajo hasta encontrar el
+  `package.json` del paquete de Functions, porque el emulador puede arrancar el proceso desde otro
+  sitio. Si no se encuentra, el directorio de trabajo es el plan B.
+- **El volcado nunca tumba la callable**: si el disco falla, la escritura falla y se sigue. La
+  lectura de la libreta ya se pagó.
+- El emparejamiento del volcado es **el mismo** que usa la comparación (`pairLedgerOperations` +
+  `summarize`), no una copia que se parece: por eso `pairLedgerOperations` pasó a ser pública.
+
+El cliente (`mexalmLedgerClient.ts`) ahora guarda la respuesta cruda del Ledger en `raw`. **No se
+registra nunca**: sólo la usa el volcado, y no llega a la respuesta de la app.
+
+### El parámetro
+
+`MEXALM_LEDGER_DEBUG_DUMP` — `defineBoolean`, **apagado por defecto**, como un parámetro (no un
+secreto: no es un secreto, es una decisión de desarrollo). Va en el entorno de la función del
+emulador (`.env.<project_id>` o el `.env` local).
+
+## C5.3 Lo que cambió en la app
+
+El veredicto se interpreta en un **objeto puro**, `MexalmCrosscheckVerdictCalculator`
+(`app/src/main/java/com/cuentivo/app/ai/ledger/MexalmCrosscheckVerdict.kt`), para que la prueba lo
+pueda invocar sin Android. La tarjeta sólo lo dibuja.
+
+| Estado del veredicto | Qué se ve |
+|---|---|
+| `AGREED` | "✓ El Ledger de MexaLM está de acuerdo" (como siempre) |
+| `DISAGREEMENTS` | "El Ledger leyó N renglones distintos" (como siempre) |
+| `NO_VERDICT` | "El Ledger no pudo confirmar la página" (como siempre) |
+| `COULD_NOT_READ` | **"El Ledger de MexaLM no pudo leer esta página"** + el motivo en lenguaje sencillo |
+
+El motivo depende del status:
+
+- `BLOCKED` → "Se detuvo antes de comparar: no pudo certificar alguna línea de la hoja."
+- `REVIEW_REQUIRED` → "Leyó la hoja, pero la dejó pendiente de revisión."
+
+Y las **insignias por renglón**: cuando el Ledger no leyó la página, las diferencias de
+**presencia** (`MISSING_IN_LEDGER`, `MISSING_IN_GEMINI`) **no** se muestran en ningún renglón. No
+son la diferencia de un renglón: son la página entera sin certificar. Las diferencias de **valor**
+(monto, cliente, tipo) **sí** se muestran, porque ésas sí son de un renglón concreto.
+
+Esto arregla el síntoma **con el servidor viejo y con el nuevo**: el servidor viejo mandaba las
+doce `MISSING_IN_LEDGER` con `ledgerStatus: "BLOCKED"`, y la app ahora las filtra igual. Con el
+servidor nuevo el bloque ya viene sin diferencias.
+
+**El modelo, el parser y el contrato no se tocaron.** Sólo la interpretación y el texto.
+
+## C5.4 Las pruebas (números reales)
+
+- `functions`: **546/546** (`npm test`), `npm run lint` limpio. Antes: 529.
+- Android JVM: **1426/1426**, 0 fallos, 0 errores, 0 omitidas (153 clases). Antes: 1418.
+- `assembleDebug`: BUILD SUCCESSFUL (APK de 68 MB). **No se instaló nada.**
+- Puertas de idioma: las dos **vacías**. Paridad ES/EN: **700/700** `<string>`.
+- Salida completa: `CUENTIVO5_TEST_OUTPUT.txt`.
+
+**Las 17 pruebas nuevas**:
+
+`functions/test/mexalmLedgerDebugDump.test.ts` (11, nuevo):
+
+1. fuera del emulador el parámetro se ignora (emulador ausente, y emulador "false");
+2. dentro del emulador hace falta el parámetro;
+3. **fuera del emulador no se escribe NADA**: ni archivo, ni directorio, ni una línea de la libreta;
+4. tampoco con el emulador apagado explícitamente;
+5. con el emulador y el parámetro encendido se escribe el archivo con el texto, la respuesta
+   completa y el emparejamiento;
+6. el archivo se llama con el momento de la llamada y sin dos puntos;
+7. el volcado nunca tumba la callable (si el disco falla, no hay archivo y sigue);
+8. el directorio cae en el paquete de Functions, no en el directorio del proceso;
+9. si no hay paquete de Functions, el directorio de trabajo es el plan B;
+10. con la verificación cruzada de verdad, el Ledger que bloquea deja un volcado con el texto que
+    se le mandó;
+11. sin el volcado encendido no se escribe nada, aunque el Ledger bloquee.
+
+`functions/test/mexalmCrosscheck.test.ts` (+4):
+
+12. `BLOCKED` sin operaciones NO deja un desacuerdo en cada renglón (la libreta de doce renglones);
+13. `REVIEW_REQUIRED` sin operaciones tampoco;
+14. con `OK` todo sigue igual: los renglones que el Ledger no vio **sí** se reportan;
+15. `BLOCKED` **con** operaciones se compara normal.
+
+`functions/test/index.test.ts` (+2): el parámetro del volcado se declara apagado por defecto y
+ligado al emulador; el volcado nunca llega al log.
+
+`app/src/test/java/com/cuentivo/app/ai/ledger/MexalmCrosscheckVerdictTest.kt` (8, nuevo): el Ledger
+que no leyó la página produce un veredicto y ningún desacuerdo por renglón; `BLOCKED` sin
+diferencias también es el veredicto único; `REVIEW_REQUIRED` es el mismo caso con otro motivo; con
+`OK` todo sigue igual; el de acuerdo sigue siendo el de acuerdo; sin veredicto **no** es que estén
+de acuerdo; una diferencia de valor se ve aunque el Ledger no haya leído la página; el status crudo
+viaja en el veredicto.
+
+### Verificación por mutación
+
+Porque en este proyecto una prueba en verde ya mintió cinco veces: se rompió producción a
+propósito y se comprobó que las pruebas **caen**.
+
+| Mutación | Qué cayó |
+|---|---|
+| servidor: `didNotRead = false` (se comparan igual) | 2 pruebas (la de `BLOCKED` y la de `REVIEW_REQUIRED`) |
+| servidor: el volcado escribe sin el emulador | 4 pruebas (las de "no se escribe nada") |
+| app: se dejan las diferencias de presencia | 1 prueba (la del veredicto único) |
+| app: `COULD_NOT_READ` nunca se alcanza | 4 pruebas |
+
+## C5.5 Archivos exactos
+
+**Modificados**
+
+- `functions/src/ai/mexalmCrosscheck.ts`
+- `functions/src/ai/mexalmLedgerClient.ts`
+- `functions/src/index.ts`
+- `functions/test/mexalmCrosscheck.test.ts`
+- `functions/test/index.test.ts`
+- `app/src/main/java/com/cuentivo/app/ai/ledger/MexalmCrosscheck.kt`
+- `app/src/main/java/com/cuentivo/app/ui/ai/LedgerReviewScreen.kt`
+- `app/src/main/res/values/strings.xml`
+- `app/src/main/res/values-en/strings.xml`
+- `.gitignore` (el directorio del volcado)
+- `HANDOFF_CUENTIVO1.md` (esta sección) · `PROJECT_MEMORY.md` (estado vivo)
+
+**Nuevos**
+
+- `functions/src/ai/mexalmLedgerDebugDump.ts`
+- `functions/test/mexalmLedgerDebugDump.test.ts`
+- `app/src/main/java/com/cuentivo/app/ai/ledger/MexalmCrosscheckVerdict.kt`
+- `app/src/test/java/com/cuentivo/app/ai/ledger/MexalmCrosscheckVerdictTest.kt`
+- `CUENTIVO5_TEST_OUTPUT.txt` · `done_cuentivo5.txt`
+
+## C5.6 Lo que NO se hizo
+
+- **No se hizo push, ni deploy, ni build de release.** Todo es local, en la rama
+  `mexalm/ledger-crosscheck`.
+- **No se arrancó ningún servidor ni emulador** (el de Functions en el 5001 no se tocó) y **no se
+  instaló** nada en ningún dispositivo.
+- **No se corrieron las instrumentadas** ni `lintDebug` (hacen falta emulador o teléfono).
+- **No se corrió `npm --prefix functions run release:check`**: ese script levanta el emulador de
+  Firestore, y esta tarea prohíbe arrancar emuladores. Se corrieron `npm test` y `npm run lint`.
+- **No se tocaron llaves ni secretos**, ni `functions/.secret.local`, ni `keystore.properties`, ni
+  ningún `*.jks`.
+- **No se cambió el contrato** (`functions/src/contract.ts`), ni el parser de Android, ni el
+  modelo de la app, ni la bandera `MEXALM_LEDGER_CROSSCHECK` (sigue apagada).
+- **No se tocó** `CLAUDE.md`, `AGENTS.md` ni `firestore.rules`.
+- `.gitignore` traía un cambio sin commitear de la parte 1 (`/functions/.secret.local`). Al
+  commitear el `.gitignore` de esta parte **se fue con él**: es una regla de ignore correcta y
+  era absurdo dejar el archivo a medias.
+
+## C5.7 Lo que queda abierto (es de Diego)
+
+- **La bandera sigue apagada** y **nadie ha corrido esto contra el Ledger real** desde este
+  worktree. La prueba que falta es la de la libreta de "Aurora" de verdad, con
+  `MEXALM_LEDGER_DEBUG_DUMP=true` **en el emulador**: el volcado dice qué `rawText` concreto no
+  certificó el Ledger, y eso es lo que hay que arreglar en la lectura de la página.
+- **El motivo del Ledger no llega al teléfono.** El `status` viaja verbatim y la app lo traduce a
+  lenguaje sencillo, pero el código de motivo del Ledger (por ejemplo `plan_uncertifiable_line`, que
+  viaja en `reasons`) **no** se manda a la app: el bloque no creció y el parser de Android es
+  estricto. Está en el volcado. Si hace falta en la pantalla, es un contrato nuevo y se decide
+  aparte.
+- **`agreed` sigue significando "no hubo desacuerdos"**, no "el Ledger confirmó cada renglón" (de
+  la parte 4).
+- **La insignia por renglón sigue siendo una por diferencia** (una fila puede llevar "Ledger:
+  monto" y "Ledger: cliente").
