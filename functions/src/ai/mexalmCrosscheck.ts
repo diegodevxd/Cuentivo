@@ -399,6 +399,58 @@ export function compareLedgerOperations(
 }
 
 /**
+ * Los renglones que el Ledger CONFIRMÓ.
+ *
+ * Un renglón está confirmado cuando **los dos lados tienen un valor** en el tipo, el cliente y el
+ * monto, y **los tres coinciden**: el tipo igual, el cliente igual después de normalizar, y el
+ * monto igual en centavos.
+ *
+ * La diferencia con "no hubo desacuerdos" es la que importa, y es la que hace que este encargo
+ * sea posible: un desacuerdo sólo existe cuando los dos lados tienen un valor, así que un Ledger
+ * que no tuvo opinión de nada no discrepa de nada — `agreed: true` y, al mismo tiempo, esta lista
+ * vacía. Con esta lista el cliente sabe qué renglón quedó confirmado de verdad.
+ *
+ * Por eso el renglón confirmado exige que el Ledger **también** afirmara el monto, el cliente y el
+ * tipo: "no lo sé" no es un acuerdo.
+ */
+export function confirmAgreedPairs(pairs: readonly OperationPair[]): number[] {
+  const confirmed: number[] = [];
+  for (const pair of pairs) {
+    const gemini = pair.gemini;
+    const ledger = pair.ledger;
+    if (gemini === undefined || ledger === undefined) {
+      continue;
+    }
+    const geminiKind = opinion(gemini.proposedKind);
+    const ledgerKind = opinion(ledger.proposedKind);
+    if (geminiKind === undefined || ledgerKind === undefined || geminiKind !== ledgerKind) {
+      continue;
+    }
+    const geminiCustomer = opinion(gemini.customerName);
+    const ledgerCustomer = opinion(ledger.customerName);
+    if (geminiCustomer === undefined || ledgerCustomer === undefined) {
+      continue;
+    }
+    if (
+      normalizeCustomerNameForCrosscheck(geminiCustomer) !==
+      normalizeCustomerNameForCrosscheck(ledgerCustomer)
+    ) {
+      continue;
+    }
+    const geminiAmount = opinion(gemini.amountCents);
+    const ledgerAmount = opinion(ledger.amountCents);
+    if (geminiAmount === undefined || ledgerAmount === undefined) {
+      continue;
+    }
+    if (!sameAmountCents(geminiAmount, ledgerAmount)) {
+      continue;
+    }
+    confirmed.push(pair.lineIndex);
+  }
+  return confirmed.sort((left, right) => left - right);
+}
+
+/**
  * Compara los renglones YA emparejados. Es el corazón de la comparación, y está aparte para que
  * el volcado de diagnóstico y la comparación usen exactamente el mismo emparejamiento.
  */
@@ -558,6 +610,9 @@ export function createMexalmLedgerCrosschecker(options: Readonly<{
         disagreements: didNotRead ? [] : disagreements,
         ledgerStatus: result.status,
         latencyMs,
+        // Los renglones que el Ledger confirmó de verdad. Cuando no leyó la página, no confirmó
+        // ninguno: no hay veredicto que haya confirmado nada.
+        confirmedLineIndexes: didNotRead ? [] : confirmAgreedPairs(pairs),
       };
     },
   };

@@ -1014,3 +1014,127 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
     });
   });
 });
+
+/**
+ * Los renglones que el Ledger CONFIRMÓ.
+ *
+ * Es la pieza que hace posible el encargo del dueño: cuando el Ledger confirma un renglón, ese
+ * renglón ya no cuenta como duda de lectura. Y para que la app pueda saberlo, el bloque tiene que
+ * llevar la lista: "no hubo desacuerdos" NO es lo mismo que "el Ledger confirmó este renglón" —un
+ * Ledger que no tuvo opinión de nada no discrepa de nada—.
+ */
+describe("los renglones que el Ledger confirmó", () => {
+  /**
+   * La libreta de doce renglones de una clienta: ocho ventas y cuatro abonos. Es el caso real
+   * del dueño, y el que sale de la prueba de la libreta de verdad.
+   */
+  const TWELVE_ROWS: LedgerExtractionResult = {
+    operations: Array.from({ length: 12 }, (_, index) => ({
+      lineIndex: index,
+      proposedKind: index < 8 ? "SALE" : "PAYMENT",
+      customerName: "Aurora",
+      amountCents: String(10000 + index),
+      uncertainFields: [],
+      unreadableFields: [],
+      rawText: `renglon ${index}`,
+    })),
+    discards: [],
+    unreadTextRemaining: false,
+    pageIncomplete: false,
+  };
+
+  test("un renglón con las dos lecturas de acuerdo queda confirmado", async () => {
+    const crosscheck = crosscheckerOver(jsonResponse(LEDGER_AGREED));
+
+    const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+      auth: AUTH_USER,
+      data: VALID_DATA,
+    })) as any;
+
+    expect(result.mexalmCrosscheck.agreed).toBe(true);
+    expect(result.mexalmCrosscheck.confirmedLineIndexes).toEqual([0, 1]);
+  });
+
+  test("un renglón que discrepa NO queda confirmado", async () => {
+    const crosscheck = crosscheckerOver(jsonResponse(LEDGER_DIFFERENT_AMOUNT));
+
+    const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+      auth: AUTH_USER,
+      data: VALID_DATA,
+    })) as any;
+
+    // El primer renglón coincide entero; el segundo discrepa en el monto.
+    expect(result.mexalmCrosscheck.confirmedLineIndexes).toEqual([0]);
+  });
+
+  test("un Ledger sin opinión de nada no confirma ni un renglón, aunque no haya desacuerdos", async () => {
+    const crosscheck = crosscheckerOver(jsonResponse(LEDGER_AURORA_NO_CUSTOMER));
+
+    const result = (await createExtractLedgerPageHandler(
+      deps({ provider: providerReturning(AURORA_PAGE), crosscheck }),
+    )({
+      auth: AUTH_USER,
+      data: VALID_DATA,
+    })) as any;
+
+    // `agreed` en true: no hubo desacuerdos. Y la lista VACÍA: el Ledger no confirmó nada,
+    // porque no tuvo opinión del cliente. Confundir las dos cosas es justo el error que la lista
+    // viene a evitar.
+    expect(result.mexalmCrosscheck.agreed).toBe(true);
+    expect(result.mexalmCrosscheck.confirmedLineIndexes).toEqual([]);
+  });
+
+  test("el mismo cliente con otra grafía SÍ se confirma: la comparación normaliza", async () => {
+    const crosscheck = crosscheckerOver(
+      jsonResponse({
+        status: "OK",
+        operations: [
+          { lineIndex: 0, proposedKind: "SALE", customerName: "ROSA", amountCents: "25000" },
+          { lineIndex: 1, proposedKind: "SALE", customerName: "Toño", amountCents: "3800" },
+        ],
+      }),
+    );
+
+    const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+      auth: AUTH_USER,
+      data: VALID_DATA,
+    })) as any;
+
+    expect(result.mexalmCrosscheck.confirmedLineIndexes).toEqual([0, 1]);
+  });
+
+  test("el Ledger que no leyó la página no confirma ningún renglón", async () => {
+    const crosscheck = crosscheckerOver(jsonResponse({ status: "BLOCKED", operations: [] }));
+
+    const result = (await createExtractLedgerPageHandler(
+      deps({ provider: providerReturning(TWELVE_ROWS), crosscheck }),
+    )({
+      auth: AUTH_USER,
+      data: VALID_DATA,
+    })) as any;
+
+    expect(result.mexalmCrosscheck.ledgerStatus).toBe("BLOCKED");
+    expect(result.mexalmCrosscheck.confirmedLineIndexes).toEqual([]);
+  });
+
+  test("los doce renglones de la libreta que coinciden todos quedan confirmados", async () => {
+    const twelveRows = Array.from({ length: 12 }, (_, index) => ({
+      lineIndex: index,
+      proposedKind: index < 8 ? "SALE" : "PAYMENT",
+      customerName: "Aurora",
+      amountCents: String(10000 + index),
+    }));
+    const crosscheck = crosscheckerOver(jsonResponse({ status: "OK", operations: twelveRows }));
+
+    const result = (await createExtractLedgerPageHandler(
+      deps({ provider: providerReturning(TWELVE_ROWS), crosscheck }),
+    )({
+      auth: AUTH_USER,
+      data: VALID_DATA,
+    })) as any;
+
+    // El caso del dueño: doce renglones, el Ledger de acuerdo, y los doce confirmados.
+    expect(result.mexalmCrosscheck.agreed).toBe(true);
+    expect(result.mexalmCrosscheck.confirmedLineIndexes).toHaveLength(12);
+  });
+});

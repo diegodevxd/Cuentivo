@@ -481,6 +481,23 @@ export type MexalmCrosscheckBlock = Readonly<{
   ledgerStatus: string;
   /** Ida y vuelta medida en el servidor. El del Ledger no se copia: se mide aquí. */
   latencyMs: number;
+  /**
+   * Los renglones que el Ledger CONFIRMÓ: los dos lados tienen un valor y dicen lo mismo en el
+   * tipo, el cliente (normalizado) y el monto en centavos.
+   *
+   * Esto NO es lo mismo que `agreed`. `agreed: true` quiere decir "no hubo desacuerdos", y eso
+   * también pasa cuando el Ledger no tuvo opinión de nada: un Ledger que devuelve
+   * `customerName: null` en todas partes deja `agreed: true` porque no discrepó de nada, y con
+   * esta lista vacía el cliente sabe que ese Ledger no confirmó nada.
+   *
+   * Viaja aquí y no en las diferencias porque las diferencias son lo que NO coincide: la
+   * confirmación es lo que SÍ coincide, y sin ella el cliente no puede distinguir "el Ledger
+   * confirmó este renglón" de "el Ledger no dijo nada de este renglón".
+   *
+   * Opcional: un servidor más viejo no la manda, y su ausencia significa "no hay renglones
+   * confirmados", nunca "confirmó todos".
+   */
+  confirmedLineIndexes?: readonly number[];
 }>;
 
 export type ExtractLedgerPageResponseV3 = Readonly<{
