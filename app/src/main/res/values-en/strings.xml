@@ -386,6 +386,7 @@
     <string name="subscription_pro_limits">Unlimited customers and sales</string>
     <string name="subscription_ai_limits">Text capture + all Pro features</string>
     <string name="subscription_price_per_month">%1$s per month</string>
+    <string name="subscription_price_with_trial">%1$d months free, then %2$s per month</string>
     <string name="subscription_price_unknown">See price on Google Play</string>
     <string name="subscription_pro_adds">With Pro you also get:</string>
     <string name="subscription_pro_includes">Your plan includes:</string>

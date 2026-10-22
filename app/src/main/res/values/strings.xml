@@ -386,6 +386,7 @@
     <string name="subscription_pro_limits">Clientes y ventas sin límite</string>
     <string name="subscription_ai_limits">Registro por texto + todo lo de Pro</string>
     <string name="subscription_price_per_month">%1$s al mes</string>
+    <string name="subscription_price_with_trial">%1$d meses gratis, luego %2$s al mes</string>
     <string name="subscription_price_unknown">Ver precio en Google Play</string>
     <string name="subscription_pro_adds">Con Pro además tienes:</string>
     <string name="subscription_pro_includes">Tu plan incluye:</string>

@@ -49,8 +49,8 @@ android {
         targetSdk = 36
         // Play refuses an AAB whose versionCode was already uploaded, so this goes up on every
         // upload even when versionName does not.
-        versionCode = 47
-        versionName = "1.23.3"
+        versionCode = 48
+        versionName = "1.23.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

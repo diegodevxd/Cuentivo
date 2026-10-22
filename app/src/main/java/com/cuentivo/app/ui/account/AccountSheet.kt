@@ -52,6 +52,8 @@ fun AccountSheet(
     proPrice: String? = null,
     /** AI's price as Play formats it, or null while it has not loaded. */
     aiPrice: String? = null,
+    proTrialMonths: Int = 0,
+    aiTrialMonths: Int = 0,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
     onDismiss: () -> Unit,
@@ -143,6 +145,8 @@ fun AccountSheet(
                 onUpgrade = onUpgrade,
                 proPrice = proPrice,
                 aiPrice = aiPrice,
+                proTrialMonths = proTrialMonths,
+                aiTrialMonths = aiTrialMonths,
                 isAnonymous = isAnonymous,
                 customerCount = customerCount,
             )
