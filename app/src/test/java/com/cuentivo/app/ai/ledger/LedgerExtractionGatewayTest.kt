@@ -211,11 +211,31 @@ class LedgerExtractionGatewayTest {
         val payload = buildLedgerCallablePayload(REQUEST_ID, "aGVsbG8=", "image/jpeg")
 
         assertEquals(
-            setOf("contractVersion", "requestId", "action", "imageBase64", "imageMimeType"),
+            setOf(
+                "contractVersion",
+                "requestId",
+                "action",
+                "imageBase64",
+                "imageMimeType",
+                "acceptsMexalmCrosscheck",
+            ),
             payload.keys,
         )
         assertEquals(5, payload["contractVersion"])
         assertEquals("extract_ledger_page", payload["action"])
+    }
+
+    /**
+     * La capacidad de leer el bloque `mexalmCrosscheck` viaja en la petición, y viaja como booleano
+     * `true`. No es un adorno: el servidor sólo agrega el bloque a quien la declara, porque la app
+     * ≤ v48 rechaza la página ENTERA ante una llave raíz que no conoce. Que se mande siempre es lo
+     * que hace que encender la bandera en producción no dependa de la suerte de cada teléfono.
+     */
+    @Test fun `the payload declares the crosscheck capability as a boolean true`() {
+        val payload = buildLedgerCallablePayload(REQUEST_ID, "aGVsbG8=", "image/jpeg")
+
+        assertEquals(true, payload["acceptsMexalmCrosscheck"])
+        assertTrue(payload["acceptsMexalmCrosscheck"] is Boolean)
     }
 
     @Test fun `a v4 page with v4 operation keys and pageDate is parsed`() {

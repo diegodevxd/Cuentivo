@@ -78,6 +78,15 @@ data class LedgerExtractionPayload(
  * still accepts v3, so rolling the server back leaves the installed app reading pages instead of
  * mute. The image travels base64 encoded in the request body and is never written anywhere by this
  * class.
+ *
+ * `acceptsMexalmCrosscheck` es una CAPACIDAD, no un gusto: dice que este build sabe leer el bloque
+ * `mexalmCrosscheck` sin rechazar la página. La app ≤ v48 no lo sabe —compara el juego de llaves de
+ * la raíz y ante una llave desconocida tumba la página entera—, así que el servidor sólo manda el
+ * bloque a quien lo pide. Mandarlo sin pedirlo no habría roto un adorno: habría dejado mudo el
+ * escaneo de todos los clientes ya publicados.
+ *
+ * Va SIEMPRE a `true` y no depende de ninguna bandera local: quien decide si hay verificación es el
+ * servidor. Este lado sólo declara lo que puede leer.
  */
 internal fun buildLedgerCallablePayload(
     requestId: String,
@@ -89,6 +98,7 @@ internal fun buildLedgerCallablePayload(
     "action" to ACTION_VALUE,
     "imageBase64" to imageBase64,
     "imageMimeType" to imageMimeType,
+    "acceptsMexalmCrosscheck" to true,
 )
 
 /**
