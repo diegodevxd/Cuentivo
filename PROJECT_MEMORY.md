@@ -101,6 +101,35 @@ va a producción** (no hay push, ni deploy, ni release, ni emulador, ni instalac
   `10.0.2.2`. Es un cambio de comportamiento de release y **decide Diego**.
 - Detalle completo: `HANDOFF_CUENTIVO1.md`, sección **CUENTIVO3**.
 
+### 2026-10-21 — CUENTIVO4: la verificación cruzada sí manda el cliente
+
+Rama `mexalm/ledger-crosscheck`, base `e884fd9`. **Sigue fuera de producción, con la bandera
+apagada** (no hay push, ni deploy, ni release, ni emulador, ni instalación).
+
+- **La página que se manda al Ledger lleva el encabezado de la clienta.** Antes se armaba con el
+  `rawText` de cada renglón y nada más, y en una libreta de fiado el nombre se escribe **una vez**
+  arriba: el Ledger no tenía de dónde sacar a quién pertenece cada movimiento y respondía
+  `customerName: null` (la libreta de "Aurora", 8 ventas y 4 abonos, salió "11 renglones distinto").
+  Ahora la página agrupa por clienta y pone el nombre **tal cual** antes de sus renglones; un
+  renglón sin clienta no inventa encabezado.
+- **El `null` del Ledger es "sin opinión", no un desacuerdo.** Para el cliente, el tipo y el monto,
+  una contradicción exige que **los dos lados** tengan un valor. Un Ledger que no leyó una clienta
+  no discrepa de la foto.
+- **El emparejamiento es por la POSICIÓN en la página** (el `lineIndex` del Ledger es el ordinal de
+  la operación, no el número de la línea física), y el desacuerdo se sigue marcando con el
+  `lineIndex` **del renglón de Gemini**: el que la app sabe marcar.
+- **App, sólo visual:** la tarjeta del resumen lleva el acento de la app, el "✓" de "está de
+  acuerdo" va en el color positivo y "leyó N renglones distintos" en el color de aviso. El modelo,
+  el parser, el contrato y la bandera **no** se tocaron.
+- Evidencia: `CUENTIVO4_TEST_OUTPUT.txt` (functions **529/529** —antes 519—, lint limpio, JVM
+  **1418/1418**, `assembleDebug` en verde, puertas de idioma vacías, paridad 697/697) y **tres
+  mutaciones cazadas** (quitar el encabezado, tratar el `null` como desacuerdo, reportar la
+  posición en vez del renglón).
+- **Queda abierto:** la bandera sigue apagada y **nadie lo ha corrido contra el Ledger real** desde
+  este worktree; falta la prueba con la libreta de "Aurora" de verdad. Y `agreed` sigue
+  significando "no hubo desacuerdos", no "el Ledger confirmó cada renglón".
+- Detalle completo: `HANDOFF_CUENTIVO1.md`, sección **CUENTIVO4**.
+
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 
 **Fase 1 (`0bba4dc`, `82df2c0`).** El estado de la revisión vivía en `remember`: al recrearse la

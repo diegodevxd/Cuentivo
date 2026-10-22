@@ -1,0 +1,74 @@
+CUENTIVO4 — SALIDA REAL
+=======================
+
+Tarea: TASK_CUENTIVO4.md   Rama: mexalm/ledger-crosscheck   Fecha: 2026-10-21
+Entorno: JAVA_HOME=Android Studio jbr, trust store temporal de Norton (C:\tmp\cuentivo-jbr-cacerts),
+         ANDROID_HOME=C:\Users\pibed\AppData\Local\Android\Sdk
+         (no hay local.properties en este worktree)
+Gradle: ./gradlew.bat <tarea> --no-daemon --no-configuration-cache --no-watch-fs --console=plain
+
+NUNCA se arranco ningun servidor ni emulador (el de Functions en el 5001 no se toco).
+NUNCA se instalo nada. No se hizo push ni deploy. No se toco ningun secreto.
+
+-------------------------------------------------------------------------------
+1) FUNCIONES: PRUEBAS Y LINT
+-------------------------------------------------------------------------------
+$ npm test
+[33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[39m
+ RUN  v4.1.10 C:/Users/pibed/Downloads/CUENTIVO_mexalm_ledger/functions
+ Test Files  19 passed (19)
+      Tests  529 passed (529)
+   Start at  21:02:46
+   Duration  1.24s (transform 1.60s, setup 0ms, import 3.47s, tests 1.33s, environment 2ms)
+
+$ npm run lint
+
+> functions@0.0.0 lint
+> tsc -p tsconfig.json --noEmit
+
+
+-------------------------------------------------------------------------------
+2) ANDROID: PRUEBAS JVM Y COMPILACION
+   Se borran los resultados y el APK ANTES de correr, para que el BUILD no sea un
+   UP-TO-DATE: las tareas de prueba y de empaquetado se ejecutan de verdad.
+-------------------------------------------------------------------------------
+$ rm -rf app/build/test-results/testDebugUnitTest app/build/outputs/apk/debug
+$ ./gradlew.bat testDebugUnitTest assembleDebug
+> Task :app:testDebugUnitTest
+> Task :app:packageDebug
+> Task :app:assembleDebug
+BUILD SUCCESSFUL in 14s
+56 actionable tasks: 2 executed, 54 up-to-date
+
+Conteo real sobre los XML de app/build/test-results/testDebugUnitTest/:
+  clases=152  pruebas=1418  omitidas=0  fallan=0  errores=0
+  (antes de esta parte: 1418 pruebas en 152 clases -> 0 pruebas y 0 clases nuevos;
+   la parte de Android es SOLO visual y no toca ninguna clase de prueba)
+
+  -rw-r--r-- 1 pibed 197609 67071383 Oct 21 21:03 app/build/outputs/apk/debug/app-debug.apk
+  (NO se instalo nada: ni en el emulador ni en un telefono)
+
+-------------------------------------------------------------------------------
+3) PUERTAS DE IDIOMA (CLAUDE.md)
+-------------------------------------------------------------------------------
+$ puerta 1: literales en app/src/main/java/com/cuentivo/app/ui
+  (vacio = pasa)
+
+$ puerta 2: avisos fuera de ui/
+  (vacio = pasa)
+
+-------------------------------------------------------------------------------
+4) PARIDAD DE CLAVES ES/EN
+-------------------------------------------------------------------------------
+  app/src/main/res/values/strings.xml:697
+  app/src/main/res/values-en/strings.xml:697
+  claves (string + plurals): ES=713  EN=713
+  solo ES: []
+  solo EN: []
+
+-------------------------------------------------------------------------------
+5) REGLA 1 (dinero en Long) EN LOS ARCHIVOS TOCADOS
+-------------------------------------------------------------------------------
+  (vacio = pasa)

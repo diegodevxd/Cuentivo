@@ -816,3 +816,191 @@ con esa bandera.
 - **No se tocaron los cambios de trabajo ajeno**: `.gitignore` ya traía un cambio sin commitear de
   la parte 1 (`/functions/.secret.local`) y se dejó como estaba.
 - **No se corrieron las instrumentadas** ni `lintDebug`.
+
+---
+
+# CUENTIVO4 — la verificación cruzada sí manda el cliente y lo muestra visible
+
+**Tarea:** `TASK_CUENTIVO4.md` · **Rama:** `mexalm/ledger-crosscheck` (base `e884fd9`) ·
+**Worktree:** `C:\Users\pibed\Downloads\CUENTIVO_mexalm_ledger` · **Fecha:** 2026-10-21
+
+**Estado:** la página que se manda al Ledger ahora lleva el **encabezado de la clienta**, y un
+`customerName: null` del Ledger es "sin opinión", no un desacuerdo. La app muestra el veredicto
+con los colores que ya usa. No se hizo push, no se hizo deploy, no se arrancó ningún emulador ni
+servidor (el de Functions en el 5001 no se tocó), no se instaló nada y no se tocó ningún secreto.
+
+---
+
+## C4.1 El problema, verificado
+
+Con la libreta de una sola clienta ("Aurora": 8 ventas y 4 abonos) el bloque salió **"11 renglones
+distinto"**.
+
+La causa está en `functions/src/ai/mexalmCrosscheck.ts`: la página que se manda al Ledger se armaba
+con el `rawText` de cada renglón y **nada más**. En una libreta de fiado el nombre de la clienta se
+escribe **una vez**, arriba de sus renglones, y los renglones no lo repiten — así que el `rawText`
+de cada renglón es el texto de ESE renglón y nada más. El Ledger no tenía de dónde sacar a quién
+pertenece cada movimiento y respondía `customerName: null` donde la lectura de la foto sí sabía la
+clienta.
+
+Con "Aurora" como primera línea, el Ledger devuelve `customerName: "Aurora"` en todas las
+operaciones.
+
+## C4.2 Lo que cambió en el servidor
+
+### El encabezado de la clienta (`planCrosscheckPage`)
+
+`functions/src/ai/mexalmCrosscheck.ts` — la página se arma **agrupando por clienta**:
+
+```
+Aurora
+protector tapete 250
+jabon 100
+Beto
+abono 50
+```
+
+- Los renglones de una misma clienta quedan **juntos**, aunque en la hoja vinieran intercalados: el
+  encabezado de una clienta vale para los renglones que la siguen, y si sus renglones están
+  repartidos, el encabezado tendría que repetirse y el Ledger atribuiría al último nombre leído los
+  renglones que no son suyos.
+- El encabezado lleva el nombre **tal cual** lo escribió Gemini. La clave del grupo es el nombre
+  **normalizado** ("María" y "MARIA" son la misma clienta y no pueden ser dos grupos), pero lo que
+  viaja es lo que dijo el otro lado: normalizar es para comparar, nunca para reescribir.
+- Un renglón **sin clienta no inventa encabezado**: es su propio grupo y no lleva nombre.
+- Si una clienta no tiene ni un renglón con texto, su nombre **no** se manda solo: una línea sin
+  movimiento es ruido para el Ledger.
+
+### El orden de la página y el emparejamiento
+
+El Ledger numera sus operaciones por su **posición** en la página: su `lineIndex` es el ordinal de
+la operación, no el número de la línea física (una línea con dos movimientos da dos operaciones y la
+segunda no repite el número de la primera — está verificado contra el pipeline de MexaLM,
+`r2_pipeline.py`: `op["lineIndex"] = position`).
+
+Por eso el plan lleva las operaciones en el orden de la página y el emparejamiento se hace por esa
+posición. El encabezado **no** es un renglón: el Ledger no saca operaciones de él, así que no
+desplaza la numeración.
+
+Lo que se reporta en un desacuerdo sigue siendo el `lineIndex` **del renglón de Gemini** (el que la
+app sabe marcar), no la posición en la página. Con renglones intercalados, el desacuerdo del tercer
+renglón de la hoja se marca en el renglón 2, no en el 1.
+
+### `null` del Ledger = sin opinión
+
+`functions/src/ai/mexalmLedgerClient.ts` conserva el `customerName: null` que manda el Ledger (es lo
+que dijo el otro lado; quitarlo en la frontera sería decidir ahí lo que significa) y
+`functions/src/ai/mexalmCrosscheck.ts` lo convierte en "sin opinión" con `opinion()`: **ausente,
+`null` y vacío son lo mismo**, para el cliente, el tipo y el monto.
+
+Una contradicción exige que **los dos lados** tengan un valor y que sean distintos. Con eso, un
+Ledger que devuelve `customerName: null` **no** genera desacuerdo de cliente: no lo leyó, y no lo
+leyó no es discrepar.
+
+## C4.3 Lo que cambió en la app (SOLO visual)
+
+`app/src/main/java/com/cuentivo/app/ui/ai/LedgerReviewScreen.kt`:
+
+- La tarjeta del resumen lleva el **acento de la app** como borde (el mismo `primary` con 42 % de
+  alfa que usa `NeoPanel`, que es lo que llevan las tarjetas del Inicio), para que no se confunda
+  con las otras tres grises de la pantalla.
+- "**✓** El Ledger de MexaLM está de acuerdo" en el **color positivo** de la app
+  (`colorScheme.secondary`, el mismo verde del dinero cobrado).
+- "El Ledger leyó N renglones distintos" en el **color de aviso** de la app (`NeoSlow`, el ámbar de
+  "paga, pero tarde").
+- La **insignia por renglón** sigue en el acento de la app y ahora pesa más (`Medium`) y tiene su
+  propia marca de prueba (`ledger-crosscheck-badge-<renglón>`).
+
+`app/src/main/res/values/strings.xml` y `values-en/strings.xml`: sólo cambia el texto del veredicto
+positivo, que ahora lleva el "✓". El plural de los renglones distintos **no** se tocó.
+
+**No se cambió** el modelo, ni el parser de la app, ni el contrato, ni la bandera: la parte de
+Android de esta tarea es visual.
+
+## C4.4 Una expectativa existente que cambió (y por qué)
+
+La prueba `el cuerpo que viaja al Ledger lleva el texto de la página, con su encabezado` afirmaba el
+texto EXACTO que se manda. Con el encabezado, ese texto cambia **por diseño**: ahora lleva el
+nombre de cada clienta. La prueba se actualizó al texto nuevo (`Rosa\nRosa protector tapete 250\nToño\nToño
+2 cocas 38`) y sigue guarding lo que guardaba: que al Ledger va el texto de la página y nada más.
+
+**Las 519 pruebas que ya existían siguen en verde**: 529 pasan ahora (519 + 10 nuevas). Ninguna otra
+expectativa se tocó.
+
+## C4.5 Archivos exactos
+
+**Modificados**
+
+- `functions/src/ai/mexalmCrosscheck.ts`
+- `functions/src/ai/mexalmLedgerClient.ts`
+- `functions/test/mexalmCrosscheck.test.ts`
+- `app/src/main/java/com/cuentivo/app/ui/ai/LedgerReviewScreen.kt`
+- `app/src/main/res/values/strings.xml`
+- `app/src/main/res/values-en/strings.xml`
+- `HANDOFF_CUENTIVO1.md` (esta sección) · `PROJECT_MEMORY.md` (estado vivo)
+
+**Nuevos**
+
+- `CUENTIVO4_TEST_OUTPUT.txt` (la salida real)
+- `done_cuentivo4.txt`
+
+## C4.6 Las pruebas (números reales)
+
+- `functions`: **529/529** (`npm test`), `npm run lint` limpio. Antes: 519.
+- Android JVM: **1418/1418**, 0 fallos, 0 errores, 0 omitidas (152 clases). Sin cambios: la parte de
+  Android es visual.
+- `assembleDebug`: BUILD SUCCESSFUL (APK de 67 MB). **No se instaló nada.**
+- Puertas de idioma: las dos **vacías**. Paridad ES/EN: **697/697** `<string>`, 713/713 con
+  `<plurals>`, sin claves huérfanas. Regla 1 (dinero en `Long`): limpia en los archivos tocados.
+
+**Las 10 pruebas nuevas** (`functions/test/mexalmCrosscheck.test.ts`):
+
+1. una página de una clienta lleva su nombre arriba y el Ledger está de acuerdo;
+2. un `null` del Ledger es «sin opinión», no un desacuerdo de cliente;
+3. un monto distinto sigue contando como desacuerdo, con el encabezado puesto;
+4. dos clientas en la misma página: cada una con su encabezado;
+5. los renglones de una clienta quedan juntos aunque en la hoja vinieran intercalados (y el
+   desacuerdo se marca en el renglón de la hoja);
+6. la libreta de una clienta con ventas y abonos (8 + 4, el caso real): el Ledger está de acuerdo;
+7. un renglón sin clienta no inventa un encabezado;
+8. el encabezado lleva el nombre TAL CUAL lo escribió la lectura;
+9. un `null` del Ledger es «sin opinión» (comparación aislada);
+10. un nombre en blanco del Ledger tampoco es una contradicción.
+
+**Verificación por mutación**, porque en este proyecto una prueba en verde ya mintió cinco veces:
+se rompió producción a propósito y se comprobó que las pruebas caen.
+
+| Mutación | Qué cayó |
+|---|---|
+| quitar el encabezado de la página | 4 pruebas (la del texto enviado, la de una clienta, la de dos clientas y la de los intercalados) |
+| `null`/vacío del Ledger cuenta como desacuerdo | 3 pruebas (las dos del «sin opinión» y la de la libreta de Aurora) |
+| reportar la posición de la página en vez del renglón de la hoja | 1 prueba (la de los intercalados) |
+
+## C4.7 Lo que NO se hizo
+
+- **No se hizo push, ni deploy, ni build de release.** Todo es local, en la rama
+  `mexalm/ledger-crosscheck`.
+- **No se arrancó ningún servidor ni emulador** (el de Functions en el 5001 no se tocó) y **no se
+  instaló** nada en ningún dispositivo.
+- **No se tocaron llaves ni secretos**, ni `functions/.secret.local`, ni `keystore.properties`, ni
+  ningún `*.jks`.
+- **No se cambió el modelo de la app**, ni el parser, ni el contrato, ni la bandera
+  `MEXALM_LEDGER_CROSSCHECK` (sigue apagada).
+- **No se corrieron las instrumentadas** ni `lintDebug` (hacen falta emulador o teléfono).
+- **No se tocó** `CLAUDE.md`, `AGENTS.md`, `firestore.rules` ni `functions/contract.ts`.
+- `.gitignore` ya traía un cambio sin commitear de la parte 1 (`/functions/.secret.local`) y se dejó
+  como estaba: no es de esta parte.
+
+## C4.8 Lo que queda abierto (es de Diego)
+
+- **La bandera sigue apagada.** Con el encabezado, la comparación ya tiene la página que el Ledger
+  necesita, pero **nadie lo ha corrido contra el Ledger real** desde este worktree: el servicio
+  del Ledger es el de MexaLM y no se tocó. La prueba con la libreta de "Aurora" de verdad (8 ventas y
+  4 abonos) sigue siendo la que hay que hacer.
+- **La insignia por renglón sigue siendo una por diferencia** (una fila puede llevar "Ledger:
+  monto" y "Ledger: cliente"). Es deliberado desde la parte 2: callarse una de las dos escondería
+  justo el detalle que hay que ver.
+- **`agreed` sigue significando "no hubo desacuerdos"**, no "el Ledger confirmó cada renglón": un
+  Ledger que conteste `null` en todos los clientes deja `agreed: true` porque no discrepó de nada.
+  El resumen lo dice en positivo ("está de acuerdo"), y esa diferencia entre "no discrepó" y
+  "confirmó" es una decisión de producto que sigue siendo de Diego.
