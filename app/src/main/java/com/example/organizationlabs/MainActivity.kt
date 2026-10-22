@@ -423,6 +423,8 @@ class MainActivity : ComponentActivity() {
         val creditLimitSuggestionStore = CreditLimitSuggestionStore(applicationContext)
         val subscriptionVerifier = com.cuentivo.app.billing.subscriptionVerificationGateway()
         val aiAvailabilityGateway = com.cuentivo.app.ai.FirebaseAiAvailabilityGateway()
+        // El Ledger de MexaLM se duerme solo; esta es la puerta para despertarlo al abrir la app.
+        val mexalmLedgerWarmGateway = com.cuentivo.app.ai.FirebaseMexalmLedgerWarmGateway()
         val billing = BillingGateway(
             context = applicationContext,
             onPriceLoaded = { productId, formatted ->
@@ -1721,6 +1723,7 @@ class MainActivity : ComponentActivity() {
                     productSavedToken = productSavedToken,
                     aiDailyChatRepository = aiDailyChatRepository,
                     aiAvailabilityGateway = aiAvailabilityGateway,
+                    mexalmLedgerWarmGateway = mexalmLedgerWarmGateway,
                     paymentPreviewResolver = aiPaymentPreviewResolver::resolve,
                     confirmPayment = { request ->
                         val activeBusinessId = (state as? DashboardUiState.Content)?.businessId

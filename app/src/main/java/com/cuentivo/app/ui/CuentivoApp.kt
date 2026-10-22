@@ -81,6 +81,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.cuentivo.app.ai.AiAvailabilityGateway
 import com.cuentivo.app.ai.AiAvailabilityCoordinator
 import com.cuentivo.app.ai.AiAvailabilityPolicy
+import com.cuentivo.app.ai.MexalmLedgerWarmGateway
+import com.cuentivo.app.ai.MexalmLedgerWarmPolicy
 import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
@@ -289,6 +291,11 @@ fun CuentivoApp(
     onOpenOverdueCustomersConsumed: () -> Unit = {},
     aiDailyChatRepository: AiDailyChatRepository? = null,
     aiAvailabilityGateway: AiAvailabilityGateway? = null,
+    /**
+     * Despierta el Ledger de MexaLM al abrir la app. Sólo se usa si la cuenta tiene
+     * CuentivoAI, y ningún error llega a la persona.
+     */
+    mexalmLedgerWarmGateway: MexalmLedgerWarmGateway? = null,
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal, choices: com.cuentivo.app.ai.AiSaleResolutionChoices) -> AiSalePreviewResult)? = null,
@@ -372,6 +379,22 @@ fun CuentivoApp(
         }
     }
 
+    // El Ledger de MexaLM se apaga solo cuando nadie lo usa y tarda entre 30 y 60 s en volver.
+    // Al abrir la app se le pide que empiece a despertarse, para que la primera lectura de la
+    // libreta no espere a que la instancia levante.
+    //
+    // Sólo para quien tiene CuentivoAI —es el único plan que usa el Ledger—, sin bloquear la UI
+    // y sin que ningún error llegue a la persona: el despertar es un favor, y si no sale, la app
+    // sigue igual. Y NO hay nada que apagar al cerrar: Cloud Run se apaga solo.
+    val warmMexalmLedger: () -> Unit = {
+        val gateway = mexalmLedgerWarmGateway
+        if (gateway != null && MexalmLedgerWarmPolicy.shouldWarm(tier)) {
+            coroutineScope.launch {
+                gateway.warm()
+            }
+        }
+    }
+
     LaunchedEffect(tier) {
         if (tier == SubscriptionTier.AI) {
             refreshAiAvailability()
@@ -381,10 +404,11 @@ fun CuentivoApp(
         }
     }
 
-    DisposableEffect(lifecycleOwner, tier) {
+    DisposableEffect(lifecycleOwner, tier, mexalmLedgerWarmGateway) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 refreshAiAvailability()
+                warmMexalmLedger()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
