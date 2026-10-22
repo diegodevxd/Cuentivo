@@ -79,6 +79,28 @@ APAGADA**, que es como vive en producción: no hay push, ni deploy, ni release.
   el juego de llaves exacto y **rechazan la página** si la llave llega.
 - Detalle completo, con archivos y pruebas: `HANDOFF_CUENTIVO1.md`, sección **CUENTIVO2**.
 
+### 2026-10-21 — CUENTIVO3: un build debug que manda SOLO las Functions a la PC
+
+Rama `mexalm/ledger-crosscheck`, base `e97ef57`. **Esto es herramienta de desarrollo: nada de esto
+va a producción** (no hay push, ni deploy, ni release, ni emulador, ni instalación).
+
+- **La propiedad `-Pcuentivo.functionsEmulatorHost=<host>`** (vacía por defecto) llega como
+  `BuildConfig.FUNCTIONS_EMULATOR_HOST`. **Sólo el build type `debug` la lee**; el `release`
+  declara la misma llave con la cadena vacía, así que un release no puede llevarla. Y si alguien
+  pone la propiedad y compila un release, **el build falla** (en vez de ignorarla).
+- **Apunta sólo a Functions**, en la región que la app ya usaba (`us-south1`, ahora una constante
+  compartida en `com/cuentivo/app/FunctionsRegion.kt`) y en el puerto 5001. **Auth y Firestore no
+  se tocan**: siguen en producción salvo `-Pcuentivo.useEmulators=true`. En un celular físico la
+  PC se alcanza con `adb reverse tcp:5001 tcp:5001`.
+- Evidencia: `CUENTIVO3_TEST_OUTPUT.txt` (JVM **1418/1418**, `assembleDebug` en verde con la
+  propiedad, release con la propiedad **falla**, `BuildConfig` de release con la cadena vacía,
+  puertas de idioma vacías, paridad 697/697).
+- **Hallazgo anotado, no tocado** (§C3.7 del handoff): `USE_FIREBASE_EMULATORS` está en
+  `defaultConfig`, así que **el release también lo hereda** — un
+  `assembleRelease -Pcuentivo.useEmulators=true` produce un APK de release apuntando a
+  `10.0.2.2`. Es un cambio de comportamiento de release y **decide Diego**.
+- Detalle completo: `HANDOFF_CUENTIVO1.md`, sección **CUENTIVO3**.
+
 ## 2026-09-08 — v39, fases 1 y 2: el borrador sobrevive y ya se puede medir
 
 **Fase 1 (`0bba4dc`, `82df2c0`).** El estado de la revisión vivía en `remember`: al recrearse la

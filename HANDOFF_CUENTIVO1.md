@@ -609,3 +609,210 @@ diferencias y usa `agreed`, que es lo único que el contrato define.
 - **No se corrieron las instrumentadas** ni `lintDebug`.
 - **No se hizo OCR independiente**: sigue siendo lo que dice §1 de la parte 1 — la verificación
   compara dos interpretaciones del **mismo** texto de Gemini, no dos lecturas del papel.
+
+---
+
+# CUENTIVO3 — un build debug que manda SOLO las Functions a la PC (celular físico)
+
+**Tarea:** `TASK_CUENTIVO3.md` · **Rama:** `mexalm/ledger-crosscheck` (base `e97ef57`) ·
+**Worktree:** `C:\Users\pibed\Downloads\CUENTIVO_mexalm_ledger` · **Fecha:** 2026-10-21
+
+**Estado:** la propiedad nueva existe, llega al `BuildConfig` **sólo en el build debug**, y el
+cableado apunta **sólo** a Functions: Auth y Firestore siguen en producción. Un build de release
+que reciba la propiedad **falla**, en vez de ignorarla. No se hizo push, no se hizo deploy, no se
+arrancó ningún emulador ni servidor, no se instaló nada en ningún dispositivo y no se tocó
+`functions/`.
+
+---
+
+## C3.1 La propiedad nueva
+
+`-Pcuentivo.functionsEmulatorHost=<host>` (por ejemplo `127.0.0.1`). **Vacía por defecto.**
+
+Llega como `BuildConfig.FUNCTIONS_EMULATOR_HOST` (un `String`):
+
+| Variante | `FUNCTIONS_EMULATOR_HOST` |
+|---|---|
+| `debug` | el valor de la propiedad, o `""` si no se pasó |
+| `release` | **siempre `""`**, aunque la propiedad esté puesta |
+
+La propiedad la lee **sólo el build type `debug`** (`app/build.gradle.kts`): el `release` declara la
+misma llave con la cadena vacía, así que un release no tiene ni cómo llevar el valor.
+
+Además, un host tiene que ser un host: si el valor trae esquema, ruta o espacios, el build falla
+con un mensaje claro, en vez de producir un APK que no puede llegar al emulador.
+
+## C3.2 Dónde se aplica (y contra qué instancia)
+
+Todo en `app/src/main/java/com/cuentivo/app/sync/FirebaseEmulators.kt`, que ya era el lugar donde
+se configuran los emuladores:
+
+- `FirebaseEmulators.connectIfEnabled()` — el mismo punto de entrada de siempre, el que se llama
+  desde `MainActivity.onCreate` y desde `SyncWorker.doWork` (WorkManager puede correr en un proceso
+  donde la Activity nunca arrancó) — ahora llama **primero** al cableado de Functions.
+- `FunctionsEmulatorWiring.connectIfEnabled()`: si el build no nombró host, **no hace nada**; si lo
+  nombró, llama
+  `FirebaseFunctions.getInstance(FUNCTIONS_REGION).useEmulator(host, 5001)`.
+
+**La región es la misma de las callables, y ahora es una constante compartida.** Antes cada
+gateway traía su propio literal `"us-south1"`; hoy los cuatro usan
+`com.cuentivo.app.FUNCTIONS_REGION` (`app/src/main/java/com/cuentivo/app/FunctionsRegion.kt`):
+
+| Gateway | Callable |
+|---|---|
+| `ai/FirebaseCallableAiGateway` | `interpretAiRequest` |
+| `ai/FirebaseAiAvailabilityGateway` | `getAiAvailability` |
+| `ai/ledger/LedgerExtractionGateway` | `extractLedgerPage` |
+| `billing/FirebaseCallableSubscriptionVerificationGateway` | `verifyAiSubscription` |
+
+Esto no es un detalle de estilo: `FirebaseFunctions.getInstance(region)` devuelve **una instancia
+por región**, así que apuntar al emulador una región distinta de la que la app llama configuraría
+una instancia que nadie usa. Con dos literales, ese error es de los que sólo se ven en el teléfono.
+
+**Auth y Firestore no se tocan.** El interruptor de ellos sigue siendo
+`-Pcuentivo.useEmulators=true`, y es independiente a propósito: el teléfono puede llamar a las
+Functions locales mientras la cuenta y la copia en la nube siguen siendo reales.
+
+**Una sola vez por proceso.** Un segundo `useEmulator` sobre la misma instancia de
+`FirebaseFunctions` lanza ("Cannot modify a FirebaseFunctions instance after it has been used"), y
+esta llamada se puede alcanzar desde dos sitios del mismo proceso (la Activity y un trabajo de
+WorkManager). Por eso el estado "ya conectado" vive en la instancia.
+
+## C3.3 Cómo se usa en un celular físico
+
+En un teléfono, `127.0.0.1` es **el teléfono**, no la PC. El camino de la PC al teléfono se abre
+con:
+
+```bash
+adb reverse tcp:5001 tcp:5001
+```
+
+(con el teléfono conectado por USB en depuración). Sin eso, la llamada del emulador de Functions
+sale del teléfono y no llega a ninguna parte.
+
+El resto:
+
+```bash
+# 1. el build debug con el host (no instalar sin querer)
+.\gradlew.bat assembleDebug -Pcuentivo.functionsEmulatorHost=127.0.0.1
+# (o installDebug, si de verdad se quiere instalar)
+# 2. el loopback
+adb reverse tcp:5001 tcp:5001
+```
+
+El emulador de Android usaría `10.0.2.2` (el alias que ya usa el cableado de Firestore y Auth);
+esta tarea es del **celular físico**, y por eso el valor de ejemplo es `127.0.0.1`.
+
+> **Lo que NO se hizo:** no se ejecutó `adb reverse` ni se instaló el APK en ningún dispositivo.
+> La tarea no lo pedía y además prohibía instalar. Lo que se probó es el **cableado del cliente**,
+> no el servidor: ningún emulador de Functions se arrancó.
+
+## C3.4 El guarda: un release nunca puede llevar el valor
+
+Dos capas, y las dos se comprueban:
+
+1. **El valor.** El `BuildConfig` del release lleva `FUNCTIONS_EMULATOR_HOST = ""` **siempre**, se
+   ponga o no la propiedad. Comprobado generando los dos `BuildConfig` y leyéndolos (ver
+   `CUENTIVO3_TEST_OUTPUT.txt`, §4).
+2. **El fallo.** Si alguien pone la propiedad y compila un release, el build **falla** con un
+   mensaje que dice qué hacer en su lugar, en vez de ignorarla en silencio:
+
+   ```
+   * What went wrong:
+   cuentivo.functionsEmulatorHost=127.0.0.1 is set, but a release build must never point Firebase
+   Functions at a local emulator. Build the debug variant instead:
+   assembleDebug -Pcuentivo.functionsEmulatorHost=127.0.0.1
+   ```
+
+   El disparo es la **compilación** de la variante release. La variante release también es dueña de
+   unas cuantas tareas de preparación compartidas (el manifiesto, la info de control de versiones, el
+   archivo de Google Services) que una tarea **debug** arrastra a propósito —las pruebas JVM
+   arrastran `processReleaseMainManifest`— y ésas **no** cuentan como "se está compilando un
+   release". Por eso `testDebugUnitTest` con la propiedad puesta sigue pasando.
+
+## C3.5 Archivos exactos
+
+### Nuevos
+
+| Archivo | Qué hace |
+|---|---|
+| `app/src/main/java/com/cuentivo/app/FunctionsRegion.kt` | La constante compartida de la región (`us-south1`). |
+| `app/src/test/java/com/cuentivo/app/sync/FirebaseEmulatorsTest.kt` | Las 7 pruebas JVM (ver §C3.6). |
+| `CUENTIVO3_TEST_OUTPUT.txt` | La salida real de todo lo de esta parte. |
+
+### Modificados
+
+| Archivo | Qué cambió |
+|---|---|
+| `app/build.gradle.kts` | La propiedad, el `buildConfigField` de debug y de release, la validación del host y el guarda que hace fallar un release. |
+| `app/src/main/java/com/cuentivo/app/sync/FirebaseEmulators.kt` | El cableado de Functions (`FunctionsEmulatorWiring`) y la llamada desde `connectIfEnabled()`. |
+| `app/src/main/java/com/cuentivo/app/ai/FirebaseAiAvailabilityGateway.kt` | Usa la región compartida. |
+| `app/src/main/java/com/cuentivo/app/ai/FirebaseCallableAiGateway.kt` | Usa la región compartida. |
+| `app/src/main/java/com/cuentivo/app/ai/ledger/LedgerExtractionGateway.kt` | Usa la región compartida. |
+| `app/src/main/java/com/cuentivo/app/billing/FirebaseCallableSubscriptionVerificationGateway.kt` | Usa la región compartida (antes tenía el literal dentro de la llamada). |
+
+**Ningún archivo fuera de `app/` fue tocado**, salvo este handoff, `PROJECT_MEMORY.md`,
+`done_cuentivo3.txt` y el archivo de evidencia. `functions/` no se tocó.
+
+## C3.6 Las pruebas (números reales)
+
+`CUENTIVO3_TEST_OUTPUT.txt` tiene la salida completa.
+
+| | |
+|---|---|
+| `testDebugUnitTest` | **1418 pruebas, 1418 pasan, 0 fallan, 0 errores, 0 omitidas** (152 clases; antes 1411 en 151) |
+| `assembleDebug -Pcuentivo.functionsEmulatorHost=127.0.0.1` | **BUILD SUCCESSFUL** (APK de 67 MB; **no se instaló**) |
+| release con la propiedad | **BUILD FAILED** con el mensaje del guarda |
+| `BuildConfig` de debug / release | `"127.0.0.1"` / `""` (leídos del archivo generado) |
+| puertas de idioma de `CLAUDE.md` | las dos **vacías** |
+| paridad ES/EN | 697/697 `<string>`, 16/16 `<plurals>` (esta parte no tocó ninguna cadena) |
+| regla 1 (dinero en enteros) | limpia en los seis archivos de producción tocados |
+
+Las 7 pruebas nuevas:
+
+| Prueba | Qué garantiza |
+|---|---|
+| un host vacío no toca nada | `useEmulator` **no** se llama |
+| un host nombrado apunta al emulador | una sola llamada, con la región de la app y el puerto 5001 |
+| la segunda llamada del mismo proceso no apunta a nada | un `useEmulator` por proceso |
+| el cableado de producción lleva el host del build | el objeto y el `BuildConfig` no se desincronizan |
+| el cableado de producción de un build sin host no toca nada | la regla, sobre el objeto real |
+| el build type de release no puede llevar el host | guarda de fuente: el release declara la cadena vacía y la propiedad tiene default vacío |
+| todos los gateways usan la región compartida | si alguien vuelve a dejar un literal, la puerta lo caza |
+
+**Lo que no se corrió y por qué:** las instrumentadas (exigen emulador o dispositivo) y `lintDebug`
+(la tarea no lo pide). **No se hizo `assembleRelease` ni `bundleRelease` reales**: la tarea los
+prohíbe; el guarda se verificó con `--dry-run` (que sólo inspecciona el grafo de tareas, sin
+compilar ni producir artefactos) y con la generación de los dos `BuildConfig`.
+
+## C3.7 Un hueco que se encontró y **no** se tocó
+
+`USE_FIREBASE_EMULATORS` está declarado en `defaultConfig`, así que lo heredan **todas** las
+variantes, release incluida. Comprobado generando el `BuildConfig` de release:
+
+```
+.\gradlew :app:generateReleaseBuildConfig -Pcuentivo.useEmulators=true
+  -> USE_FIREBASE_EMULATORS = true      (en el RELEASE)
+```
+
+Es decir: un `assembleRelease -Pcuentivo.useEmulators=true` produce un APK de release que apunta
+Auth y Firestore a `10.0.2.2`. El comentario del build file ("a release build can never talk to
+localhost") es cierto **por defecto**, no cuando alguien pasa la bandera.
+
+**No se cambió**, porque el encargo de esta parte es explícito en que Auth y Firestore se quedan
+como están, y tocar el comportamiento de una release es una decisión que no se toma de paso. Queda
+anotado para Diego: el arreglo es mover ese `buildConfigField` del `defaultConfig` al build type
+`debug` (y añadirle un guarda como el de esta parte), pero **cambia** lo que hace hoy un release
+con esa bandera.
+
+## C3.8 Lo que NO se hizo
+
+- **No se hizo push, ni deploy, ni build de release** (sólo el grafo de release con `--dry-run`).
+- **No se arrancó ningún emulador ni servidor**, y **no se instaló** nada en ningún dispositivo.
+  `adb reverse` **no** se ejecutó.
+- **No se tocó `functions/`**, ni `CLAUDE.md`, ni `AGENTS.md`, ni `firestore.rules`, ni
+  `keystore.properties`, ni ningún `*.jks` ni secreto.
+- **No se cambió el comportamiento de Auth ni de Firestore**, ni el interruptor que los gobierna.
+- **No se tocaron los cambios de trabajo ajeno**: `.gitignore` ya traía un cambio sin commitear de
+  la parte 1 (`/functions/.secret.local`) y se dejó como estaba.
+- **No se corrieron las instrumentadas** ni `lintDebug`.

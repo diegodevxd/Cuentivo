@@ -1,0 +1,92 @@
+CUENTIVO3 — LISTO
+=================
+
+Tarea: TASK_CUENTIVO3.md
+Rama:  mexalm/ledger-crosscheck (base e97ef57)
+Worktree: C:\Users\pibed\Downloads\CUENTIVO_mexalm_ledger
+Fecha: 2026-10-21
+
+QUÉ SE HIZO (los 4 puntos de la tarea)
+-------------------------------------
+1. PROPIEDAD NUEVA. -Pcuentivo.functionsEmulatorHost=<host>, VACIA POR DEFECTO. Llega como
+   BuildConfig.FUNCTIONS_EMULATOR_HOST (String). Solo el build type "debug" la lee; el "release"
+   declara la MISMA llave con la cadena vacia, asi que un release no tiene ni como llevar el
+   valor. Un host con esquema, ruta o espacios hace fallar el build con un mensaje claro.
+2. DONDE SE APLICA. En app/src/main/java/com/cuentivo/app/sync/FirebaseEmulators.kt (el mismo
+   lugar donde ya se configuraban los emuladores): FirebaseEmulators.connectIfEnabled() llama
+   primero al cableado de Functions, que hace
+   FirebaseFunctions.getInstance(FUNCTIONS_REGION).useEmulator(host, 5001).
+   La region es la MISMA de las callables de la app (us-south1) y ahora es UNA constante
+   compartida: com/cuentivo/app/FunctionsRegion.kt, usada por los cuatro gateways
+   (interpretAiRequest, getAiAvailability, extractLedgerPage, verifyAiSubscription).
+   AUTH Y FIRESTORE NO SE TOCAN: siguen en produccion salvo -Pcuentivo.useEmulators=true.
+   Una sola vez por proceso: un segundo useEmulator sobre la misma instancia lanza.
+   Celular fisico: la PC se alcanza con "adb reverse tcp:5001 tcp:5001" (documentado en el
+   handoff; NO se ejecuto, porque no se instalo nada).
+3. PRUEBAS JVM. Con la propiedad vacia no se llama a useEmulator. Y un release NUNCA puede llevar
+   el valor: el BuildConfig del release lleva siempre "" (comprobado generando los dos
+   BuildConfig) y, si alguien pone la propiedad y compila un release, el build FALLA con un
+   mensaje que dice que use la variante debug.
+4. COMPILACION. assembleDebug -Pcuentivo.functionsEmulatorHost=127.0.0.1 -> BUILD SUCCESSFUL
+   (APK de 67 MB). NO se instalo nada.
+
+PRUEBAS Y COMPILACION (numeros reales)
+--------------------------------------
+  testDebugUnitTest : 1418 pruebas, 1418 pasan, 0 fallan, 0 errores, 0 omitidas (152 clases)
+                       (antes: 1411 en 151 -> 7 pruebas y 1 clase nuevos)
+  assembleDebug      : BUILD SUCCESSFUL con -Pcuentivo.functionsEmulatorHost=127.0.0.1
+  release + propiedad: BUILD FAILED (el guarda) -- verificado con --dry-run (no compila nada)
+  BuildConfig debug  : FUNCTIONS_EMULATOR_HOST = "127.0.0.1"   USE_FIREBASE_EMULATORS = false
+  BuildConfig release: FUNCTIONS_EMULATOR_HOST = ""             USE_FIREBASE_EMULATORS = false
+  puertas de idioma  : las dos VACIAS (CLAUDE.md)
+  paridad ES/EN      : 697/697 <string>, 16/16 <plurals> (esta parte no toco ninguna cadena)
+  regla 1 (dinero)   : limpia en los seis archivos de produccion tocados
+  salida real        : CUENTIVO3_TEST_OUTPUT.txt
+
+  7 pruebas nuevas: host vacio no toca nada; host nombrado apunta al emulador con la region de la
+  app y el puerto 5001; la segunda llamada del mismo proceso no hace nada; el cableado de
+  produccion lleva el host del build; el build type de release no puede llevar el host; y todos
+  los gateways usan la region compartida.
+
+ARCHIVOS (rutas exactas)
+------------------------
+  Nuevos:
+    app/src/main/java/com/cuentivo/app/FunctionsRegion.kt
+    app/src/test/java/com/cuentivo/app/sync/FirebaseEmulatorsTest.kt
+    CUENTIVO3_TEST_OUTPUT.txt
+  Modificados:
+    app/build.gradle.kts
+    app/src/main/java/com/cuentivo/app/sync/FirebaseEmulators.kt
+    app/src/main/java/com/cuentivo/app/ai/FirebaseAiAvailabilityGateway.kt
+    app/src/main/java/com/cuentivo/app/ai/FirebaseCallableAiGateway.kt
+    app/src/main/java/com/cuentivo/app/ai/ledger/LedgerExtractionGateway.kt
+    app/src/main/java/com/cuentivo/app/billing/FirebaseCallableSubscriptionVerificationGateway.kt
+    HANDOFF_CUENTIVO1.md   (seccion CUENTIVO3)
+    PROJECT_MEMORY.md      (estado vivo: la pieza existe, es de desarrollo, NO va a produccion)
+  Nada fuera de app/ fue tocado, salvo el handoff, este archivo, el de evidencia y
+  PROJECT_MEMORY.md. functions/ no se toco.
+
+LO QUE NO SE HIZO
+-----------------
+  - No se hizo push, ni deploy, ni build de release (solo el grafo con --dry-run).
+  - No se arranco ningun servidor ni emulador, y no se instalo nada en ningun dispositivo.
+    "adb reverse" NO se ejecuto.
+  - No se tocaron llaves ni secretos, ni keystore.properties, ni ningun *.jks.
+  - No se toco functions/, CLAUDE.md, AGENTS.md ni firestore.rules.
+  - No se cambio el comportamiento de Auth ni de Firestore.
+  - No se corrieron las instrumentadas ni lintDebug.
+  - .gitignore traia un cambio sin commitear de la parte 1 (/functions/.secret.local) y se dejo
+    como estaba: no es de esta parte.
+
+HALLAZGO QUE SE ANOTA Y NO SE TOCO (es de Diego)
+------------------------------------------------
+  USE_FIREBASE_EMULATORS esta en defaultConfig, asi que el release tambien lo hereda:
+  un "assembleRelease -Pcuentivo.useEmulators=true" produce un APK de release que apunta Auth y
+  Firestore a 10.0.2.2 (comprobado generando el BuildConfig del release). El comentario del build
+  file dice que un release nunca habla con localhost, y eso es cierto POR DEFECTO, no cuando
+  alguien pasa la bandera. El arreglo (mover ese buildConfigField al build type debug y ponerle
+  un guarda como el de esta parte) cambia el comportamiento de un release con esa bandera, asi
+  que no se hizo de paso. Queda anotado en el handoff, seccion C3.7.
+
+Detalle completo (con el porque de cada decision y los riesgos que quedan): HANDOFF_CUENTIVO1.md,
+seccion CUENTIVO3, del final del archivo.
