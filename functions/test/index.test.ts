@@ -12,6 +12,7 @@ describe("regional callable gateway", () => {
     expect(module.getAiAvailability).toBeDefined();
     expect(module.verifyAiSubscription).toBeDefined();
     expect(module.handlePlayRtdnNotification).toBeDefined();
+    expect(module.warmMexalmLedger).toBeDefined();
   });
 
   test("declares exactly the five approved runtime options", () => {
@@ -187,5 +188,35 @@ describe("regional callable gateway", () => {
     expect(SOURCE).not.toMatch(
       /logger\.(warn|error|info|log)\([^)]*(rawText|ledgerText|pageText|debugDump)/,
     );
+  });
+
+  /**
+   * El despertar del Ledger de MexaLM.
+   *
+   * Es una callable más, con la misma frontera de las demás: autenticación, App Check y la
+   * bandera de la verificación cruzada. Y con la misma regla del secreto: el token del Ledger
+   * sigue ligado a UNA sola callable, la de la libreta, porque un health check no lo necesita.
+   */
+  test("the warm callable is gated by the crosscheck flag and never binds the ledger secret", () => {
+    const warmIndex = SOURCE.indexOf("export const warmMexalmLedger");
+    const verifyIndex = SOURCE.indexOf("export const verifyAiSubscription");
+    expect(warmIndex).toBeGreaterThan(0);
+    expect(warmIndex).toBeLessThan(verifyIndex);
+
+    const warmBlock = SOURCE.slice(warmIndex, verifyIndex);
+    expect(warmBlock).toContain("mexalmLedgerCrosscheck.value()");
+    expect(warmBlock).toContain("createWarmMexalmLedgerHandler");
+    // El secreto del Ledger NO se liga aquí: el health check no lo necesita.
+    expect(warmBlock).not.toContain("mexalmLedgerToken");
+    expect(warmBlock).not.toContain("secrets:");
+  });
+
+  test("the warm callable never logs the account", () => {
+    const warmIndex = SOURCE.indexOf("export const warmMexalmLedger");
+    const verifyIndex = SOURCE.indexOf("export const verifyAiSubscription");
+    const warmBlock = SOURCE.slice(warmIndex, verifyIndex);
+    expect(warmBlock).toContain('logger.info("MEXALM_LEDGER_WARM"');
+    // Ni el uid, ni la dirección del Ledger, ni lo que el health check contestó.
+    expect(warmBlock).not.toMatch(/logger\.(warn|error|info|log)\([^)]*(auth\.uid|request\.data|ledgerUrl)/);
   });
 });

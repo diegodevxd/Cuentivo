@@ -5,6 +5,7 @@ import {
   isEntitlementValid,
   type AiAuthorizationDecision,
   type AiControlConfig,
+  type AiEntitlement,
   type AiProviderId,
   type AuthorizeAiInput,
   type AuthorizeAiResult,
@@ -18,6 +19,15 @@ export interface AiControlPlaneRepository {
     nowEpochMillis: number;
   }>): Promise<"CLAIMED" | "ALREADY_CLAIMED">;
   getAvailability(): Promise<{ available: boolean }>;
+  /**
+   * La suscripción de la cuenta, tal como la dejó `verifyAiSubscription`.
+   *
+   * Es el MISMO documento que lee la autorización (`aiEntitlements/{uid}`), leído por su cuenta y
+   * no dentro de una transacción: aquí no se autoriza nada, sólo se pregunta "¿esta cuenta tiene
+   * CuentivoAI?". Un documento ausente o malformado se lee como "no lo tiene", que es lo que
+   * `isEntitlementValid` decide con `null`.
+   */
+  readEntitlement(uid: string): Promise<AiEntitlement | null>;
 }
 
 /** Minimal transaction surface so the transactional logic is testable without a Firestore emulator. */
@@ -324,6 +334,30 @@ export function createFirestoreControlPlaneRepository(
         return { available: isControlAllowed(data ?? null) };
       } catch {
         return { available: false };
+      }
+    },
+    async readEntitlement(uid: string): Promise<AiEntitlement | null> {
+      if (uid.length === 0) {
+        return null;
+      }
+      try {
+        const snap = await firestore.doc(entitlementPath(uid)).get();
+        if (!snap.exists) {
+          return null;
+        }
+        const data = snap.data();
+        if (data === undefined) {
+          return null;
+        }
+        return {
+          enabled: data["enabled"] === true,
+          expiresAtEpochMillis:
+            typeof data["expiresAtEpochMillis"] === "number" ? data["expiresAtEpochMillis"] : 0,
+        };
+      } catch {
+        // Un Firestore que no contesta NO es una suscripción: se lee como "no la tiene" y el
+        // despertar se salta. Fallar hacia "sí la tiene" sería despertarle el Ledger a cualquiera.
+        return null;
       }
     },
   };

@@ -9,6 +9,7 @@ import { createExtractLedgerPageHandler } from "./extractLedgerPage.js";
 import { createAuthorizeAiHandler } from "./authorizeAiAction.js";
 import { createVerifyAiSubscriptionHandler } from "./verifyAiSubscription.js";
 import { createGetAiAvailabilityHandler } from "./getAiAvailability.js";
+import { createWarmMexalmLedgerHandler, MexalmLedgerWarmLimiter } from "./warmMexalmLedger.js";
 import { createPlayRtdnHandler } from "./handlePlayRtdnNotification.js";
 import { createAiEdgeRequestGuard } from "./ai/edgeRequestGuard";
 import { createFirestoreControlPlaneRepository } from "./ai/firestoreControlPlane";
@@ -17,6 +18,7 @@ import { createGeminiLedgerProvider } from "./ai/geminiLedgerProvider";
 import { createMexalmLedgerClient } from "./ai/mexalmLedgerClient";
 import { createMexalmLedgerCrosschecker } from "./ai/mexalmCrosscheck";
 import { createMexalmLedgerDebugDumpWriter } from "./ai/mexalmLedgerDebugDump";
+import { createMexalmLedgerWarmer } from "./ai/mexalmLedgerWarm";
 import { createDefaultPlaySubscriptionApi } from "./ai/playSubscriptionVerifier";
 import { createFirestoreSubscriptionEntitlementRepository } from "./ai/subscriptionEntitlementRepository";
 
@@ -270,6 +272,50 @@ export const getAiAvailability = onCall({ ...AI_BOUNDARY, concurrency: 1 }, asyn
   if ("code" in result) {
     throw new HttpsError(result.code, "Authentication required");
   }
+  return result;
+});
+
+/**
+ * Despertar el Ledger de MexaLM.
+ *
+ * El Ledger es un Cloud Run con `min-instances=0`: se apaga solo y tarda entre 30 y 60 s en
+ * volver. Abrir la app con CuentivoAI lo despierta por adelantado, para que la primera lectura de
+ * la libreta no espere a que la instancia levante.
+ *
+ * Tres cosas y ninguna negociable:
+ *
+ * - **Sólo para cuentas con CuentivoAI.** La suscripción se lee del mismo documento que escribe
+ *   `verifyAiSubscription`, con la misma regla de siempre: habilitada y sin expirar.
+ * - **Con la bandera apagada no hace nada.** Es la misma bandera de la verificación cruzada: sin
+ *   ella el Ledger no se usa, y despertarlo sería pagar por nada.
+ * - **Un despertar por cuenta cada 5 minutos.** En memoria, en la instancia: el límite evita el
+ *   ciclón de "abrir y cerrar la app"; no protege un recurso scarce.
+ *
+ * El secreto del Ledger NO se liga aquí: un health check no lo necesita, y el secreto sigue
+ * ligado a una sola callable (`extractLedgerPage`).
+ */
+const mexalmLedgerWarmLimiter = new MexalmLedgerWarmLimiter();
+
+export const warmMexalmLedger = onCall({ ...AI_BOUNDARY, concurrency: 1 }, async (request) => {
+  const result = await createWarmMexalmLedgerHandler({
+    isEnabled: () => mexalmLedgerCrosscheck.value(),
+    ledgerUrl: () => mexalmLedgerUrl.value(),
+    readEntitlement: (uid) => controlPlaneRepository().readEntitlement(uid),
+    warm: () => {
+      createMexalmLedgerWarmer({ baseUrl: mexalmLedgerUrl.value() }).warm();
+    },
+    now: () => Date.now(),
+    limiter: mexalmLedgerWarmLimiter,
+  })({
+    auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
+    data: request.data,
+  });
+  if ("code" in result) {
+    throw new HttpsError(result.code, "Authentication required");
+  }
+  // El resultado y nada más: ni el uid, ni la dirección del Ledger, ni la respuesta del health
+  // check. Un log es un destino público.
+  logger.info("MEXALM_LEDGER_WARM", { status: result.status, reason: result.reason });
   return result;
 });
 
