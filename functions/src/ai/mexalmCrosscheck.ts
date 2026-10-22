@@ -216,7 +216,7 @@ export type CrosscheckPagePlan = Readonly<{
  *
  * Por eso la página lleva, antes de los renglones de cada clienta, una línea con su nombre tal
  * cual. El Ledger reconoce esa línea como encabezado y le atribuye los renglones que siguen: con
- * "Aurora" arriba, sus renglones salen con `customerName: "Aurora"`.
+ * "Chelo" arriba, sus renglones salen con `customerName: "Chelo"`.
  *
  * **El orden.** El Ledger numera sus operaciones por su POSICIÓN en la página —`lineIndex` es el
  * ordinal de la operación, no el número de la línea física: una línea con dos movimientos da dos

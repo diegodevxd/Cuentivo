@@ -32,7 +32,7 @@ class MexalmCrosscheckConfirmationTest {
     ): LedgerOperation = LedgerOperation(
         lineIndex = lineIndex,
         proposedKind = ProposedLedgerKind.SALE,
-        customerName = "Aurora",
+        customerName = "Chelo",
         amountCents = "25000",
         date = SafeDateCandidate(year = year, month = 3, day = 10),
         uncertainFields = uncertain,
@@ -183,7 +183,7 @@ class MexalmCrosscheckConfirmationTest {
 
         // Resolver una duda no reescribe lo que se anota.
         assertEquals("25000", resolved.amountCents)
-        assertEquals("Aurora", resolved.customerName)
+        assertEquals("Chelo", resolved.customerName)
         assertEquals(ProposedLedgerKind.SALE, resolved.proposedKind)
     }
 
@@ -281,7 +281,7 @@ class MexalmCrosscheckConfirmationTest {
             mapOf(
                 "lineIndex" to lineIndex,
                 "proposedKind" to "SALE",
-                "customerName" to "Aurora",
+                "customerName" to "Chelo",
                 "amountCents" to (10000 + lineIndex).toString(),
                 // La duda de lectura del modelo: el monto.
                 "uncertainFields" to listOf("AMOUNT"),

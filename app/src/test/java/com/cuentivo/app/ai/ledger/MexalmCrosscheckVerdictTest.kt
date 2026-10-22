@@ -22,7 +22,7 @@ class MexalmCrosscheckVerdictTest {
                 field = MexalmCrosscheckDisagreementField.MISSING_IN_LEDGER,
                 gemini = MexalmCrosscheckOperationSummary(
                     proposedKind = "SALE",
-                    customerName = "Aurora",
+                    customerName = "Chelo",
                     amountCents = 10000L + lineIndex,
                 ),
             )
@@ -90,7 +90,7 @@ class MexalmCrosscheckVerdictTest {
                 MexalmCrosscheckDisagreement(
                     lineIndex = 3,
                     field = MexalmCrosscheckDisagreementField.CUSTOMER,
-                    gemini = MexalmCrosscheckOperationSummary(customerName = "Aurora"),
+                    gemini = MexalmCrosscheckOperationSummary(customerName = "Chelo"),
                     ledger = MexalmCrosscheckOperationSummary(customerName = "Beto"),
                 ),
             ),

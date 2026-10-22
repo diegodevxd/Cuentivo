@@ -109,7 +109,7 @@ apagada** (no hay push, ni deploy, ni release, ni emulador, ni instalación).
 - **La página que se manda al Ledger lleva el encabezado de la clienta.** Antes se armaba con el
   `rawText` de cada renglón y nada más, y en una libreta de fiado el nombre se escribe **una vez**
   arriba: el Ledger no tenía de dónde sacar a quién pertenece cada movimiento y respondía
-  `customerName: null` (la libreta de "Aurora", 8 ventas y 4 abonos, salió "11 renglones distinto").
+  `customerName: null` (la libreta de "Chelo", 8 ventas y 4 abonos, salió "11 renglones distinto").
   Ahora la página agrupa por clienta y pone el nombre **tal cual** antes de sus renglones; un
   renglón sin clienta no inventa encabezado.
 - **El `null` del Ledger es "sin opinión", no un desacuerdo.** Para el cliente, el tipo y el monto,
@@ -126,7 +126,7 @@ apagada** (no hay push, ni deploy, ni release, ni emulador, ni instalación).
   mutaciones cazadas** (quitar el encabezado, tratar el `null` como desacuerdo, reportar la
   posición en vez del renglón).
 - **Queda abierto:** la bandera sigue apagada y **nadie lo ha corrido contra el Ledger real** desde
-  este worktree; falta la prueba con la libreta de "Aurora" de verdad. Y `agreed` sigue
+  este worktree; falta la prueba con la libreta de "Chelo" de verdad. Y `agreed` sigue
   significando "no hubo desacuerdos", no "el Ledger confirmó cada renglón".
 - Detalle completo: `HANDOFF_CUENTIVO1.md`, sección **CUENTIVO4**.
 
@@ -159,7 +159,7 @@ apagada** (no hay push, ni deploy, ni release, ni emulador, ni instalación).
   mutaciones cazadas** (comparar igual con `BLOCKED`, escribir el volcado sin el emulador, dejar las
   diferencias de presencia, no llegar nunca a `COULD_NOT_READ`).
 - **Queda abierto:** la bandera sigue apagada y **nadie ha corrido esto contra el Ledger real** desde
-  este worktree; falta la prueba con la libreta de "Aurora" de verdad, con el volcado encendido en
+  este worktree; falta la prueba con la libreta de "Chelo" de verdad, con el volcado encendido en
   el emulador, para ver el `rawText` que el Ledger no certifica. Y el **código de motivo** del
   Ledger (`reasons`) no llega a la app: el bloque no creció y el parser de Android es estricto.
 - Detalle completo: `HANDOFF_CUENTIVO1.md`, sección **CUENTIVO5**.

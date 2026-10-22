@@ -112,12 +112,12 @@ const LEDGER_DIFFERENT_AMOUNT = {
  * renglones abajo, SIN repetir el nombre en cada renglón. Es el caso real que rompía la
  * verificación: el Ledger no tenía de dónde sacar a quién pertenece cada movimiento.
  */
-const AURORA_PAGE: LedgerExtractionResult = {
+const CHELO_PAGE: LedgerExtractionResult = {
   operations: [
     {
       lineIndex: 0,
       proposedKind: "SALE",
-      customerName: "Aurora",
+      customerName: "Chelo",
       amountCents: "25000",
       description: "Protector tapete",
       uncertainFields: [],
@@ -131,7 +131,7 @@ const AURORA_PAGE: LedgerExtractionResult = {
     {
       lineIndex: 1,
       proposedKind: "PAYMENT",
-      customerName: "Aurora",
+      customerName: "Chelo",
       amountCents: "10000",
       uncertainFields: [],
       unreadableFields: [],
@@ -144,16 +144,16 @@ const AURORA_PAGE: LedgerExtractionResult = {
 };
 
 /** El Ledger de acuerdo con esa página: mismo tipo, misma clienta, mismo monto. */
-const LEDGER_AURORA_AGREED = {
+const LEDGER_CHELO_AGREED = {
   status: "OK",
   operations: [
-    { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "25000" },
-    { lineIndex: 1, proposedKind: "PAYMENT", customerName: "Aurora", amountCents: "10000" },
+    { lineIndex: 0, proposedKind: "SALE", customerName: "Chelo", amountCents: "25000" },
+    { lineIndex: 1, proposedKind: "PAYMENT", customerName: "Chelo", amountCents: "10000" },
   ],
 };
 
 /** El Ledger que NO pudo leer la clienta: `null`, no un nombre inventado. */
-const LEDGER_AURORA_NO_CUSTOMER = {
+const LEDGER_CHELO_NO_CUSTOMER = {
   status: "OK",
   operations: [
     { lineIndex: 0, proposedKind: "SALE", customerName: null, amountCents: "25000" },
@@ -162,11 +162,11 @@ const LEDGER_AURORA_NO_CUSTOMER = {
 };
 
 /** El Ledger que leyó el abono con otro monto. */
-const LEDGER_AURORA_DIFFERENT_AMOUNT = {
+const LEDGER_CHELO_DIFFERENT_AMOUNT = {
   status: "OK",
   operations: [
-    { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "25000" },
-    { lineIndex: 1, proposedKind: "PAYMENT", customerName: "Aurora", amountCents: "9000" },
+    { lineIndex: 0, proposedKind: "SALE", customerName: "Chelo", amountCents: "25000" },
+    { lineIndex: 1, proposedKind: "PAYMENT", customerName: "Chelo", amountCents: "9000" },
   ],
 };
 
@@ -176,7 +176,7 @@ const TWO_CUSTOMERS_PAGE: LedgerExtractionResult = {
     {
       lineIndex: 0,
       proposedKind: "SALE",
-      customerName: "Aurora",
+      customerName: "Chelo",
       amountCents: "25000",
       uncertainFields: [],
       unreadableFields: [],
@@ -185,7 +185,7 @@ const TWO_CUSTOMERS_PAGE: LedgerExtractionResult = {
     {
       lineIndex: 1,
       proposedKind: "SALE",
-      customerName: "Aurora",
+      customerName: "Chelo",
       amountCents: "10000",
       uncertainFields: [],
       unreadableFields: [],
@@ -210,8 +210,8 @@ const TWO_CUSTOMERS_PAGE: LedgerExtractionResult = {
 const LEDGER_TWO_CUSTOMERS_AGREED = {
   status: "OK",
   operations: [
-    { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "25000" },
-    { lineIndex: 1, proposedKind: "SALE", customerName: "Aurora", amountCents: "10000" },
+    { lineIndex: 0, proposedKind: "SALE", customerName: "Chelo", amountCents: "25000" },
+    { lineIndex: 1, proposedKind: "SALE", customerName: "Chelo", amountCents: "10000" },
     { lineIndex: 2, proposedKind: "PAYMENT", customerName: "Beto", amountCents: "5000" },
   ],
 };
@@ -648,7 +648,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
           {
             lineIndex: 0,
             proposedKind: "SALE",
-            customerName: "Aurora",
+            customerName: "Chelo",
             amountCents: "25000",
             uncertainFields: [],
             unreadableFields: [],
@@ -666,7 +666,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
           {
             lineIndex: 0,
             proposedKind: "SALE",
-            customerName: "Aurora",
+            customerName: "Chelo",
             amountCents: "25000",
             uncertainFields: [],
             unreadableFields: [],
@@ -707,12 +707,12 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       let sentBody = "";
       const captureFetch: MexalmLedgerFetch = async (_url, init) => {
         sentBody = init.body;
-        return { ok: true, status: 200, json: async () => LEDGER_AURORA_AGREED };
+        return { ok: true, status: 200, json: async () => LEDGER_CHELO_AGREED };
       };
 
       const result = (await createExtractLedgerPageHandler(
         deps({
-          provider: providerReturning(AURORA_PAGE),
+          provider: providerReturning(CHELO_PAGE),
           crosscheck: crosscheckerOver(captureFetch),
         }),
       )({
@@ -721,17 +721,17 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       })) as any;
 
       // El encabezado va arriba y los renglones NO repiten el nombre: así es como la hoja lo trae.
-      expect(JSON.parse(sentBody).text).toBe("Aurora\nprotector tapete 250\nabono 100");
+      expect(JSON.parse(sentBody).text).toBe("Chelo\nprotector tapete 250\nabono 100");
       // Y con el encabezado, el Ledger sabe a quién pertenece cada renglón y está de acuerdo.
       expect(result.mexalmCrosscheck.agreed).toBe(true);
       expect(result.mexalmCrosscheck.disagreements).toEqual([]);
     });
 
     test("un `null` del Ledger es «sin opinión», no un desacuerdo de cliente", async () => {
-      const crosscheck = crosscheckerOver(jsonResponse(LEDGER_AURORA_NO_CUSTOMER));
+      const crosscheck = crosscheckerOver(jsonResponse(LEDGER_CHELO_NO_CUSTOMER));
 
       const result = (await createExtractLedgerPageHandler(
-        deps({ provider: providerReturning(AURORA_PAGE), crosscheck }),
+        deps({ provider: providerReturning(CHELO_PAGE), crosscheck }),
       )({
         auth: AUTH_USER,
         data: NEW_APP_DATA,
@@ -745,10 +745,10 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
     });
 
     test("un monto distinto sigue contando como desacuerdo, con el encabezado puesto", async () => {
-      const crosscheck = crosscheckerOver(jsonResponse(LEDGER_AURORA_DIFFERENT_AMOUNT));
+      const crosscheck = crosscheckerOver(jsonResponse(LEDGER_CHELO_DIFFERENT_AMOUNT));
 
       const result = (await createExtractLedgerPageHandler(
-        deps({ provider: providerReturning(AURORA_PAGE), crosscheck }),
+        deps({ provider: providerReturning(CHELO_PAGE), crosscheck }),
       )({
         auth: AUTH_USER,
         data: NEW_APP_DATA,
@@ -783,7 +783,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       })) as any;
 
       expect(JSON.parse(sentBody).text).toBe(
-        "Aurora\nprotector tapete 250\njabon 100\nBeto\nabono 50",
+        "Chelo\nprotector tapete 250\njabon 100\nBeto\nabono 50",
       );
       expect(result.mexalmCrosscheck.agreed).toBe(true);
       expect(result.mexalmCrosscheck.disagreements).toEqual([]);
@@ -795,7 +795,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
           {
             lineIndex: 0,
             proposedKind: "SALE",
-            customerName: "Aurora",
+            customerName: "Chelo",
             amountCents: "25000",
             uncertainFields: [],
             unreadableFields: [],
@@ -813,7 +813,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
           {
             lineIndex: 2,
             proposedKind: "SALE",
-            customerName: "Aurora",
+            customerName: "Chelo",
             amountCents: "15000",
             uncertainFields: [],
             unreadableFields: [],
@@ -828,8 +828,8 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       const ledger = {
         status: "OK",
         operations: [
-          { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "25000" },
-          { lineIndex: 1, proposedKind: "SALE", customerName: "Aurora", amountCents: "14000" },
+          { lineIndex: 0, proposedKind: "SALE", customerName: "Chelo", amountCents: "25000" },
+          { lineIndex: 1, proposedKind: "SALE", customerName: "Chelo", amountCents: "14000" },
           { lineIndex: 2, proposedKind: "SALE", customerName: "Beto", amountCents: "5000" },
         ],
       };
@@ -847,9 +847,9 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         data: NEW_APP_DATA,
       })) as any;
 
-      // Los renglones de Aurora quedan juntos, con un solo encabezado.
+      // Los renglones de Chelo quedan juntos, con un solo encabezado.
       expect(JSON.parse(sentBody).text).toBe(
-        "Aurora\nprotector tapete 250\ncepillo 150\nBeto\njabon 100",
+        "Chelo\nprotector tapete 250\ncepillo 150\nBeto\njabon 100",
       );
       // Y el desacuerdo se marca en el RENGLÓN de la hoja, no en la posición de la página: la app
       // marca renglones, no posiciones.
@@ -860,12 +860,12 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
     });
 
     test("la libreta de una clienta con ventas y abonos: el Ledger está de acuerdo", async () => {
-      // El caso real que salió en la libreta de "Aurora": 8 ventas y 4 abonos, y el bloque decía
+      // El caso real que salió en la libreta de "Chelo": 8 ventas y 4 abonos, y el bloque decía
       // "11 renglones distintos" porque la página no llevaba el nombre de la clienta.
       const operations: LedgerOperationV5[] = Array.from({ length: 12 }, (_, index) => ({
         lineIndex: index,
         proposedKind: index < 8 ? "SALE" : "PAYMENT",
-        customerName: "Aurora",
+        customerName: "Chelo",
         amountCents: String(10000 + index),
         uncertainFields: [],
         unreadableFields: [],
@@ -874,7 +874,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       const ledgerOperations = operations.map((operation) => ({
         lineIndex: operation.lineIndex,
         proposedKind: operation.proposedKind,
-        customerName: "Aurora",
+        customerName: "Chelo",
         amountCents: operation.amountCents,
       }));
 
@@ -938,11 +938,11 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
    */
   describe("cuando el Ledger no lee la página", () => {
     /** La libreta de una clienta: doce renglones, como la del teléfono. */
-    const AURORA_TWELVE_ROWS: LedgerExtractionResult = {
+    const CHELO_TWELVE_ROWS: LedgerExtractionResult = {
       operations: Array.from({ length: 12 }, (_, index) => ({
         lineIndex: index,
         proposedKind: index < 8 ? "SALE" : "PAYMENT",
-        customerName: "Aurora",
+        customerName: "Chelo",
         amountCents: String(10000 + index),
         uncertainFields: [],
         unreadableFields: [],
@@ -957,7 +957,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       const crosscheck = crosscheckerOver(jsonResponse({ status: "BLOCKED", operations: [] }));
 
       const result = (await createExtractLedgerPageHandler(
-        deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
+        deps({ provider: providerReturning(CHELO_TWELVE_ROWS), crosscheck }),
       )({
         auth: AUTH_USER,
         data: NEW_APP_DATA,
@@ -976,7 +976,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       const crosscheck = crosscheckerOver(jsonResponse({ status: "REVIEW_REQUIRED", operations: [] }));
 
       const result = (await createExtractLedgerPageHandler(
-        deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
+        deps({ provider: providerReturning(CHELO_TWELVE_ROWS), crosscheck }),
       )({
         auth: AUTH_USER,
         data: NEW_APP_DATA,
@@ -991,7 +991,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       const crosscheck = crosscheckerOver(jsonResponse({ status: "OK", operations: [] }));
 
       const result = (await createExtractLedgerPageHandler(
-        deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
+        deps({ provider: providerReturning(CHELO_TWELVE_ROWS), crosscheck }),
       )({
         auth: AUTH_USER,
         data: NEW_APP_DATA,
@@ -1009,13 +1009,13 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         jsonResponse({
           status: "BLOCKED",
           operations: [
-            { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "10000" },
+            { lineIndex: 0, proposedKind: "SALE", customerName: "Chelo", amountCents: "10000" },
           ],
         }),
       );
 
       const result = (await createExtractLedgerPageHandler(
-        deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
+        deps({ provider: providerReturning(CHELO_TWELVE_ROWS), crosscheck }),
       )({
         auth: AUTH_USER,
         data: NEW_APP_DATA,
@@ -1046,7 +1046,7 @@ describe("los renglones que el Ledger confirmó", () => {
     operations: Array.from({ length: 12 }, (_, index) => ({
       lineIndex: index,
       proposedKind: index < 8 ? "SALE" : "PAYMENT",
-      customerName: "Aurora",
+      customerName: "Chelo",
       amountCents: String(10000 + index),
       uncertainFields: [],
       unreadableFields: [],
@@ -1082,10 +1082,10 @@ describe("los renglones que el Ledger confirmó", () => {
   });
 
   test("un Ledger sin opinión de nada no confirma ni un renglón, aunque no haya desacuerdos", async () => {
-    const crosscheck = crosscheckerOver(jsonResponse(LEDGER_AURORA_NO_CUSTOMER));
+    const crosscheck = crosscheckerOver(jsonResponse(LEDGER_CHELO_NO_CUSTOMER));
 
     const result = (await createExtractLedgerPageHandler(
-      deps({ provider: providerReturning(AURORA_PAGE), crosscheck }),
+      deps({ provider: providerReturning(CHELO_PAGE), crosscheck }),
     )({
       auth: AUTH_USER,
       data: NEW_APP_DATA,
@@ -1135,7 +1135,7 @@ describe("los renglones que el Ledger confirmó", () => {
     const twelveRows = Array.from({ length: 12 }, (_, index) => ({
       lineIndex: index,
       proposedKind: index < 8 ? "SALE" : "PAYMENT",
-      customerName: "Aurora",
+      customerName: "Chelo",
       amountCents: String(10000 + index),
     }));
     const crosscheck = crosscheckerOver(jsonResponse({ status: "OK", operations: twelveRows }));
