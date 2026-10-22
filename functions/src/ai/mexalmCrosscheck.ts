@@ -33,10 +33,15 @@ import type {
   MexalmCrosscheckOperationSummary,
 } from "../contract.js";
 import {
+  LEDGER_STATUS_WITHOUT_READ,
   MEXALM_LEDGER_MAX_TEXT_LENGTH,
   type MexalmLedgerClient,
   type MexalmLedgerOperation,
 } from "./mexalmLedgerClient.js";
+import type {
+  MexalmLedgerDebugDumpEntry,
+  MexalmLedgerDebugDumpWriter,
+} from "./mexalmLedgerDebugDump.js";
 
 /**
  * Los tipos del bloque viven en `contract.ts` porque son parte de la forma de la respuesta; aquí
@@ -276,7 +281,13 @@ type GeminiOperation = LedgerOperationV5;
  */
 export const UNNUMBERED_LINE_INDEX = -1;
 
-type OperationPair = Readonly<{
+/**
+ * Un renglón emparejado: lo que dijo cada lado de ESA línea.
+ *
+ * La columna `lineIndex` es la del renglón de Gemini —la que la app sabe marcar— salvo cuando el
+ * renglón sólo existe del lado del Ledger, y entonces es la de él.
+ */
+export type OperationPair = Readonly<{
   gemini?: GeminiOperation;
   ledger?: MexalmLedgerOperation;
   lineIndex: number;
@@ -293,8 +304,11 @@ type OperationPair = Readonly<{
  * Si el Ledger numera distinto (otra base, o cuenta sólo los renglones con movimiento), no hay ni
  * una posición en común y se empareja POR ORDEN, que para dos listas del mismo orden es lo mismo.
  * El síntoma de un emparejamiento roto es que TODOS los renglones discrepan, y eso se ve.
+ *
+ * Es pública porque el volcado de diagnóstico tiene que mostrar EL emparejamiento —el mismo que
+ * usa la comparación— y no una copia que se parece.
  */
-function pairOperations(
+export function pairLedgerOperations(
   geminiOperations: readonly GeminiOperation[],
   ledgerOperations: readonly MexalmLedgerOperation[],
 ): OperationPair[] {
@@ -381,8 +395,16 @@ export function compareLedgerOperations(
   geminiOperations: readonly GeminiOperation[],
   ledgerOperations: readonly MexalmLedgerOperation[],
 ): MexalmCrosscheckDisagreement[] {
+  return comparePairs(pairLedgerOperations(geminiOperations, ledgerOperations));
+}
+
+/**
+ * Compara los renglones YA emparejados. Es el corazón de la comparación, y está aparte para que
+ * el volcado de diagnóstico y la comparación usen exactamente el mismo emparejamiento.
+ */
+function comparePairs(pairs: readonly OperationPair[]): MexalmCrosscheckDisagreement[] {
   const disagreements: MexalmCrosscheckDisagreement[] = [];
-  for (const pair of pairOperations(geminiOperations, ledgerOperations)) {
+  for (const pair of pairs) {
     const gemini = pair.gemini;
     const ledger = pair.ledger;
     if (gemini === undefined && ledger === undefined) {
@@ -450,6 +472,37 @@ export function compareLedgerOperations(
   return disagreements;
 }
 
+/**
+ * ¿El Ledger NO leyó la página?
+ *
+ * Es el caso que se ve desde el teléfono como "cada renglón dice que el Ledger no lo vio": el
+ * Ledger respondió `BLOCKED` (o `REVIEW_REQUIRED`) y sin operaciones. No es que le faltara un
+ * renglón: es que **la página entera** no se pudo certificar.
+ *
+ * Por eso, en ese caso NO se reportan diferencias renglón por renglón. Un `MISSING_IN_LEDGER` en
+ * cada renglón no dice "el Ledger no leyó esta página": dice "el Ledger no leyó N renglones", que
+ * es una lectura equivocada de lo que pasó — y hace que la persona revise una libreta que en
+ * realidad no tiene nada que ver con lo que el Ledger dijo.
+ */
+export function ledgerDidNotReadPage(status: string, operationCount: number): boolean {
+  return operationCount === 0 && LEDGER_STATUS_WITHOUT_READ.has(status);
+}
+
+/**
+ * El emparejamiento, escrito para el volcado de diagnóstico.
+ *
+ * Usa el MISMO `summarize` que la comparación: el archivo tiene que mostrar lo que se comparó.
+ */
+export function describeCrosscheckPairing(
+  pairs: readonly OperationPair[],
+): MexalmLedgerDebugDumpEntry[] {
+  return pairs.map((pair) => ({
+    lineIndex: pair.lineIndex,
+    ...(pair.gemini !== undefined ? { gemini: summarize(pair.gemini) } : {}),
+    ...(pair.ledger !== undefined ? { ledger: summarize(pair.ledger) } : {}),
+  }));
+}
+
 export interface MexalmLedgerCrosschecker {
   /**
    * Compara la página de Gemini contra el Ledger. Devuelve `null` cuando NO hubo veredicto
@@ -465,6 +518,11 @@ export interface MexalmLedgerCrosschecker {
 export function createMexalmLedgerCrosschecker(options: Readonly<{
   client: MexalmLedgerClient;
   now?: () => number;
+  /**
+   * El volcado de diagnóstico. Es OPCIONAL y sólo existe en el emulador: aquí se pasa el
+   * escritor, que apagado no escribe nada. `null` es lo mismo que no pasarlo.
+   */
+  debugDump?: MexalmLedgerDebugDumpWriter | null;
 }>): MexalmLedgerCrosschecker {
   const now = options.now ?? (() => Date.now());
   return {
@@ -483,10 +541,21 @@ export function createMexalmLedgerCrosschecker(options: Readonly<{
         // El cliente ya reportó la causa por su cuenta. Acá no hay nada que añadir a la respuesta.
         return null;
       }
-      const disagreements = compareLedgerOperations(input.operations, result.operations);
+      const pairs = pairLedgerOperations(input.operations, result.operations);
+      const disagreements = comparePairs(pairs);
+      // El Ledger no leyó la página: no hay veredicto renglón por renglón, y por eso no se
+      // reportan diferencias por renglón. El `ledgerStatus` del bloque dice lo que pasó, y la app
+      // lo explica una sola vez.
+      const didNotRead = ledgerDidNotReadPage(result.status, result.operations.length);
+      // El volcado va ANTES de la respuesta: aunque el bloque se arme raro, el diagnóstico está.
+      options.debugDump?.write({
+        text,
+        response: result.raw,
+        matching: describeCrosscheckPairing(pairs),
+      });
       return {
-        agreed: disagreements.length === 0,
-        disagreements,
+        agreed: !didNotRead && disagreements.length === 0,
+        disagreements: didNotRead ? [] : disagreements,
         ledgerStatus: result.status,
         latencyMs,
       };

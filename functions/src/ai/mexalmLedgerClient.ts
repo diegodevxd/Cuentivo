@@ -59,6 +59,14 @@ export type MexalmLedgerExtractResult = Readonly<{
   /** `status` del Ledger, verbatim. "OK" es el único que significa "aquí hay operaciones". */
   status: string;
   operations: readonly MexalmLedgerOperation[];
+  /**
+   * La respuesta COMPLETA del Ledger, tal cual llegó.
+   *
+   * **Nunca se registra.** Sólo la usa el volcado de diagnóstico del emulador, que es un archivo
+   * local ignorado por Git: un log es un destino público y este texto es la transcripción de la
+   * libreta de una clienta.
+   */
+  raw: unknown;
 }>;
 
 /**
@@ -109,6 +117,15 @@ const EXTRACT_PATH = "/v1/extract";
  * verificación, y el `status` viaja verbatim en el bloque para que quien lo lea vea lo que dijo.
  */
 const NO_VERDICT_STATUSES = new Set(["INVALID_OUTPUT", "REFUSED"]);
+
+/**
+ * `status` que el Ledger usa cuando NO LEYÓ la página (C1: "BLOCKED" y "REVIEW_REQUIRED").
+ *
+ * Son distintos de los de arriba: el Ledger **respondió** y dijo que no pudo certificar la
+ * página, en vez de devolver algo inútil. Por eso la respuesta viaja con `ledgerStatus` y la app
+ * puede explicarle a la persona qué pasó, en vez de no decir nada.
+ */
+export const LEDGER_STATUS_WITHOUT_READ = new Set(["BLOCKED", "REVIEW_REQUIRED"]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -270,7 +287,7 @@ class MexalmLedgerHttpClient implements MexalmLedgerClient {
 
       // `status` viaja verbatim en el bloque de la respuesta, incluso si el Ledger no mandó
       // ninguno (queda ""). No se inventa un "OK" que el Ledger no dijo.
-      return { status, operations: Object.freeze(operations) };
+      return { status, operations: Object.freeze(operations), raw: payload };
     } catch (error) {
       if (timedOut || isAbortLike(error)) {
         this.emitFailure({ category: "TIMEOUT" });

@@ -16,6 +16,7 @@ import { createGeminiTextProvider } from "./ai/geminiTextProvider";
 import { createGeminiLedgerProvider } from "./ai/geminiLedgerProvider";
 import { createMexalmLedgerClient } from "./ai/mexalmLedgerClient";
 import { createMexalmLedgerCrosschecker } from "./ai/mexalmCrosscheck";
+import { createMexalmLedgerDebugDumpWriter } from "./ai/mexalmLedgerDebugDump";
 import { createDefaultPlaySubscriptionApi } from "./ai/playSubscriptionVerifier";
 import { createFirestoreSubscriptionEntitlementRepository } from "./ai/subscriptionEntitlementRepository";
 
@@ -65,6 +66,21 @@ const mexalmLedgerUrl = defineString("MEXALM_LEDGER_URL", { default: "" });
  * del deploy, o el deploy falla. Crear antes: `firebase functions:secrets:set MEXALM_LEDGER_TOKEN`.
  */
 const mexalmLedgerToken = defineSecret("MEXALM_LEDGER_TOKEN");
+
+/**
+ * Volcado de diagnóstico de la verificación cruzada. APAGADO por defecto y **SÓLO en el emulador**.
+ *
+ * Cuando el Ledger de MexaLM no puede certificar la página (`BLOCKED`), el `ledgerStatus` del
+ * bloque dice que pasó pero no dice POR QUÉ. Con este parámetro encendido, el emulador escribe en
+ * `functions/.mexalm-debug/<timestamp>.json` el texto exacto que se mandó, la respuesta completa
+ * del Ledger y el emparejamiento renglón por renglón.
+ *
+ * La regla dura: **en producción este parámetro no hace nada.** El volcado exige las DOS cosas —
+ * el emulador (`FUNCTIONS_EMULATOR === "true"`) y el parámetro en `true`— y la decisión vive en un
+ * solo lugar, `isMexalmLedgerDebugDumpEnabled`. El archivo lleva el texto de la libreta de una
+ * clienta: por eso vive en un directorio ignorado por Git y nunca se registra.
+ */
+const mexalmLedgerDebugDump = defineBoolean("MEXALM_LEDGER_DEBUG_DUMP", { default: false });
 
 /**
  * Process-level warm-instance edge guard: a bounded cost mitigation, NOT a durable security
@@ -180,6 +196,12 @@ export const extractLedgerPage = onCall(
                   status: failure.status,
                 });
               },
+            }),
+            // El volcado se arma siempre, pero sólo escribe en el emulador con el parámetro
+            // encendido: la decisión está dentro del escritor, no en este `if`.
+            debugDump: createMexalmLedgerDebugDumpWriter({
+              emulator: process.env.FUNCTIONS_EMULATOR,
+              parameterEnabled: mexalmLedgerDebugDump.value(),
             }),
           })
         : null;

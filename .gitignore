@@ -55,3 +55,8 @@ backup-cuentivo-*/
 # Local env of the Functions emulator: it can hold the MexaLM ledger token. Never commit it.
 /functions/.env
 /functions/.env.*
+/functions/.secret.local
+
+# Volcado de diagnóstico del Ledger de MexaLM: el texto exacto de la libreta de una clienta y la
+# respuesta completa del Ledger. Sólo existe en el emulador, y nunca a Git.
+/functions/.mexalm-debug/

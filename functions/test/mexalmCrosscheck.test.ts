@@ -916,4 +916,101 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       expect(text).toBe("María de los Ángeles\nprotector tapete 250");
     });
   });
+
+  /**
+   * El caso que salió en el teléfono: la libreta de una clienta, doce renglones, y el resumen
+   * diciendo "el Ledger no lo vio" en CADA renglón. El Ledger no había contestado "no vi ése": no
+   * había podido certificar la página y lo había dicho (`BLOCKED`).
+   */
+  describe("cuando el Ledger no lee la página", () => {
+    /** La libreta de una clienta: doce renglones, como la del teléfono. */
+    const AURORA_TWELVE_ROWS: LedgerExtractionResult = {
+      operations: Array.from({ length: 12 }, (_, index) => ({
+        lineIndex: index,
+        proposedKind: index < 8 ? "SALE" : "PAYMENT",
+        customerName: "Aurora",
+        amountCents: String(10000 + index),
+        uncertainFields: [],
+        unreadableFields: [],
+        rawText: `renglon ${index}`,
+      })),
+      discards: [],
+      unreadTextRemaining: false,
+      pageIncomplete: false,
+    };
+
+    test("BLOCKED sin operaciones NO deja un desacuerdo en cada renglón", async () => {
+      const crosscheck = crosscheckerOver(jsonResponse({ status: "BLOCKED", operations: [] }));
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      // El status dice lo que pasó...
+      expect(result.mexalmCrosscheck.ledgerStatus).toBe("BLOCKED");
+      // ...y NO hay doce renglones "no lo vio": la página entera no se pudo certificar, y eso no
+      // es una diferencia renglón por renglón.
+      expect(result.mexalmCrosscheck.disagreements).toEqual([]);
+      // Y `agreed` en falso: no se puede decir que los dos lados dicen lo mismo.
+      expect(result.mexalmCrosscheck.agreed).toBe(false);
+    });
+
+    test("REVIEW_REQUIRED sin operaciones tampoco", async () => {
+      const crosscheck = crosscheckerOver(jsonResponse({ status: "REVIEW_REQUIRED", operations: [] }));
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      expect(result.mexalmCrosscheck.ledgerStatus).toBe("REVIEW_REQUIRED");
+      expect(result.mexalmCrosscheck.disagreements).toEqual([]);
+      expect(result.mexalmCrosscheck.agreed).toBe(false);
+    });
+
+    test("con OK todo sigue igual: los renglones que el Ledger no vio SÍ se reportan", async () => {
+      const crosscheck = crosscheckerOver(jsonResponse({ status: "OK", operations: [] }));
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      // Con "OK" el Ledger sí dio veredicto, y un veredicto que no ve un renglón ES un desacuerdo.
+      expect(result.mexalmCrosscheck.ledgerStatus).toBe("OK");
+      expect(result.mexalmCrosscheck.disagreements).toHaveLength(12);
+      expect(result.mexalmCrosscheck.disagreements[0].field).toBe("MISSING_IN_LEDGER");
+      expect(result.mexalmCrosscheck.agreed).toBe(false);
+    });
+
+    test("BLOCKED CON operaciones se compara normal: lo que el Ledger sí leyó, se compara", async () => {
+      const crosscheck = crosscheckerOver(
+        jsonResponse({
+          status: "BLOCKED",
+          operations: [
+            { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "10000" },
+          ],
+        }),
+      );
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      // El Ledger devolvió una operación: hay algo que comparar, y se compara.
+      expect(result.mexalmCrosscheck.ledgerStatus).toBe("BLOCKED");
+      expect(result.mexalmCrosscheck.disagreements).toHaveLength(11);
+      expect(result.mexalmCrosscheck.disagreements[0].field).toBe("MISSING_IN_LEDGER");
+    });
+  });
 });

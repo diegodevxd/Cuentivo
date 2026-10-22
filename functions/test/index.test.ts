@@ -168,4 +168,24 @@ describe("regional callable gateway", () => {
     expect(SOURCE).not.toContain("mexalm-ledger");
     expect(SOURCE).not.toContain("huggingface.co");
   });
+
+  /**
+   * El volcado de diagnóstico del Ledger. Es una herramienta del EMULADOR: en producción el
+   * parámetro se ignora, y eso no se deja a la memoria de nadie sino a una decisión que vive en un
+   * solo lugar (`isMexalmLedgerDebugDumpEnabled`).
+   */
+  test("declares the debug dump off by default and bound to the emulator", () => {
+    expect(SOURCE).toContain('defineBoolean("MEXALM_LEDGER_DEBUG_DUMP", { default: false })');
+    // El escritor recibe el emulador y el parámetro: la decisión es suya, no de un `if` de aquí.
+    expect(SOURCE).toContain("emulator: process.env.FUNCTIONS_EMULATOR");
+    expect(SOURCE).toContain("parameterEnabled: mexalmLedgerDebugDump.value()");
+  });
+
+  test("the debug dump never reaches the log", () => {
+    // El volcado es un archivo local del emulador. Al log no llega: el texto de la libreta y la
+    // respuesta del Ledger nunca se registran.
+    expect(SOURCE).not.toMatch(
+      /logger\.(warn|error|info|log)\([^)]*(rawText|ledgerText|pageText|debugDump)/,
+    );
+  });
 });
