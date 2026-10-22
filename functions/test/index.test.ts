@@ -1,18 +1,31 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
+import * as compositionRoot from "../src/index.js";
 
 const SOURCE = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
 
+/**
+ * El composition root se importa ARRIBA, en la carga del archivo, y no dentro de la prueba.
+ *
+ * Estaba dentro de la prueba y eso lo volvía la única prueba de la suite cuyo plazo de 5 s incluía
+ * cargar `firebase-functions` + `firebase-admin` + los siete handlers. Con la caché de transformación
+ * fría —la primera corrida de una máquina limpia, o un CI— esa carga pasó de los 5 s y la prueba
+ * falló por tiempo, no por lo que afirma: una de 574, una sola vez, imposible de reproducir después
+ * porque la caché ya estaba tibia. Era la prueba inestable.
+ *
+ * Cargar el módulo fuera del cuerpo no debilita nada: se sigue importando el composition root real y
+ * las aserciones son las mismas. Si el módulo no carga, el archivo falla al recolectarse —ruidoso—
+ * en vez de esconderse detrás de un "timeout" que parece un problema de la máquina.
+ */
 describe("regional callable gateway", () => {
-  test("exports interpretAiRequest, authorizeAiAction, getAiAvailability, verifyAiSubscription and handlePlayRtdnNotification", async () => {
-    const module = await import("../src/index.js");
-    expect(module.interpretAiRequest).toBeDefined();
-    expect(module.authorizeAiAction).toBeDefined();
-    expect(module.getAiAvailability).toBeDefined();
-    expect(module.verifyAiSubscription).toBeDefined();
-    expect(module.handlePlayRtdnNotification).toBeDefined();
-    expect(module.warmMexalmLedger).toBeDefined();
+  test("exports interpretAiRequest, authorizeAiAction, getAiAvailability, verifyAiSubscription and handlePlayRtdnNotification", () => {
+    expect(compositionRoot.interpretAiRequest).toBeDefined();
+    expect(compositionRoot.authorizeAiAction).toBeDefined();
+    expect(compositionRoot.getAiAvailability).toBeDefined();
+    expect(compositionRoot.verifyAiSubscription).toBeDefined();
+    expect(compositionRoot.handlePlayRtdnNotification).toBeDefined();
+    expect(compositionRoot.warmMexalmLedger).toBeDefined();
   });
 
   test("declares exactly the five approved runtime options", () => {
