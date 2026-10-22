@@ -327,6 +327,15 @@ private val CROSSCHECK_DISAGREEMENT_KEYS = setOf("lineIndex", "field", "gemini",
 private val CROSSCHECK_SUMMARY_KEYS = setOf("proposedKind", "customerName", "amountCents")
 
 /**
+ * The keys the cross-check block MAY carry in addition to its base four.
+ *
+ * `confirmedLineIndexes` is the list of rows the Ledger confirmed. It is optional because an
+ * older server does not send it, and its absence means "no rows were confirmed" — never "all of
+ * them were". A block with any other extra key is not this block and collapses to null.
+ */
+private val CROSSCHECK_OPTIONAL_ROOT_KEYS = setOf("confirmedLineIndexes")
+
+/**
  * Reads the optional cross-check block: the server's comparison between the page that was read and
  * the Ledger de MexaLM reading the same text, row by row.
  *
@@ -342,7 +351,11 @@ private val CROSSCHECK_SUMMARY_KEYS = setOf("proposedKind", "customerName", "amo
 private fun parseMexalmCrosscheckWire(value: Any?): MexalmCrosscheckPayload? {
     if (value == null) return null
     val map = value as? Map<*, *> ?: return null
-    if (map.keys.map { it.toString() }.toSet() != CROSSCHECK_ROOT_KEYS) return null
+    val keys = map.keys.map { it.toString() }.toSet()
+    // The four base keys have to be there, and the only extra key allowed is the list of
+    // confirmed rows. Anything else is not this block.
+    if (!keys.containsAll(CROSSCHECK_ROOT_KEYS)) return null
+    if (!CROSSCHECK_OPTIONAL_ROOT_KEYS.containsAll(keys - CROSSCHECK_ROOT_KEYS)) return null
     val agreed = map["agreed"] as? Boolean ?: return null
     val ledgerStatus = map["ledgerStatus"] as? String ?: return null
     if (ledgerStatus.isBlank() || ledgerStatus.length > MAX_LEDGER_STATUS_WIRE) return null
@@ -356,12 +369,36 @@ private fun parseMexalmCrosscheckWire(value: Any?): MexalmCrosscheckPayload? {
     // while listing differences would show a person "de acuerdo" on a page that carries badges,
     // and there is no way to tell which of the two the server meant.
     if (agreed && disagreements.isNotEmpty()) return null
+    val confirmedLineIndices = parseConfirmedLineIndexesWire(map["confirmedLineIndexes"]) ?: return null
     return MexalmCrosscheckPayload(
         agreed = agreed,
         disagreements = disagreements,
         ledgerStatus = ledgerStatus,
         latencyMs = latencyMs,
+        confirmedLineIndices = confirmedLineIndices,
     )
+}
+
+/**
+ * The list of rows the Ledger confirmed.
+ *
+ * Absent means "none confirmed". A value that is not a list of whole, non-negative line indexes
+ * is not that list, and a list that names a row twice or names a negative row is not one either:
+ * the block collapses rather than be read half way.
+ */
+private fun parseConfirmedLineIndexesWire(value: Any?): Set<Int>? {
+    if (value == null) return emptySet()
+    val list = value as? List<*> ?: return null
+    if (list.size > MAX_CROSSCHECK_CONFIRMED_WIRE) return null
+    val parsed = LinkedHashSet<Int>(list.size)
+    for (item in list) {
+        val raw = item as? Number ?: return null
+        if (raw.toDouble() != raw.toLong().toDouble()) return null
+        val lineIndex = raw.toLong()
+        if (lineIndex < 0L || lineIndex > Int.MAX_VALUE.toLong()) return null
+        parsed += lineIndex.toInt()
+    }
+    return parsed
 }
 
 private fun parseCrosscheckDisagreementsWire(value: Any?): List<MexalmCrosscheckDisagreement>? {
@@ -591,6 +628,12 @@ private const val MAX_WARNINGS_WIRE = 16
 
 /** A page has at most 25 rows and a row can differ in three fields: 75 is already generous. */
 private const val MAX_CROSSCHECK_DISAGREEMENTS_WIRE = 100
+
+/**
+ * Tope de renglones confirmados que un bloque puede nombrar. Una página tiene 25 renglones como
+ * máximo; el tope es sólo un límite de memoria para un bloque corrupto.
+ */
+private const val MAX_CROSSCHECK_CONFIRMED_WIRE = 64
 
 /** The Ledger's status is a short word, not a sentence. */
 private const val MAX_LEDGER_STATUS_WIRE = 64

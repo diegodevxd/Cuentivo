@@ -58,6 +58,14 @@ data class MexalmCrosscheckVerdict(
     val ledgerStatus: String,
     /** Por qué no leyó la página, o `null` si la leyó. */
     val unreadReason: MexalmCrosscheckUnreadReason?,
+    /**
+     * Cuántos renglones confirmó el Ledger de verdad.
+     *
+     * No es lo mismo que [MexalmCrosscheckOutcome.AGREED]: "no hubo desacuerdos" también pasa
+     * cuando el Ledger no tuvo opinión de nada. Este número es el de los renglones que las dos
+     * lecturas dijeron IGUALES, y es el que explica por qué un renglón dejó de estar "por revisar".
+     */
+    val confirmedRowCount: Int = 0,
 ) {
     /**
      * Cuántos RENGLONES discrepan, no cuántas diferencias: un renglón puede diferir en el monto y
@@ -119,6 +127,9 @@ object MexalmCrosscheckVerdictCalculator {
             visibleDisagreements = visible,
             ledgerStatus = payload.ledgerStatus,
             unreadReason = reason,
+            // Los renglones confirmados sólo existen cuando el Ledger dio veredicto: sin veredicto
+            // no hay nada confirmado, por mucho que no haya desacuerdos.
+            confirmedRowCount = MexalmCrosscheckConfirmation.confirmedLineIndices(payload).size,
         )
     }
 }

@@ -411,6 +411,8 @@ class LedgerExtractionGatewayTest {
         ledgerStatus: Any = "OK",
         latencyMs: Any = 812,
         extraRootKey: Any? = null,
+        confirmedLineIndexes: Any? = null,
+        withConfirmedLineIndexes: Boolean = false,
     ): Map<String, Any?> {
         val block = mutableMapOf<String, Any?>(
             "agreed" to agreed,
@@ -418,6 +420,7 @@ class LedgerExtractionGatewayTest {
             "ledgerStatus" to ledgerStatus,
             "latencyMs" to latencyMs,
         )
+        if (withConfirmedLineIndexes) block["confirmedLineIndexes"] = confirmedLineIndexes
         if (extraRootKey != null) block["nota"] = extraRootKey
         return block
     }
@@ -437,6 +440,53 @@ class LedgerExtractionGatewayTest {
         val disagreement = crosscheck?.disagreements?.first()
         assertEquals(0, disagreement?.lineIndex)
         assertEquals(MexalmCrosscheckDisagreementField.AMOUNT, disagreement?.field)
+    }
+
+    @Test fun `la lista de renglones confirmados se lee entera`() {
+        // La lista de confirmados es lo que le dice a la app qué renglón quedó confirmado: sin
+        // ella, "no hubo desacuerdos" no llega a ser "el Ledger confirmó este renglón".
+        val result = parseLedgerExtractionResponse(
+            v4WithCrosscheck(
+                crosscheckBlock(
+                    withConfirmedLineIndexes = true,
+                    confirmedLineIndexes = listOf(0, 3, 7),
+                ),
+            ),
+            REQUEST_ID,
+        )
+
+        val crosscheck = (result as LedgerExtractionCallResult.Extracted).extraction.mexalmCrosscheck
+        assertEquals(setOf(0, 3, 7), crosscheck?.confirmedLineIndices)
+    }
+
+    @Test fun `un bloque sin la lista se lee igual, un servidor viejo no la manda`() {
+        val result = parseLedgerExtractionResponse(v4WithCrosscheck(crosscheckBlock()), REQUEST_ID)
+
+        val crosscheck = (result as LedgerExtractionCallResult.Extracted).extraction.mexalmCrosscheck
+        // La ausencia de la lista significa "no hay renglones confirmados", NUNCA "confirmó todos".
+        assertEquals(emptySet<Int>(), crosscheck?.confirmedLineIndices)
+    }
+
+    @Test fun `una lista de confirmados malformada tumba el bloque, no la pagina`() {
+        for (mala in listOf(
+            listOf("0"),
+            listOf(0.5),
+            listOf(-1),
+            listOf(1L shl 40),
+            "0",
+        )) {
+            val result = parseLedgerExtractionResponse(
+                v4WithCrosscheck(
+                    crosscheckBlock(withConfirmedLineIndexes = true, confirmedLineIndexes = mala),
+                ),
+                REQUEST_ID,
+            )
+
+            val payload = (result as LedgerExtractionCallResult.Extracted).extraction
+            assertEquals("la lista mala debe tumbar el bloque: $mala", null, payload.mexalmCrosscheck)
+            // Y la pagina se lee igual: el bloque es un comentario al lado de la pagina.
+            assertEquals(1, payload.operations.size)
+        }
     }
 
     @Test fun `el monto del resumen se lee como centavos enteros`() {

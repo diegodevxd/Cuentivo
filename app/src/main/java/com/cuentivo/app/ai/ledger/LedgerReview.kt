@@ -335,9 +335,19 @@ object LedgerReviewEngine {
         pageTotals: List<LedgerPageTotal> = emptyList(),
         mexalmCrosscheck: MexalmCrosscheckPayload? = null,
     ): LedgerReview {
+        // El acuerdo del Ledger de MexaLM resuelve la duda de LECTURA de los renglones que él
+        // confirmó, y sólo de ésos: el monto, el cliente y el tipo. Se aplica AQUÍ, y no en el
+        // parser, porque el bloque pertenece a la página y cada edición vuelve a construir la
+        // revisión —igual que la fecha detectada— y la resolución tiene que sobrevivir el rebuild.
+        //
+        // Lo que NO se toca: la fecha, las objeciones, los duplicados, el saldo, y el monto que
+        // se registra. Un renglón confirmado deja de estar "por revisar"; no cambia lo que se
+        // anota, y el dueño sigue pulsando el botón de siempre.
+        val resolvedOps = operations.map { MexalmCrosscheckConfirmation.resolveReadingDoubts(it, mexalmCrosscheck) }
+
         // Defensive copy: isolate snapshot from any caller modifications
         val frozenOps: List<LedgerOperation> = Collections.unmodifiableList(
-            operations.map { it.deepCopy() }
+            resolvedOps.map { it.deepCopy() }
         )
         val frozenDiscards: List<LedgerDiscardDiagnostic> = Collections.unmodifiableList(
             discards.toList()

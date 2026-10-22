@@ -77,6 +77,19 @@ data class MexalmCrosscheckPayload(
     val ledgerStatus: String,
     /** Round trip measured by the server, in milliseconds. */
     val latencyMs: Long,
+    /**
+     * The rows the Ledger CONFIRMED: both sides stated the kind, the customer and the amount,
+     * and all three matched.
+     *
+     * This is not the same as [agreed]. `agreed: true` means "there were no disagreements", and
+     * that also happens when the Ledger had no opinion at all: a Ledger that answers
+     * `customerName: null` everywhere disagrees with nothing, and with this list empty the client
+     * knows that Ledger confirmed not a single row.
+     *
+     * Empty by default: an older server does not send the list, and its absence means "no rows
+     * were confirmed", never "all of them were".
+     */
+    val confirmedLineIndices: Set<Int> = emptySet(),
 ) {
     /**
      * The rows that disagree, by line index.

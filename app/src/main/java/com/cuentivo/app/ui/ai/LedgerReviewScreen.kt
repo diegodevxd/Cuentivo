@@ -65,6 +65,7 @@ import com.cuentivo.app.ai.ledger.LedgerAmountInput
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReview
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
+import com.cuentivo.app.ai.ledger.MexalmCrosscheckConfirmation
 import com.cuentivo.app.ai.ledger.MexalmCrosscheckOutcome
 import com.cuentivo.app.ai.ledger.MexalmCrosscheckUnreadReason
 import com.cuentivo.app.ai.ledger.MexalmCrosscheckVerdict
@@ -467,6 +468,10 @@ fun LedgerReviewContent(
             // de "no lo vio" no van en ningún renglón, porque no son la diferencia de un renglón.
             val crosscheckByLineIndex = crosscheckVerdict?.visibleDisagreements?.groupBy { it.lineIndex }
                 ?: emptyMap()
+            // Los renglones que el Ledger de MexaLM confirmó. La decisión vive en el objeto puro
+            // `MexalmCrosscheckConfirmation`; aquí sólo se pasa lo que ya está calculado.
+            val ledgerConfirmedLineIndices =
+                MexalmCrosscheckConfirmation.confirmedLineIndices(review.mexalmCrosscheck)
             items(review.customerGroups) { group ->
                 CustomerGroupCard(
                     group = group,
@@ -474,6 +479,7 @@ fun LedgerReviewContent(
                     fieldHealth = fieldHealth,
                     duplicateMatches = duplicateMatches,
                     crosscheckDisagreements = crosscheckByLineIndex,
+                    ledgerConfirmedLineIndices = ledgerConfirmedLineIndices,
                     onEditOperation = { op -> editingOperation = op },
                     onUpdateKind = onUpdateKind,
                     onRemoveRow = onRemoveRow,
@@ -1088,6 +1094,8 @@ private fun CustomerGroupCard(
     duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch>,
     /** The Ledger de MexaLM differences, by line index. Empty when the server sent no block. */
     crosscheckDisagreements: Map<Int, List<com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreement>> = emptyMap(),
+    /** The rows the Ledger de MexaLM confirmed. Empty when the server sent no block. */
+    ledgerConfirmedLineIndices: Set<Int> = emptySet(),
     onEditOperation: (LedgerOperation) -> Unit,
     onUpdateKind: (lineIndex: Int, kind: ProposedLedgerKind) -> Unit,
     onRemoveRow: (lineIndex: Int) -> Unit,
@@ -1168,6 +1176,7 @@ private fun CustomerGroupCard(
                     health = fieldHealth[op.lineIndex],
                     duplicateMatch = duplicateMatches[op.lineIndex],
                     crosscheckDisagreements = crosscheckDisagreements[op.lineIndex] ?: emptyList(),
+                    isLedgerConfirmed = op.lineIndex in ledgerConfirmedLineIndices,
                     onEdit = { onEditOperation(op) },
                     onUpdateKind = { kind -> onUpdateKind(op.lineIndex, kind) },
                     onRemove = { onRemoveRow(op.lineIndex) },
@@ -1186,6 +1195,14 @@ private fun LedgerOperationRow(
     duplicateMatch: com.cuentivo.app.domain.LedgerDuplicateMatch? = null,
     /** What the Ledger de MexaLM read differently on this row. Empty when there is no block. */
     crosscheckDisagreements: List<com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreement> = emptyList(),
+    /**
+     * The Ledger de MexaLM confirmed this row: both readings said the same thing about the kind,
+     * the customer and the amount.
+     *
+     * It is why the row is no longer asking for a review, and the discreet mark says so: a row
+     * that silently changed colour is a row the person cannot explain.
+     */
+    isLedgerConfirmed: Boolean = false,
     onEdit: () -> Unit,
     onUpdateKind: (ProposedLedgerKind) -> Unit,
     onRemove: () -> Unit,
@@ -1306,6 +1323,31 @@ private fun LedgerOperationRow(
                     ) {
                         crosscheckDisagreements.forEach { disagreement ->
                             CrosscheckBadge(disagreement, operation.lineIndex)
+                        }
+                    }
+                }
+
+                // El Ledger de MexaLM confirmó este renglón: las dos lecturas dicen lo mismo del
+                // tipo, el cliente y el monto, y por eso el renglón ya no pide revisión.
+                //
+                // Es una marca DISCRETA, en el color positivo de la app: no es un error ni un
+                // aviso, es un hecho. Y está en su propia fila porque una etiqueta larga se come
+                // el ancho y empuja la tarjeta al alto del teléfono.
+                if (isLedgerConfirmed) {
+                    Row(
+                        modifier = Modifier.testTag("ledger-crosscheck-confirmed-" + operation.lineIndex),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(4.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.ai_ledger_crosscheck_row_confirmed),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
                         }
                     }
                 }
@@ -1967,6 +2009,20 @@ private fun CrosscheckSummaryCard(
                     text = reason,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Cuántos renglones confirmó el Ledger de verdad. Es lo que explica por qué un
+            // renglón que antes pedía revisión ya no la pide: no es que la app haya decidido
+            // saltárselo, es que una segunda lectura dijo lo mismo.
+            if (verdict.confirmedRowCount > 0) {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.ai_ledger_crosscheck_confirmed_count,
+                        verdict.confirmedRowCount,
+                        verdict.confirmedRowCount,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
                 )
             }
             Text(

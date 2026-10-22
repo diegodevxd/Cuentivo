@@ -736,7 +736,12 @@
     <string name="ai_ledger_crosscheck_summary_could_not_read">El Ledger de MexaLM no pudo leer esta página</string>
     <string name="ai_ledger_crosscheck_reason_blocked">Se detuvo antes de comparar: no pudo certificar alguna línea de la hoja.</string>
     <string name="ai_ledger_crosscheck_reason_review_required">Leyó la hoja, pero la dejó pendiente de revisión.</string>
-    <string name="ai_ledger_crosscheck_summary_note">Sólo informa: no cambia lo que se registra.</string>
+    <string name="ai_ledger_crosscheck_summary_note">Sólo confirma la lectura: los montos y los tipos siguen siendo los de la foto.</string>
+    <plurals name="ai_ledger_crosscheck_confirmed_count">
+        <item quantity="one">%1$d renglón confirmado por el Ledger</item>
+        <item quantity="other">%1$d renglones confirmados por el Ledger</item>
+    </plurals>
+    <string name="ai_ledger_crosscheck_row_confirmed">Confirmado por el Ledger de MexaLM</string>
     <string name="ai_ledger_crosscheck_badge_amount">Ledger: monto</string>
     <string name="ai_ledger_crosscheck_badge_customer">Ledger: cliente</string>
     <string name="ai_ledger_crosscheck_badge_type">Ledger: tipo</string>
