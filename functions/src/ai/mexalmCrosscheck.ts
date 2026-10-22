@@ -14,8 +14,8 @@
  * El Ledger es un lector de TEXTO, y en este repo no existe una transcripción de la página como
  * tal: lo que hay es el `rawText` de cada renglón, que el modelo escribe como "el texto de ESE
  * renglón tal como está escrito en la hoja" (obligatorio desde el bloque v4 del contrato). La
- * página que se manda al Ledger se arma con esos renglones, uno por línea y en orden de
- * `lineIndex`.
+ * página que se manda al Ledger se arma con esos renglones **agrupados por clienta y con el
+ * nombre de cada una como encabezado**; el porqué está en `planCrosscheckPage`.
  *
  * Lo que esto NO es, y conviene decirlo claro: **esto no es una segunda lectura de la foto.**
  * El texto lo transcribió Gemini. El Ledger vuelve a interpretar ese mismo texto y compara. Lo
@@ -66,14 +66,19 @@ export function normalizeCustomerNameForCrosscheck(name: string): string {
 }
 
 function summarize(operation: {
-  proposedKind?: string;
-  customerName?: string;
-  amountCents?: string;
+  proposedKind?: string | null;
+  customerName?: string | null;
+  amountCents?: string | null;
 }): MexalmCrosscheckOperationSummary {
+  // Lo que un lado no sabe, no viaja en el resumen: un `null` del Ledger no es un nombre vacío
+  // que la app pueda leer como "la clienta se llama nada".
+  const kind = opinion(operation.proposedKind);
+  const customer = opinion(operation.customerName);
+  const amount = opinion(operation.amountCents);
   return {
-    ...(operation.proposedKind !== undefined ? { proposedKind: operation.proposedKind } : {}),
-    ...(operation.customerName !== undefined ? { customerName: operation.customerName } : {}),
-    ...(operation.amountCents !== undefined ? { amountCents: operation.amountCents } : {}),
+    ...(kind !== undefined ? { proposedKind: kind } : {}),
+    ...(customer !== undefined ? { customerName: customer } : {}),
+    ...(amount !== undefined ? { amountCents: amount } : {}),
   };
 }
 
@@ -91,39 +96,175 @@ function sameAmountCents(left: string | undefined, right: string | undefined): b
 }
 
 /**
- * Arma el texto de la página con los `rawText` de los renglones: una línea por renglón, en orden
- * de `lineIndex`.
+ * El valor de un campo cuando ese lado SÍ tiene opinión.
  *
- * Los saltos de línea que traiga un `rawText` se cambian por un espacio ANTES de unir: si un
- * renglón trajera un salto dentro, la página enviada tendría más líneas que los renglones y la
- * numeración del Ledger dejaría de corresponderse con la de Gemini. Una línea por renglón es lo
- * que hace que el emparejamiento sea por `lineIndex`.
+ * "Sin opinión" son tres cosas y las tres son lo mismo para la comparación: que el campo no
+ * venga, que venga `null` y que venga vacío. El Ledger responde `customerName: null` cuando no
+ * puede leer un cliente de la página, y eso NO es una contradicción con lo que dice Gemini: es
+ * que uno de los dos no lo pudo leer, y eso ya lo dice el propio renglón con `unreadableFields`.
  *
- * Devuelve `null` cuando no hay ningún `rawText`: sin texto no hay nada que mandar al Ledger, y
- * sin Ledger no hay veredicto.
+ * Una contradicción exige que LOS DOS lados tengan un valor y que sean distintos. El valor que
+ * sale es el que cada lado escribió, sin tocar: normalizar es para comparar, nunca para
+ * reescribir lo que dijo el otro lado.
  */
-export function buildCrosscheckPageText(operations: readonly LedgerOperationV5[]): string | null {
-  const ordered = [...operations].sort((left, right) => left.lineIndex - right.lineIndex);
-  const lines: string[] = [];
-  for (const operation of ordered) {
-    const rawText = operation.rawText;
-    if (typeof rawText !== "string") {
-      continue;
-    }
-    const line = rawText.replace(/\r\n|\r|\n/g, " ").trim();
-    if (line.length === 0) {
-      continue;
-    }
-    lines.push(line);
+function opinion(value: string | undefined | null): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
   }
-  if (lines.length === 0) {
+  return value.trim().length === 0 ? undefined : value;
+}
+
+/**
+ * Una línea, nunca dos.
+ *
+ * Los saltos de línea que traiga un texto se cambian por un espacio ANTES de unir: si un renglón
+ * trajera un salto dentro, la página enviada tendría más líneas que los renglones y la
+ * numeración del Ledger dejaría de corresponderse con la de Gemini.
+ */
+function singleLine(text: string): string {
+  return text.replace(/\r\n|\r|\n/g, " ").trim();
+}
+
+/**
+ * El texto de UN renglón: su `rawText`, en una línea.
+ *
+ * Devuelve `null` cuando el renglón no tiene texto: un renglón sin `rawText` no se puede mandar
+ * al Ledger.
+ */
+function rowLine(operation: LedgerOperationV5): string | null {
+  const rawText = operation.rawText;
+  if (typeof rawText !== "string") {
     return null;
+  }
+  const line = singleLine(rawText);
+  return line.length === 0 ? null : line;
+}
+
+/**
+ * Una clienta de la página: su encabezado y sus renglones.
+ *
+ * El encabezado es el nombre TAL CUAL lo escribió Gemini. Un renglón sin clienta no lleva
+ * encabezado: no se inventa a quién pertenece.
+ */
+type CustomerGroup = {
+  /** El nombre tal cual, o `undefined` si el grupo no lleva encabezado. */
+  customerName?: string;
+  operations: LedgerOperationV5[];
+};
+
+/**
+ * Agrupa los renglones por clienta, en orden de `lineIndex`.
+ *
+ * Los renglones de una misma clienta quedan juntos aunque en la hoja vinieran intercalados: el
+ * encabezado de una clienta vale para los renglones que la siguen, y si sus renglones están
+ * repartidos, el encabezado tendría que repetirse y el Ledger atribuiría al último nombre leído
+ * los renglones que no son suyos.
+ *
+ * La clave del grupo es el nombre NORMALIZADO: "María" y "MARIA" son la misma clienta y no pueden
+ * ser dos grupos con dos encabezados. El encabezado lleva el nombre tal cual: normalizar es para
+ * comparar, nunca para reescribir lo que dijo el otro lado.
+ */
+function groupByCustomer(ordered: readonly LedgerOperationV5[]): CustomerGroup[] {
+  const groups: CustomerGroup[] = [];
+  const byCustomer = new Map<string, CustomerGroup>();
+  for (const operation of ordered) {
+    const name = operation.customerName;
+    if (typeof name !== "string" || name.trim().length === 0) {
+      // Sin clienta no hay encabezado: este renglón es su propio grupo.
+      groups.push({ operations: [operation] });
+      continue;
+    }
+    const key = normalizeCustomerNameForCrosscheck(name);
+    const existing = byCustomer.get(key);
+    if (existing !== undefined) {
+      existing.operations.push(operation);
+      continue;
+    }
+    const group: CustomerGroup = { customerName: name, operations: [operation] };
+    byCustomer.set(key, group);
+    groups.push(group);
+  }
+  return groups;
+}
+
+/**
+ * El plan de la página: qué se manda al Ledger y en qué orden queda cada renglón.
+ *
+ * `text` es el texto que se manda, o `null` cuando no hay nada que mandar (ningún renglón con
+ * texto, o un texto más largo de lo que el Ledger acepta). `operations` son las operaciones en el
+ * ORDEN en que aparecen en la página.
+ */
+export type CrosscheckPagePlan = Readonly<{
+  text: string | null;
+  operations: readonly LedgerOperationV5[];
+}>;
+
+/**
+ * Arma la página que se manda al Ledger.
+ *
+ * **El encabezado de la clienta.** En una libreta de fiado el nombre se escribe una vez, arriba de
+ * los renglones de esa clienta, y los renglones no lo repiten. El `rawText` de cada renglón es el
+ * texto de ESE renglón y nada más: sin el nombre. Una página mandada renglón por renglón no tiene
+ * de dónde sacar a quién pertenece cada movimiento, y el Ledger responde `customerName: null` —"no
+ * lo sé"— donde la lectura de la foto sí sabe la clienta. Esa es la diferencia entre un
+ * desacuerdo y una opinión que no existe.
+ *
+ * Por eso la página lleva, antes de los renglones de cada clienta, una línea con su nombre tal
+ * cual. El Ledger reconoce esa línea como encabezado y le atribuye los renglones que siguen: con
+ * "Aurora" arriba, sus renglones salen con `customerName: "Aurora"`.
+ *
+ * **El orden.** El Ledger numera sus operaciones por su POSICIÓN en la página —`lineIndex` es el
+ * ordinal de la operación, no el número de la línea física: una línea con dos movimientos da dos
+ * operaciones y la segunda no repite el número de la primera—, así que el plan lleva las
+ * operaciones en el orden de la página y el emparejamiento se hace por esa posición.
+ *
+ * El encabezado NO es un renglón: el Ledger no saca operaciones de él, así que no desplaza la
+ * numeración.
+ */
+export function planCrosscheckPage(operations: readonly LedgerOperationV5[]): CrosscheckPagePlan {
+  const ordered = [...operations].sort((left, right) => left.lineIndex - right.lineIndex);
+  const groups = groupByCustomer(ordered);
+
+  const lines: string[] = [];
+  const planned: LedgerOperationV5[] = [];
+  for (const group of groups) {
+    const rows: string[] = [];
+    for (const operation of group.operations) {
+      const line = rowLine(operation);
+      if (line !== null) {
+        rows.push(line);
+      }
+      planned.push(operation);
+    }
+    if (rows.length === 0) {
+      // Un grupo sin renglones con texto no es una clienta de la página: mandar su nombre solo
+      // sería una línea que no es un movimiento.
+      continue;
+    }
+    if (group.customerName !== undefined) {
+      lines.push(singleLine(group.customerName));
+    }
+    lines.push(...rows);
+  }
+
+  if (lines.length === 0) {
+    // Sin texto no hay nada que mandar al Ledger, y sin Ledger no hay veredicto.
+    return { text: null, operations: planned };
   }
   const text = lines.join("\n");
   if (text.length > MEXALM_LEDGER_MAX_TEXT_LENGTH) {
-    return null;
+    return { text: null, operations: planned };
   }
-  return text;
+  return { text, operations: planned };
+}
+
+/**
+ * El texto de la página que se manda al Ledger.
+ *
+ * Ver `planCrosscheckPage`, que es donde vive el porqué del encabezado de la clienta.
+ */
+export function buildCrosscheckPageText(operations: readonly LedgerOperationV5[]): string | null {
+  return planCrosscheckPage(operations).text;
 }
 
 type GeminiOperation = LedgerOperationV5;
@@ -135,10 +276,6 @@ type GeminiOperation = LedgerOperationV5;
  */
 export const UNNUMBERED_LINE_INDEX = -1;
 
-function byLineIndex(left: { lineIndex: number }, right: { lineIndex: number }): number {
-  return left.lineIndex - right.lineIndex;
-}
-
 type OperationPair = Readonly<{
   gemini?: GeminiOperation;
   ledger?: MexalmLedgerOperation;
@@ -148,66 +285,76 @@ type OperationPair = Readonly<{
 /**
  * Empareja los renglones de los dos lados.
  *
- * Por `lineIndex`, que es la identidad natural del renglón: las dos listas numeran los renglones
- * de la misma página. Si el Ledger numera distinto (otra base, o cuenta sólo los renglones con
- * movimiento), no hay ni un `lineIndex` en común y se empareja POR POSICIÓN, que para dos listas
- * del mismo orden es lo mismo. El síntoma de un emparejamiento roto es que TODOS los renglones
- * discrepan, y eso se ve.
+ * El Ledger numera sus operaciones por su POSICIÓN en la página —su `lineIndex` es el ordinal de
+ * la operación, no el número de la línea física— así que su número se lee como una posición
+ * dentro del plan de la página (ver `planCrosscheckPage`), y el `lineIndex` que se reporta en un
+ * desacuerdo es el del renglón de Gemini: el que la app sabe marcar.
+ *
+ * Si el Ledger numera distinto (otra base, o cuenta sólo los renglones con movimiento), no hay ni
+ * una posición en común y se empareja POR ORDEN, que para dos listas del mismo orden es lo mismo.
+ * El síntoma de un emparejamiento roto es que TODOS los renglones discrepan, y eso se ve.
  */
 function pairOperations(
   geminiOperations: readonly GeminiOperation[],
   ledgerOperations: readonly MexalmLedgerOperation[],
 ): OperationPair[] {
-  const gemini = [...geminiOperations].sort(byLineIndex);
+  const planned = planCrosscheckPage(geminiOperations).operations;
   const ledger = [...ledgerOperations].sort(
     (left, right) => (left.lineIndex ?? -1) - (right.lineIndex ?? -1),
   );
 
-  const ledgerByLineIndex = new Map<number, MexalmLedgerOperation>();
-  for (const operation of ledger) {
-    if (operation.lineIndex !== undefined && !ledgerByLineIndex.has(operation.lineIndex)) {
-      ledgerByLineIndex.set(operation.lineIndex, operation);
-    }
-  }
-  const geminiLineIndexes = new Set(gemini.map((operation) => operation.lineIndex));
-  const sharesAnyLineIndex = ledger.some(
-    (operation) => operation.lineIndex !== undefined && geminiLineIndexes.has(operation.lineIndex),
+  const sharesAnyPosition = ledger.some(
+    (operation) =>
+      operation.lineIndex !== undefined &&
+      operation.lineIndex >= 0 &&
+      operation.lineIndex < planned.length,
   );
 
   const pairs: OperationPair[] = [];
-  if (sharesAnyLineIndex) {
-    const usedLedgerLineIndexes = new Set<number>();
-    for (const geminiOperation of gemini) {
-      const ledgerOperation = ledgerByLineIndex.get(geminiOperation.lineIndex);
-      if (ledgerOperation !== undefined) {
-        usedLedgerLineIndexes.add(geminiOperation.lineIndex);
-      }
-      pairs.push({
-        gemini: geminiOperation,
-        ...(ledgerOperation !== undefined ? { ledger: ledgerOperation } : {}),
-        lineIndex: geminiOperation.lineIndex,
-      });
-    }
+  if (sharesAnyPosition) {
+    const usedPositions = new Set<number>();
     for (const ledgerOperation of ledger) {
-      if (usedLedgerLineIndexes.has(ledgerOperation.lineIndex ?? -1)) {
-        continue;
-      }
-      if (ledgerOperation.lineIndex === undefined) {
+      const position = ledgerOperation.lineIndex;
+      if (position === undefined) {
         // El Ledger mandó una operación SIN renglón, lo cual el contrato C1 no permite. No se puede
         // emparejarla con nada, pero tampoco se puede hacer como que no existe: se reporta con
         // lineIndex -1, que significa "el Ledger no indicó de qué renglón habla".
         pairs.push({ ledger: ledgerOperation, lineIndex: UNNUMBERED_LINE_INDEX });
         continue;
       }
-      pairs.push({ ledger: ledgerOperation, lineIndex: ledgerOperation.lineIndex });
+      const geminiOperation =
+        position >= 0 && position < planned.length ? planned[position] : undefined;
+      if (geminiOperation !== undefined && !usedPositions.has(position)) {
+        usedPositions.add(position);
+        pairs.push({
+          gemini: geminiOperation,
+          ledger: ledgerOperation,
+          lineIndex: geminiOperation.lineIndex,
+        });
+        continue;
+      }
+      // Una segunda operación con la misma posición, o una posición que no existe en la página:
+      // no se empareja con nada, y no se pierde en silencio.
+      pairs.push({ ledger: ledgerOperation, lineIndex: position });
+    }
+    // Los renglones que el Ledger no vio: la página los tenía y él no los devolvió.
+    for (let position = 0; position < planned.length; position += 1) {
+      if (usedPositions.has(position)) {
+        continue;
+      }
+      const geminiOperation = planned[position];
+      if (geminiOperation === undefined) {
+        continue;
+      }
+      pairs.push({ gemini: geminiOperation, lineIndex: geminiOperation.lineIndex });
     }
     return pairs;
   }
 
-  // Sin un solo lineIndex en común: se empareja por posición.
-  const count = Math.max(gemini.length, ledger.length);
+  // Sin una posición en común: se empareja por orden.
+  const count = Math.max(planned.length, ledger.length);
   for (let index = 0; index < count; index += 1) {
-    const geminiOperation = gemini[index];
+    const geminiOperation = planned[index];
     const ledgerOperation = ledger[index];
     const lineIndex =
       geminiOperation?.lineIndex ??
@@ -258,11 +405,9 @@ export function compareLedgerOperations(
       continue;
     }
 
-    if (
-      gemini.proposedKind !== undefined &&
-      ledger.proposedKind !== undefined &&
-      gemini.proposedKind !== ledger.proposedKind
-    ) {
+    const geminiKind = opinion(gemini.proposedKind);
+    const ledgerKind = opinion(ledger.proposedKind);
+    if (geminiKind !== undefined && ledgerKind !== undefined && geminiKind !== ledgerKind) {
       disagreements.push({
         lineIndex: pair.lineIndex,
         field: "TYPE",
@@ -271,11 +416,13 @@ export function compareLedgerOperations(
       });
     }
 
+    const geminiCustomer = opinion(gemini.customerName);
+    const ledgerCustomer = opinion(ledger.customerName);
     if (
-      gemini.customerName !== undefined &&
-      ledger.customerName !== undefined &&
-      normalizeCustomerNameForCrosscheck(gemini.customerName) !==
-        normalizeCustomerNameForCrosscheck(ledger.customerName)
+      geminiCustomer !== undefined &&
+      ledgerCustomer !== undefined &&
+      normalizeCustomerNameForCrosscheck(geminiCustomer) !==
+        normalizeCustomerNameForCrosscheck(ledgerCustomer)
     ) {
       disagreements.push({
         lineIndex: pair.lineIndex,
@@ -285,10 +432,12 @@ export function compareLedgerOperations(
       });
     }
 
+    const geminiAmount = opinion(gemini.amountCents);
+    const ledgerAmount = opinion(ledger.amountCents);
     if (
-      gemini.amountCents !== undefined &&
-      ledger.amountCents !== undefined &&
-      !sameAmountCents(gemini.amountCents, ledger.amountCents)
+      geminiAmount !== undefined &&
+      ledgerAmount !== undefined &&
+      !sameAmountCents(geminiAmount, ledgerAmount)
     ) {
       disagreements.push({
         lineIndex: pair.lineIndex,

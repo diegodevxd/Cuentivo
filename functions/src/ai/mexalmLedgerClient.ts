@@ -45,7 +45,13 @@ export type MexalmLedgerFailureListener = (failure: MexalmLedgerFailure) => void
 export type MexalmLedgerOperation = Readonly<{
   lineIndex?: number;
   proposedKind?: string;
-  customerName?: string;
+  /**
+   * El nombre tal cual lo mandó el Ledger, o `null` cuando no pudo leer una clienta en esa línea.
+   *
+   * El `null` se conserva: es lo que dijo el otro lado, y quitarlo en la frontera sería decidir
+   * aquí lo que significa. Lo que significa "sin opinión" lo decide la comparación.
+   */
+  customerName?: string | null;
   amountCents?: string;
 }>;
 
@@ -112,6 +118,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * Lee los tres campos que la comparación usa. Lo que no está o no es del tipo esperado se
  * devuelve como `undefined`, que es "no lo sé": la comparación sólo reporta desacuerdo cuando
  * LOS DOS lados tienen un valor y difieren.
+ *
+ * Un `customerName: null` se conserva tal cual: el Ledger no pudo leer una clienta en esa línea y
+ * eso no es una contradicción con lo que dice la lectura de la foto. Lo decide la comparación, no
+ * la frontera.
  */
 function readOperation(value: unknown): MexalmLedgerOperation | null {
   if (!isPlainObject(value)) {
@@ -126,7 +136,11 @@ function readOperation(value: unknown): MexalmLedgerOperation | null {
       ? { lineIndex: rawLineIndex }
       : {}),
     ...(typeof rawKind === "string" ? { proposedKind: rawKind } : {}),
-    ...(typeof rawCustomer === "string" ? { customerName: rawCustomer } : {}),
+    ...(typeof rawCustomer === "string"
+      ? { customerName: rawCustomer }
+      : rawCustomer === null
+        ? { customerName: null }
+        : {}),
     ...(typeof rawAmount === "string" ? { amountCents: rawAmount } : {}),
   };
 }

@@ -3,7 +3,7 @@ import { createExtractLedgerPageHandler } from "../src/extractLedgerPage.js";
 import { createAiEdgeRequestGuard } from "../src/ai/edgeRequestGuard.js";
 import type { LedgerExtractionProvider } from "../src/ai/geminiLedgerProvider.js";
 import type { AuthorizeAiResult } from "../src/ai/controlPlane.js";
-import type { LedgerExtractionResult } from "../src/contract.js";
+import type { LedgerExtractionResult, LedgerOperationV5 } from "../src/contract.js";
 import {
   createMexalmLedgerClient,
   type MexalmLedgerFetch,
@@ -91,6 +91,115 @@ const LEDGER_DIFFERENT_AMOUNT = {
   operations: [
     { lineIndex: 0, proposedKind: "SALE", customerName: "Rosa", amountCents: "25000" },
     { lineIndex: 1, proposedKind: "SALE", customerName: "Toño", amountCents: "3900" },
+  ],
+};
+
+/**
+ * Una página de UNA clienta, como la trae una libreta de fiado de verdad: el nombre arriba y los
+ * renglones abajo, SIN repetir el nombre en cada renglón. Es el caso real que rompía la
+ * verificación: el Ledger no tenía de dónde sacar a quién pertenece cada movimiento.
+ */
+const AURORA_PAGE: LedgerExtractionResult = {
+  operations: [
+    {
+      lineIndex: 0,
+      proposedKind: "SALE",
+      customerName: "Aurora",
+      amountCents: "25000",
+      description: "Protector tapete",
+      uncertainFields: [],
+      unreadableFields: [],
+      confidence: { customer: 0.95, concept: 0.9, amount: 0.98, date: 0.9, kind: 0.95 },
+      sources: { customer: "EXPLICIT", date: "PAGE_DATE" },
+      rawText: "protector tapete 250",
+      items: [{ description: "Protector tapete", quantity: 1, subtotalCents: "25000" }],
+      warnings: [],
+    },
+    {
+      lineIndex: 1,
+      proposedKind: "PAYMENT",
+      customerName: "Aurora",
+      amountCents: "10000",
+      uncertainFields: [],
+      unreadableFields: [],
+      rawText: "abono 100",
+    },
+  ],
+  discards: [],
+  unreadTextRemaining: false,
+  pageIncomplete: false,
+};
+
+/** El Ledger de acuerdo con esa página: mismo tipo, misma clienta, mismo monto. */
+const LEDGER_AURORA_AGREED = {
+  status: "OK",
+  operations: [
+    { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "25000" },
+    { lineIndex: 1, proposedKind: "PAYMENT", customerName: "Aurora", amountCents: "10000" },
+  ],
+};
+
+/** El Ledger que NO pudo leer la clienta: `null`, no un nombre inventado. */
+const LEDGER_AURORA_NO_CUSTOMER = {
+  status: "OK",
+  operations: [
+    { lineIndex: 0, proposedKind: "SALE", customerName: null, amountCents: "25000" },
+    { lineIndex: 1, proposedKind: "PAYMENT", customerName: null, amountCents: "10000" },
+  ],
+};
+
+/** El Ledger que leyó el abono con otro monto. */
+const LEDGER_AURORA_DIFFERENT_AMOUNT = {
+  status: "OK",
+  operations: [
+    { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "25000" },
+    { lineIndex: 1, proposedKind: "PAYMENT", customerName: "Aurora", amountCents: "9000" },
+  ],
+};
+
+/** Dos clientas en la misma página, cada una con sus renglones. */
+const TWO_CUSTOMERS_PAGE: LedgerExtractionResult = {
+  operations: [
+    {
+      lineIndex: 0,
+      proposedKind: "SALE",
+      customerName: "Aurora",
+      amountCents: "25000",
+      uncertainFields: [],
+      unreadableFields: [],
+      rawText: "protector tapete 250",
+    },
+    {
+      lineIndex: 1,
+      proposedKind: "SALE",
+      customerName: "Aurora",
+      amountCents: "10000",
+      uncertainFields: [],
+      unreadableFields: [],
+      rawText: "jabon 100",
+    },
+    {
+      lineIndex: 2,
+      proposedKind: "PAYMENT",
+      customerName: "Beto",
+      amountCents: "5000",
+      uncertainFields: [],
+      unreadableFields: [],
+      rawText: "abono 50",
+    },
+  ],
+  discards: [],
+  unreadTextRemaining: false,
+  pageIncomplete: false,
+};
+
+/** El Ledger de acuerdo con las dos clientas. */
+const LEDGER_TWO_CUSTOMERS_AGREED = {
+  status: "OK",
+  operations: [
+    { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "25000" },
+    { lineIndex: 1, proposedKind: "SALE", customerName: "Aurora", amountCents: "10000" },
+    { lineIndex: 2, proposedKind: "PAYMENT", customerName: "Beto", amountCents: "5000" },
   ],
 };
 
@@ -406,7 +515,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       expect(serialized).not.toContain("rawText");
     });
 
-    test("el cuerpo que viaja al Ledger lleva el texto, y sólo el texto de los renglones", async () => {
+    test("el cuerpo que viaja al Ledger lleva el texto de la página, con su encabezado", async () => {
       let sentBody = "";
       const captureFetch: MexalmLedgerFetch = async (_url, init) => {
         sentBody = init.body;
@@ -420,7 +529,11 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       });
 
       const body = JSON.parse(sentBody);
-      expect(body.text).toBe(`${PAGE_TEXT_LINE_ONE}\n${PAGE_TEXT_LINE_TWO}`);
+      // El texto de la página: el encabezado de cada clienta y luego sus renglones. El nombre
+      // va tal cual lo escribió Gemini.
+      expect(body.text).toBe(
+        `Rosa\n${PAGE_TEXT_LINE_ONE}\nToño\n${PAGE_TEXT_LINE_TWO}`,
+      );
       expect(body.knownCustomers).toBeNull();
     });
   });
@@ -515,6 +628,42 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       expect(disagreements).toEqual([]);
     });
 
+    test("un `null` del Ledger es «sin opinión»: no es un desacuerdo de cliente", () => {
+      const disagreements = compareLedgerOperations(
+        [
+          {
+            lineIndex: 0,
+            proposedKind: "SALE",
+            customerName: "Aurora",
+            amountCents: "25000",
+            uncertainFields: [],
+            unreadableFields: [],
+          },
+        ],
+        [{ lineIndex: 0, proposedKind: "SALE", customerName: null, amountCents: "25000" }],
+      );
+
+      expect(disagreements).toEqual([]);
+    });
+
+    test("un nombre en blanco del Ledger tampoco es una contradicción", () => {
+      const disagreements = compareLedgerOperations(
+        [
+          {
+            lineIndex: 0,
+            proposedKind: "SALE",
+            customerName: "Aurora",
+            amountCents: "25000",
+            uncertainFields: [],
+            unreadableFields: [],
+          },
+        ],
+        [{ lineIndex: 0, proposedKind: "SALE", customerName: "   ", amountCents: "25000" }],
+      );
+
+      expect(disagreements).toEqual([]);
+    });
+
     test("una operación del Ledger sin renglón se reporta, no se pierde en silencio", () => {
       const disagreements = compareLedgerOperations(
         [
@@ -536,6 +685,235 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
       expect(disagreements).toHaveLength(1);
       expect(disagreements[0]?.field).toBe("MISSING_IN_GEMINI");
       expect(disagreements[0]?.lineIndex).toBe(-1);
+    });
+  });
+
+  describe("el encabezado de la clienta", () => {
+    test("una página de una clienta lleva su nombre arriba y el Ledger está de acuerdo", async () => {
+      let sentBody = "";
+      const captureFetch: MexalmLedgerFetch = async (_url, init) => {
+        sentBody = init.body;
+        return { ok: true, status: 200, json: async () => LEDGER_AURORA_AGREED };
+      };
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({
+          provider: providerReturning(AURORA_PAGE),
+          crosscheck: crosscheckerOver(captureFetch),
+        }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      // El encabezado va arriba y los renglones NO repiten el nombre: así es como la hoja lo trae.
+      expect(JSON.parse(sentBody).text).toBe("Aurora\nprotector tapete 250\nabono 100");
+      // Y con el encabezado, el Ledger sabe a quién pertenece cada renglón y está de acuerdo.
+      expect(result.mexalmCrosscheck.agreed).toBe(true);
+      expect(result.mexalmCrosscheck.disagreements).toEqual([]);
+    });
+
+    test("un `null` del Ledger es «sin opinión», no un desacuerdo de cliente", async () => {
+      const crosscheck = crosscheckerOver(jsonResponse(LEDGER_AURORA_NO_CUSTOMER));
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({ provider: providerReturning(AURORA_PAGE), crosscheck }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      // El Ledger no pudo leer la clienta: eso NO contradice a la lectura de la foto.
+      const fields = result.mexalmCrosscheck.disagreements.map((entry: any) => entry.field);
+      expect(fields).not.toContain("CUSTOMER");
+      expect(result.mexalmCrosscheck.agreed).toBe(true);
+      expect(result.mexalmCrosscheck.disagreements).toEqual([]);
+    });
+
+    test("un monto distinto sigue contando como desacuerdo, con el encabezado puesto", async () => {
+      const crosscheck = crosscheckerOver(jsonResponse(LEDGER_AURORA_DIFFERENT_AMOUNT));
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({ provider: providerReturning(AURORA_PAGE), crosscheck }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      expect(result.mexalmCrosscheck.agreed).toBe(false);
+      expect(result.mexalmCrosscheck.disagreements).toHaveLength(1);
+      const disagreement = result.mexalmCrosscheck.disagreements[0];
+      expect(disagreement.field).toBe("AMOUNT");
+      expect(disagreement.lineIndex).toBe(1);
+      expect(disagreement.gemini.amountCents).toBe("10000");
+      expect(disagreement.ledger.amountCents).toBe("9000");
+      // El renglón sigue siendo el de Gemini: la marca no reescribe la operación.
+      expect(result.operations[1].amountCents).toBe("10000");
+    });
+
+    test("dos clientas en la misma página: cada una con su encabezado", async () => {
+      let sentBody = "";
+      const captureFetch: MexalmLedgerFetch = async (_url, init) => {
+        sentBody = init.body;
+        return { ok: true, status: 200, json: async () => LEDGER_TWO_CUSTOMERS_AGREED };
+      };
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({
+          provider: providerReturning(TWO_CUSTOMERS_PAGE),
+          crosscheck: crosscheckerOver(captureFetch),
+        }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      expect(JSON.parse(sentBody).text).toBe(
+        "Aurora\nprotector tapete 250\njabon 100\nBeto\nabono 50",
+      );
+      expect(result.mexalmCrosscheck.agreed).toBe(true);
+      expect(result.mexalmCrosscheck.disagreements).toEqual([]);
+    });
+
+    test("los renglones de una clienta quedan juntos aunque en la hoja vinieran intercalados", async () => {
+      const page: LedgerExtractionResult = {
+        operations: [
+          {
+            lineIndex: 0,
+            proposedKind: "SALE",
+            customerName: "Aurora",
+            amountCents: "25000",
+            uncertainFields: [],
+            unreadableFields: [],
+            rawText: "protector tapete 250",
+          },
+          {
+            lineIndex: 1,
+            proposedKind: "SALE",
+            customerName: "Beto",
+            amountCents: "5000",
+            uncertainFields: [],
+            unreadableFields: [],
+            rawText: "jabon 100",
+          },
+          {
+            lineIndex: 2,
+            proposedKind: "SALE",
+            customerName: "Aurora",
+            amountCents: "15000",
+            uncertainFields: [],
+            unreadableFields: [],
+            rawText: "cepillo 150",
+          },
+        ],
+        discards: [],
+        unreadTextRemaining: false,
+        pageIncomplete: false,
+      };
+      // El Ledger leyó el tercer renglón de la hoja con otro monto.
+      const ledger = {
+        status: "OK",
+        operations: [
+          { lineIndex: 0, proposedKind: "SALE", customerName: "Aurora", amountCents: "25000" },
+          { lineIndex: 1, proposedKind: "SALE", customerName: "Aurora", amountCents: "14000" },
+          { lineIndex: 2, proposedKind: "SALE", customerName: "Beto", amountCents: "5000" },
+        ],
+      };
+
+      let sentBody = "";
+      const captureFetch: MexalmLedgerFetch = async (_url, init) => {
+        sentBody = init.body;
+        return { ok: true, status: 200, json: async () => ledger };
+      };
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({ provider: providerReturning(page), crosscheck: crosscheckerOver(captureFetch) }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      // Los renglones de Aurora quedan juntos, con un solo encabezado.
+      expect(JSON.parse(sentBody).text).toBe(
+        "Aurora\nprotector tapete 250\ncepillo 150\nBeto\njabon 100",
+      );
+      // Y el desacuerdo se marca en el RENGLÓN de la hoja, no en la posición de la página: la app
+      // marca renglones, no posiciones.
+      expect(result.mexalmCrosscheck.agreed).toBe(false);
+      expect(result.mexalmCrosscheck.disagreements).toHaveLength(1);
+      expect(result.mexalmCrosscheck.disagreements[0].field).toBe("AMOUNT");
+      expect(result.mexalmCrosscheck.disagreements[0].lineIndex).toBe(2);
+    });
+
+    test("la libreta de una clienta con ventas y abonos: el Ledger está de acuerdo", async () => {
+      // El caso real que salió en la libreta de "Aurora": 8 ventas y 4 abonos, y el bloque decía
+      // "11 renglones distintos" porque la página no llevaba el nombre de la clienta.
+      const operations: LedgerOperationV5[] = Array.from({ length: 12 }, (_, index) => ({
+        lineIndex: index,
+        proposedKind: index < 8 ? "SALE" : "PAYMENT",
+        customerName: "Aurora",
+        amountCents: String(10000 + index),
+        uncertainFields: [],
+        unreadableFields: [],
+        rawText: `renglon ${index}`,
+      }));
+      const ledgerOperations = operations.map((operation) => ({
+        lineIndex: operation.lineIndex,
+        proposedKind: operation.proposedKind,
+        customerName: "Aurora",
+        amountCents: operation.amountCents,
+      }));
+
+      const crosscheck = crosscheckerOver(
+        jsonResponse({ status: "OK", operations: ledgerOperations }),
+      );
+
+      const result = (await createExtractLedgerPageHandler(
+        deps({
+          provider: providerReturning({
+            operations,
+            discards: [],
+            unreadTextRemaining: false,
+            pageIncomplete: false,
+          }),
+          crosscheck,
+        }),
+      )({
+        auth: AUTH_USER,
+        data: VALID_DATA,
+      })) as any;
+
+      expect(result.mexalmCrosscheck.agreed).toBe(true);
+      expect(result.mexalmCrosscheck.disagreements).toEqual([]);
+    });
+
+    test("un renglón sin clienta no inventa un encabezado", () => {
+      const text = buildCrosscheckPageText([
+        {
+          lineIndex: 0,
+          uncertainFields: [],
+          unreadableFields: [],
+          rawText: "protector tapete 250",
+        },
+      ]);
+
+      expect(text).toBe("protector tapete 250");
+    });
+
+    test("el encabezado lleva el nombre TAL CUAL lo escribió la lectura", () => {
+      const text = buildCrosscheckPageText([
+        {
+          lineIndex: 0,
+          proposedKind: "SALE",
+          customerName: "María de los Ángeles",
+          amountCents: "25000",
+          uncertainFields: [],
+          unreadableFields: [],
+          rawText: "protector tapete 250",
+        },
+      ]);
+
+      expect(text).toBe("María de los Ángeles\nprotector tapete 250");
     });
   });
 });
