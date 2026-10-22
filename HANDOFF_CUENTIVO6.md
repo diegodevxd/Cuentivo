@@ -191,6 +191,10 @@ Y una más, la más importante de todas:
   (`ledger-crosscheck-confirmed-<renglón>`). Y en la tarjeta del veredicto, el conteo de
   renglones confirmados ("12 renglones confirmados por el Ledger"), que es lo que explica por qué
   un renglón dejó de pedir revisión.
+  - La marca va en **todo** renglón que el Ledger confirmó, incluso si ese renglón todavía espera
+    por una fecha: son dos hechos distintos, y la insignia roja de "Dudoso" sigue al lado, así que
+    la persona ve las dos cosas ("el Ledger confirmó el monto, pero la fecha es dudosa") en vez de
+    un renglón que cambió de color sin explicación.
 - `MexalmCrosscheckVerdict.kt`: el veredicto lleva `confirmedRowCount`.
 - Textos: `ai_ledger_crosscheck_row_confirmed`, `ai_ledger_crosscheck_confirmed_count` (plural) y
   el texto de la nota de la tarjeta, que cambió para ser cierto: antes decía "Sólo informa: no
@@ -247,7 +251,7 @@ levantarse.
 | `functions/src/ai/mexalmLedgerWarm.ts` | El despertador: `GET <baseUrl>/health` con plazo de 2 s, sin token, nunca lanza. |
 | `functions/test/warmMexalmLedger.test.ts` | 20 pruebas de la callable y del despertador. |
 | `app/src/main/java/com/cuentivo/app/ai/ledger/MexalmCrosscheckConfirmation.kt` | El objeto puro con la regla: qué resuelve el Ledger y qué no. |
-| `app/src/test/java/com/cuentivo/app/ai/ledger/MexalmCrosscheckConfirmationTest.kt` | 15 pruebas de la regla. |
+| `app/src/test/java/com/cuentivo/app/ai/ledger/MexalmCrosscheckConfirmationTest.kt` | 16 pruebas de la regla (la última es de punta a punta: la respuesta del servidor, el parser, la revisión y el resumen). |
 | `app/src/main/java/com/cuentivo/app/ai/MexalmLedgerWarmGateway.kt` | El transporte del despertar y la política de quién puede pedirlo. |
 | `app/src/test/java/com/cuentivo/app/ai/MexalmLedgerWarmGatewayTest.kt` | 3 pruebas (la política y dos guardas de fuente). |
 | `MEXALM_TEST_OUTPUT_6.txt` | La salida real de todo lo de esta parte. |
@@ -285,7 +289,7 @@ levantarse.
 |---|---|
 | `npm --prefix functions test` | **574/574** (21 archivos). Antes: 546. |
 | `npm --prefix functions run lint` | limpio (`tsc --noEmit`, 0 errores). |
-| Android `testDebugUnitTest` | **1447/1447**, 0 fallos, 0 errores, 0 omitidas (155 clases). Antes: 1426/153. |
+| Android `testDebugUnitTest` | **1448/1448**, 0 fallos, 0 errores, 0 omitidas (155 clases). Antes: 1426/153. |
 | `assembleDebug -Pcuentivo.functionsEmulatorHost=127.0.0.1` | **BUILD SUCCESSFUL** (APK de 68 MB). **NO se instaló nada.** |
 | `BuildConfig` del build debug | `FUNCTIONS_EMULATOR_HOST = "127.0.0.1"` (leído del archivo generado). |
 | Puertas de idioma de `CLAUDE.md` | las dos **vacías**. |
@@ -301,7 +305,7 @@ propósito y se comprobó que las pruebas **caen**.
 |---|---|
 | servidor: `confirmAgreedPairs` devuelve `[]` siempre | 4 pruebas |
 | servidor: la bandera ya no manda y el límite ya no aplica | 2 pruebas |
-| app: la regla no resuelve nada | 4 pruebas |
+| app: la regla no resuelve nada | 5 pruebas |
 | app: la regla **también** resuelve la duda de `DATE` | 2 pruebas |
 
 Y una prueba nueva del parser **cayó durante el desarrollo**: la primera versión del parser

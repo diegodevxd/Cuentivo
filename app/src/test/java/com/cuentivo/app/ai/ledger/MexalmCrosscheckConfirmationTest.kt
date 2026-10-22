@@ -19,6 +19,11 @@ import org.junit.Test
  */
 class MexalmCrosscheckConfirmationTest {
 
+    companion object {
+        /** El id de la petición, tal como lo devuelve el servidor. */
+        const val REQUEST_ID = "123e4567-e89b-12d3-a456-426614174000"
+    }
+
     private fun doubtfulRow(
         lineIndex: Int = 0,
         uncertain: List<UncertainLedgerField> = listOf(UncertainLedgerField.AMOUNT),
@@ -260,5 +265,61 @@ class MexalmCrosscheckConfirmationTest {
         )
 
         assertEquals(0, verdict.confirmedRowCount)
+    }
+
+    /**
+     * De punta a punta, con la respuesta TAL COMO la manda el servidor: la libreta de doce
+     * renglones dudosos, el bloque con los doce confirmados, y el resumen de la app.
+     *
+     * Esta es la prueba del caso del dueño: si el bloque no llega bien, o si la regla no se
+     * aplica donde tiene que aplicarse, el resumen sigue diciendo "0 listos para registrar" y
+     * el dueño tiene que revisar los doce a mano otra vez.
+     */
+    @Test
+    fun `de punta a punta, la respuesta del servidor deja los doce renglones listos`() {
+        val operations = (0 until 12).map { lineIndex ->
+            mapOf(
+                "lineIndex" to lineIndex,
+                "proposedKind" to "SALE",
+                "customerName" to "Aurora",
+                "amountCents" to (10000 + lineIndex).toString(),
+                // La duda de lectura del modelo: el monto.
+                "uncertainFields" to listOf("AMOUNT"),
+                "unreadableFields" to emptyList<String>(),
+                "date" to mapOf("year" to 2026, "month" to 3, "day" to 10),
+            )
+        }
+        val wire: Map<String, Any?> = mapOf(
+            "contractVersion" to 5,
+            "requestId" to REQUEST_ID,
+            "status" to "AI_PROPOSAL",
+            "operations" to operations,
+            "discards" to emptyList<Any>(),
+            "unreadTextRemaining" to false,
+            "pageIncomplete" to false,
+            "mexalmCrosscheck" to mapOf(
+                "agreed" to true,
+                "disagreements" to emptyList<Any>(),
+                "ledgerStatus" to "OK",
+                "latencyMs" to 812,
+                "confirmedLineIndexes" to (0 until 12).toList(),
+            ),
+        )
+
+        val parsed = parseLedgerExtractionResponse(wire, REQUEST_ID)
+        assertTrue(parsed is LedgerExtractionCallResult.Extracted)
+        val payload = (parsed as LedgerExtractionCallResult.Extracted).extraction
+
+        val review = LedgerReviewEngine.build(
+            operations = payload.operations,
+            mexalmCrosscheck = payload.mexalmCrosscheck,
+            pageDateEpochDay = 20_000L,
+            todayEpochDay = 20_100L,
+        )
+        val summary = LedgerImportSummaryCalculator.calculate(review, emptyList())
+
+        // "12 listos para registrar - 0 por revisar": el problema del dueño, resuelto.
+        assertEquals(12, summary.readyCount)
+        assertEquals(0, summary.pendingReviewCount)
     }
 }

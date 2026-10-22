@@ -109,7 +109,7 @@ PARTE B — el despertar
 --------------
   functions:  574/574 (antes 546)     npm test
               npm run lint limpio
-  Android:    1447/1447, 0 fallos, 0 errores, 0 omitidas (155 clases)   testDebugUnitTest
+  Android:    1448/1448, 0 fallos, 0 errores, 0 omitidas (155 clases)   testDebugUnitTest
               (antes 1426/153)
   assembleDebug -Pcuentivo.functionsEmulatorHost=127.0.0.1: BUILD SUCCESSFUL (APK de 68 MB).
               NO SE INSTALÓ NADA.
@@ -118,18 +118,18 @@ PARTE B — el despertar
   claves huérfanas.   Regla 1 (dinero en Long): limpia en los siete archivos tocados.
   Salida completa: MEXALM_TEST_OUTPUT_6.txt
 
-Pruebas nuevas (47):
+Pruebas nuevas (48):
   functions/test/warmMexalmLedger.test.ts (20, nuevo)
   functions/test/mexalmCrosscheck.test.ts (+6)
   functions/test/index.test.ts (+2)
-  app/src/test/.../MexalmCrosscheckConfirmationTest.kt (15, nuevo)
+  app/src/test/.../MexalmCrosscheckConfirmationTest.kt (16, nuevo)
   app/src/test/.../MexalmLedgerWarmGatewayTest.kt (3, nuevo)
   app/src/test/.../LedgerExtractionGatewayTest.kt (+3)
 
 Verificación por mutación (las pruebas tienen que CAER):
   servidor: confirmAgreedPairs devuelve [] siempre     -> 4 pruebas caen
   servidor: la bandera ya no manda y el límite no aplica -> 2 pruebas caen
-  app:      la regla no resuelve nada                    -> 4 pruebas caen
+  app:      la regla no resuelve nada                    -> 5 pruebas caen
   app:      la regla también resuelve la duda de DATE    -> 2 pruebas caen
 
 Y una prueba nueva del parser CAYÓ durante el desarrollo: la primera versión del parser exigía

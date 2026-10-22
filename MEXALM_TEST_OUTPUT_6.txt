@@ -42,8 +42,10 @@ SIN ERRORES (salida vacía = lint limpio)
 BUILD SUCCESSFUL in 22s
 
   Conteo desde los XML de app/build/test-results/testDebugUnitTest:
-  clases 155 / tests 1447 / fallos 0 / errores 0 / omitidas 0
-  (antes de esta tarea: 1426 tests / 153 clases)
+  clases 155 / tests 1448 / fallos 0 / errores 0 / omitidas 0
+
+  (antes de esta tarea: 1426 tests / 153 clases)
+
 
 ==============================================================
 4) Android: ./gradlew.bat assembleDebug -Pcuentivo.functionsEmulatorHost=127.0.0.1
@@ -160,7 +162,7 @@ servidor (functions/src/warmMexalmLedger.ts)
   - la bandera ya no manda y el limite ya no aplica   -> 2 pruebas caen
       (la de la bandera apagada y la del limite de 5 minutos)
 app (app/.../ai/ledger/MexalmCrosscheckConfirmation.kt)
-  - la regla no resuelve nada                         -> 4 pruebas caen
+  - la regla no resuelve nada                         -> 5 pruebas caen
       (la del renglon que queda listo, la de cliente y tipo, la del anio distinto y la de los
        doce renglones del resumen)
   - la regla tambien resuelve la duda de FECHA        -> 2 pruebas caen
