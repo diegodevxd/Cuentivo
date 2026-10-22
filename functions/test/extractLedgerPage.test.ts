@@ -3,7 +3,8 @@ import { createExtractLedgerPageHandler } from "../src/extractLedgerPage.js";
 import { createAiEdgeRequestGuard } from "../src/ai/edgeRequestGuard.js";
 import type { LedgerExtractionProvider } from "../src/ai/geminiLedgerProvider.js";
 import type { AuthorizeAiResult } from "../src/ai/controlPlane.js";
-import type { LedgerExtractionResult } from "../src/contract.js";
+import type { LedgerExtractionResult, MexalmCrosscheckBlock } from "../src/contract.js";
+import type { MexalmLedgerCrosschecker } from "../src/ai/mexalmCrosscheck.js";
 
 const NOW = 1_000_000;
 
@@ -105,6 +106,70 @@ const V3_ALLOWED_OP_KEYS = [
   "unreadableFields",
   "region",
 ] as const;
+
+/**
+ * El bloque tal como lo devuelve el verificador cuando el Ledger sí contestó.
+ *
+ * `confirmedLineIndexes` va incluido a propósito: es la llave OPCIONAL del bloque, y una prueba de
+ * compatibilidad con la app vieja tiene que ejercitar el bloque CON su forma más ancha. Si probara
+ * con la forma mínima, la llave de más quedaría sin cubrir.
+ */
+const CROSSCHECK_BLOCK: MexalmCrosscheckBlock = {
+  agreed: true,
+  disagreements: [],
+  ledgerStatus: "OK",
+  latencyMs: 12,
+  confirmedLineIndexes: [0],
+};
+
+/**
+ * Verificador de mentira que cuenta si lo llamaron. `crosscheck` es lo que cuesta dinero —una ida y
+ * vuelta al Ledger por página—, así que "no se llamó" es una aserción sobre el gasto, no sobre el
+ * estilo.
+ */
+function crosscheckerSpy(block: MexalmCrosscheckBlock | null = CROSSCHECK_BLOCK): MexalmLedgerCrosschecker & {
+  crosscheck: ReturnType<typeof vi.fn>;
+} {
+  return { crosscheck: vi.fn(async () => block) } as MexalmLedgerCrosschecker & {
+    crosscheck: ReturnType<typeof vi.fn>;
+  };
+}
+
+/**
+ * La regla EXACTA con la que la app publicada hoy (≤ v48) decide si acepta una respuesta. Está
+ * copiada de `app/src/main/java/com/cuentivo/app/ai/ledger/LedgerExtractionGateway.kt` en el
+ * commit `76242e5`, que es el parser que corre en los teléfonos de los clientes.
+ *
+ * Se copia en vez de importarse porque es Kotlin y esto es TypeScript, y se copia TAL CUAL —con su
+ * comparación de juego exacto para v3 y su lista cerrada para v4/v5— porque una versión "equivalente
+ * pero más amable" de esta regla no probaría nada: probaría que el servidor le habla bien a un
+ * parser que no existe.
+ *
+ * Devuelve `null` cuando la app rechaza la página entera (lo que en Kotlin es `Unavailable`): para
+ * esta prueba basta saber si la página pasa o no, no qué contendría.
+ */
+function oldAppAcceptsResponse(root: Record<string, unknown>): boolean {
+  const version = root["contractVersion"] as number;
+  const baseKeys = [
+    "contractVersion",
+    "requestId",
+    "status",
+    "operations",
+    "discards",
+    "unreadTextRemaining",
+    "pageIncomplete",
+  ];
+  const rootKeys = Object.keys(root);
+  if (version === 3) {
+    return rootKeys.length === baseKeys.length && baseKeys.every((k) => rootKeys.includes(k));
+  }
+  const allowedKeys = [
+    ...baseKeys,
+    "pageDate",
+    ...(version === 5 ? ["pageType", "pageTotals"] : []),
+  ];
+  return rootKeys.every((k) => allowedKeys.includes(k)) && baseKeys.every((k) => rootKeys.includes(k));
+}
 
 describe("createExtractLedgerPageHandler", () => {
   test("v3 request returns exact v3 projection without a single v4 key even when provider returns rich v4 data", async () => {
@@ -302,6 +367,131 @@ describe("createExtractLedgerPageHandler", () => {
         imageBase64: VALID_DATA.imageBase64,
         imageMimeType: VALID_DATA.imageMimeType,
       }),
+    );
+  });
+});
+
+/**
+ * La verificación cruzada se manda SÓLO a la app que la pide.
+ *
+ * El defecto que estas pruebas cierran ya estaba en producción: la app que hoy tienen los clientes
+ * (≤ v48) compara el juego de llaves de la raíz y, ante una llave que no conoce, rechaza la página
+ * ENTERA. Con la bandera encendida y sin esta condición, encenderla habría dejado el escaneo mudo
+ * en todos los teléfonos a la vez —y el síntoma habría sido "la IA no sirve", no "llegó una llave
+ * de más"—.
+ *
+ * Son dos condiciones distintas y las dos se prueban por separado: la bandera dice si el servidor
+ * verifica; la capacidad dice si ESTA app sabe leer el bloque.
+ */
+describe("verificación cruzada: la capacidad decide a quién se le cuenta", () => {
+  const VERSIONS = [3, 4, 5] as const;
+
+  test.each(VERSIONS)(
+    "v%i con la bandera encendida y SIN la capacidad: ni bloque, ni llamada al Ledger, ni un byte distinto",
+    async (version) => {
+      const crosscheck = crosscheckerSpy();
+      const data = { ...VALID_DATA, contractVersion: version };
+
+      const withFlagOn = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+        auth: AUTH_USER,
+        data,
+      })) as any;
+      const today = (await createExtractLedgerPageHandler(deps())({ auth: AUTH_USER, data })) as any;
+
+      // Lo que cuesta: el Ledger no se toca.
+      expect(crosscheck.crosscheck).not.toHaveBeenCalled();
+      // Lo que se ve: la llave no existe y la respuesta es la de hoy, byte a byte.
+      expect(withFlagOn).not.toHaveProperty("mexalmCrosscheck");
+      expect(JSON.stringify(withFlagOn)).toBe(JSON.stringify(today));
+      expect(withFlagOn.status).toBe("AI_PROPOSAL");
+    },
+  );
+
+  test.each(VERSIONS)(
+    "v%i con la bandera encendida y con la capacidad: el bloque llega y el Ledger se consulta UNA vez",
+    async (version) => {
+      const crosscheck = crosscheckerSpy();
+
+      const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+        auth: AUTH_USER,
+        data: { ...VALID_DATA, contractVersion: version, acceptsMexalmCrosscheck: true },
+      })) as any;
+
+      expect(crosscheck.crosscheck).toHaveBeenCalledTimes(1);
+      expect(result.mexalmCrosscheck).toEqual(CROSSCHECK_BLOCK);
+      // El bloque es aditivo: la página sigue exactamente igual que sin él.
+      expect(result.status).toBe("AI_PROPOSAL");
+      expect(result.operations).toHaveLength(1);
+    },
+  );
+
+  test("la capacidad en false explícito se trata igual que ausente, no como un consentimiento tácito", async () => {
+    const crosscheck = crosscheckerSpy();
+
+    const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+      auth: AUTH_USER,
+      data: { ...VALID_DATA, contractVersion: 5, acceptsMexalmCrosscheck: false },
+    })) as any;
+
+    expect(crosscheck.crosscheck).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty("mexalmCrosscheck");
+  });
+
+  test("una capacidad que no es booleana se RECHAZA antes de gastar, y el mensaje lo dice", async () => {
+    const crosscheck = crosscheckerSpy();
+    const provider = providerReturning(EXTRACTION_V4);
+
+    for (const bad of ["true", 1, null, {}, []]) {
+      const result = await createExtractLedgerPageHandler(deps({ crosscheck, provider }))({
+        auth: AUTH_USER,
+        data: { ...VALID_DATA, contractVersion: 5, acceptsMexalmCrosscheck: bad },
+      });
+      expect(result).toEqual({ code: "invalid-argument" });
+    }
+
+    // Rechazar no gasta: ni el Ledger ni el modelo se tocan.
+    expect(crosscheck.crosscheck).not.toHaveBeenCalled();
+    expect(provider.extract).not.toHaveBeenCalled();
+  });
+
+  /**
+   * La prueba de "app vieja contra servidor nuevo".
+   *
+   * `oldAppAcceptsResponse` es la regla del parser publicado, copiada del Kotlin. Se le pasa la
+   * respuesta REAL que produce el handler, no una inventada.
+   *
+   * Y se prueba en las dos direcciones a propósito: si la regla copiada aceptara también la
+   * respuesta CON el bloque, esta prueba estaría en verde sin demostrar nada —diría "la app vieja
+   * aguanta" cuando lo que pasa es que la regla copiada no se parece a la app vieja—.
+   */
+  describe("compatibilidad con la app publicada (≤ v48)", () => {
+    test.each(VERSIONS)(
+      "v%i bandera encendida y sin capacidad: la respuesta PASA la regla de la app vieja",
+      async (version) => {
+        const crosscheck = crosscheckerSpy();
+
+        const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+          auth: AUTH_USER,
+          data: { ...VALID_DATA, contractVersion: version },
+        })) as any;
+
+        expect(oldAppAcceptsResponse(result)).toBe(true);
+      },
+    );
+
+    test.each(VERSIONS)(
+      "v%i la MISMA respuesta con el bloque NO pasaría esa regla: la prueba discrimina",
+      async (version) => {
+        const crosscheck = crosscheckerSpy();
+
+        const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+          auth: AUTH_USER,
+          data: { ...VALID_DATA, contractVersion: version, acceptsMexalmCrosscheck: true },
+        })) as any;
+
+        expect(result.mexalmCrosscheck).toBeDefined();
+        expect(oldAppAcceptsResponse(result)).toBe(false);
+      },
     );
   });
 });

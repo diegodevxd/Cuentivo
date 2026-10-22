@@ -260,6 +260,21 @@ export type ExtractLedgerPageRequest = Readonly<{
   action: "extract_ledger_page";
   imageBase64: string;
   imageMimeType: ExtractLedgerPageImageMimeType;
+  /**
+   * Capacidad, no preferencia: la app dice si SABE leer el bloque `mexalmCrosscheck` en la
+   * respuesta.
+   *
+   * Existe porque la app que hoy tienen los clientes (≤ v48) compara el juego de llaves de la raíz
+   * y rechaza la página ENTERA ante una llave desconocida. Es decir: agregar el bloque a una
+   * respuesta que esa app va a leer no degrada un adorno, deja el escaneo mudo. Con este campo, el
+   * servidor sólo manda el bloque a quien lo pidió, y todo lo demás sigue recibiendo exactamente
+   * los bytes de siempre.
+   *
+   * Ausente significa `false`: una app que no lo manda es una app que no sabe leer el bloque, y no
+   * hay nada que interpretar. La bandera `MEXALM_LEDGER_CROSSCHECK` sigue siendo la que decide si
+   * la verificación existe; esto sólo decide a quién se le cuenta.
+   */
+  acceptsMexalmCrosscheck?: boolean;
 }>;
 
 export type ProposedLedgerKind = "PRIOR_DEBT" | "SALE" | "PAYMENT";
@@ -566,6 +581,16 @@ const EXTRACT_LEDGER_KEYS = [
   "imageMimeType",
 ] as const;
 
+/**
+ * Las llaves que la petición puede traer ADEMÁS de las cinco obligatorias. Hoy es una sola, y es
+ * una capacidad: `acceptsMexalmCrosscheck`.
+ *
+ * La lista es explícita y cerrada, igual que la de las obligatorias: una llave que no esté aquí
+ * sigue tumbando la petición. Lo único que cambia es que el juego exacto ya no es "cinco", sino
+ * "cinco más, opcionalmente, ésta".
+ */
+const EXTRACT_LEDGER_OPTIONAL_KEYS = ["acceptsMexalmCrosscheck"] as const;
+
 const ALLOWED_IMAGE_MIME_TYPES: readonly ExtractLedgerPageImageMimeType[] = [
   "image/jpeg",
   "image/png",
@@ -574,7 +599,8 @@ const ALLOWED_IMAGE_MIME_TYPES: readonly ExtractLedgerPageImageMimeType[] = [
 
 /**
  * Accepts contract v3, v4 or v5 extract_ledger_page allow-list: a plain non-null object whose only keys
- * are contractVersion, requestId, action, imageBase64 and imageMimeType, with contractVersion 3, 4 or 5,
+ * are contractVersion, requestId, action, imageBase64 and imageMimeType — plus, optionally, the
+ * boolean capability `acceptsMexalmCrosscheck` — with contractVersion 3, 4 or 5,
  * action "extract_ledger_page", a 36-character UUID, non-empty well-formed base64 image data of at
  * most MAX_LEDGER_IMAGE_BASE64_LENGTH code units, and an allowed mime type.
  *
@@ -600,10 +626,19 @@ export function validateExtractLedgerPageRequest(input: unknown): ExtractLedgerP
     }
     const record = input as Record<string, unknown>;
     const ownNames = Object.getOwnPropertyNames(record);
-    if (
-      ownNames.length !== EXTRACT_LEDGER_KEYS.length ||
-      !EXTRACT_LEDGER_KEYS.every((key) => Object.prototype.hasOwnProperty.call(record, key))
-    ) {
+    // El juego sigue siendo EXACTO: cinco llaves obligatorias, más opcionalmente la capacidad.
+    // Ni una de más ni una de menos. Se comprueba en las dos direcciones a propósito, porque un
+    // validador que sólo mira que "estén las obligatorias" deja pasar documentos con llaves que
+    // nadie revisó.
+    const hasEveryRequiredKey = EXTRACT_LEDGER_KEYS.every((key) =>
+      Object.prototype.hasOwnProperty.call(record, key),
+    );
+    const hasNoUnknownKey = ownNames.every(
+      (name) =>
+        (EXTRACT_LEDGER_KEYS as readonly string[]).includes(name) ||
+        (EXTRACT_LEDGER_OPTIONAL_KEYS as readonly string[]).includes(name),
+    );
+    if (!hasEveryRequiredKey || !hasNoUnknownKey) {
       return { ok: false, reason: "invalid-request" };
     }
     const version = record["contractVersion"];
@@ -634,6 +669,18 @@ export function validateExtractLedgerPageRequest(input: unknown): ExtractLedgerP
     ) {
       return { ok: false, reason: "invalid-request" };
     }
+    // La capacidad, si viene, es un booleano o no es nada. Se RECHAZA en vez de interpretarse, y la
+    // razón es concreta: en JavaScript el texto "false" es VERDADERO. Un validador que se tragara
+    // cualquier cosa y luego preguntara por truthiness mandaría el bloque —la llave que tumba el
+    // escaneo de la app ≤ v48— a un cliente que escribió "false". El resto de este validador
+    // tampoco adivina: rechaza, y el cliente se entera en vez de recibir otra cosa que la que pidió.
+    const acceptsMexalmCrosscheck = record["acceptsMexalmCrosscheck"];
+    if (
+      Object.prototype.hasOwnProperty.call(record, "acceptsMexalmCrosscheck") &&
+      typeof acceptsMexalmCrosscheck !== "boolean"
+    ) {
+      return { ok: false, reason: "invalid-request" };
+    }
     return {
       ok: true,
       value: {
@@ -642,6 +689,10 @@ export function validateExtractLedgerPageRequest(input: unknown): ExtractLedgerP
         action: EXTRACT_LEDGER_ACTION,
         imageBase64,
         imageMimeType: imageMimeType as ExtractLedgerPageImageMimeType,
+        // La llave sólo aparece en `value` cuando la petición la trajo. Así el valor validado de
+        // una petición vieja es EXACTAMENTE el mismo objeto que era antes de este cambio, y las
+        // pruebas que comparan contra él siguen diciendo la verdad.
+        ...(typeof acceptsMexalmCrosscheck === "boolean" ? { acceptsMexalmCrosscheck } : {}),
       },
     };
   } catch {

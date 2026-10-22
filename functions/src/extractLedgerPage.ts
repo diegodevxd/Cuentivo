@@ -187,6 +187,14 @@ export function createExtractLedgerPageHandler(
       return { code: "invalid-argument" };
     }
     const { contractVersion, requestId, imageBase64, imageMimeType } = validation.value;
+    /**
+     * La capacidad de leer el bloque, tal como la declaró ESTA petición.
+     *
+     * `=== true` y no truthiness: lo que llegó aquí ya pasó el validador, pero la comparación
+     * estricta deja dicho en el código que sólo un `true` booleano enciende nada. Ausente es
+     * `false`, que es el caso de toda app publicada antes de este cambio.
+     */
+    const acceptsMexalmCrosscheck = validation.value.acceptsMexalmCrosscheck === true;
 
     if (isAnonymousUser(request.auth as CallableAuth | undefined)) {
       deps.onRejected?.("ANONYMOUS_SESSION");
@@ -257,7 +265,9 @@ export function createExtractLedgerPageHandler(
       if (extraction === null) {
         return buildExtractLedgerResponse(contractVersion, requestId, "AI_UNAVAILABLE", null);
       }
-      const crosscheck = await runCrosscheck(deps, extraction);
+      const crosscheck = acceptsMexalmCrosscheck
+        ? await runCrosscheck(deps, extraction)
+        : null;
       return buildExtractLedgerResponse(contractVersion, requestId, "AI_PROPOSAL", extraction, crosscheck);
     } catch {
       const durationMillis = Math.max(0, deps.now() - providerStartTime);
@@ -269,6 +279,14 @@ export function createExtractLedgerPageHandler(
 
 /**
  * Corre la verificación cruzada, si está encendida.
+ *
+ * **Ojo: la bandera sola no basta.** Quien llama aquí sólo lo hace cuando la petición declaró
+ * `acceptsMexalmCrosscheck === true`. Son dos condiciones y las dos importan, pero por razones
+ * distintas: la bandera dice si el servidor verifica, y la capacidad dice si ESTA app sabe leer el
+ * bloque. Una app publicada antes de este cambio compara el juego de llaves de la raíz y rechaza la
+ * página entera ante una llave que no conoce, así que mandarle el bloque no es mandarle un adorno:
+ * es dejarle el escaneo mudo. Encender la bandera sin esta segunda condición rompería a todos los
+ * clientes viejos a la vez.
  *
  * Devuelve `null` cuando no hubo veredicto: la bandera apagada, la página sin texto que mandar,
  * o el Ledger que no pudo contestar. En esos casos la respuesta sale EXACTAMENTE como sale hoy,

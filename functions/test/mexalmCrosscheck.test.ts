@@ -31,6 +31,19 @@ const VALID_DATA = {
   imageMimeType: "image/jpeg",
 } as const;
 
+/**
+ * La petición de la app NUEVA: la misma de siempre más la capacidad de leer el bloque.
+ *
+ * Este archivo prueba la verificación cruzada, así que sus casos "con la bandera encendida" tienen
+ * que mandar lo que manda la app que puede leer el bloque. Sin la capacidad el servidor no manda
+ * nada —a propósito, porque la app ≤ v48 rechaza la página entera ante una llave raíz que no
+ * conoce—, y una prueba que esperara el bloque sin declararla estaría pidiendo el defecto.
+ *
+ * `VALID_DATA`, sin la capacidad, es la petición de la app publicada hoy, y se usa en los casos que
+ * justamente verifican que esa app sigue recibiendo los mismos bytes.
+ */
+const NEW_APP_DATA = { ...VALID_DATA, acceptsMexalmCrosscheck: true } as const;
+
 const AUTHORIZED: AuthorizeAiResult = {
   decision: "AI_AUTHORIZED",
   provider: "GEMINI",
@@ -265,16 +278,17 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         data: VALID_DATA,
       });
 
-      const crosscheck = vi.fn();
-      const withFlagOff = await createExtractLedgerPageHandler(
-        deps({ crosscheck: crosscheck as never }),
-      )({
+      // La bandera apagada se representa como la representa el composition root: `crosscheck` en
+      // null. Aquí NO se usa un verificador de mentira, y es a propósito: con la bandera apagada el
+      // servidor no tiene verificador que consultar, así que fingir uno probaría otra cosa —que la
+      // capacidad de la petición lo frena—, y esa propiedad tiene su propia prueba en
+      // `extractLedgerPage.test.ts`, con el verificador cableado y la petición vieja.
+      const withFlagOff = await createExtractLedgerPageHandler(deps({ crosscheck: null }))({
         auth: AUTH_USER,
         data: VALID_DATA,
       });
 
       expect(JSON.stringify(withFlagOff)).toBe(JSON.stringify(withoutFeature));
-      expect(crosscheck).not.toHaveBeenCalled();
       expect(withFlagOff).not.toHaveProperty("mexalmCrosscheck");
     });
 
@@ -294,7 +308,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(result.mexalmCrosscheck).toBeDefined();
@@ -309,11 +323,11 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const withCrosscheck = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
       const withoutCrosscheck = (await createExtractLedgerPageHandler(deps())({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(withCrosscheck.operations).toEqual(withoutCrosscheck.operations);
@@ -331,7 +345,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(result.mexalmCrosscheck.agreed).toBe(false);
@@ -358,7 +372,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       const fields = result.mexalmCrosscheck.disagreements.map((entry: any) => entry.field);
@@ -374,11 +388,11 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const withCrosscheck = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
       const withoutCrosscheck = (await createExtractLedgerPageHandler(deps())({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(JSON.stringify(withCrosscheck)).toBe(JSON.stringify(withoutCrosscheck));
@@ -397,11 +411,11 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const withCrosscheck = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
       const withoutCrosscheck = (await createExtractLedgerPageHandler(deps())({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(JSON.stringify(withCrosscheck)).toBe(JSON.stringify(withoutCrosscheck));
@@ -414,11 +428,11 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const withCrosscheck = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
       const withoutCrosscheck = (await createExtractLedgerPageHandler(deps())({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(JSON.stringify(withCrosscheck)).toBe(JSON.stringify(withoutCrosscheck));
@@ -431,11 +445,11 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const withCrosscheck = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
       const withoutCrosscheck = (await createExtractLedgerPageHandler(deps())({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(JSON.stringify(withCrosscheck)).toBe(JSON.stringify(withoutCrosscheck));
@@ -450,7 +464,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(result.mexalmCrosscheck.ledgerStatus).toBe("success");
@@ -475,7 +489,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(fetchImpl).not.toHaveBeenCalled();
@@ -490,7 +504,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       });
 
       const serialized = JSON.stringify(failures);
@@ -506,7 +520,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       const serialized = JSON.stringify(result.mexalmCrosscheck);
@@ -525,7 +539,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
 
       await createExtractLedgerPageHandler(deps({ crosscheck }))({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       });
 
       const body = JSON.parse(sentBody);
@@ -703,7 +717,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       // El encabezado va arriba y los renglones NO repiten el nombre: así es como la hoja lo trae.
@@ -720,7 +734,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         deps({ provider: providerReturning(AURORA_PAGE), crosscheck }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       // El Ledger no pudo leer la clienta: eso NO contradice a la lectura de la foto.
@@ -737,7 +751,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         deps({ provider: providerReturning(AURORA_PAGE), crosscheck }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(result.mexalmCrosscheck.agreed).toBe(false);
@@ -765,7 +779,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(JSON.parse(sentBody).text).toBe(
@@ -830,7 +844,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         deps({ provider: providerReturning(page), crosscheck: crosscheckerOver(captureFetch) }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       // Los renglones de Aurora quedan juntos, con un solo encabezado.
@@ -880,7 +894,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(result.mexalmCrosscheck.agreed).toBe(true);
@@ -946,7 +960,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       // El status dice lo que pasó...
@@ -965,7 +979,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       expect(result.mexalmCrosscheck.ledgerStatus).toBe("REVIEW_REQUIRED");
@@ -980,7 +994,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       // Con "OK" el Ledger sí dio veredicto, y un veredicto que no ve un renglón ES un desacuerdo.
@@ -1004,7 +1018,7 @@ describe("verificación cruzada con el Ledger de MexaLM", () => {
         deps({ provider: providerReturning(AURORA_TWELVE_ROWS), crosscheck }),
       )({
         auth: AUTH_USER,
-        data: VALID_DATA,
+        data: NEW_APP_DATA,
       })) as any;
 
       // El Ledger devolvió una operación: hay algo que comparar, y se compara.
@@ -1048,7 +1062,7 @@ describe("los renglones que el Ledger confirmó", () => {
 
     const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
       auth: AUTH_USER,
-      data: VALID_DATA,
+      data: NEW_APP_DATA,
     })) as any;
 
     expect(result.mexalmCrosscheck.agreed).toBe(true);
@@ -1060,7 +1074,7 @@ describe("los renglones que el Ledger confirmó", () => {
 
     const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
       auth: AUTH_USER,
-      data: VALID_DATA,
+      data: NEW_APP_DATA,
     })) as any;
 
     // El primer renglón coincide entero; el segundo discrepa en el monto.
@@ -1074,7 +1088,7 @@ describe("los renglones que el Ledger confirmó", () => {
       deps({ provider: providerReturning(AURORA_PAGE), crosscheck }),
     )({
       auth: AUTH_USER,
-      data: VALID_DATA,
+      data: NEW_APP_DATA,
     })) as any;
 
     // `agreed` en true: no hubo desacuerdos. Y la lista VACÍA: el Ledger no confirmó nada,
@@ -1097,7 +1111,7 @@ describe("los renglones que el Ledger confirmó", () => {
 
     const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
       auth: AUTH_USER,
-      data: VALID_DATA,
+      data: NEW_APP_DATA,
     })) as any;
 
     expect(result.mexalmCrosscheck.confirmedLineIndexes).toEqual([0, 1]);
@@ -1110,7 +1124,7 @@ describe("los renglones que el Ledger confirmó", () => {
       deps({ provider: providerReturning(TWELVE_ROWS), crosscheck }),
     )({
       auth: AUTH_USER,
-      data: VALID_DATA,
+      data: NEW_APP_DATA,
     })) as any;
 
     expect(result.mexalmCrosscheck.ledgerStatus).toBe("BLOCKED");
@@ -1130,7 +1144,7 @@ describe("los renglones que el Ledger confirmó", () => {
       deps({ provider: providerReturning(TWELVE_ROWS), crosscheck }),
     )({
       auth: AUTH_USER,
-      data: VALID_DATA,
+      data: NEW_APP_DATA,
     })) as any;
 
     // El caso del dueño: doce renglones, el Ledger de acuerdo, y los doce confirmados.

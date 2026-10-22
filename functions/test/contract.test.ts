@@ -527,3 +527,81 @@ describe("validateExtractLedgerPageRequest", () => {
     expect(res).toEqual({ ok: false, reason: "invalid-request" });
   });
 });
+
+/**
+ * `acceptsMexalmCrosscheck`: una capacidad OPCIONAL en la petición de la libreta.
+ *
+ * Existe porque la app publicada (≤ v48) rechaza la página entera ante una llave raíz que no
+ * conoce, así que el servidor no puede mandarle el bloque a ciegas. La valida el mismo validador
+ * estricto que todo lo demás, y con la misma política: si no es un booleano, se rechaza. No se
+ * "ignora", y no por gusto de pureza: en JavaScript el texto "false" es verdadero, así que un
+ * validador que se tragara cualquier cosa y después preguntara por truthiness le mandaría el bloque
+ * a un cliente que dijo "false". Rechazar es lo único que no tiene que adivinar nada.
+ */
+describe("validateExtractLedgerPageRequest: la capacidad de la verificación cruzada", () => {
+  const BASE = {
+    contractVersion: 5,
+    requestId: "123e4567-e89b-12d3-a456-426614174000",
+    action: "extract_ledger_page",
+    imageBase64: "aGVsbG8=",
+    imageMimeType: "image/jpeg",
+  } as const;
+
+  test.each([true, false])("accepts the capability as the boolean %s and carries it in the value", (capability) => {
+    const request = { ...BASE, acceptsMexalmCrosscheck: capability };
+    expect(validateExtractLedgerPageRequest(request)).toEqual({
+      ok: true,
+      value: { ...BASE, acceptsMexalmCrosscheck: capability },
+    });
+  });
+
+  test("an old request without the capability still validates to exactly the same value as before", () => {
+    const res = validateExtractLedgerPageRequest(BASE);
+    expect(res).toEqual({ ok: true, value: BASE });
+    // Y sin la llave: el valor validado de una petición vieja no gana un campo que no traía.
+    expect(res.ok && "acceptsMexalmCrosscheck" in res.value).toBe(false);
+  });
+
+  test.each([
+    ["string 'true'", "true"],
+    ["string 'false'", "false"],
+    ["number 1", 1],
+    ["number 0", 0],
+    ["null", null],
+    ["undefined", undefined],
+    ["object", {}],
+    ["array", []],
+  ])("rejects a non-boolean capability (%s) instead of guessing what it meant", (_desc, bad) => {
+    const res = validateExtractLedgerPageRequest({ ...BASE, acceptsMexalmCrosscheck: bad });
+    expect(res).toEqual({ ok: false, reason: "invalid-request" });
+  });
+
+  test("the capability does not open the door to any OTHER key", () => {
+    for (const extra of [
+      { acceptsMexalmCrosscheckPlus: true },
+      { knownCustomers: [] },
+      { acceptsMexalmCrosscheck: true, extraKey: true },
+      { acceptsMexalmCrosscheck: true, prompt: "hola" },
+    ]) {
+      expect(validateExtractLedgerPageRequest({ ...BASE, ...extra })).toEqual({
+        ok: false,
+        reason: "invalid-request",
+      });
+    }
+  });
+
+  test("the capability is not a substitute for a required key", () => {
+    const { imageMimeType: _omitted, ...withoutMimeType } = BASE;
+    expect(
+      validateExtractLedgerPageRequest({ ...withoutMimeType, acceptsMexalmCrosscheck: true }),
+    ).toEqual({ ok: false, reason: "invalid-request" });
+  });
+
+  test("the capability is accepted on every version: v3, v4 and v5", () => {
+    for (const contractVersion of [3, 4, 5] as const) {
+      expect(
+        validateExtractLedgerPageRequest({ ...BASE, contractVersion, acceptsMexalmCrosscheck: true }).ok,
+      ).toBe(true);
+    }
+  });
+});
