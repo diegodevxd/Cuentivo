@@ -1,4 +1,6 @@
 // Imported explicitly: inside the android { } block, `java` resolves to Gradle's java extension.
+import org.gradle.api.Action
+import org.gradle.api.execution.TaskExecutionGraph
 import java.util.Properties
 
 plugins {
@@ -12,6 +14,25 @@ plugins {
 
 room {
     schemaDirectory("$projectDir/schemas")
+}
+
+// The host of the local Functions emulator. Empty by default, and ONLY the debug build type ever
+// carries it:
+//   .\gradlew.bat assembleDebug -Pcuentivo.functionsEmulatorHost=127.0.0.1
+// On a physical phone 127.0.0.1 is the phone itself, so the loopback is opened with
+// `adb reverse tcp:5001 tcp:5001` (see HANDOFF_CUENTIVO1.md, section CUENTIVO3).
+// A release build can never carry the value: the property is read by the debug build type only,
+// and the guard at the end of this file fails the build if somebody sets it while building a
+// release.
+val functionsEmulatorHost = ((project.findProperty("cuentivo.functionsEmulatorHost") as? String) ?: "").trim()
+
+// A host is a bare host: no scheme, no path, no spaces. A value that cannot be one is a typo, and
+// saying so here beats shipping an app that silently cannot reach the emulator.
+if (functionsEmulatorHost.isNotEmpty() && !Regex("[A-Za-z0-9._:\\-]+").matches(functionsEmulatorHost)) {
+    throw GradleException(
+        "cuentivo.functionsEmulatorHost must be a bare host (for example 127.0.0.1 or localhost), " +
+            "but it was '$functionsEmulatorHost'."
+    )
 }
 
 android {
@@ -61,7 +82,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // The only build type that can talk to a local Functions emulator. Empty when the
+            // property was not given, which is the case for every ordinary build.
+            buildConfigField("String", "FUNCTIONS_EMULATOR_HOST", buildConfigStringLiteral(functionsEmulatorHost))
+        }
         release {
+            // Always empty. The property above is read by the debug build type only, so a release
+            // can never point Functions at a local emulator; the guard at the end of this file
+            // fails the build if somebody sets the property while building a release.
+            buildConfigField("String", "FUNCTIONS_EMULATOR_HOST", "\"\"")
             optimization {
                 enable = true
             }
@@ -167,3 +197,38 @@ afterEvaluate {
         inputs.file(rootProject.file("shared-fixtures/ledgerOperationFixtures.json"))
     }
 }
+
+/**
+ * A Java string literal for the generated BuildConfig.
+ *
+ * The host comes from a command-line property, so it is escaped: a stray quote would otherwise
+ * produce a BuildConfig that does not compile, with an error that points nowhere near the cause.
+ */
+fun buildConfigStringLiteral(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+// A release build must never point Firebase Functions at a local emulator.
+//
+// The property is read by the debug build type only, so a release always carries the empty string.
+// But somebody who sets the property and then builds a release would be silently ignored -- and
+// the next person to "fix" that could publish an app that talks to localhost. So the build fails.
+//
+// The trigger is the release variant's COMPILE tasks. The release variant also owns a few shared
+// preparation tasks -- the manifest, the version-control info, the Google Services file -- that a
+// DEBUG task pulls in on purpose (the unit tests pull `processReleaseMainManifest` in), and those
+// do not mean "a release build is happening".
+val appProject = project
+gradle.taskGraph.whenReady(Action<TaskExecutionGraph> {
+    val graph = this
+    if (functionsEmulatorHost.isEmpty()) return@Action
+    val releaseIsBeingBuilt = graph.allTasks.any { task ->
+        task.project == appProject && task.name.startsWith("compileRelease")
+    }
+    if (releaseIsBeingBuilt) {
+        throw GradleException(
+            "cuentivo.functionsEmulatorHost=$functionsEmulatorHost is set, but a release build must " +
+                "never point Firebase Functions at a local emulator. Build the debug variant " +
+                "instead: assembleDebug -Pcuentivo.functionsEmulatorHost=$functionsEmulatorHost"
+        )
+    }
+})

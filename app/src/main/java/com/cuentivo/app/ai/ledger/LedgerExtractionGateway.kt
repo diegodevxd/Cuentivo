@@ -1,12 +1,12 @@
 package com.cuentivo.app.ai.ledger
 
+import com.cuentivo.app.FUNCTIONS_REGION
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val CALLABLE_NAME = "extractLedgerPage"
-private const val REGION = "us-south1"
 private const val CONTRACT_VERSION_FIELD = 5
 private const val ACTION_VALUE = "extract_ledger_page"
 private const val MAX_LEDGER_OPERATIONS_WIRE = 25
@@ -465,7 +465,7 @@ private fun parseLedgerDiscardsWire(value: Any?): List<LedgerDiscardDiagnostic>?
  * [LedgerExtractionCallResult.Unavailable] without logging the image or anything read from it.
  */
 class LedgerExtractionGateway(
-    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance(REGION),
+    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance(FUNCTIONS_REGION),
 ) {
     suspend fun extractPage(
         requestId: String,

@@ -1,12 +1,12 @@
 package com.cuentivo.app.ai
 
+import com.cuentivo.app.FUNCTIONS_REGION
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val AVAILABILITY_CALLABLE_NAME = "getAiAvailability"
-private const val REGION = "us-south1"
 
 /**
  * Parses the raw callable response. Returns true if available, false if disabled,
@@ -26,7 +26,7 @@ internal fun parseAvailabilityResponse(data: Any?): Boolean? {
  * The server-side authorization remains authoritative and fails closed.
  */
 class FirebaseAiAvailabilityGateway(
-    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance(REGION),
+    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance(FUNCTIONS_REGION),
 ) : AiAvailabilityGateway {
 
     override suspend fun checkAvailability(): Boolean? {

@@ -1,5 +1,6 @@
 package com.cuentivo.app.billing
 
+import com.cuentivo.app.FUNCTIONS_REGION
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.CoroutineScope
@@ -12,7 +13,7 @@ import kotlinx.coroutines.withContext
  * `us-south1` `verifyAiSubscription` Firebase Callable.
  */
 class FirebaseCallableSubscriptionVerificationGateway(
-    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance("us-south1"),
+    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance(FUNCTIONS_REGION),
 ) : SubscriptionVerificationGateway {
 
     override fun verifySubscription(

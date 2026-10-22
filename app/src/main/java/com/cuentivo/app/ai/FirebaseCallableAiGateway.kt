@@ -1,5 +1,6 @@
 package com.cuentivo.app.ai
 
+import com.cuentivo.app.FUNCTIONS_REGION
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.Dispatchers
@@ -12,8 +13,6 @@ import kotlinx.coroutines.withContext
  */
 
 private const val CALLABLE_NAME = "interpretAiRequest"
-
-private const val REGION = "us-south1"
 
 private const val CONTRACT_VERSION_FIELD = 2
 
@@ -34,7 +33,7 @@ internal fun buildCallablePayload2(request: AiInterpretRequest): Map<String, Any
  * [CallableAiProposalResult.Unavailable] without logs.
  */
 class FirebaseCallableAiGateway(
-    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance(REGION),
+    private val functions: FirebaseFunctions = FirebaseFunctions.getInstance(FUNCTIONS_REGION),
 ) {
 
     suspend fun callContractV2(request: AiInterpretRequest): CallableAiProposalResult {
