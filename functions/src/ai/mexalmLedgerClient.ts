@@ -95,10 +95,10 @@ export interface MexalmLedgerClient {
 }
 
 /**
- * Plazo del Ledger. Corto a propósito: la lectura de la libreta es lo que importa y no puede
+ * Plazo del Ledger. Cubre los ~10-20 s que tarda una página completa en CPU; la lectura de la libreta es lo que importa y no puede
  * quedarse esperando a un servicio de terceros.
  */
-export const MEXALM_LEDGER_TIMEOUT_MILLIS = 8_000;
+export const MEXALM_LEDGER_TIMEOUT_MILLIS = 25_000;
 
 /**
  * Tope de texto que acepta el servicio (`text` de máximo 8 000 caracteres). Si la página supera
