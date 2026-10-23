@@ -421,6 +421,10 @@ export function confirmAgreedPairs(pairs: readonly OperationPair[]): number[] {
     if (gemini === undefined || ledger === undefined) {
       continue;
     }
+    // Si el propio Ledger marcó una duda en el renglón, que coincida con Gemini no confirma nada.
+    if ((ledger.uncertainFields?.length ?? 0) > 0 || (ledger.unreadableFields?.length ?? 0) > 0) {
+      continue;
+    }
     const geminiKind = opinion(gemini.proposedKind);
     const ledgerKind = opinion(ledger.proposedKind);
     if (geminiKind === undefined || ledgerKind === undefined || geminiKind !== ledgerKind) {

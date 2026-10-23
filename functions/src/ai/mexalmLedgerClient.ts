@@ -53,6 +53,13 @@ export type MexalmLedgerOperation = Readonly<{
    */
   customerName?: string | null;
   amountCents?: string;
+  /**
+   * Los campos que el propio Ledger marcó como dudosos o ilegibles en ESE renglón, tal cual. Un
+   * renglón con alguno no se puede dar por confirmado: el Ledger mismo dice que no está seguro.
+   * Si el Ledger manda algo que no es una lista, se guarda `["MALFORMED"]` (falla cerrado).
+   */
+  uncertainFields?: readonly string[];
+  unreadableFields?: readonly string[];
 }>;
 
 export type MexalmLedgerExtractResult = Readonly<{
@@ -159,7 +166,23 @@ function readOperation(value: unknown): MexalmLedgerOperation | null {
         ? { customerName: null }
         : {}),
     ...(typeof rawAmount === "string" ? { amountCents: rawAmount } : {}),
+    ...readFieldList(value, "uncertainFields"),
+    ...readFieldList(value, "unreadableFields"),
   };
+}
+
+function readFieldList(
+  value: Record<string, unknown>,
+  key: "uncertainFields" | "unreadableFields",
+): Partial<Record<typeof key, readonly string[]>> {
+  if (!(key in value)) {
+    return {};
+  }
+  const raw = value[key];
+  if (!Array.isArray(raw)) {
+    return { [key]: ["MALFORMED"] };
+  }
+  return { [key]: raw.map((field) => (typeof field === "string" ? field : "MALFORMED")) };
 }
 
 function isAbortLike(error: unknown): boolean {

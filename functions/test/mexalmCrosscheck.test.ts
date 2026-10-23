@@ -1117,6 +1117,74 @@ describe("los renglones que el Ledger confirmó", () => {
     expect(result.mexalmCrosscheck.confirmedLineIndexes).toEqual([0, 1]);
   });
 
+  test("un renglón que el propio Ledger marcó dudoso NO se confirma aunque coincida", async () => {
+    // Forma real del Ledger (rev 00007) para "$10 (o $10.50?)": el status de la página es OK,
+    // pero el renglón trae AMOUNT en uncertainFields.
+    const crosscheck = crosscheckerOver(
+      jsonResponse({
+        status: "OK",
+        needsReview: false,
+        operations: [
+          {
+            lineIndex: 0,
+            uncertainFields: ["AMOUNT"],
+            unreadableFields: [],
+            proposedKind: "SALE",
+            customerName: "Rosa",
+            amountCents: "25000",
+          },
+          {
+            lineIndex: 1,
+            uncertainFields: [],
+            unreadableFields: [],
+            proposedKind: "SALE",
+            customerName: "Toño",
+            amountCents: "3800",
+          },
+        ],
+      }),
+    );
+
+    const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+      auth: AUTH_USER,
+      data: NEW_APP_DATA,
+    })) as any;
+
+    expect(result.mexalmCrosscheck.confirmedLineIndexes).toEqual([1]);
+  });
+
+  test("un renglón con un campo ilegible o con dudas mal formadas NO se confirma", async () => {
+    const crosscheck = crosscheckerOver(
+      jsonResponse({
+        status: "OK",
+        operations: [
+          {
+            lineIndex: 0,
+            uncertainFields: [],
+            unreadableFields: ["DATE"],
+            proposedKind: "SALE",
+            customerName: "Rosa",
+            amountCents: "25000",
+          },
+          {
+            lineIndex: 1,
+            uncertainFields: "AMOUNT",
+            proposedKind: "SALE",
+            customerName: "Toño",
+            amountCents: "3800",
+          },
+        ],
+      }),
+    );
+
+    const result = (await createExtractLedgerPageHandler(deps({ crosscheck }))({
+      auth: AUTH_USER,
+      data: NEW_APP_DATA,
+    })) as any;
+
+    expect(result.mexalmCrosscheck.confirmedLineIndexes).toEqual([]);
+  });
+
   test("el Ledger que no leyó la página no confirma ningún renglón", async () => {
     const crosscheck = crosscheckerOver(jsonResponse({ status: "BLOCKED", operations: [] }));
 
