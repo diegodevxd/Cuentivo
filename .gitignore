@@ -1,0 +1,80 @@
+*.iml
+.gradle
+/.audit-betterorganitazion/
+/.idea/
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/.superpowers/
+# Kotlin compiler scratch: error logs and session files, regenerated on every build.
+.kotlin/
+
+# Independent legal websites, each with its own Git repository.
+/web/
+# Firebase Emulator Suite scratch, written into the repo root every time it runs.
+*-debug.log
+.firebase/
+__pycache__/
+*.py[cod]
+app/google-services.json
+# Release signing. Losing the keystore means never being able to update the app on Play again:
+# keep a backup somewhere safe, just never in git.
+keystore.properties
+*.jks
+*.keystore
+
+# Personal Claude Code overrides — not shared with the team.
+/.claude/settings.local.json
+
+# Respaldos del ledger: llevan nombres, telefonos y saldos de clientes reales.
+# Nunca a GitHub, ni siquiera por un `git add -A` distraido.
+backup-cuentivo-*/
+*.cuentivo-backup
+
+# Binarios de release y salidas de build: pesan megas y se regeneran con Gradle.
+*.apk
+*.aab
+/dist/
+/artifacts/
+
+# Firebase Functions local scaffold: compiled output and installed dependencies.
+/functions/lib/
+/functions/node_modules/
+/functions/coverage/
+
+# Local env of the Functions emulator: it can hold the MexaLM ledger token. Never commit it.
+/functions/.env
+/functions/.env.*
+/functions/.secret.local
+
+# Volcado de diagnóstico del Ledger de MexaLM: el texto exacto de la libreta de una clienta y la
+# respuesta completa del Ledger. Sólo existe en el emulador, y nunca a Git.
+/functions/.mexalm-debug/
+
+# --- Nunca a un repositorio público ---
+.env
+.env.*
+!.env.example
+functions/.env.*
+!functions/.env.example
+functions/.secret.local
+*.secret.local
+**/google-services.json
+GoogleService-Info.plist
+*service-account*.json
+*.p12
+*.pem
+!app/src/debug/res/raw/*.pem
+# Volcados de diagnóstico del Ledger: llevan texto de libretas reales.
+functions/.mexalm-debug/
+**/.mexalm-debug/

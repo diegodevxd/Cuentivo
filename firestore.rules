@@ -1,0 +1,230 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // businesses/{businessId}: ownerUserId (immutable), name, currency,
+    // timezone, createdAtEpochMillis (immutable), updatedAtEpochMillis.
+    // Each business owns members/{uid}, customers, products, sales,
+    // payments, movements and auditLogs. Monetary values are integer cents.
+    // Sales, items, payments, allocations and movements are append-only.
+    // Customer PII is never readable outside a business membership.
+
+    // Signed in is not enough: the address has to have been proven to exist. Every other function
+    // here hangs off this one, so an account that never opened its verification mail cannot read or
+    // write anything at all. The app checks the same thing, but the app is not the enforcement —
+    // this is. The claim is set by Firebase Auth itself and travels inside the signed ID token, so
+    // a modified client cannot assert it.
+    function isAuthenticated() { return request.auth != null && request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isAuthenticated() && request.auth.uid == userId; }
+    function uidUnchanged() { return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId; }
+    function uidNotModified() { return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId; }
+    function validString(value, min, max) { return value is string && value.size() >= min && value.size() <= max; }
+    function validOptionalString(data, key, max) { return !(key in data) || data[key] == null || (data[key] is string && data[key].size() <= max); }
+    function validEpoch(value) { return value is int && value >= 0 && value <= 4102444800000; }
+    function validMoney(value) { return value is int && value >= 0 && value <= 1000000000000; }
+    function hasExactKeys(data, keys) { return data.keys().hasAll(keys) && data.keys().hasOnly(keys); }
+    function memberPath(businessId, userId) { return /databases/$(database)/documents/businesses/$(businessId)/members/$(userId); }
+    function isMember(businessId) { return isAuthenticated() && exists(memberPath(businessId, request.auth.uid)) && get(memberPath(businessId, request.auth.uid)).data.status == 'ACTIVE'; }
+    function role(businessId) { return get(memberPath(businessId, request.auth.uid)).data.role; }
+    function canReadBusiness(businessId) { return isMember(businessId); }
+    function canWriteOperationalData(businessId) { return isMember(businessId) && role(businessId) in ['OWNER', 'ADMIN', 'EDITOR']; }
+    function canAdministerBusiness(businessId) { return isMember(businessId) && role(businessId) in ['OWNER', 'ADMIN']; }
+    function isBusinessOwner(businessId) { return isAuthenticated() && exists(/databases/$(database)/documents/businesses/$(businessId)) && get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerUserId == request.auth.uid; }
+
+    // The one-way door opened by `deletionRequestedAtEpochMillis` on the business document.
+    //
+    // Normal records stay append-only: every other `delete` below is `if false`. The sole exception
+    // is a business whose verified owner asked for it to be erased. Once the flag is present:
+    //   - Only that same owner may delete anything under the business, and
+    //   - the flag itself is immutable (`deletionFlagImmutable` on update), so the door cannot be
+    //     closed again to hide that the request happened.
+    // `exists()` guards `get()`: rules abort on get() of a missing document, and every delete of a
+    // subcollection document happens while the business document still exists (the client deletes
+    // children first, the business document last).
+    function deletionRequested(businessId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+        'deletionRequestedAtEpochMillis' in get(/databases/$(database)/documents/businesses/$(businessId)).data;
+    }
+    function canDeleteForDeletion(businessId) {
+      return isBusinessOwner(businessId) && deletionRequested(businessId);
+    }
+    // Once the owner has requested erasure, the flag can be neither removed nor changed. An update
+    // that drops it, or moves the timestamp, is rejected outright.
+    function deletionFlagImmutable(requestData, resourceData) {
+      return !('deletionRequestedAtEpochMillis' in resourceData) ||
+        (requestData.deletionRequestedAtEpochMillis == resourceData.deletionRequestedAtEpochMillis);
+    }
+
+    // The only document in the schema with an OPTIONAL key, and deliberately so.
+    // `deletionRequestedAtEpochMillis` is the owner asking for their business to be erased. It cannot
+    // be required, because every business written before this rule existed has six keys and would
+    // stop validating; and it cannot be left out of hasOnly, because then anything could be smuggled
+    // onto the document. So: the six stay mandatory, the seventh is allowed and validated if present.
+    //
+    // It is also a one-way door. Setting it opens the only `delete` path that exists anywhere in
+    // these rules: once the verified owner has asked for erasure, the same owner may delete every
+    // document under the business — the subcollections first, the business document last. Nothing
+    // short of that may ever delete: the flag can be set only by an owner update, and
+    // `deletionFlagImmutable` makes it impossible to remove or change once present, so a flag can
+    // never be cleared to pretend the request never happened. See docs/borrado-de-cuenta.md.
+    function validBusiness(data) {
+      return data.keys().hasAll(['name', 'ownerUserId', 'currency', 'timezone', 'createdAtEpochMillis', 'updatedAtEpochMillis']) &&
+        data.keys().hasOnly(['name', 'ownerUserId', 'currency', 'timezone', 'createdAtEpochMillis', 'updatedAtEpochMillis', 'deletionRequestedAtEpochMillis']) &&
+        validString(data.name, 1, 120) && validString(data.ownerUserId, 1, 128) &&
+        data.currency is string && data.currency.matches('^[A-Z]{3}$') &&
+        validString(data.timezone, 1, 80) && validEpoch(data.createdAtEpochMillis) && validEpoch(data.updatedAtEpochMillis) &&
+        (!('deletionRequestedAtEpochMillis' in data) || validEpoch(data.deletionRequestedAtEpochMillis));
+    }
+    function validMember(data) {
+      return hasExactKeys(data, ['businessId', 'userId', 'role', 'status', 'invitedAtEpochMillis', 'acceptedAtEpochMillis']) &&
+        validString(data.businessId, 1, 128) && validString(data.userId, 1, 128) &&
+        data.role in ['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'] && data.status in ['INVITED', 'ACTIVE', 'REMOVED'] &&
+        (data.invitedAtEpochMillis == null || validEpoch(data.invitedAtEpochMillis)) &&
+        (data.acceptedAtEpochMillis == null || validEpoch(data.acceptedAtEpochMillis));
+    }
+    function validCustomer(data) {
+      return hasExactKeys(data, ['businessId', 'name', 'normalizedName', 'phone', 'email', 'address', 'notes', 'creditLimitCents', 'isActive', 'createdAtEpochMillis', 'updatedAtEpochMillis', 'deletedAtEpochMillis']) &&
+        validString(data.businessId, 1, 128) && validString(data.name, 1, 160) && validString(data.normalizedName, 1, 200) &&
+        validOptionalString(data, 'phone', 40) && validOptionalString(data, 'email', 254) && validOptionalString(data, 'address', 500) && validOptionalString(data, 'notes', 2000) &&
+        (data.creditLimitCents == null || validMoney(data.creditLimitCents)) && data.isActive is bool &&
+        validEpoch(data.createdAtEpochMillis) && validEpoch(data.updatedAtEpochMillis) &&
+        (data.deletedAtEpochMillis == null || validEpoch(data.deletedAtEpochMillis));
+    }
+    function validProduct(data) {
+      return hasExactKeys(data, ['businessId', 'name', 'description', 'sku', 'category', 'salePriceCents', 'costPriceCents', 'stock', 'imageUri', 'isActive', 'createdAtEpochMillis', 'updatedAtEpochMillis', 'deletedAtEpochMillis']) &&
+        validString(data.businessId, 1, 128) && validString(data.name, 1, 160) &&
+        validOptionalString(data, 'description', 2000) && validOptionalString(data, 'sku', 100) && validOptionalString(data, 'category', 100) && validOptionalString(data, 'imageUri', 2048) &&
+        validMoney(data.salePriceCents) && (data.costPriceCents == null || validMoney(data.costPriceCents)) &&
+        (data.stock == null || (data.stock is int && data.stock >= 0 && data.stock <= 1000000000)) && data.isActive is bool &&
+        validEpoch(data.createdAtEpochMillis) && validEpoch(data.updatedAtEpochMillis) &&
+        (data.deletedAtEpochMillis == null || validEpoch(data.deletedAtEpochMillis));
+    }
+    function validSale(data, businessId) {
+      return hasExactKeys(data, ['businessId', 'customerId', 'sellerUserId', 'saleNumber', 'saleDateEpochDay', 'dueDateEpochDay', 'subtotalCents', 'discountCents', 'totalCents', 'isCanceled', 'notes', 'createdAtEpochMillis', 'updatedAtEpochMillis']) &&
+        data.businessId == businessId && validString(data.customerId, 1, 128) && data.sellerUserId == request.auth.uid && validString(data.saleNumber, 1, 128) &&
+        data.saleDateEpochDay is int && data.saleDateEpochDay >= 0 && (data.dueDateEpochDay == null || (data.dueDateEpochDay is int && data.dueDateEpochDay >= data.saleDateEpochDay)) &&
+        validMoney(data.subtotalCents) && validMoney(data.discountCents) && validMoney(data.totalCents) && data.totalCents == data.subtotalCents - data.discountCents &&
+        data.isCanceled is bool && validOptionalString(data, 'notes', 2000) && validEpoch(data.createdAtEpochMillis) && validEpoch(data.updatedAtEpochMillis);
+    }
+    function validSaleItem(data, saleId) {
+      return hasExactKeys(data, ['saleId', 'productId', 'productNameSnapshot', 'quantity', 'unitPriceCents', 'discountCents', 'subtotalCents']) &&
+        data.saleId == saleId && (data.productId == null || validString(data.productId, 1, 128)) && validString(data.productNameSnapshot, 1, 160) &&
+        data.quantity is int && data.quantity > 0 && data.quantity <= 1000000 && validMoney(data.unitPriceCents) && validMoney(data.discountCents) && validMoney(data.subtotalCents) &&
+        data.subtotalCents == data.quantity * data.unitPriceCents - data.discountCents;
+    }
+    function validPayment(data, businessId) {
+      return hasExactKeys(data, ['businessId', 'customerId', 'amountCents', 'paymentMethod', 'paymentDateEpochDay', 'reference', 'notes', 'createdByUserId', 'createdAtEpochMillis', 'canceledAtEpochMillis']) &&
+        data.businessId == businessId && validString(data.customerId, 1, 128) && validMoney(data.amountCents) && data.amountCents > 0 &&
+        data.paymentMethod in ['CASH', 'TRANSFER', 'CARD', 'OTHER', 'LEGACY_ONLINE', 'LEGACY_CASH'] && data.paymentDateEpochDay is int && data.paymentDateEpochDay >= 0 &&
+        validOptionalString(data, 'reference', 200) && validOptionalString(data, 'notes', 2000) && data.createdByUserId == request.auth.uid && validEpoch(data.createdAtEpochMillis) &&
+        (data.canceledAtEpochMillis == null || validEpoch(data.canceledAtEpochMillis));
+    }
+    function validAllocation(data, paymentId) {
+      return hasExactKeys(data, ['paymentId', 'saleId', 'amountCents']) && data.paymentId == paymentId && validString(data.saleId, 1, 128) && validMoney(data.amountCents) && data.amountCents > 0;
+    }
+    function validMovement(data, businessId) {
+      return hasExactKeys(data, ['businessId', 'customerId', 'saleId', 'paymentId', 'type', 'amountCents', 'direction', 'occurredAtEpochMillis', 'createdByUserId', 'reversesMovementId', 'notes']) &&
+        data.businessId == businessId && validString(data.customerId, 1, 128) && (data.saleId == null || validString(data.saleId, 1, 128)) && (data.paymentId == null || validString(data.paymentId, 1, 128)) &&
+        data.type in ['CHARGE', 'PAYMENT', 'ADJUSTMENT', 'REFUND', 'CANCELLATION'] && data.direction in ['DEBIT', 'CREDIT'] && validMoney(data.amountCents) && data.amountCents > 0 &&
+        validEpoch(data.occurredAtEpochMillis) && data.createdByUserId == request.auth.uid && (data.reversesMovementId == null || validString(data.reversesMovementId, 1, 128)) && validOptionalString(data, 'notes', 2000);
+    }
+
+    match /businesses/{businessId} {
+      allow create: if isOwner(request.resource.data.ownerUserId) && validBusiness(request.resource.data);
+      // The owner clause is what lets a reinstalled phone find its way home. canReadBusiness()
+      // requires the members document, which a wiped device cannot name because it no longer knows
+      // the businessId — so recovery would be impossible with membership as the only route in.
+      // ownerUserId is immutable on update, so this grants nobody anything they did not create.
+      //
+      // Order matters and is load-bearing, not style. isOwner() reads no documents, while
+      // canReadBusiness() spends an exists() and a get() on the member doc. Rules allow only ten
+      // such calls per query, evaluated per returned document, so putting canReadBusiness() first
+      // made the recovery query die once the account owned six businesses: 6 x 2 = 12 > 10, and the
+      // whole query was denied. With isOwner() first the || short-circuits and the owner's own
+      // documents cost nothing.
+      // The `resource == null` arm exists for one caller: the deletion retry. The cascade erases
+      // the business document last, and a retry must be able to *see* that the document is gone
+      // (an empty snapshot) — otherwise "already deleted" arrives as PERMISSION_DENIED and the
+      // account can never finish deleting itself. Reading a missing document reveals nothing, and
+      // the arm still demands a verified session; `resource == null` is false for every existing
+      // document, whose read keeps requiring ownership or an ACTIVE membership below. Using
+      // `resource == null` instead of `!exists(...)` costs no extra document reads, which the
+      // recovery query below depends on staying within Firestore's ten-call budget.
+      allow read: if (resource == null && isAuthenticated()) || isOwner(resource.data.ownerUserId) || canReadBusiness(businessId);
+      allow update: if isBusinessOwner(businessId) && validBusiness(request.resource.data) && deletionFlagImmutable(request.resource.data, resource.data) && request.resource.data.ownerUserId == resource.data.ownerUserId && request.resource.data.createdAtEpochMillis == resource.data.createdAtEpochMillis;
+      // The one deletion the schema allows anywhere: a verified owner erasing the business they
+      // asked to be erased. Everything else stays `delete: if false`.
+      allow delete: if canDeleteForDeletion(businessId);
+
+      match /members/{memberUserId} {
+        allow read: if canReadBusiness(businessId);
+        allow create: if validMember(request.resource.data) && request.resource.data.businessId == businessId && request.resource.data.userId == memberUserId &&
+          ((request.resource.data.role == 'OWNER' && request.resource.data.status == 'ACTIVE' && isOwner(memberUserId) && getAfter(/databases/$(database)/documents/businesses/$(businessId)).data.ownerUserId == memberUserId) ||
+           (isBusinessOwner(businessId) && request.resource.data.role != 'OWNER'));
+        allow update: if isBusinessOwner(businessId) && validMember(request.resource.data) && uidUnchanged() && uidNotModified() && request.resource.data.businessId == resource.data.businessId && resource.data.role != 'OWNER' && request.resource.data.role != 'OWNER';
+        // Removing a member is the owner's normal right — except the OWNER document itself, which
+        // only the erasure cascade may take, because the cascade must be able to delete every member
+        // including the owner's own.
+        allow delete: if canDeleteForDeletion(businessId) || (isBusinessOwner(businessId) && resource.data.role != 'OWNER');
+      }
+
+      match /customers/{customerId} {
+        allow read: if canReadBusiness(businessId);
+        allow create: if canWriteOperationalData(businessId) && validCustomer(request.resource.data) && request.resource.data.businessId == businessId;
+        allow update: if canWriteOperationalData(businessId) && validCustomer(request.resource.data) && request.resource.data.businessId == resource.data.businessId && request.resource.data.createdAtEpochMillis == resource.data.createdAtEpochMillis;
+        allow delete: if canDeleteForDeletion(businessId);
+      }
+      match /products/{productId} {
+        allow read: if canReadBusiness(businessId);
+        allow create: if canWriteOperationalData(businessId) && validProduct(request.resource.data) && request.resource.data.businessId == businessId;
+        allow update: if canWriteOperationalData(businessId) && validProduct(request.resource.data) && request.resource.data.businessId == resource.data.businessId && request.resource.data.createdAtEpochMillis == resource.data.createdAtEpochMillis;
+        allow delete: if canDeleteForDeletion(businessId);
+      }
+      match /sales/{saleId} {
+        allow read: if canReadBusiness(businessId);
+        allow create: if canWriteOperationalData(businessId) && validSale(request.resource.data, businessId) && exists(/databases/$(database)/documents/businesses/$(businessId)/customers/$(request.resource.data.customerId));
+        allow update: if false;
+        allow delete: if canDeleteForDeletion(businessId);
+        match /items/{itemId} {
+          allow read: if canReadBusiness(businessId);
+          allow create: if canWriteOperationalData(businessId) && validSaleItem(request.resource.data, saleId);
+          allow update: if false;
+          allow delete: if canDeleteForDeletion(businessId);
+        }
+      }
+      match /payments/{paymentId} {
+        allow read: if canReadBusiness(businessId);
+        allow create: if canWriteOperationalData(businessId) && validPayment(request.resource.data, businessId) && exists(/databases/$(database)/documents/businesses/$(businessId)/customers/$(request.resource.data.customerId));
+        allow update: if false;
+        allow delete: if canDeleteForDeletion(businessId);
+        match /allocations/{allocationId} {
+          allow read: if canReadBusiness(businessId);
+          allow create: if canWriteOperationalData(businessId) && validAllocation(request.resource.data, paymentId);
+          allow update: if false;
+          allow delete: if canDeleteForDeletion(businessId);
+        }
+      }
+      match /movements/{movementId} {
+        allow read: if canReadBusiness(businessId);
+        // CHARGE and PAYMENT are ordinary operational writes. CANCELLATION, REFUND and ADJUSTMENT
+        // change what an existing balance means, so they need OWNER or ADMIN. Mirrored client-side
+        // in domain/Permissions.kt — if one side changes, change both, or the client is only hiding
+        // buttons. validMovement already constrains type to these five values.
+        allow create: if canWriteOperationalData(businessId) && validMovement(request.resource.data, businessId) &&
+          (request.resource.data.type in ['CHARGE', 'PAYMENT'] || canAdministerBusiness(businessId)) &&
+          exists(/databases/$(database)/documents/businesses/$(businessId)/customers/$(request.resource.data.customerId));
+        allow update: if false;
+        allow delete: if canDeleteForDeletion(businessId);
+      }
+      match /auditLogs/{auditId} {
+        allow read: if canAdministerBusiness(businessId);
+        // Ordinary writes stay forbidden; only the erasure cascade may remove audit rows.
+        allow create, update: if false;
+        allow delete: if canDeleteForDeletion(businessId);
+      }
+    }
+  }
+}

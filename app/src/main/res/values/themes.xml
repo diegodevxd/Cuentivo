@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.Cuentivo" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- Cold-start ground: matches the Compose theme's graphite before the first frame so the
+             flash of white on launch disappears. -->
+        <item name="android:windowBackground">@color/cuentivo_window_background</item>
+    </style>
+</resources>

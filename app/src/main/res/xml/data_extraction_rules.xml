@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup and transfer rules for Android 12 and above (API 31+). backup_rules.xml covers older
+  devices and has to keep saying the same thing.
+
+  Both sections are locked down, not just cloud-backup. device-transfer is the phone-to-phone copy
+  during setup, and it is the easier one to forget: it moves data without ever touching Google's
+  servers, so "we don't upload anything" is not an answer to it.
+
+  Why nothing is included: cuentivo.db is a financial ledger, and the app binds it to one signed-in
+  account on purpose — LocalSessionGuard wipes the database when a different uid appears. A restore
+  happens before any of that runs, so it could seed a fresh install with somebody else's customers
+  and balances, and the two sets of books would then be mixed with no way to tell them apart.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="root" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="root" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

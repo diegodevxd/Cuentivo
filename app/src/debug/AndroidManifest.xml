@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Firebase Emulator Suite is HTTP-only on 10.0.2.2. This manifest is merged into debug builds
+      only; release keeps Android's cleartext traffic protection unchanged.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!--
+      Host for instrumented tests that need an Activity WITHOUT configChanges: rotating it
+      recreates it, which is the exact condition the ledger review saver exists to survive.
+      The production MainActivity absorbs orientation itself, so the recreation path needs its
+      own host to be exercised. Debug-only on purpose: it never ships, has no launcher intent,
+      and is reachable only from the test runner.
+    -->
+    <application
+        android:networkSecurityConfig="@xml/debug_network_security_config"
+        android:usesCleartextTraffic="true">
+        <activity
+            android:name="com.cuentivo.app.ui.LedgerLabHostActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Cuentivo" />
+    </application>
+</manifest>

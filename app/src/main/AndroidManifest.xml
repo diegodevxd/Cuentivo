@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Daily local collection reminders. Only requested on API 33+, only after the owner turns
+         the setting on, and never automatically — see the Account sheet. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Voice recognition for CuentivoAI dictation. Only requested when user taps mic button. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Queries declaration for Android 11+ package visibility required by SpeechRecognizer -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <!--
+      Backup is off on purpose. cuentivo.db is a financial ledger and the app deliberately binds it
+      to one signed-in account: LocalSessionGuard wipes it when a different uid appears. An automatic
+      restore runs before any of that could happen and would drop one person's customers, sales and
+      balances onto another person's phone. Recovery is the sync, not Google's backup.
+      The rules files below stay configured anyway, so flipping this flag back on later cannot
+      quietly start shipping the ledger off the device.
+    -->
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Cuentivo">
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Cuentivo"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/product_camera_paths" />
+        </provider>
+
+    </application>
+
+</manifest>
