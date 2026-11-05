@@ -1,7 +1,5 @@
 package com.cuentivo.app.domain
 
-import java.security.MessageDigest
-
 /**
  * Derives a stable, deterministic, and irreversible obfuscated account identifier for Google Play Billing.
  *
@@ -21,8 +19,6 @@ object BillingAccountHasher {
      */
     fun obfuscate(userId: String?): String? {
         if (userId.isNullOrBlank()) return null
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(userId.trim().toByteArray(Charsets.UTF_8))
-        return digest.joinToString("") { "%02x".format(it) }
+        return hexDigest(sha256(userId.trim().encodeToByteArray()))
     }
 }

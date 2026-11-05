@@ -14,6 +14,11 @@ kotlin {
         namespace = "com.cuentivo.shared"
         compileSdk = 36
         minSdk = 24
+
+        // Pruebas del código común que corren en la JVM del host (`:shared:testAndroidHostTest`),
+        // sin emulador. Es donde se ejecutan las pruebas de `commonTest` en esta máquina.
+        withHostTestBuilder {}.configure {
+        }
     }
 
     iosArm64()
@@ -21,6 +26,11 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            // Fechas de negocio (`...EpochDay`) sin `java.time`, disponible en Android e iOS.
+            implementation(libs.kotlinx.datetime)
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
         }
     }
 }
