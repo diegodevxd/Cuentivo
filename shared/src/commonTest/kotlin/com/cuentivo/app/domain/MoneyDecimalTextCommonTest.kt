@@ -48,6 +48,27 @@ class MoneyDecimalTextCommonTest {
         }
     }
 
+    /**
+     * Un exponente sin dígitos no es un número: `BigDecimal("1e+")` lanza, así que el parser tiene
+     * que rechazarlo igual. El signo del exponente es opcional, el dígito no.
+     */
+    @Test
+    fun an_exponent_without_digits_is_refused() {
+        listOf("1e+", "1e-", "1e", "e5", ".", "+", "-").forEach { text ->
+            assertNull(Money.centsFromPesos(text), "expected null for '$text'")
+        }
+    }
+
+    @Test
+    fun the_extreme_long_values_are_exact_like_big_decimal() {
+        // BigDecimal(...).movePointRight(2).longValueExact() los acepta: son Long.MAX_VALUE y
+        // Long.MIN_VALUE. Un centavo más ya no cabe.
+        assertEquals(Long.MAX_VALUE, Money.centsFromPesos("92233720368547758.07"))
+        assertEquals(Long.MIN_VALUE, Money.centsFromPesos("-92233720368547758.08"))
+        assertNull(Money.centsFromPesos("92233720368547758.08"))
+        assertNull(Money.centsFromPesos("-92233720368547758.09"))
+    }
+
     @Test
     fun exponent_notation_behaves_like_big_decimal() {
         assertEquals(100_000L, Money.centsFromPesos("1E3"))

@@ -108,7 +108,7 @@ internal fun centsFromDecimalText(raw: String): Long? {
     // "." and "+." carry no number at all; "5." and ".5" do.
     if (integerDigits == 0 && fractionDigits == 0) return null
 
-    var exponent = 0
+    var exponent = 0L
     if (index < text.length && (text[index] == 'e' || text[index] == 'E')) {
         index++
         var exponentNegative = false
@@ -119,44 +119,71 @@ internal fun centsFromDecimalText(raw: String): Long? {
                 index++
             }
         }
-        if (index >= text.length) return null
-        var magnitude = 0
+        // El exponente necesita al menos un dígito DESPUÉS del signo opcional: `BigDecimal("1e+")`
+        // y `BigDecimal("1e-")` lanzan, así que aquí también se rechazan.
+        if (index >= text.length || !text[index].isAsciiDigit()) return null
+        var magnitude = 0L
         while (index < text.length && text[index].isAsciiDigit()) {
-            magnitude = magnitude * 10 + (text[index] - '0')
-            // Anything this large overflows a Long after scaling anyway.
-            if (magnitude > 100_000) return null
+            // Se deja de acumular en cuanto pasa del máximo aceptable: más dígitos ya no cambian
+            // la respuesta y un Long no llega a desbordarse.
+            if (magnitude <= MAX_EXPONENT_MAGNITUDE) {
+                magnitude = magnitude * 10 + (text[index] - '0')
+            }
             index++
         }
+        // `BigDecimal` lanza Exponent overflow pasado este límite, y es asimétrico: acepta
+        // 2147483648 con signo + pero sólo 2147483647 con signo -.
+        val maxExponent = if (exponentNegative) 2_147_483_647L else MAX_EXPONENT_MAGNITUDE
+        if (magnitude > maxExponent) return null
         exponent = if (exponentNegative) -magnitude else magnitude
     }
     if (index != text.length) return null
 
-    var value = 0L
+    // La magnitud se acumula en ULong porque el caso exacto de `Long.MIN_VALUE` no cabe en el
+    // positivo de un Long: `-92233720368547758.08` pesos son -9223372036854775808 centavos y
+    // `BigDecimal.longValueExact()` los acepta. Con Long se rechazarían de más.
+    var magnitude = 0uL
     for (character in digits) {
-        val digit = character - '0'
-        if (value > (Long.MAX_VALUE - digit) / 10) return null
-        value = value * 10 + digit
+        val digit = (character - '0').toULong()
+        if (magnitude > (ULong.MAX_VALUE - digit) / 10uL) return null
+        magnitude = magnitude * 10uL + digit
     }
-    if (value == 0L) return 0L
+    val limit = if (negative) LONG_MIN_MAGNITUDE else Long.MAX_VALUE.toULong()
+    if (magnitude > limit) return null
+    // Cero es cero con cualquier exponente: `BigDecimal("0e801669")` da 0, no lanza.
+    if (magnitude == 0uL) return 0L
 
-    val shift = 2 + exponent - fractionDigits
+    val shift = 2L + exponent - fractionDigits
     if (shift >= 0) {
-        repeat(shift) {
-            if (value > Long.MAX_VALUE / 10) return null
-            value *= 10
+        // 10^19 ya supera cualquier magnitud válida; el tope evita un bucle de dos mil millones
+        // de vueltas cuando el exponente es enorme. Con magnitudes no nulas el resultado es null.
+        if (shift > 19) return null
+        repeat(shift.toInt()) {
+            if (magnitude > ULong.MAX_VALUE / 10uL) return null
+            magnitude *= 10uL
         }
+        if (magnitude > limit) return null
     } else {
-        var divisor = 1L
-        repeat(-shift) {
-            // Beyond 18 zeros the divisor itself overflows; only an exact zero survives, and that
-            // case already returned above.
-            if (divisor > Long.MAX_VALUE / 10) return null
-            divisor *= 10
+        // El divisor más grande que puede dividir a una magnitud válida es 10^19.
+        if (-shift > 19) return null
+        var divisor = 1uL
+        repeat((-shift).toInt()) {
+            if (divisor > ULong.MAX_VALUE / 10uL) return null
+            divisor *= 10uL
         }
-        if (value % divisor != 0L) return null
-        value /= divisor
+        if (magnitude % divisor != 0uL) return null
+        magnitude /= divisor
     }
-    return if (negative) -value else value
+    // La negación de `Long.MIN_VALUE` vuelve a dar `Long.MIN_VALUE` (complemento a dos), que es
+    // justo el valor que corresponde a la magnitud 2^63. Cualquier otra magnitud cabe en su signo.
+    val signed = magnitude.toLong()
+    return if (negative) -signed else signed
 }
+
+/** `9223372036854775808`, el valor absoluto de `Long.MIN_VALUE`. */
+private const val LONG_MIN_MAGNITUDE: ULong = 9223372036854775808uL
+
+/** El exponente positivo más grande que acepta `BigDecimal` (`Integer.MAX_VALUE + 1`). */
+private const val MAX_EXPONENT_MAGNITUDE: Long = 2_147_483_648L
 
 private fun Char.isAsciiDigit(): Boolean = this in '0'..'9'
