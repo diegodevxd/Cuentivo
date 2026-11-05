@@ -2,7 +2,6 @@ package com.cuentivo.app.ai.ledger
 
 import com.cuentivo.app.domain.CustomerNameNormalizer
 import com.cuentivo.app.domain.LedgerObjectionConfirmation
-import java.util.Collections
 
 enum class ProposedLedgerKind {
     PRIOR_DEBT,
@@ -101,10 +100,10 @@ data class LedgerOperation(
      * Defensive copy to guarantee snapshot immutability regardless of caller list modifications.
      */
     fun deepCopy(): LedgerOperation = copy(
-        uncertainFields = Collections.unmodifiableList(uncertainFields.toList()),
-        unreadableFields = Collections.unmodifiableList(unreadableFields.toList()),
-        items = Collections.unmodifiableList(items.toList()),
-        warnings = Collections.unmodifiableList(warnings.toList()),
+        uncertainFields = unmodifiableList(uncertainFields.toList()),
+        unreadableFields = unmodifiableList(unreadableFields.toList()),
+        items = unmodifiableList(items.toList()),
+        warnings = unmodifiableList(warnings.toList()),
         isObjectionConfirmed = isObjectionConfirmed,
         objectionConfirmedFingerprint = objectionConfirmedFingerprint,
     )
@@ -346,14 +345,14 @@ object LedgerReviewEngine {
         val resolvedOps = operations.map { MexalmCrosscheckConfirmation.resolveReadingDoubts(it, mexalmCrosscheck) }
 
         // Defensive copy: isolate snapshot from any caller modifications
-        val frozenOps: List<LedgerOperation> = Collections.unmodifiableList(
+        val frozenOps: List<LedgerOperation> = unmodifiableList(
             resolvedOps.map { it.deepCopy() }
         )
-        val frozenDiscards: List<LedgerDiscardDiagnostic> = Collections.unmodifiableList(
+        val frozenDiscards: List<LedgerDiscardDiagnostic> = unmodifiableList(
             discards.toList()
         )
 
-        val frozenBalances: Map<String, Long> = Collections.unmodifiableMap(
+        val frozenBalances: Map<String, Long> = unmodifiableMap(
             LinkedHashMap(existingCustomerBalances)
         )
 
@@ -410,7 +409,7 @@ object LedgerReviewEngine {
                             allFinancialDiagnostics.add(diag)
                         } else {
                             try {
-                                currentRunningBalance = Math.addExact(currentRunningBalance, cents)
+                                currentRunningBalance = addExact(currentRunningBalance, cents)
                                 groupExecutableOps.add(op)
                                 executableCount++
                                 salesCount++
@@ -429,7 +428,7 @@ object LedgerReviewEngine {
                             allFinancialDiagnostics.add(diag)
                         } else {
                             try {
-                                currentRunningBalance = Math.addExact(currentRunningBalance, cents)
+                                currentRunningBalance = addExact(currentRunningBalance, cents)
                                 groupExecutableOps.add(op)
                                 executableCount++
                                 priorDebtsCount++
@@ -456,7 +455,7 @@ object LedgerReviewEngine {
                             allFinancialDiagnostics.add(diag)
                         } else {
                             try {
-                                currentRunningBalance = Math.subtractExact(currentRunningBalance, cents)
+                                currentRunningBalance = subtractExact(currentRunningBalance, cents)
                                 groupExecutableOps.add(op)
                                 executableCount++
                                 paymentsCount++
@@ -482,9 +481,9 @@ object LedgerReviewEngine {
                     isNew = isNew,
                     previousBalanceCents = previousBalance,
                     resultingBalanceCents = currentRunningBalance,
-                    operations = Collections.unmodifiableList(ops.toList()),
-                    executableOperations = Collections.unmodifiableList(groupExecutableOps.toList()),
-                    financialDiagnostics = Collections.unmodifiableList(groupFinancialDiagnostics.toList()),
+                    operations = unmodifiableList(ops.toList()),
+                    executableOperations = unmodifiableList(groupExecutableOps.toList()),
+                    financialDiagnostics = unmodifiableList(groupFinancialDiagnostics.toList()),
                 )
             )
         }
@@ -506,13 +505,13 @@ object LedgerReviewEngine {
             paymentsCount = paymentsCount,
             priorDebtsCount = priorDebtsCount,
             excludedRowsCount = frozenDiscards.size,
-            financialDiagnostics = Collections.unmodifiableList(allFinancialDiagnostics.toList()),
+            financialDiagnostics = unmodifiableList(allFinancialDiagnostics.toList()),
             pageDateEpochDay = pageDateEpochDay,
             hasMissingDates = hasMissingDates,
         )
 
         return LedgerReview(
-            customerGroups = Collections.unmodifiableList(customerGroups.toList()),
+            customerGroups = unmodifiableList(customerGroups.toList()),
             operations = frozenOps,
             discards = frozenDiscards,
             unreadTextRemaining = unreadTextRemaining,
@@ -747,9 +746,9 @@ object LedgerReviewEdits {
     fun isAcceptableDate(date: SafeDateCandidate?, todayEpochDay: Long): Boolean {
         if (date == null) return false
         val day = runCatching {
-            java.time.LocalDate.of(date.year, date.month, date.day)
+            kotlinx.datetime.LocalDate(date.year, date.month, date.day)
         }.getOrNull() ?: return false
-        return day.toEpochDay() <= todayEpochDay
+        return day.toEpochDays().toLong() <= todayEpochDay
     }
 
     /**
@@ -818,3 +817,14 @@ object LedgerReviewEdits {
         lineIndex: Int,
     ): List<LedgerOperation> = operations.filterNot { it.lineIndex == lineIndex }
 }
+
+/**
+ * `Collections.unmodifiableList` de Java, que no existe en común.
+ *
+ * En Kotlin la interfaz `List` ya es de sólo lectura y los llamadores reciben `toList()`, que es una
+ * copia; lo que se pierde es el envoltorio de Java, no la garantía.
+ */
+private fun <T> unmodifiableList(list: List<T>): List<T> = list
+
+/** Igual que [unmodifiableList], para mapas. */
+private fun <K, V> unmodifiableMap(map: Map<K, V>): Map<K, V> = map

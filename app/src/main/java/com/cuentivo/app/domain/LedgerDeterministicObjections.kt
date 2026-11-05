@@ -381,7 +381,9 @@ object LedgerDeterministicObjections {
         }
 
         for (total in pageTotals) {
-            val block = operations.filter { total.afterLineIndex == null || it.lineIndex <= total.afterLineIndex }
+            // A una local: el smart cast no cruza el borde de módulo (`afterLineIndex` vive en :shared).
+            val afterLineIndex = total.afterLineIndex
+            val block = operations.filter { afterLineIndex == null || it.lineIndex <= afterLineIndex }
             val expected = block.sumOf { op ->
                 val cents = op.amountCents?.toLongOrNull() ?: 0L
                 if (op.proposedKind == com.cuentivo.app.ai.ledger.ProposedLedgerKind.PAYMENT) -cents else cents

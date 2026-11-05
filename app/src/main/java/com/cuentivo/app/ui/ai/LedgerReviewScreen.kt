@@ -1366,10 +1366,12 @@ private fun LedgerOperationRow(
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                     )
-                    if (operation.customerName != null) {
+                    // A una local: el smart cast no cruza el borde de módulo (LedgerOperation es de :shared).
+                    val customerName = operation.customerName
+                    if (customerName != null) {
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = operation.customerName,
+                            text = customerName,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,

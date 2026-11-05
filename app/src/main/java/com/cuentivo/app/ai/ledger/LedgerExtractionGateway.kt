@@ -44,12 +44,6 @@ sealed interface LedgerExtractionCallResult {
     data object EntitlementRequired : LedgerExtractionCallResult
 }
 
-/** The page date the server read off the sheet, with how sure it was. Never applied on its own. */
-data class LedgerDetectedPageDate(
-    val date: SafeDateCandidate,
-    val confidence: Double,
-)
-
 /** The operations the server read from the page, plus whether the page fitted. */
 data class LedgerExtractionPayload(
     val operations: List<LedgerOperation>,

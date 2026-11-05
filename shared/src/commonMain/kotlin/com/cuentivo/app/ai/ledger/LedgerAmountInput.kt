@@ -34,8 +34,8 @@ object LedgerAmountInput {
         val whole = cleaned.substringBefore('.')
         val fraction = cleaned.substringAfter('.', "").padEnd(2, '0')
         return try {
-            val cents = Math.addExact(
-                Math.multiplyExact(whole.toLong(), 100L),
+            val cents = addExact(
+                multiplyExact(whole.toLong(), 100L),
                 fraction.toLong(),
             )
             cents.toString()

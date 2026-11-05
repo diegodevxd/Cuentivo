@@ -85,10 +85,10 @@ object LedgerYearCorrection {
             .filter { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }
             .map { it.lineIndex }
             .toSet()
+        // `date` a una local: el smart cast no cruza el borde de módulo (LedgerOperation es de :shared).
         val candidates = operations.filter { op ->
-            op.lineIndex in dateObjectionLineIndices &&
-                op.date != null &&
-                op.date.year != targetYear
+            val date = op.date
+            op.lineIndex in dateObjectionLineIndices && date != null && date.year != targetYear
         }
         if (candidates.size < 2) return null
 
