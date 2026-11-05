@@ -170,6 +170,10 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.room.runtime)
+    // room-ktx se queda en Android y sólo por `withTransaction`, que no existe en común: los tres
+    // usos vivos están en MainActivity, LegacyMigrationRepository y RemoteMerger, todos de este
+    // módulo. El código de :shared no transacciona con eso; cuando lo necesite, la forma común es
+    // `useWriterConnection { it.immediateTransaction { } }`.
     implementation(libs.androidx.room.ktx)
     testImplementation(libs.junit)
     testImplementation("org.json:json:20240303")
