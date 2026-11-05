@@ -1,7 +1,5 @@
 package com.cuentivo.app.domain
 
-import java.math.BigDecimal
-
 /**
  * One ledger line of a single customer's statement, already scoped to one business.
  * The caller formats the date; this layer stays free of time zones and Android.
@@ -36,8 +34,8 @@ data class StatementEntry(
 /**
  * Builds the CSV export of a customer's account statement (Fase 5).
  *
- * Pure integer arithmetic over cents; the only decimal conversion is the same
- * BigDecimal.valueOf(cents, 2) boundary the UI uses. The running balance follows the ledger's
+ * Pure integer arithmetic over cents; the text of each amount comes from the same
+ * `decimalTextFromCents` boundary the UI uses. The running balance follows the ledger's
  * convention: DEBIT increases what the customer owes, CREDIT decreases it.
  *
  * Scope note: entries must belong to ONE customer. A statement never mixes customers — the master
@@ -78,7 +76,7 @@ object CustomerStatementCsv {
     }
 
     /** "15050" cents → "150.50". Negative balances keep their sign. */
-    private fun pesos(cents: Long): String = BigDecimal.valueOf(cents, 2).toPlainString()
+    private fun pesos(cents: Long): String = decimalTextFromCents(cents)
 
     private fun escape(value: String): String =
         if (value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) {
