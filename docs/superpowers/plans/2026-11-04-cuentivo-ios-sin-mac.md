@@ -260,3 +260,26 @@ acepte un `.ipa` externo; si no, esta fase se descarta.
 ## Pendientes (los llena el implementador)
 
 - `XlsxReader` (usa `ZipInputStream`): pendiente para iOS.
+- **Los `actual` de iOS no se compilan en Windows.** `Hashing.ios.kt` (CommonCrypto), `Normalization.ios.kt`
+  (`decomposedStringWithCanonicalMapping`) y `Money.ios.kt` (`NSNumberFormatter`) sólo los valida el
+  runner macOS de `ios-build.yml`. Cualquier error de interop ahí aparece en CI, no aquí.
+- **20 archivos de `domain/` siguen en `app` porque importan `com.cuentivo.app.ai.ledger`**, que no
+  está en `:shared`: `AiLedgerBatchPlanner`, `LedgerBatchCoordinator`, `LedgerCentPatternDetector`,
+  `LedgerCorrectionCounter`, `LedgerCustomerMatching`, `LedgerDeterministicObjections`,
+  `LedgerDueDatePolicy`, `LedgerDuplicateBlocking`, `LedgerDuplicateDetector`, `LedgerEffectiveDate`,
+  `LedgerFieldHealth`, `LedgerImportMetricRecorder`, `LedgerImportSummaryCalculator`,
+  `LedgerItemsDescription`, `LedgerObjectionConfirmation`, `LedgerPageCompleteness`,
+  `LedgerPageResolution`, `LedgerPendingInDoubt`, `LedgerProductMatching`, `LedgerYearCorrection`.
+  Moverlos exige decidir antes si `ai/ledger` va a `:shared` (no está en este plan).
+- **4 archivos esperan a la Fase 3** porque usan entidades de Room: `LegacyMigrationPlanner`,
+  `OpeningBalance`, `OpeningBalancePlanner`, `StatementCustomerRefresh`. Con ellos se desbloquean
+  seis más que dependen de ellos: `BusinessDeletionPlanner`, `LedgerConfirmAndRefresh`,
+  `LedgerConfirmRefreshDecision`, `LedgerOldDatesBulkCorrection`, `NewCustomerDraft`,
+  `ProductSheetParser`.
+- **Los 6 repositorios y `LegacyMigrationRepository`** son F3.4 por definición.
+- **~120 pruebas siguen en `app/src/test`**, no en `commonTest`, porque prueban archivos que aún no
+  se movieron (`Ledger*`, `OpeningBalance*`, `Migration*`, los DAO, la UI). `LedgerEntityMatcherTest`
+  es el único caso de un archivo ya movido cuya prueba no pudo seguir: usa tipos de `ai.ledger`.
+- `android-check.yml` genera un `app/google-services.json` de relleno porque el real no está en git
+  y el plugin de Google Services lo exige para compilar. Sólo sirve para pruebas unitarias.
+
