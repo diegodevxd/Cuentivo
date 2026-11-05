@@ -262,7 +262,10 @@ class BillingGateway(
                         )
                         .setObfuscatedAccountId(decision.obfuscatedAccountId)
 
-                    if (decision.productToReplace != null && decision.replacementMode != null) {
+                    // `replacementMode` se lee a una local: el smart cast no cruza el borde de módulo
+                    // (`decision` viene de :shared), y sin él el `when` de abajo no es exhaustivo.
+                    val replacementMode = decision.replacementMode
+                    if (decision.productToReplace != null && replacementMode != null) {
                         val existingPurchase = purchases.firstOrNull { purchase ->
                             purchase.purchaseState == Purchase.PurchaseState.PURCHASED &&
                                 purchase.products.contains(decision.productToReplace)
@@ -272,7 +275,7 @@ class BillingGateway(
                             return@queryPurchasesAsync
                         }
 
-                        val playReplacementMode = when (decision.replacementMode) {
+                        val playReplacementMode = when (replacementMode) {
                             ReplacementMode.CHARGE_PRORATED ->
                                 BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_PRORATED_PRICE
                             ReplacementMode.DEFERRED ->

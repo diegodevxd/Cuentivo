@@ -33,8 +33,9 @@ object LedgerProductMatching {
             val amountCents = op.amountCents?.toLongOrNull()
             val result = LedgerEntityMatcher.matchProduct(queryText, amountCents, candidates, rawText = rawText)
             if (result.decision == MatchDecision.UNRESOLVED || result.candidate == null) continue
+            val candidate = result.candidate ?: continue
             // If description already matches exact product name after normalization, don't offer
-            if (!description.isNullOrBlank() && CustomerNameNormalizer.key(result.candidate.name) == CustomerNameNormalizer.key(description)) continue
+            if (!description.isNullOrBlank() && CustomerNameNormalizer.key(candidate.name) == CustomerNameNormalizer.key(description)) continue
             matches[op.lineIndex] = result
         }
         return matches

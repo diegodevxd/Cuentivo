@@ -13,7 +13,10 @@ package com.cuentivo.app.domain
  *
  * El mensaje se lee **desde el lado del cliente**: para él una compra no es "menos" nada.
  */
-internal object StatementLineFormat {
+// Público y no `internal`: sus pruebas viven todavía en `app/src/test`, que es otro módulo y no ve
+// lo interno. El código es el mismo; cuando las pruebas se muevan a `shared/src/commonTest` (F1.4)
+// puede volver a `internal`.
+object StatementLineFormat {
 
     /** `03/08/2026 · Compra · $799.00` */
     fun movementLine(entry: StatementEntry): String {

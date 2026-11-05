@@ -80,7 +80,9 @@ object StatementImage {
         )
     }
 
-    internal const val TITLE_WITHOUT_BUSINESS_NAME = "Estado de cuenta"
-    internal const val BALANCE_LABEL = "Saldo pendiente"
-    internal const val SETTLED_LABEL = "Tu cuenta está al corriente"
+    // Públicas y no `internal` por la misma razón que StatementLineFormat: las pruebas que las
+    // verifican viven en `app/src/test`, que es otro módulo y no ve lo interno.
+    const val TITLE_WITHOUT_BUSINESS_NAME = "Estado de cuenta"
+    const val BALANCE_LABEL = "Saldo pendiente"
+    const val SETTLED_LABEL = "Tu cuenta está al corriente"
 }

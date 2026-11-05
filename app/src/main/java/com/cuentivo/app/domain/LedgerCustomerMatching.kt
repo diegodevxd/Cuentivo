@@ -30,9 +30,10 @@ object LedgerCustomerMatching {
             if (name.isNullOrBlank()) continue
             val result = LedgerEntityMatcher.matchCustomer(name, candidates)
             if (result.decision == MatchDecision.UNRESOLVED || result.candidate == null) continue
+            val candidate = result.candidate ?: continue
             // An exact match adds nothing: the planner already resolves those by normalized name,
             // and offering "is this Rosa?" over a row that plainly says Rosa is noise.
-            if (CustomerNameNormalizer.key(result.candidate.name) == CustomerNameNormalizer.key(name)) continue
+            if (CustomerNameNormalizer.key(candidate.name) == CustomerNameNormalizer.key(name)) continue
             matches[op.lineIndex] = result
         }
         return matches
