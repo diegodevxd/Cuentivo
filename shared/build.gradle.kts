@@ -64,6 +64,10 @@ kotlin {
             implementation(compose.material3)
             implementation(compose.ui)
         }
+        iosMain.dependencies {
+            // SQLite empaquetado: iOS no trae un driver utilizable desde Room.
+            implementation(libs.androidx.sqlite.bundled)
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
