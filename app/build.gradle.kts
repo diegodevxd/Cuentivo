@@ -129,6 +129,9 @@ android {
 }
 
 dependencies {
+    // Dominio puro compartido con la app de iOS (Kotlin Multiplatform). El paquete se conserva
+    // (`com.cuentivo.app.domain`), así que ningún import de `app` cambia.
+    implementation(project(":shared"))
     // Backports java.time to API 24. Paired with isCoreLibraryDesugaringEnabled above; neither one
     // does anything without the other.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")

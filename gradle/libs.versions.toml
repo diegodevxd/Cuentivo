@@ -33,6 +33,9 @@ androidx-room-testing = { group = "androidx.room", name = "room-testing", versio
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+# AGP 9: el plugin Android para librerías Kotlin Multiplatform. No es `com.android.library`.
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 room = { id = "androidx.room", version.ref = "room" }

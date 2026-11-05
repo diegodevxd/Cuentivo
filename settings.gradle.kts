@@ -24,4 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "OrganizationLabs"
 include(":app")
+include(":shared")
  
