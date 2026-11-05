@@ -1,0 +1,10 @@
+# Identidad de la app en App Store Connect.
+#
+# El equipo y la llave NO viven aquí: se leen de variables de entorno, que en CI salen de los
+# secretos del repositorio (ver docs/ios-dia-de-pago.md). Este archivo se puede comitear sin
+# secretos.
+app_identifier "com.cuentivo.app"
+apple_id ENV["APPLE_ID"] if ENV["APPLE_ID"]
+team_id ENV["APPLE_TEAM_ID"] if ENV["APPLE_TEAM_ID"]
+
+for_platform :ios

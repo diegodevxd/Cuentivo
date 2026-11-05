@@ -60,3 +60,10 @@ backup-cuentivo-*/
 # Volcado de diagnóstico del Ledger de MexaLM: el texto exacto de la libreta de una clienta y la
 # respuesta completa del Ledger. Sólo existe en el emulador, y nunca a Git.
 /functions/.mexalm-debug/
+# iOS: el plist de Firebase se baja a mano y en CI se decodifica desde el secreto.
+iosApp/iosApp/GoogleService-Info.plist
+# Artefactos de fastlane
+fastlane/report.xml
+fastlane/screenshots
+fastlane/test_output
+build/

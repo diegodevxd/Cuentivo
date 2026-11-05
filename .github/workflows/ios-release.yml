@@ -1,0 +1,73 @@
+# Subida a TestFlight. Sólo a mano: cada corrida consume minutos de macOS y sube una build real.
+#
+# Sin la cuenta de Apple y sus secretos esto no puede funcionar, así que el primer paso lo dice en
+# claro y termina en rojo con un mensaje legible, en vez de dejar que fastlane falle con un error
+# críptico de autenticación.
+name: ios-release
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-release
+  cancel-in-progress: false
+
+jobs:
+  beta:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verificar cuenta de Apple y secretos
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          missing=""
+          [ -z "$ASC_KEY_ID" ] && missing="$missing ASC_KEY_ID"
+          [ -z "$ASC_ISSUER_ID" ] && missing="$missing ASC_ISSUER_ID"
+          [ -z "$ASC_KEY_P8" ] && missing="$missing ASC_KEY_P8"
+          [ -z "$APPLE_TEAM_ID" ] && missing="$missing APPLE_TEAM_ID"
+          [ -z "$GOOGLE_SERVICE_INFO_PLIST" ] && missing="$missing GOOGLE_SERVICE_INFO_PLIST"
+          if [ -n "$missing" ]; then
+            echo "::error::Falta la cuenta de Apple o un secreto: ver docs/ios-dia-de-pago.md"
+            echo "Faltan:$missing"
+            exit 1
+          fi
+
+      - name: GoogleService-Info.plist desde el secreto
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > iosApp/iosApp/GoogleService-Info.plist
+          # Sólo para confirmar que se decodificó algo con forma de plist, sin imprimir su contenido.
+          grep -q "<plist" iosApp/iosApp/GoogleService-Info.plist \
+            || { echo "::error::GOOGLE_SERVICE_INFO_PLIST no es base64 de un plist"; exit 1; }
+
+      - name: JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Instalar fastlane
+        run: bundle install
+
+      - name: Subir a TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bundle exec fastlane beta
