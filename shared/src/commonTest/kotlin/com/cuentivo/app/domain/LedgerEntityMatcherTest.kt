@@ -174,8 +174,10 @@ class LedgerEntityMatcherTest {
             }
         }.inWholeMilliseconds
 
+        // 5 s y no 2 s: el binario de pruebas de Kotlin/Native va sin optimizar y en la VM de CI midió
+        // 3.1 s. Un algoritmo cuadrático tardaría cientos de veces más, así que aquí sigue cayendo.
         assertTrue(
-            elapsed < 2_000,
+            elapsed < 5_000,
             "25 renglones contra 552 productos tardaron $elapsed ms: eso ya no es ruido de maquina",
         )
     }

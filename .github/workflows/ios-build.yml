@@ -79,6 +79,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/iosDerivedData \
             CODE_SIGNING_ALLOWED=NO \
+            ARCHS=arm64 \
             build
 
       - name: Subir el .app del simulador
