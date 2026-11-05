@@ -1,6 +1,6 @@
 package com.cuentivo.app.domain
 
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 
 /** What the daily collection reminder says, derived purely from Room rows and the local date. */
 sealed interface OverdueReminder {
@@ -20,7 +20,7 @@ sealed interface OverdueReminder {
 object OverdueReminderPolicy {
     fun summarize(dueSales: List<DueSale>, today: LocalDate): OverdueReminder? {
         val overdue = dueSales.filter {
-            it.dueDateEpochDay < today.toEpochDay() && it.outstandingCents > 0
+            it.dueDateEpochDay < today.toEpochDays() && it.outstandingCents > 0
         }
         return when (overdue.size) {
             0 -> null

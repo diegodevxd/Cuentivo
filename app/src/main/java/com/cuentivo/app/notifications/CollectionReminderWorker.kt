@@ -22,7 +22,9 @@ import com.cuentivo.app.domain.OverdueReminder
 import com.cuentivo.app.domain.OverdueReminderPolicy
 import com.cuentivo.app.settings.CollectionReminderPreferences
 import com.google.firebase.auth.FirebaseAuth
-import java.time.LocalDate
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 
 /**
  * The daily local collection reminder.
@@ -54,7 +56,7 @@ class CollectionReminderWorker(context: Context, parameters: WorkerParameters) :
                         outstandingCents = row.outstandingCents,
                     )
                 },
-                today = LocalDate.now(),
+                today = Clock.System.todayIn(TimeZone.currentSystemDefault()),
             ) ?: return Result.success()
             showNotification(summary)
             Result.success()
