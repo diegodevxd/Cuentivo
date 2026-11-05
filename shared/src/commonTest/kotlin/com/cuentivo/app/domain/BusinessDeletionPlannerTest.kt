@@ -1,9 +1,9 @@
 package com.cuentivo.app.domain
 
 import com.cuentivo.app.domain.BusinessDeletionPlanner.Inventory
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * Pins the two properties of the deletion cascade that Firestore itself enforces:
@@ -37,7 +37,7 @@ class BusinessDeletionPlannerTest {
         val all = batches.flatMap { it.documentPaths }
         val itemIndexes = listOf("i1", "i2").map { itemId -> all.indexOf("businesses/b1/sales/s1/items/$itemId") }
         val saleIndex = all.indexOf("businesses/b1/sales/s1")
-        itemIndexes.forEach { assertTrue("item must come before its sale", it < saleIndex) }
+        itemIndexes.forEach { assertTrue(it < saleIndex, "item must come before its sale") }
     }
 
     @Test
@@ -75,9 +75,9 @@ class BusinessDeletionPlannerTest {
 
         val all = batches.flatMap { it.documentPaths }
         val businessIndex = all.indexOf("businesses/b1")
-        assertEquals("business document must be the last path of the last batch", all.lastIndex, businessIndex)
+        assertEquals(all.lastIndex, businessIndex, "business document must be the last path of the last batch")
         all.forEachIndexed { index, path ->
-            if (index < businessIndex) assertTrue("$path must come before the business document", true)
+            if (index < businessIndex) assertTrue(true, "$path must come before the business document")
         }
     }
 
@@ -93,7 +93,7 @@ class BusinessDeletionPlannerTest {
         )
 
         batches.forEach { batch ->
-            assertTrue("batch has ${batch.documentPaths.size} paths", batch.documentPaths.size <= BusinessDeletionPlanner.MAX_WRITES_PER_BATCH)
+            assertTrue(batch.documentPaths.size <= BusinessDeletionPlanner.MAX_WRITES_PER_BATCH, "batch has ${batch.documentPaths.size} paths")
         }
         // Everything is covered, and the business document appears exactly once, last.
         val all = batches.flatMap { it.documentPaths }

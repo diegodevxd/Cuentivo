@@ -3,8 +3,8 @@ package com.cuentivo.app.domain
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 /**
  * Regresión del hallazgo bloqueante de la v45: el detalle de la clienta mostraba el saldo viejo

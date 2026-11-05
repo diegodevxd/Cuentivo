@@ -1,7 +1,7 @@
 package com.cuentivo.app.domain
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 class LegacyMigrationPlannerTest {
     @Test fun `maps legacy pedidos and pagos while preserving the original movement ids`() {

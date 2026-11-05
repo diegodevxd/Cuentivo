@@ -1,10 +1,10 @@
 package com.cuentivo.app.domain
 
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * A · Refrescar al registrar (v44).
@@ -23,17 +23,17 @@ class LedgerConfirmRefreshDecisionTest {
     @Test
     fun `resultado no nulo refresca - Recorded, AlreadyRecorded y Failed devueltos con normalidad`() {
         assertTrue(
-            "una escritura confirmada debe recargar las pantallas",
             LedgerConfirmRefreshDecision.shouldRefresh(LedgerBatchConfirmation.Recorded(3)),
+            "una escritura confirmada debe recargar las pantallas",
         )
         assertTrue(
-            "un lote ya escrito también: el commit existe y la pantalla no lo muestra",
             LedgerConfirmRefreshDecision.shouldRefresh(LedgerBatchConfirmation.AlreadyRecorded(3)),
+            "un lote ya escrito también: el commit existe y la pantalla no lo muestra",
         )
         assertTrue(
+            LedgerConfirmRefreshDecision.shouldRefresh(LedgerBatchConfirmation.Failed),
             "Failed es un resultado NO nulo (el encargo manda refrescar tras resultado no nulo); " +
                 "recargar es inocuo y no perder ningún caso de éxito",
-            LedgerConfirmRefreshDecision.shouldRefresh(LedgerBatchConfirmation.Failed),
         )
     }
 
@@ -52,7 +52,7 @@ class LedgerConfirmRefreshDecisionTest {
             onRefresh = { refreshed++ },
         )
         assertEquals(LedgerBatchConfirmation.Recorded(3), result)
-        assertEquals("una escritura confirmada tiene que refrescar", 1, refreshed)
+        assertEquals(1, refreshed, "una escritura confirmada tiene que refrescar")
     }
 
     @Test
@@ -62,7 +62,7 @@ class LedgerConfirmRefreshDecisionTest {
             confirm = { LedgerBatchConfirmation.AlreadyRecorded(3) },
             onRefresh = { refreshed++ },
         )
-        assertEquals("un commit cuyo refresco se perdió también refresca", 1, refreshed)
+        assertEquals(1, refreshed, "un commit cuyo refresco se perdió también refresca")
     }
 
     @Test
@@ -74,7 +74,7 @@ class LedgerConfirmRefreshDecisionTest {
                 onRefresh = { refreshed++ },
             )
         }
-        assertTrue("la excepción se propaga", thrown.isFailure)
-        assertEquals("sin escritura no hay nada que refrescar", 0, refreshed)
+        assertTrue(thrown.isFailure, "la excepción se propaga")
+        assertEquals(0, refreshed, "sin escritura no hay nada que refrescar")
     }
 }
