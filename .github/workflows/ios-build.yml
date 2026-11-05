@@ -59,7 +59,18 @@ jobs:
       - name: Pruebas del código común en iOS
         run: ./gradlew :shared:iosSimulatorArm64Test --no-daemon --console=plain
 
+      # Los mensajes de las aserciones sólo quedan en estos XML, no en el log.
+      - name: Subir resultados de las pruebas
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultados-pruebas-ios-${{ matrix.os }}
+          path: shared/build/test-results/iosSimulatorArm64Test
+          if-no-files-found: warn
+
+      # Corre aunque falle una prueba: el job sigue en rojo, pero una sola corrida da los dos veredictos.
       - name: Compilar la app de iOS (sin firma)
+        if: ${{ !cancelled() }}
         run: |
           xcodebuild -project iosApp/iosApp.xcodeproj \
             -scheme iosApp \
