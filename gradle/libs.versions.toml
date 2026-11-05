@@ -13,6 +13,7 @@ ksp = "2.3.13"
 sqlite = "2.5.1"
 kotlinxDatetime = "0.6.2"
 composeMultiplatform = "1.9.3"
+gitlive = "2.8.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -34,6 +35,10 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 androidx-sqlite-bundled = { group = "androidx.sqlite", name = "sqlite-bundled", version.ref = "sqlite" }
+# GitLive: Firebase para Kotlin Multiplatform. Solo lo usa :iosKit; :shared no lo toca.
+firebase-auth = { group = "dev.gitlive", name = "firebase-auth", version.ref = "gitlive" }
+firebase-firestore = { group = "dev.gitlive", name = "firebase-firestore", version.ref = "gitlive" }
+firebase-functions = { group = "dev.gitlive", name = "firebase-functions", version.ref = "gitlive" }
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinxDatetime" }
 
 [plugins]
