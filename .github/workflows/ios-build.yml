@@ -19,12 +19,12 @@ concurrency:
 
 jobs:
   build:
-    # Varias imágenes en paralelo: los runners macOS arm64 a veces no se asignan por falta de
-    # capacidad y GitHub cancela a los 15 min sin correr ningún paso. Basta con que una termine.
+    # Una sola imagen. macos-15 y macos-14 no consiguen runner para este repositorio y sólo dejan
+    # jobs cancelados en el resultado; macos-26 es la que sí arranca.
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, macos-26, macos-14]
+        os: [macos-26]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
