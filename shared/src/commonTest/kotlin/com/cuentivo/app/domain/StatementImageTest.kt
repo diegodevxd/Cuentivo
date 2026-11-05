@@ -15,7 +15,7 @@ import kotlin.test.Test
 class StatementImageTest {
 
     private fun entry(index: Int, type: String, direction: String, cents: Long, detail: String? = null) =
-        StatementEntry("2026-08-%02d".format(index % 28 + 1), type, direction, cents, null, detail = detail)
+        StatementEntry("2026-08-" + (index % 28 + 1).toString().padStart(2, '0'), type, direction, cents, null, detail = detail)
 
     /** N movimientos con importes distintos, para poder distinguir uno de otro. */
     private fun movements(count: Int) = (1..count).map { entry(it, "CHARGE", "DEBIT", 10_000L * it) }

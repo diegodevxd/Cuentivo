@@ -125,7 +125,7 @@ class SyncEntitlementTest {
     }
 
     @Test
-    fun `the boundary itself is still trusted, one millisecond past it is not`() {
+    fun `the boundary itself is still trusted one millisecond past it is not`() {
         assertTrue(SyncEntitlement.allowsCloudSync(ana, "PRO", now - day, ana, now, true))
         assertFalse(SyncEntitlement.allowsCloudSync(ana, "PRO", now - day - 1, ana, now, true))
     }

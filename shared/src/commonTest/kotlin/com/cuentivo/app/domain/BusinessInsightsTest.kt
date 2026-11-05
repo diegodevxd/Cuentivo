@@ -35,7 +35,7 @@ class BusinessInsightsTest {
     }
 
     @Test
-    fun `a drop is reported as a drop, not softened`() {
+    fun `a drop is reported as a drop not softened`() {
         val insights = BusinessInsights.compare(totals(collected = 8_200), totals(collected = 10_000))
 
         assertEquals(Insight.Tone.BAD, insights.first().tone)

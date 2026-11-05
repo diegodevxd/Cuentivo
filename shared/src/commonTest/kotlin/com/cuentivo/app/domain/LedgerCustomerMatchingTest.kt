@@ -65,7 +65,7 @@ class LedgerCustomerMatchingTest {
     }
 
     @Test
-    fun `an exact name is not offered, because there is nothing to decide`() {
+    fun `an exact name is not offered because there is nothing to decide`() {
         val matches = LedgerCustomerMatching.matchesFor(listOf(op(0, "Rosa Martinez")), listOf(rosa))
 
         assertTrue(matches.isEmpty())

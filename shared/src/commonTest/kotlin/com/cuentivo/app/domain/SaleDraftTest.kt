@@ -1,5 +1,6 @@
 package com.cuentivo.app.domain
 
+import kotlin.test.assertFailsWith
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -81,9 +82,11 @@ class SaleDraftTest {
         assertEquals(28_000, draft.totalCents)
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `a line with a blank name is refused at construction`() {
-        manual("  ", 1, 8_000)
+        assertFailsWith<IllegalArgumentException> {
+            manual("  ", 1, 8_000)
+        }
     }
 
     @Test
@@ -102,9 +105,11 @@ class SaleDraftTest {
         assertNull(SaleDraft().withLine(line("a", 1, 30_000)).validationError())
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `quantity zero is refused at construction`() {
-        line("a", 0, 10_000)
+        assertFailsWith<IllegalArgumentException> {
+            line("a", 0, 10_000)
+        }
     }
 
     @Test

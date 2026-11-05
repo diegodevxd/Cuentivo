@@ -1,5 +1,6 @@
 package com.cuentivo.app.domain
 
+import kotlin.test.assertFailsWith
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.Test
@@ -61,14 +62,18 @@ class OpeningBalanceTest {
         assertEquals(entry(), entry())
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `a balance of zero is refused`() {
-        entry(amountCents = 0)
+        assertFailsWith<IllegalArgumentException> {
+            entry(amountCents = 0)
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `a negative balance is refused`() {
-        entry(amountCents = -1)
+        assertFailsWith<IllegalArgumentException> {
+            entry(amountCents = -1)
+        }
     }
 
     @Test
@@ -90,68 +95,76 @@ class OpeningBalanceTest {
         assertEquals("Past debt", result.item.productNameSnapshot)
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `a sale date in the future is refused`() {
-        OpeningBalance.entry(
-            saleId = "sale-1",
-            itemId = "item-1",
-            chargeId = "charge-1",
-            businessId = "biz",
-            customerId = "cust",
-            ownerUserId = "owner",
-            amountCents = 50_000,
-            todayEpochDay = 20_000,
-            nowEpochMillis = 1_700_000_000_000,
-            saleDateEpochDay = 20_001,
-        )
+        assertFailsWith<IllegalArgumentException> {
+            OpeningBalance.entry(
+                saleId = "sale-1",
+                itemId = "item-1",
+                chargeId = "charge-1",
+                businessId = "biz",
+                customerId = "cust",
+                ownerUserId = "owner",
+                amountCents = 50_000,
+                todayEpochDay = 20_000,
+                nowEpochMillis = 1_700_000_000_000,
+                saleDateEpochDay = 20_001,
+            )
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `a non-positive sale date is refused`() {
-        OpeningBalance.entry(
-            saleId = "sale-1",
-            itemId = "item-1",
-            chargeId = "charge-1",
-            businessId = "biz",
-            customerId = "cust",
-            ownerUserId = "owner",
-            amountCents = 50_000,
-            todayEpochDay = 20_000,
-            nowEpochMillis = 1_700_000_000_000,
-            saleDateEpochDay = 0,
-        )
+        assertFailsWith<IllegalArgumentException> {
+            OpeningBalance.entry(
+                saleId = "sale-1",
+                itemId = "item-1",
+                chargeId = "charge-1",
+                businessId = "biz",
+                customerId = "cust",
+                ownerUserId = "owner",
+                amountCents = 50_000,
+                todayEpochDay = 20_000,
+                nowEpochMillis = 1_700_000_000_000,
+                saleDateEpochDay = 0,
+            )
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `a blank line name snapshot is refused`() {
-        OpeningBalance.entry(
-            saleId = "sale-1",
-            itemId = "item-1",
-            chargeId = "charge-1",
-            businessId = "biz",
-            customerId = "cust",
-            ownerUserId = "owner",
-            amountCents = 50_000,
-            todayEpochDay = 20_000,
-            nowEpochMillis = 1_700_000_000_000,
-            lineNameSnapshot = "   ",
-        )
+        assertFailsWith<IllegalArgumentException> {
+            OpeningBalance.entry(
+                saleId = "sale-1",
+                itemId = "item-1",
+                chargeId = "charge-1",
+                businessId = "biz",
+                customerId = "cust",
+                ownerUserId = "owner",
+                amountCents = 50_000,
+                todayEpochDay = 20_000,
+                nowEpochMillis = 1_700_000_000_000,
+                lineNameSnapshot = "   ",
+            )
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `a line name snapshot longer than 160 characters is refused`() {
-        OpeningBalance.entry(
-            saleId = "sale-1",
-            itemId = "item-1",
-            chargeId = "charge-1",
-            businessId = "biz",
-            customerId = "cust",
-            ownerUserId = "owner",
-            amountCents = 50_000,
-            todayEpochDay = 20_000,
-            nowEpochMillis = 1_700_000_000_000,
-            lineNameSnapshot = "A".repeat(161),
-        )
+        assertFailsWith<IllegalArgumentException> {
+            OpeningBalance.entry(
+                saleId = "sale-1",
+                itemId = "item-1",
+                chargeId = "charge-1",
+                businessId = "biz",
+                customerId = "cust",
+                ownerUserId = "owner",
+                amountCents = 50_000,
+                todayEpochDay = 20_000,
+                nowEpochMillis = 1_700_000_000_000,
+                lineNameSnapshot = "A".repeat(161),
+            )
+        }
     }
 }
 

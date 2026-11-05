@@ -31,7 +31,7 @@ class AppAlertsTest {
     }
 
     @Test
-    fun `today, tomorrow and late are each worded differently`() {
+    fun `today tomorrow and late are each worded differently`() {
         val result = alerts(sale("Hoy", 0), sale("Manana", 1), sale("Tarde", -3))
 
         assertEquals(3, result.size)
@@ -41,7 +41,7 @@ class AppAlertsTest {
     }
 
     @Test
-    fun `late comes first, and the longest wait leads`() {
+    fun `late comes first and the longest wait leads`() {
         val result = alerts(sale("Hoy", 0), sale("PocoTarde", -2), sale("MuyTarde", -9))
 
         assertEquals(listOf("MuyTarde", "PocoTarde", "Hoy"), result.map { it.title })
@@ -49,7 +49,7 @@ class AppAlertsTest {
     }
 
     @Test
-    fun `one day late says day, not days`() {
+    fun `one day late says day not days`() {
         val result = alerts(sale("Beto", -1))
 
         assertTrue(result.first().detail.contains("1 día"))
@@ -83,7 +83,7 @@ class AppAlertsTest {
     }
 
     @Test
-    fun `plan notices come after the money, never before it`() {
+    fun `plan notices come after the money never before it`() {
         val result = AppAlerts.from(listOf(sale("Ana", -5)), today, SubscriptionTier.FREE, 5)
 
         assertEquals(Alert.Severity.OVERDUE, result.first().severity)

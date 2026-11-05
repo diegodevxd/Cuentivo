@@ -57,7 +57,7 @@ class SyncDrainerTest {
         SyncProcessResult(batch.map { it.id }, emptyList(), emptyMap())
 
     @Test
-    fun `fifty one successful operations all get uploaded, not just the first fifty`() {
+    fun `fifty one successful operations all get uploaded not just the first fifty`() {
         val queue = FakeQueue(51)
 
         val needsRetry = runBlocking { drainer(queue) { allSucceed(it) }.drain() }

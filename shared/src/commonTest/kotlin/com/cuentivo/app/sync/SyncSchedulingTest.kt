@@ -1,7 +1,7 @@
 package com.cuentivo.app.sync
 
 import kotlin.test.assertNull
-import org.junit.Assert.assertSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.test.Test
 

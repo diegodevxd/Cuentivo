@@ -17,7 +17,7 @@ import kotlin.test.Test
 class BusinessDeletionPlannerTest {
 
     @Test
-    fun `empty inventory still erases the business document, alone, last`() {
+    fun `empty inventory still erases the business document alone last`() {
         val batches = BusinessDeletionPlanner.plan(Inventory(businessId = "b1"))
 
         assertEquals(1, batches.size)
@@ -102,7 +102,7 @@ class BusinessDeletionPlannerTest {
     }
 
     @Test
-    fun `500 subcollection writes fit in one batch, business alone after`() {
+    fun `500 subcollection writes fit in one batch business alone after`() {
         val batches = BusinessDeletionPlanner.plan(
             Inventory(businessId = "b1", customerIds = (1..500).map { "c$it" }),
         )

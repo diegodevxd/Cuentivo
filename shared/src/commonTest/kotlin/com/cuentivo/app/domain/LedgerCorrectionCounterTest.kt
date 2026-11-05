@@ -85,7 +85,7 @@ class LedgerCorrectionCounterTest {
     }
 
     @Test
-    fun `a deleted row counts as discarded, not as corrected`() {
+    fun `a deleted row counts as discarded not as corrected`() {
         val original = listOf(row(0), row(1))
         val final = listOf(row(0))
 
@@ -97,7 +97,7 @@ class LedgerCorrectionCounterTest {
     }
 
     @Test
-    fun `a row corrected and then deleted counts as discarded, not as both`() {
+    fun `a row corrected and then deleted counts as discarded not as both`() {
         val original = listOf(row(0, amount = "25000"))
         val final = emptyList<LedgerOperation>()
 
@@ -170,7 +170,7 @@ class LedgerCorrectionCounterTest {
     }
 
     @Test
-    fun `a field without confidence falls in no bucket, not in the lowest`() {
+    fun `a field without confidence falls in no bucket not in the lowest`() {
         // "The model did not say" is not "the model was unsure".
         assertEquals(null, LedgerCorrectionCounter.bucketOf(null))
     }

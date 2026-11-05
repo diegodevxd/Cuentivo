@@ -83,7 +83,7 @@ class LedgerImplausibleDateReasonTest {
     }
 
     @Test
-    fun `el anio manda sobre la antiguedad - 2023 en hoja de 2026 es YEAR_MISMATCH, no TOO_OLD`() {
+    fun `el anio manda sobre la antiguedad - 2023 en hoja de 2026 es YEAR_MISMATCH no TOO_OLD`() {
         // Es el caso de Diego: el renglón también es viejo, pero decir "hace más de 6 meses" no
         // ayuda cuando lo que está mal es el año, y "Cambiar todos" es el arreglo correcto.
         val resultado = reasons(listOf(row(0, SafeDateCandidate(2023, 3, 1))), pageDateEpochDay = page)
@@ -100,7 +100,7 @@ class LedgerImplausibleDateReasonTest {
     }
 
     @Test
-    fun `sin fecha de pagina el anio se compara contra hoy, no contra nada`() {
+    fun `sin fecha de pagina el anio se compara contra hoy no contra nada`() {
         // v47: con la hoja sin fecha, la tarjeta de año corrige contra el año de hoy. El motivo tiene
         // que decir lo mismo, o el renglón sale como "hace más de 6 meses" Y cuenta para "Cambiar
         // todos", y las dos tarjetas aparecen juntas por los mismos renglones.

@@ -12,7 +12,7 @@ import kotlin.test.Test
 class DefaultBusinessCreationPolicyTest {
 
     @Test
-    fun `con la nube respondiendo que no hay negocio, se crea`() {
+    fun `con la nube respondiendo que no hay negocio se crea`() {
         assertEquals(
             DefaultBusinessDecision.Create,
             DefaultBusinessCreationPolicy.decide(
@@ -36,7 +36,7 @@ class DefaultBusinessCreationPolicyTest {
     }
 
     @Test
-    fun `un claim bloqueado no crea nunca, ni aunque la consulta haya terminado`() {
+    fun `un claim bloqueado no crea nunca ni aunque la consulta haya terminado`() {
         assertEquals(
             DefaultBusinessDecision.DoNothing,
             DefaultBusinessCreationPolicy.decide(
@@ -60,7 +60,7 @@ class DefaultBusinessCreationPolicyTest {
     }
 
     @Test
-    fun `ya tener negocio local es idempotente, sin importar el claim`() {
+    fun `ya tener negocio local es idempotente sin importar el claim`() {
         listOf<BusinessClaim?>(
             null,
             BusinessClaim.UseLocal,

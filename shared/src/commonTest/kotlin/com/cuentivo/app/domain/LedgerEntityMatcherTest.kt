@@ -9,7 +9,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.Test
-import kotlin.system.measureTimeMillis
+import kotlin.time.measureTime
 
 class LedgerEntityMatcherTest {
 
@@ -168,11 +168,11 @@ class LedgerEntityMatcherTest {
             LedgerEntityMatcher.matchProduct(query, amount, products)
         }
 
-        val elapsed = measureTimeMillis {
+        val elapsed = measureTime {
             for ((query, amount) in queries) {
                 LedgerEntityMatcher.matchProduct(query, amount, products)
             }
-        }
+        }.inWholeMilliseconds
 
         assertTrue(
             elapsed < 2_000,

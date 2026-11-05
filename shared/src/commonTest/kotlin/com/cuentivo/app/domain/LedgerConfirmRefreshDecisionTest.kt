@@ -21,7 +21,7 @@ import kotlin.test.Test
 class LedgerConfirmRefreshDecisionTest {
 
     @Test
-    fun `resultado no nulo refresca - Recorded, AlreadyRecorded y Failed devueltos con normalidad`() {
+    fun `resultado no nulo refresca - Recorded AlreadyRecorded y Failed devueltos con normalidad`() {
         assertTrue(
             LedgerConfirmRefreshDecision.shouldRefresh(LedgerBatchConfirmation.Recorded(3)),
             "una escritura confirmada debe recargar las pantallas",

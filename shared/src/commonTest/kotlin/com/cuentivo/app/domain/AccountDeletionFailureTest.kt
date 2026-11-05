@@ -44,7 +44,7 @@ class AccountDeletionFailureTest {
     }
 
     @Test
-    fun `the web spelling still maps, for safety`() {
+    fun `the web spelling still maps for safety`() {
         assertEquals(
             MessageKey.RECENT_LOGIN_REQUIRED,
             AccountDeletionFailure.messageKeyForAuth("requires-recent-login"),

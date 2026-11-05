@@ -40,7 +40,7 @@ class LedgerOldDatesBulkCorrectionTest {
     }
 
     @Test
-    fun `dos o mas fechas viejas arman la tarjeta, en orden`() {
+    fun `dos o mas fechas viejas arman la tarjeta en orden`() {
         assertEquals(
             listOf(1, 4, 7),
             LedgerOldDatesBulkCorrection.lineIndices(
@@ -97,7 +97,7 @@ class LedgerOldDatesBulkCorrectionTest {
     }
 
     @Test
-    fun `confirmar todos solo afecta a los viejos, y cambiar la fecha despues vuelve a objetar`() {
+    fun `confirmar todos solo afecta a los viejos y cambiar la fecha despues vuelve a objetar`() {
         val page = LocalDate(2026, 9, 10).toEpochDays().toLong()
         val hoy = LocalDate(2026, 9, 22).toEpochDays().toLong()
         val rows = listOf(

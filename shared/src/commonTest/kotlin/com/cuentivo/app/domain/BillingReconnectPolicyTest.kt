@@ -16,7 +16,7 @@ class BillingReconnectPolicyTest {
     }
 
     @Test
-    fun `each attempt waits twice as long as the last, until the cap`() {
+    fun `each attempt waits twice as long as the last until the cap`() {
         val delays = (1..BillingReconnectPolicy.MAX_ATTEMPTS)
             .map { BillingReconnectPolicy.delayMillisForAttempt(it) }
 

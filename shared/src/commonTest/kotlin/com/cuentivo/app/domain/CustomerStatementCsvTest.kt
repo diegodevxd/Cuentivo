@@ -33,7 +33,7 @@ class CustomerStatementCsvTest {
     }
 
     @Test
-    fun `notes with commas and quotes are escaped, not corrupted`() {
+    fun `notes with commas and quotes are escaped not corrupted`() {
         val csv = CustomerStatementCsv.build(
             listOf(StatementEntry("2026-07-01", "ADJUSTMENT", "DEBIT", 100, """ajuste "julio", acordado""")),
         )
