@@ -28,6 +28,8 @@ class CustomerRepository(private val customerDao: CustomerDao) {
         require(customer.businessId.isNotBlank())
         require(customer.name.isNotBlank())
         require(customer.normalizedName.isNotBlank())
-        require(customer.creditLimitCents == null || customer.creditLimitCents >= 0)
+        // A una local: el smart cast no cruza el borde de módulo (CustomerEntity vive en :shared).
+        val creditLimitCents = customer.creditLimitCents
+        require(creditLimitCents == null || creditLimitCents >= 0)
     }
 }

@@ -1,23 +1,18 @@
 package com.cuentivo.app.data.local
 
-import androidx.room.Database
-import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [OperationEntity::class, CustomerEntity::class, ProductEntity::class, SaleEntity::class, SaleItemEntity::class, PaymentEntity::class, PaymentAllocationEntity::class, AccountMovementEntity::class, BusinessEntity::class, BusinessMemberEntity::class, AuditLogEntity::class, SyncOperationEntity::class, SyncStateEntity::class, AiDailyMessageEntity::class, AiLedgerImportMetricEntity::class], version = 8, exportSchema = true)
-abstract class CuentivoDatabase : RoomDatabase() {
-    abstract fun operationDao(): OperationDao
-    abstract fun financialDao(): FinancialDao
-    abstract fun customerDao(): CustomerDao
-    abstract fun productDao(): ProductDao
-    abstract fun auditDao(): AuditDao
-    abstract fun businessDao(): BusinessDao
-    abstract fun syncOperationDao(): SyncOperationDao
-    abstract fun syncStateDao(): SyncStateDao
-    abstract fun aiDailyMessageDao(): AiDailyMessageDao
-    abstract fun aiLedgerImportMetricDao(): AiLedgerImportMetricDao
-}
+// Las migraciones son de Android y se quedan aquí, no en :shared.
+//
+// La app de Android es la única que se actualiza sobre una base ya instalada en el teléfono de
+// alguien; iOS siempre arranca de cero en la versión 8 (ver
+// shared/src/iosMain/kotlin/com/cuentivo/app/data/local/CuentivoDatabaseFactory.kt, que abre sin
+// migraciones). Por eso estos objetos viven en el módulo Android y `CuentivoDatabase`, que es común,
+// no los conoce.
+//
+// Todo builder de "cuentivo.db" en Android tiene que registrar `CUENTIVO_MIGRATIONS`: no hay
+// fallbackToDestructiveMigration() en ningún lado, a propósito.
 
 /**
  * Adds the [SyncStateEntity] table introduced with the remote pull.

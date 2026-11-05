@@ -6,14 +6,8 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.room)
     id("com.google.gms.google-services")
     id("com.google.firebase.crashlytics")
-}
-
-room {
-    schemaDirectory("$projectDir/schemas")
 }
 
 // The host of the local Functions emulator. Empty by default, and ONLY the debug build type ever
@@ -177,7 +171,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     testImplementation("org.json:json:20240303")
     // androidTest only: lets the E2E build a real SyncWorker without WorkManager scheduling it.

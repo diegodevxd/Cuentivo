@@ -1132,7 +1132,7 @@ interface FinancialDao {
             require(saleItems.any { it.saleId == sale.id }) { "A batch sale needs at least one item." }
         }
         val itemTotalsBySale = saleItems.groupBy { it.saleId }
-            .mapValues { (_, items) -> items.fold(0L) { acc, item -> Math.addExact(acc, item.subtotalCents) } }
+            .mapValues { (_, items) -> items.fold(0L) { acc, item -> addExactCents(acc, item.subtotalCents) } }
         for (sale in sales) {
             require(itemTotalsBySale[sale.id] == sale.totalCents) {
                 "A batch sale total must equal its items."
@@ -1148,7 +1148,7 @@ interface FinancialDao {
             require(movement.customerId == payment.customerId) { "Batch payment movement must belong to its payment's customer." }
             require(movement.amountCents == payment.amountCents) { "Batch payment movement must equal its payment." }
             val assigned = paymentAllocations.filter { it.paymentId == payment.id }
-                .fold(0L) { acc, allocation -> Math.addExact(acc, allocation.amountCents) }
+                .fold(0L) { acc, allocation -> addExactCents(acc, allocation.amountCents) }
             require(assigned <= payment.amountCents) { "A batch payment cannot assign more than it received." }
         }
         for (movement in paymentMovements) {
@@ -1181,7 +1181,7 @@ interface FinancialDao {
         // the same page or a debt the customer already had, so what is still owed comes from this
         // batch for the former and from the ledger for the latter.
         paymentAllocations.groupBy { it.saleId }.forEach { (saleId, allocations) ->
-            val assigned = allocations.fold(0L) { acc, allocation -> Math.addExact(acc, allocation.amountCents) }
+            val assigned = allocations.fold(0L) { acc, allocation -> addExactCents(acc, allocation.amountCents) }
             // Money must not cross customers: a payment can only settle what the person who paid
             // actually owes.
             for (allocation in allocations) {
@@ -1260,4 +1260,18 @@ interface FinancialDao {
         return ExpectedLedgerBatchResult.Recorded(batchIdempotencyKey, executableOperationsCount)
     }
 
+}
+
+/**
+ * `Math.addExact` de Java, que no existe en código común.
+ *
+ * Lanza `ArithmeticException` si la suma se sale de un `Long`, igual que la versión de Java que se
+ * usaba aquí: con un `+` normal el desbordamiento sería silencioso y un total podría quedar
+ * negativo sin que nadie lo note. Los centavos son enteros; el desbordamiento no es un caso a
+ * tolerar, es un error que hay que ver.
+ */
+private fun addExactCents(a: Long, b: Long): Long {
+    val result = a + b
+    if (((a xor result) and (b xor result)) < 0) throw ArithmeticException("long overflow")
+    return result
 }

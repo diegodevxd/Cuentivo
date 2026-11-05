@@ -28,7 +28,10 @@ class ProductRepository(private val productDao: ProductDao) {
         require(product.businessId.isNotBlank())
         require(product.name.isNotBlank())
         require(product.salePriceCents >= 0)
-        require(product.costPriceCents == null || product.costPriceCents >= 0)
-        require(product.stock == null || product.stock >= 0)
+        // A locales: el smart cast no cruza el borde de módulo (ProductEntity vive en :shared).
+        val costPriceCents = product.costPriceCents
+        val stock = product.stock
+        require(costPriceCents == null || costPriceCents >= 0)
+        require(stock == null || stock >= 0)
     }
 }
