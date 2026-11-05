@@ -2,7 +2,10 @@ package com.cuentivo.app.domain
 
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import java.time.LocalDate
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 
 /**
  * El año que la hoja debía tener, y las fechas de los renglones con ese año puesto.
@@ -31,8 +34,8 @@ object LedgerYearCorrection {
      */
     fun expectedYearOrNull(pageDateEpochDay: Long?, todayEpochDay: Long?): Int? =
         pageDateEpochDay
-            ?.let { runCatching { LocalDate.ofEpochDay(it).year }.getOrNull() }
-            ?: todayEpochDay?.let { runCatching { LocalDate.ofEpochDay(it).year }.getOrNull() }
+            ?.let { runCatching { LocalDate.fromEpochDays(it.toInt()).year }.getOrNull() }
+            ?: todayEpochDay?.let { runCatching { LocalDate.fromEpochDays(it.toInt()).year }.getOrNull() }
 
     /**
      * El año de la página si la hay; si no, el de hoy. Es el año al que se corrige un renglón con
@@ -43,7 +46,7 @@ object LedgerYearCorrection {
      */
     fun targetYear(pageDateEpochDay: Long?, todayEpochDay: Long): Int =
         expectedYearOrNull(pageDateEpochDay, todayEpochDay)
-            ?: LocalDate.ofEpochDay(todayEpochDay).year
+            ?: LocalDate.fromEpochDays(todayEpochDay.toInt()).year
 
     /**
      * La misma fecha con el año corregido.
@@ -55,9 +58,9 @@ object LedgerYearCorrection {
     fun correctedDate(date: SafeDateCandidate, targetYear: Int): SafeDateCandidate {
         val month = date.month.coerceIn(1, 12)
         val day = runCatching {
-            LocalDate.of(targetYear, month, date.day)
+            LocalDate(targetYear, month, date.day)
         }.getOrNull()?.dayOfMonth
-            ?: LocalDate.of(targetYear, month, 1).lengthOfMonth()
+            ?: LocalDate(targetYear, month, 1).plus(1, DateTimeUnit.MONTH).minus(1, DateTimeUnit.DAY).dayOfMonth
         return SafeDateCandidate(year = targetYear, month = month, day = day)
     }
 

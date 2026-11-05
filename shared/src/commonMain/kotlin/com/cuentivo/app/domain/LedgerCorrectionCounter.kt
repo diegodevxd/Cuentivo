@@ -2,7 +2,7 @@ package com.cuentivo.app.domain
 
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerFieldConfidence
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 
 /**
  * How many fields the person actually corrected on an imported page, and how the model's
@@ -119,7 +119,7 @@ object LedgerCorrectionCounter {
         canonicalEpochDay(original.date) != canonicalEpochDay(final.date)
 
     private fun canonicalEpochDay(date: com.cuentivo.app.ai.ledger.SafeDateCandidate?): Long? =
-        date?.let { runCatching { LocalDate.of(it.year, it.month, it.day).toEpochDay() }.getOrNull() }
+        date?.let { runCatching { LocalDate(it.year, it.month, it.day).toEpochDays().toLong() }.getOrNull() }
 
     private fun kindChanged(original: LedgerOperation, final: LedgerOperation): Boolean =
         original.proposedKind != final.proposedKind

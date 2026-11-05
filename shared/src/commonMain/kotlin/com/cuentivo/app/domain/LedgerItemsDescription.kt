@@ -1,7 +1,6 @@
 package com.cuentivo.app.domain
 
 import com.cuentivo.app.ai.ledger.LedgerLineItem
-import java.math.BigDecimal
 
 /**
  * Writes the products of a line into the one field that survives into the ledger: the description.
@@ -37,7 +36,7 @@ object LedgerItemsDescription {
             val name = item.description.trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             val quantity = item.quantity?.takeIf { it > 1 }
             val price = item.subtotalCents?.toLongOrNull()?.let { cents ->
-                "$" + BigDecimal.valueOf(cents, 2).toPlainString()
+                "$" + decimalTextFromCents(cents)
             }
             buildString {
                 if (quantity != null) {

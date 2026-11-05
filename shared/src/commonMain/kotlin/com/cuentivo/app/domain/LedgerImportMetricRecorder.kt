@@ -5,10 +5,6 @@ import com.cuentivo.app.ai.ledger.LedgerReview
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.data.local.AiLedgerImportMetricEntity
 import com.cuentivo.app.data.local.AiLedgerImportStatus
-import java.security.MessageDigest
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
 
 /**
  * Writes the local quality/cost metric of one ledger page import, in two stages.
@@ -48,9 +44,8 @@ object LedgerImportMetricRecorder {
      * information about the page or the business.
      */
     fun importIdFor(sessionId: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(sessionId.toByteArray(Charsets.UTF_8))
-        return digest.joinToString("") { "%02x".format(it) }
+        // sha256 + hexDigest: el mismo resumen y el mismo texto hexadecimal que MessageDigest.
+        return hexDigest(sha256(sessionId.encodeToByteArray()))
     }
 
     /**
@@ -206,8 +201,9 @@ object LedgerImportMetricRecorder {
      * created at that instant; the hour is enough to compare mornings against afternoons and
      * useless for joining.
      */
-    internal fun hourRounded(nowEpochMillis: Long): Long =
-        Math.floorDiv(nowEpochMillis, 3_600_000L) * 3_600_000L
+    // Público y no internal: su prueba vive todavía en app/src/test, que es otro módulo.
+    fun hourRounded(nowEpochMillis: Long): Long =
+        nowEpochMillis.floorDiv(3_600_000L) * 3_600_000L
 
     private suspend fun applyRetention(
         dao: com.cuentivo.app.data.local.AiLedgerImportMetricDao,

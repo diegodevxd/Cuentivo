@@ -11,10 +11,10 @@ import com.cuentivo.app.data.local.PaymentAllocationEntity
 import com.cuentivo.app.data.local.PaymentEntity
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
-import java.nio.charset.StandardCharsets
-import java.time.LocalDate
-import java.util.Collections
-import java.util.UUID
+import kotlinx.datetime.LocalDate
+import com.cuentivo.app.ai.ledger.addExact
+import com.cuentivo.app.ai.ledger.subtractExact
+import com.cuentivo.app.ai.ledger.multiplyExact
 
 /**
  * Diagnostic reason explaining why a reviewed ledger operation or batch was rejected during planning.
@@ -86,9 +86,8 @@ object AiLedgerBatchPlanner {
      * sees the debt it already changed and would reject a payment that was in fact recorded.
      */
     fun batchKeyFor(businessId: String, importSessionId: String): String {
-        return "ai-ledger-batch-" + UUID.nameUUIDFromBytes(
-            "${field(businessId)}:${field(importSessionId)}".toByteArray(StandardCharsets.UTF_8)
-        ).toString()
+        // nameUuidV3 es el mismo UUID v3 (MD5) que daba java.util.UUID.nameUUIDFromBytes.
+        return "ai-ledger-batch-" + nameUuidV3("${field(businessId)}:${field(importSessionId)}")
     }
 
     /**
@@ -99,7 +98,8 @@ object AiLedgerBatchPlanner {
      * - An explicit date candidate MUST be valid calendar day and <= [todayEpochDay]. An invalid explicit candidate
      *   returns null and NEVER falls back to [pageDateEpochDay].
      */
-    internal fun resolveDate(
+    // Público y no internal: su prueba vive todavía en app/src/test, que es otro módulo.
+    fun resolveDate(
         dateCandidate: SafeDateCandidate?,
         pageDateEpochDay: Long?,
         todayEpochDay: Long,
@@ -224,7 +224,7 @@ object AiLedgerBatchPlanner {
             for (sale in existingSales) {
                 if (sale.outstandingCents <= 0L) continue
                 try {
-                    runningBalance = Math.addExact(runningBalance, sale.outstandingCents)
+                    runningBalance = addExact(runningBalance, sale.outstandingCents)
                 } catch (_: ArithmeticException) {
                     openingOverflowed = true
                     break
@@ -246,7 +246,7 @@ object AiLedgerBatchPlanner {
                 when (op.proposedKind) {
                     ProposedLedgerKind.SALE, ProposedLedgerKind.PRIOR_DEBT -> {
                         try {
-                            runningBalance = Math.addExact(runningBalance, cents)
+                            runningBalance = addExact(runningBalance, cents)
                         } catch (_: ArithmeticException) {
                             rejections.add(BatchPlanningRejection.FinancialError(op.lineIndex, FinancialRejectionReason.OVERFLOW))
                         }
@@ -258,7 +258,7 @@ object AiLedgerBatchPlanner {
                             rejections.add(BatchPlanningRejection.FinancialError(op.lineIndex, FinancialRejectionReason.PAYMENT_EXCEEDS_DEBT))
                         } else {
                             try {
-                                runningBalance = Math.subtractExact(runningBalance, cents)
+                                runningBalance = subtractExact(runningBalance, cents)
                             } catch (_: ArithmeticException) {
                                 rejections.add(BatchPlanningRejection.FinancialError(op.lineIndex, FinancialRejectionReason.OVERFLOW))
                             }
@@ -295,9 +295,7 @@ object AiLedgerBatchPlanner {
                 // No anchor can reach here: an anchored group always resolves above, and one whose
                 // customer vanished was rejected before anything was built. A new customer is only
                 // ever minted for a name the notebook brought and nobody matched.
-                val customerId = UUID.nameUUIDFromBytes(
-                    "$batchKey:customer:$groupKey".toByteArray(StandardCharsets.UTF_8)
-                ).toString()
+                val customerId = nameUuidV3("$batchKey:customer:$groupKey")
                 val newCust = CustomerEntity(
                     id = customerId,
                     businessId = businessId,
@@ -525,13 +523,13 @@ object AiLedgerBatchPlanner {
             sellerUserId = userId,
             nowEpochMillis = nowEpochMillis,
             todayEpochDay = todayEpochDay,
-            newCustomers = Collections.unmodifiableList(newCustomers),
-            sales = Collections.unmodifiableList(sales),
-            saleItems = Collections.unmodifiableList(saleItems),
-            chargeMovements = Collections.unmodifiableList(chargeMovements),
-            payments = Collections.unmodifiableList(payments),
-            paymentMovements = Collections.unmodifiableList(paymentMovements),
-            paymentAllocations = Collections.unmodifiableList(paymentAllocations),
+            newCustomers = newCustomers.toList(),
+            sales = sales.toList(),
+            saleItems = saleItems.toList(),
+            chargeMovements = chargeMovements.toList(),
+            payments = payments.toList(),
+            paymentMovements = paymentMovements.toList(),
+            paymentAllocations = paymentAllocations.toList(),
             executableOperationsCount = registrableOps.size,
         )
 
@@ -547,7 +545,7 @@ object AiLedgerBatchPlanner {
 
     private fun toEpochDay(candidate: SafeDateCandidate): Long? {
         return runCatching {
-            LocalDate.of(candidate.year, candidate.month, candidate.day).toEpochDay()
+            LocalDate(candidate.year, candidate.month, candidate.day).toEpochDays().toLong()
         }.getOrNull()
     }
 }

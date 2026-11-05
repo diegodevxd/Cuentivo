@@ -29,7 +29,7 @@ object LedgerEffectiveDate {
         todayEpochDay: Long?,
     ): Long? {
         val rowEpoch = op.date?.let { candidate ->
-            runCatching { java.time.LocalDate.of(candidate.year, candidate.month, candidate.day).toEpochDay() }.getOrNull()
+            runCatching { kotlinx.datetime.LocalDate(candidate.year, candidate.month, candidate.day).toEpochDays().toLong() }.getOrNull()
         }
         if (rowEpoch != null && rowEpoch > 0 && (todayEpochDay == null || rowEpoch <= todayEpochDay)) {
             return rowEpoch

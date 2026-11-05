@@ -26,6 +26,6 @@ object LedgerPendingInDoubt {
             }
             .mapNotNull { it.amountCents?.toLongOrNull() }
             .filter { it > 0L }
-            .fold(0L) { acc, cents -> runCatching { Math.addExact(acc, cents) }.getOrDefault(acc) }
+            .fold(0L) { acc, cents -> runCatching { com.cuentivo.app.ai.ledger.addExact(acc, cents) }.getOrDefault(acc) }
     }
 }

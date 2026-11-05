@@ -273,7 +273,7 @@ object LedgerDeterministicObjections {
             val rowDate = op.date
             if (rowDate != null) {
                 val rowEpoch = runCatching {
-                    java.time.LocalDate.of(rowDate.year, rowDate.month, rowDate.day).toEpochDay()
+                    kotlinx.datetime.LocalDate(rowDate.year, rowDate.month, rowDate.day).toEpochDays().toLong()
                 }.getOrNull()
                 // Un renglón sin año utilizable no se juzga por antigüedad/futuridad aquí:
                 // el planificador ya lo rechaza como fecha no resoluble.
@@ -331,7 +331,7 @@ object LedgerDeterministicObjections {
                         val item = op.items.single()
                         val quantity = item.quantity
                         val expected = if (quantity != null && quantity >= 1) {
-                            runCatching { Math.multiplyExact(quantity.toLong(), catPriceCents) }.getOrNull()
+                            runCatching { com.cuentivo.app.ai.ledger.multiplyExact(quantity.toLong(), catPriceCents) }.getOrNull()
                         } else null
                         if (expected == null) emptyList() else listOf(expected to (item.subtotalCents?.toLongOrNull() ?: opPriceCents))
                     }
@@ -340,7 +340,7 @@ object LedgerDeterministicObjections {
                         val subtotal = item.subtotalCents?.toLongOrNull()
                         if (quantity == null || quantity < 1 || subtotal == null ||
                             CustomerNameNormalizer.key(item.description) != CustomerNameNormalizer.key(productCandidate.name)) null
-                        else runCatching { Math.multiplyExact(quantity.toLong(), catPriceCents) }.getOrNull()?.let { it to subtotal }
+                        else runCatching { com.cuentivo.app.ai.ledger.multiplyExact(quantity.toLong(), catPriceCents) }.getOrNull()?.let { it to subtotal }
                     }
                 }
                 for ((expected, total) in expectedTotals) {
