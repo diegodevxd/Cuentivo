@@ -1,15 +1,16 @@
 package com.cuentivo.app.sync
 
 import com.cuentivo.app.domain.BusinessName
-import java.security.MessageDigest
+import com.cuentivo.app.domain.hexDigest
+import com.cuentivo.app.domain.sha256
 
 object SyncOperationId {
     fun create(businessId: String, entityType: String, entityId: String, revision: Long): String {
         require(businessId.isNotBlank() && entityType.isNotBlank() && entityId.isNotBlank())
         val input = "$businessId|$entityType|$entityId|$revision"
-        return MessageDigest.getInstance("SHA-256")
-            .digest(input.toByteArray())
-            .joinToString("") { "%02x".format(it) }
+        // sha256 + hexDigest: el mismo SHA-256 y el mismo texto hexadecimal que MessageDigest,
+        // que es de lo que depende que la clave de una operación encolada no cambie.
+        return hexDigest(sha256(input.encodeToByteArray()))
     }
 }
 

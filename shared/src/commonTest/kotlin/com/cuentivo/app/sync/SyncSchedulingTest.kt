@@ -1,9 +1,9 @@
 package com.cuentivo.app.sync
 
-import org.junit.Assert.assertNull
+import kotlin.test.assertNull
 import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * The rule pinned here is the one that produced the v7/1.3 bug: a customer was written to Room, the

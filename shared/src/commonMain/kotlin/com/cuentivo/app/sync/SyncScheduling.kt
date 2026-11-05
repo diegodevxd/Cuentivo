@@ -15,7 +15,8 @@ package com.cuentivo.app.sync
  * Android. The thing that must never regress: an ordinary scheduling failure is reported rather
  * than thrown, and an [Error] still travels.
  */
-internal object SyncScheduling {
+// Público y no internal: lo usan SyncQueue (que se queda en app) y su prueba.
+object SyncScheduling {
 
     /**
      * Invokes [schedule], returning the exception it failed with, or null when it succeeded.
