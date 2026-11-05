@@ -19,7 +19,13 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
+    # Varias imágenes en paralelo: los runners macOS arm64 a veces no se asignan por falta de
+    # capacidad y GitHub cancela a los 15 min sin correr ningún paso. Basta con que una termine.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26, macos-14]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -67,6 +73,6 @@ jobs:
       - name: Subir el .app del simulador
         uses: actions/upload-artifact@v4
         with:
-          name: Cuentivo-ios-simulator
+          name: Cuentivo-ios-simulator-${{ matrix.os }}
           path: build/iosDerivedData/Build/Products/Debug-iphonesimulator/Cuentivo.app
           if-no-files-found: error
