@@ -6,6 +6,9 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
+    // Compose Multiplatform: la pantalla mínima de iOS (MainViewController.kt).
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.kotlin.compose)
 }
 
 kotlin {
@@ -21,8 +24,16 @@ kotlin {
         }
     }
 
-    iosArm64()
-    iosSimulatorArm64()
+    listOf(
+        iosArm64(),
+        iosSimulatorArm64(),
+    ).forEach { iosTarget ->
+        // El framework que Xcode enlaza; el nombre coincide con `import Shared` en iosApp.
+        iosTarget.binaries.framework {
+            baseName = "Shared"
+            isStatic = true
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {
@@ -30,6 +41,13 @@ kotlin {
             // `api` porque `kotlinx.datetime.LocalDate` aparece en la firma pública de
             // OverdueReminderPolicy, que la app llama.
             api(libs.kotlinx.datetime)
+
+            // La pantalla mínima de iOS. En Android, Compose Multiplatform resuelve a los mismos
+            // artefactos de androidx.compose que ya usa la app.
+            implementation(compose.runtime)
+            implementation(compose.foundation)
+            implementation(compose.material3)
+            implementation(compose.ui)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
