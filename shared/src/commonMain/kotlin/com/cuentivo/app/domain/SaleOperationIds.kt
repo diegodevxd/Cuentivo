@@ -1,8 +1,5 @@
 package com.cuentivo.app.domain
 
-import java.nio.charset.StandardCharsets
-import java.util.UUID
-
 object SaleOperationIds {
     fun sale(idempotencyKey: String): String = child(idempotencyKey, "sale", "root")
     fun saleItem(idempotencyKey: String, productId: String, index: Int): String =
@@ -16,6 +13,6 @@ object SaleOperationIds {
 
     private fun child(key: String, kind: String, suffix: String): String {
         require(key.isNotBlank()) { "Idempotency key must not be blank." }
-        return UUID.nameUUIDFromBytes("$key:$kind:$suffix".toByteArray(StandardCharsets.UTF_8)).toString()
+        return nameUuidV3("$key:$kind:$suffix")
     }
 }
