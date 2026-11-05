@@ -68,6 +68,18 @@ jobs:
           path: shared/build/test-results/iosSimulatorArm64Test
           if-no-files-found: warn
 
+      # Firebase lo lee del bundle al arrancar; sin este archivo la app compila y truena en el
+      # primer `FirebaseApp.configure()`. El plist es un secreto: no está en el repo.
+      - name: GoogleService-Info.plist desde el secreto
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -z "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "::error::Falta el secreto GOOGLE_SERVICE_INFO_PLIST"
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > iosApp/iosApp/GoogleService-Info.plist
+
       # Corre aunque falle una prueba: el job sigue en rojo, pero una sola corrida da los dos veredictos.
       - name: Compilar la app de iOS (sin firma)
         if: ${{ !cancelled() }}
