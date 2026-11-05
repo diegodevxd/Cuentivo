@@ -6,11 +6,11 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * "Registrar" sólo se activa cuando la página entera está resuelta.
@@ -22,8 +22,8 @@ import org.junit.Test
  */
 class LedgerRegisterButtonGateTest {
 
-    private val pageDateEpochDay = LocalDate.of(2026, 9, 10).toEpochDay()
-    private val todayEpochDay = LocalDate.of(2026, 9, 16).toEpochDay()
+    private val pageDateEpochDay = LocalDate(2026, 9, 10).toEpochDays().toLong()
+    private val todayEpochDay = LocalDate(2026, 9, 16).toEpochDays().toLong()
     private val existingCustomers = listOf(CustomerCandidate(id = "carmen-id", name = "Carmen"))
 
     private fun cleanRow() = LedgerOperation(
@@ -62,7 +62,7 @@ class LedgerRegisterButtonGateTest {
         val result = summaryFor(listOf(cleanRow(), objectedRow()))
 
         assertEquals(1, result.unresolvedCount)
-        assertFalse("no se puede registrar media página", result.isConfirmButtonEnabled)
+        assertFalse(result.isConfirmButtonEnabled, "no se puede registrar media página")
     }
 
     @Test
@@ -71,7 +71,7 @@ class LedgerRegisterButtonGateTest {
         val result = summaryFor(resolved)
 
         assertEquals(0, result.unresolvedCount)
-        assertTrue("con todo resuelto, registrar tiene que poder pulsarse", result.isConfirmButtonEnabled)
+        assertTrue(result.isConfirmButtonEnabled, "con todo resuelto, registrar tiene que poder pulsarse")
     }
 
     @Test

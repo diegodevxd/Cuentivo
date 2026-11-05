@@ -4,11 +4,11 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * "Confirmar todos" para las fechas simplemente viejas (v46).
@@ -98,8 +98,8 @@ class LedgerOldDatesBulkCorrectionTest {
 
     @Test
     fun `confirmar todos solo afecta a los viejos, y cambiar la fecha despues vuelve a objetar`() {
-        val page = LocalDate.of(2026, 9, 10).toEpochDay()
-        val hoy = LocalDate.of(2026, 9, 22).toEpochDay()
+        val page = LocalDate(2026, 9, 10).toEpochDays().toLong()
+        val hoy = LocalDate(2026, 9, 22).toEpochDays().toLong()
         val rows = listOf(
             operation(0, SafeDateCandidate(2026, 3, 1)),   // vieja, mismo año
             operation(1, SafeDateCandidate(2026, 3, 2)),   // vieja, mismo año
@@ -121,12 +121,9 @@ class LedgerOldDatesBulkCorrectionTest {
             afterBulk = LedgerReviewEdits.confirmObjection(afterBulk, lineIndex)
         }
 
-        assertTrue("los viejos quedan confirmados", LedgerObjectionConfirmation.isConfirmed(afterBulk[0]))
+        assertTrue(LedgerObjectionConfirmation.isConfirmed(afterBulk[0]), "los viejos quedan confirmados")
         assertTrue(LedgerObjectionConfirmation.isConfirmed(afterBulk[1]))
-        assertFalse(
-            "el de año distinto no se toca: no era una fecha vieja",
-            LedgerObjectionConfirmation.isConfirmed(afterBulk[2]),
-        )
+        assertFalse(LedgerObjectionConfirmation.isConfirmed(afterBulk[2]), "el de año distinto no se toca: no era una fecha vieja")
 
         // Y si después corrigen la fecha de un renglón confirmado, la huella cambia y vuelve a objetar.
         val edited = LedgerReviewEdits.applyDate(
@@ -135,10 +132,7 @@ class LedgerOldDatesBulkCorrectionTest {
             date = SafeDateCandidate(2024, 3, 1),
             todayEpochDay = hoy,
         )
-        assertFalse(
-            "cambiar la fecha tras confirmar tiene que volver a pedir confirmación",
-            LedgerObjectionConfirmation.isConfirmed(edited[0]),
-        )
+        assertFalse(LedgerObjectionConfirmation.isConfirmed(edited[0]), "cambiar la fecha tras confirmar tiene que volver a pedir confirmación")
     }
 
     private fun operation(lineIndex: Int, date: SafeDateCandidate) = LedgerOperation(

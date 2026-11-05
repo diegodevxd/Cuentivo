@@ -3,11 +3,11 @@ package com.cuentivo.app.domain
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * El plazo de pago de una página de libreta, sobre el planner y el objeto puro.
@@ -23,7 +23,7 @@ class LedgerDueDatePolicyTest {
     private val businessId = "biz-plazo"
     private val userId = "user-plazo"
     // 2026-09-22, hoy del encargo. Todas las fechas de esta clase se cuentan desde aquí.
-    private val todayEpochDay = LocalDate.of(2026, 9, 22).toEpochDay()
+    private val todayEpochDay = LocalDate(2026, 9, 22).toEpochDays().toLong()
     private val nowEpochMillis = 1_760_000_000_000L
 
     private fun sale(lineIndex: Int, name: String, cents: String, day: Int) = LedgerOperation(
@@ -56,7 +56,7 @@ class LedgerDueDatePolicyTest {
             todayEpochDay = todayEpochDay,
             nowEpochMillis = nowEpochMillis,
         )
-        assertTrue("el plan tuvo que salir: ${result}", result is BatchPlanningResult.Success)
+        assertTrue(result is BatchPlanningResult.Success, "el plan tuvo que salir: ${result}")
         return (result as BatchPlanningResult.Success).plan
     }
 
@@ -72,15 +72,11 @@ class LedgerDueDatePolicyTest {
         val dueBySaleDate = planned.sales.associate { it.saleDateEpochDay to it.dueDateEpochDay }
         assertEquals(2, planned.sales.size)
         for (sale in planned.sales) {
-            assertEquals(
-                "la fecha limite se cuenta desde la fecha del renglon, no desde hoy",
-                sale.saleDateEpochDay + 15,
-                sale.dueDateEpochDay,
-            )
+            assertEquals(sale.saleDateEpochDay + 15, sale.dueDateEpochDay, "la fecha limite se cuenta desde la fecha del renglon, no desde hoy")
         }
         // Y no se me va el detalle: una venta del dia 1 vence el 16, aunque hoy sea el 22.
-        val first = planned.sales.first { it.saleDateEpochDay == LocalDate.of(2026, 9, 1).toEpochDay() }
-        assertEquals(LocalDate.of(2026, 9, 16).toEpochDay(), first.dueDateEpochDay)
+        val first = planned.sales.first { it.saleDateEpochDay == LocalDate(2026, 9, 1).toEpochDays().toLong() }
+        assertEquals(LocalDate(2026, 9, 16).toEpochDays().toLong(), first.dueDateEpochDay)
         assertEquals(2, dueBySaleDate.size)
     }
 
@@ -89,7 +85,7 @@ class LedgerDueDatePolicyTest {
         // Lo de hoy, y lo que "Sin fecha" tiene que seguir significando.
         for (dueDateDays in listOf(null, null as Long?)) {
             val planned = plan(listOf(sale(0, "Beto", "12500", 5)), dueDateDays)
-            assertNull("sin plazo no puede haber fecha limite", planned.sales.single().dueDateEpochDay)
+            assertNull(planned.sales.single().dueDateEpochDay, "sin plazo no puede haber fecha limite")
         }
         // También el que no se pasa: el parametro por defecto es el comportamiento de siempre.
         val result = AiLedgerBatchPlanner.plan(
@@ -118,35 +114,31 @@ class LedgerDueDatePolicyTest {
         )
 
         val paymentRow = planned.payments.single()
-        assertEquals(
-            "el plazo no se cuela en la fecha del abono",
-            LocalDate.of(2026, 9, 12).toEpochDay(),
-            paymentRow.paymentDateEpochDay,
-        )
+        assertEquals(LocalDate(2026, 9, 12).toEpochDays().toLong(), paymentRow.paymentDateEpochDay, "el plazo no se cuela en la fecha del abono")
         // Y los cargos de la misma pagina si lo llevan.
-        assertEquals(LocalDate.of(2026, 9, 16).toEpochDay(), planned.sales.single().dueDateEpochDay)
+        assertEquals(LocalDate(2026, 9, 16).toEpochDays().toLong(), planned.sales.single().dueDateEpochDay)
     }
 
     // ---- Lo que avisa la pantalla ----
 
     @Test
     fun `un cargo de hace 40 dias con 15 dias nace vencido y uno de ayer no`() {
-        val oldDay = LocalDate.of(2026, 8, 13) // hace 40 dias
-        val yesterday = LocalDate.of(2026, 9, 21)
+        val oldDay = LocalDate(2026, 8, 13) // hace 40 dias
+        val yesterday = LocalDate(2026, 9, 21)
         val operations = listOf(
             LedgerOperation(
                 lineIndex = 0,
                 proposedKind = ProposedLedgerKind.SALE,
                 customerName = "Sra. Mendoza",
                 amountCents = "79900",
-                date = SafeDateCandidate(oldDay.year, oldDay.monthValue, oldDay.dayOfMonth),
+                date = SafeDateCandidate(oldDay.year, oldDay.monthNumber, oldDay.dayOfMonth),
             ),
             LedgerOperation(
                 lineIndex = 1,
                 proposedKind = ProposedLedgerKind.SALE,
                 customerName = "Beto",
                 amountCents = "12500",
-                date = SafeDateCandidate(yesterday.year, yesterday.monthValue, yesterday.dayOfMonth),
+                date = SafeDateCandidate(yesterday.year, yesterday.monthNumber, yesterday.dayOfMonth),
             ),
         )
 
@@ -157,31 +149,23 @@ class LedgerDueDatePolicyTest {
             dueDateDays = 15,
         )
 
-        assertEquals("solo la venta vieja nace vencida", 1, count)
+        assertEquals(1, count, "solo la venta vieja nace vencida")
         // Los dos casos por separado, para que la regla no pueda quedar indistinguible: con la
         // relación invertida ("vencida" = lo que NO vence), los dos juntos seguirían sumando 1.
-        assertEquals(
-            "la de hace 40 dias si cuenta",
-            1,
-            LedgerDueDatePolicy.bornOverdueCount(
+        assertEquals(1, LedgerDueDatePolicy.bornOverdueCount(
                 operations = operations.take(1),
                 pageDateEpochDay = null,
                 todayEpochDay = todayEpochDay,
                 dueDateDays = 15,
-            ),
-        )
-        assertEquals(
-            "la de ayer no cuenta: vence en 14 dias",
-            0,
-            LedgerDueDatePolicy.bornOverdueCount(
+            ), "la de hace 40 dias si cuenta")
+        assertEquals(0, LedgerDueDatePolicy.bornOverdueCount(
                 operations = operations.drop(1),
                 pageDateEpochDay = null,
                 todayEpochDay = todayEpochDay,
                 dueDateDays = 15,
-            ),
-        )
+            ), "la de ayer no cuenta: vence en 14 dias")
         // La de ayer vence en 14 dias: hoy esta pendiente, no vencida.
-        val yesterdaySale = plan(operations, 15).sales.first { it.saleDateEpochDay == yesterday.toEpochDay() }
+        val yesterdaySale = plan(operations, 15).sales.first { it.saleDateEpochDay == yesterday.toEpochDays().toLong() }
         assertEquals(
             SalePaymentStatus.PENDING,
             SaleStatusCalculator.status(
@@ -247,7 +231,7 @@ class LedgerDueDatePolicyTest {
             dueDateDays = 15,
         )
 
-        assertEquals("ni el abono ni el renglon bloqueado", 1, count)
+        assertEquals(1, count, "ni el abono ni el renglon bloqueado")
     }
 
     /**
@@ -300,11 +284,7 @@ class LedgerDueDatePolicyTest {
             ) == SalePaymentStatus.OVERDUE
         }
 
-        assertEquals(
-            "el aviso tiene que contar lo que despues el calculador de produccion marca como vencido",
-            actuallyOverdueOnceWritten,
-            announced,
-        )
+        assertEquals(actuallyOverdueOnceWritten, announced, "el aviso tiene que contar lo que despues el calculador de produccion marca como vencido")
         // Por si ambos se quedaran en cero por un fallo comun: la pagina si trae vencidas.
         assertEquals(2, announced)
     }

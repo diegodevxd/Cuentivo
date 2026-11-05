@@ -3,12 +3,12 @@ package com.cuentivo.app.domain
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * La corrección del año mal leído, probada sin dispositivo.
@@ -20,8 +20,8 @@ import org.junit.Test
  */
 class LedgerYearCorrectionTest {
 
-    private val today = LocalDate.of(2026, 9, 23).toEpochDay()
-    private val pageDate = LocalDate.of(2026, 3, 10).toEpochDay()
+    private val today = LocalDate(2026, 9, 23).toEpochDays().toLong()
+    private val pageDate = LocalDate(2026, 3, 10).toEpochDays().toLong()
 
     private fun op(lineIndex: Int, date: SafeDateCandidate?) = LedgerOperation(
         lineIndex = lineIndex,
@@ -50,7 +50,7 @@ class LedgerYearCorrectionTest {
         assertEquals(2026, LedgerYearCorrection.targetYear(pageDate, today))
         assertEquals(2026, LedgerYearCorrection.targetYear(null, today))
         // Una página de un año anterior corrige al año de la página, no al de hoy.
-        val olderPage = LocalDate.of(2025, 12, 1).toEpochDay()
+        val olderPage = LocalDate(2025, 12, 1).toEpochDays().toLong()
         assertEquals(2025, LedgerYearCorrection.targetYear(olderPage, today))
     }
 
@@ -145,7 +145,7 @@ class LedgerYearCorrectionTest {
     fun `cambiar todos solo toca los renglones con objecion de fecha`() {
         // Jan 5 is intentional: Dec 31 in the previous year is only five days old and therefore
         // plausible under the production date objection policy when the page has no date.
-        val scenarioToday = LocalDate.of(2026, 1, 5).toEpochDay()
+        val scenarioToday = LocalDate(2026, 1, 5).toEpochDays().toLong()
         val operations = listOf(
             op(0, SafeDateCandidate(2023, 3, 10)),
             op(1, SafeDateCandidate(2023, 4, 2)),
@@ -159,7 +159,7 @@ class LedgerYearCorrectionTest {
             pageDateEpochDay = null,
             todayEpochDay = scenarioToday,
         ).filter { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }
-        assertEquals("the recent row must not also have a date objection", listOf(0, 1), actualDateObjections.map { it.lineIndex })
+        assertEquals(listOf(0, 1), actualDateObjections.map { it.lineIndex }, "the recent row must not also have a date objection")
 
         val objections = actualDateObjections + priceObjection(2)
         val plan = LedgerYearCorrection.plan(
@@ -170,7 +170,7 @@ class LedgerYearCorrectionTest {
         )
 
         assertEquals(listOf(0, 1), plan?.lineIndices)
-        assertFalse("el renglón con objeción de precio no puede entrar", plan?.lineIndices?.contains(2) == true)
+        assertFalse(plan?.lineIndices?.contains(2) == true, "el renglón con objeción de precio no puede entrar")
     }
 
     @Test

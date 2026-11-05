@@ -3,11 +3,14 @@ package com.cuentivo.app.domain
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.plus
+import kotlinx.datetime.minus
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * El motivo de una fecha implausible, no sólo que lo sea (v46).
@@ -18,9 +21,9 @@ import org.junit.Test
  */
 class LedgerImplausibleDateReasonTest {
 
-    private val hoy = LocalDate.of(2026, 9, 22)
+    private val hoy = LocalDate(2026, 9, 22)
 
-    private fun candidate(day: LocalDate) = SafeDateCandidate(day.year, day.monthValue, day.dayOfMonth)
+    private fun candidate(day: LocalDate) = SafeDateCandidate(day.year, day.monthNumber, day.dayOfMonth)
 
     private fun row(lineIndex: Int, date: SafeDateCandidate?) = LedgerOperation(
         lineIndex = lineIndex,
@@ -34,7 +37,7 @@ class LedgerImplausibleDateReasonTest {
     private fun reasons(
         rows: List<LedgerOperation>,
         pageDateEpochDay: Long?,
-        todayEpochDay: Long? = hoy.toEpochDay(),
+        todayEpochDay: Long? = hoy.toEpochDays().toLong(),
     ) = LedgerDeterministicObjections.evaluate(
         operations = rows,
         existingCustomerCandidates = emptyList(),
@@ -43,7 +46,7 @@ class LedgerImplausibleDateReasonTest {
         todayEpochDay = todayEpochDay,
     ).filter { it.type == LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE }
 
-    private val page = LocalDate.of(2026, 9, 10).toEpochDay()
+    private val page = LocalDate(2026, 9, 10).toEpochDays().toLong()
 
     @Test
     fun `un anio distinto al de la hoja es YEAR_MISMATCH`() {
@@ -55,7 +58,7 @@ class LedgerImplausibleDateReasonTest {
 
     @Test
     fun `181 dias atras en el mismo anio es TOO_OLD`() {
-        val resultado = reasons(listOf(row(0, candidate(hoy.minusDays(181)))), pageDateEpochDay = page)
+        val resultado = reasons(listOf(row(0, candidate(hoy.minus(181, DateTimeUnit.DAY)))), pageDateEpochDay = page)
 
         assertEquals(1, resultado.size)
         assertEquals(LedgerImplausibleDateReason.TOO_OLD, resultado.single().dateReason)
@@ -63,12 +66,12 @@ class LedgerImplausibleDateReasonTest {
 
     @Test
     fun `180 dias exactos no objeta`() {
-        assertTrue(reasons(listOf(row(0, candidate(hoy.minusDays(180)))), pageDateEpochDay = page).isEmpty())
+        assertTrue(reasons(listOf(row(0, candidate(hoy.minus(180, DateTimeUnit.DAY)))), pageDateEpochDay = page).isEmpty())
     }
 
     @Test
     fun `manana es FUTURE`() {
-        val resultado = reasons(listOf(row(0, candidate(hoy.plusDays(1)))), pageDateEpochDay = hoy.toEpochDay())
+        val resultado = reasons(listOf(row(0, candidate(hoy.plus(1, DateTimeUnit.DAY)))), pageDateEpochDay = hoy.toEpochDays().toLong())
 
         assertEquals(1, resultado.size)
         assertEquals(LedgerImplausibleDateReason.FUTURE, resultado.single().dateReason)
@@ -76,7 +79,7 @@ class LedgerImplausibleDateReasonTest {
 
     @Test
     fun `hoy mismo no objeta`() {
-        assertTrue(reasons(listOf(row(0, candidate(hoy))), pageDateEpochDay = hoy.toEpochDay()).isEmpty())
+        assertTrue(reasons(listOf(row(0, candidate(hoy))), pageDateEpochDay = hoy.toEpochDays().toLong()).isEmpty())
     }
 
     @Test
@@ -90,7 +93,7 @@ class LedgerImplausibleDateReasonTest {
 
     @Test
     fun `una fecha futura de otro anio es YEAR_MISMATCH - el anio es lo accionable`() {
-        val resultado = reasons(listOf(row(0, SafeDateCandidate(2027, 1, 5))), pageDateEpochDay = hoy.toEpochDay())
+        val resultado = reasons(listOf(row(0, SafeDateCandidate(2027, 1, 5))), pageDateEpochDay = hoy.toEpochDays().toLong())
 
         assertEquals(1, resultado.size)
         assertEquals(LedgerImplausibleDateReason.YEAR_MISMATCH, resultado.single().dateReason)
@@ -109,7 +112,7 @@ class LedgerImplausibleDateReasonTest {
 
     @Test
     fun `sin fecha de pagina una fecha vieja del mismo anio sigue siendo TOO_OLD`() {
-        val resultado = reasons(listOf(row(0, candidate(hoy.minusDays(181)))), pageDateEpochDay = null)
+        val resultado = reasons(listOf(row(0, candidate(hoy.minus(181, DateTimeUnit.DAY)))), pageDateEpochDay = null)
 
         assertEquals(1, resultado.size)
         assertEquals(LedgerImplausibleDateReason.TOO_OLD, resultado.single().dateReason)
@@ -143,8 +146,8 @@ class LedgerImplausibleDateReasonTest {
         val resultado = reasons(
             listOf(
                 row(0, SafeDateCandidate(2023, 3, 1)),        // año distinto
-                row(1, candidate(hoy.minusDays(200))),         // vieja, mismo año
-                row(2, candidate(hoy.plusDays(2))),            // futura, mismo año
+                row(1, candidate(hoy.minus(200, DateTimeUnit.DAY))),         // vieja, mismo año
+                row(2, candidate(hoy.plus(2, DateTimeUnit.DAY))),            // futura, mismo año
                 row(3, SafeDateCandidate(2026, 9, 1)),         // plausible
             ),
             pageDateEpochDay = page,

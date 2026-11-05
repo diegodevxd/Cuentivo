@@ -4,10 +4,10 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import java.time.LocalDate
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * 3 · Una confirmación no puede sobrevivir a un cambio de fecha o de tipo (v44).
@@ -18,7 +18,7 @@ import org.junit.Test
  */
 class LedgerObjectionConfirmationTest {
 
-    private val today = LocalDate.of(2026, 9, 22).toEpochDay()
+    private val today = LocalDate(2026, 9, 22).toEpochDays().toLong()
 
     private fun row(
         date: SafeDateCandidate? = SafeDateCandidate(2026, 8, 14),
@@ -47,20 +47,14 @@ class LedgerObjectionConfirmationTest {
             date = SafeDateCandidate(2023, 3, 1),
             todayEpochDay = today,
         ).single()
-        assertFalse(
-            "un cambio de fecha tiene que anular la confirmación",
-            LedgerObjectionConfirmation.isConfirmed(edited),
-        )
+        assertFalse(LedgerObjectionConfirmation.isConfirmed(edited), "un cambio de fecha tiene que anular la confirmación")
     }
 
     @Test
     fun `confirmar y cambiar el tipo vuelve a pedir confirmacion`() {
         val confirmed = LedgerObjectionConfirmation.confirming(row(kind = ProposedLedgerKind.SALE))
         val edited = LedgerReviewEdits.applyKind(listOf(confirmed), lineIndex = 0, kind = ProposedLedgerKind.PAYMENT).single()
-        assertFalse(
-            "un cambio de tipo tiene que anular la confirmación",
-            LedgerObjectionConfirmation.isConfirmed(edited),
-        )
+        assertFalse(LedgerObjectionConfirmation.isConfirmed(edited), "un cambio de tipo tiene que anular la confirmación")
     }
 
     @Test
@@ -83,9 +77,6 @@ class LedgerObjectionConfirmationTest {
             "${CustomerNameNormalizer.key(op.description.orEmpty()).length}:${CustomerNameNormalizer.key(op.description.orEmpty())}",
         ).joinToString(":")
         val restored = op.copy(isObjectionConfirmed = true, objectionConfirmedFingerprint = oldFingerprint)
-        assertFalse(
-            "una huella vieja no puede dar por confirmado un renglón con la huella nueva",
-            LedgerObjectionConfirmation.isConfirmed(restored),
-        )
+        assertFalse(LedgerObjectionConfirmation.isConfirmed(restored), "una huella vieja no puede dar por confirmado un renglón con la huella nueva")
     }
 }

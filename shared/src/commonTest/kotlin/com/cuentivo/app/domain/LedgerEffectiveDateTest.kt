@@ -3,10 +3,10 @@ package com.cuentivo.app.domain
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.Test
 
 /**
  * 2 · La fecha efectiva y la ventana de consulta (v44).
@@ -18,8 +18,8 @@ import org.junit.Test
  */
 class LedgerEffectiveDateTest {
 
-    private val today = LocalDate.of(2026, 9, 22).toEpochDay()
-    private val page2023 = LocalDate.of(2023, 3, 1).toEpochDay()
+    private val today = LocalDate(2026, 9, 22).toEpochDays().toLong()
+    private val page2023 = LocalDate(2023, 3, 1).toEpochDays().toLong()
 
     private fun row(lineIndex: Int, date: SafeDateCandidate? = null) = LedgerOperation(
         lineIndex = lineIndex,
@@ -33,7 +33,7 @@ class LedgerEffectiveDateTest {
     fun `la fecha del renglon manda sobre la de la pagina`() {
         val op = row(0, SafeDateCandidate(2026, 8, 14))
         assertEquals(
-            LocalDate.of(2026, 8, 14).toEpochDay(),
+            LocalDate(2026, 8, 14).toEpochDays().toLong(),
             LedgerEffectiveDate.of(op, pageDateEpochDay = page2023, todayEpochDay = today),
         )
     }
@@ -96,6 +96,6 @@ class LedgerEffectiveDateTest {
             windowDays = 14L,
         )
         assertEquals(page2023 - 14L, min)
-        assertEquals(LocalDate.of(2026, 8, 14).toEpochDay() + 14L, max)
+        assertEquals(LocalDate(2026, 8, 14).toEpochDays().toLong() + 14L, max)
     }
 }

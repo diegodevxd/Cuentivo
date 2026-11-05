@@ -6,11 +6,11 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.data.local.ExpectedLedgerBatchResult
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * C · La página de Diego registrada dos veces (v44): reproducción con la secuencia exacta —
@@ -39,8 +39,8 @@ class LedgerDuplicateAcrossSessionsTest {
 
     private val businessId = "biz-1"
     private val userId = "user-1"
-    private val todayEpochDay = LocalDate.of(2026, 9, 16).toEpochDay()
-    private val pageDateEpochDay = LocalDate.of(2026, 9, 10).toEpochDay()
+    private val todayEpochDay = LocalDate(2026, 9, 16).toEpochDays().toLong()
+    private val pageDateEpochDay = LocalDate(2026, 9, 10).toEpochDays().toLong()
     private val nowEpochMillis = 1_700_000_000_000L
 
     /** La misma página que se fotografía dos veces: dos renglones, montos y fechas idénticos. */
@@ -109,23 +109,11 @@ class LedgerDuplicateAcrossSessionsTest {
 
         // La persona no ve el resultado (sin refresco) y fotografía otra vez: sesión nueva.
         val second = kotlinx.coroutines.runBlocking { confirm(operations, "sesion-2") }
-        assertEquals(
-            "la clave de lote depende de la sesión: la segunda foto vuelve a escribir",
-            LedgerBatchConfirmation.Recorded(2),
-            second,
-        )
+        assertEquals(LedgerBatchConfirmation.Recorded(2), second, "la clave de lote depende de la sesión: la segunda foto vuelve a escribir")
 
         assertEquals(2, writtenPlans.size)
-        assertNotEquals(
-            "dos sesiones producen dos claves de lote distintas",
-            writtenPlans[0].batchIdempotencyKey,
-            writtenPlans[1].batchIdempotencyKey,
-        )
-        assertEquals(
-            "Laura queda con 2 x 99900: exactamente el $1,998 que se vio en el teléfono",
-            listOf(99_900L, 15_000L),
-            writtenPlans[1].sales.map { it.totalCents },
-        )
+        assertNotEquals(writtenPlans[0].batchIdempotencyKey, writtenPlans[1].batchIdempotencyKey, "dos sesiones producen dos claves de lote distintas")
+        assertEquals(listOf(99_900L, 15_000L), writtenPlans[1].sales.map { it.totalCents }, "Laura queda con 2 x 99900: exactamente el $1,998 que se vio en el teléfono")
     }
 
     @Test
@@ -141,16 +129,8 @@ class LedgerDuplicateAcrossSessionsTest {
             todayEpochDay = todayEpochDay,
         )
 
-        assertEquals(
-            "con datos idénticos el detector casa en todos los renglones (el badge SÍ se muestra)",
-            setOf(0, 1),
-            matches.keys,
-        )
-        assertEquals(
-            "apunta a la venta ya escrita por la primera sesión",
-            writtenPlans.first().sales.first().id,
-            matches.getValue(0).matchedRegisteredId,
-        )
+        assertEquals(setOf(0, 1), matches.keys, "con datos idénticos el detector casa en todos los renglones (el badge SÍ se muestra)")
+        assertEquals(writtenPlans.first().sales.first().id, matches.getValue(0).matchedRegisteredId, "apunta a la venta ya escrita por la primera sesión")
     }
 
     @Test
@@ -165,7 +145,7 @@ class LedgerDuplicateAcrossSessionsTest {
             pageDateEpochDay = pageDateEpochDay,
             todayEpochDay = todayEpochDay,
         )
-        assertTrue("para que el caso valga, el detector tiene que estar avisando", matches.isNotEmpty())
+        assertTrue(matches.isNotEmpty(), "para que el caso valga, el detector tiene que estar avisando")
 
         // v44: el duplicado entra en los bloqueados, igual que una objeción determinista. La
         // pantalla y la puerta de escritura usan el mismo objeto puro, así que no pueden discrepar.
@@ -180,11 +160,7 @@ class LedgerDuplicateAcrossSessionsTest {
                 todayEpochDay = todayEpochDay,
             ),
         )
-        assertEquals(
-            "el duplicado deja los dos renglones sin resolver hasta confirmarlos",
-            setOf(0, 1),
-            blocked,
-        )
+        assertEquals(setOf(0, 1), blocked, "el duplicado deja los dos renglones sin resolver hasta confirmarlos")
 
         // Y con los renglones bloqueados, la segunda sesión NO escribe: la puerta de escritura
         // recibe ese conjunto y el planificador no ejecuta nada.
@@ -209,12 +185,8 @@ class LedgerDuplicateAcrossSessionsTest {
                 },
             )
         }
-        assertEquals(
-            "sin confirmar, el duplicado no se registra",
-            LedgerBatchConfirmation.Failed,
-            second,
-        )
-        assertEquals("no hubo segunda escritura", 1, writtenPlans.size)
+        assertEquals(LedgerBatchConfirmation.Failed, second, "sin confirmar, el duplicado no se registra")
+        assertEquals(1, writtenPlans.size, "no hubo segunda escritura")
 
         // Confirmar cada renglón ("Sí, es otra venta") los desbloquea y la página pasa.
         val confirmed = secondRead.map { LedgerObjectionConfirmation.confirming(it) }
@@ -223,7 +195,7 @@ class LedgerDuplicateAcrossSessionsTest {
             duplicateMatches = matches,
             deterministicBlockedLineIndices = emptySet(),
         )
-        assertTrue("tras confirmar, ya no queda nada bloqueado", blockedAfter.isEmpty())
+        assertTrue(blockedAfter.isEmpty(), "tras confirmar, ya no queda nada bloqueado")
 
         val third = kotlinx.coroutines.runBlocking {
             LedgerBatchCoordinator.confirm(
@@ -246,11 +218,7 @@ class LedgerDuplicateAcrossSessionsTest {
                 },
             )
         }
-        assertEquals(
-            "confirmado como otra venta, el registro procede",
-            LedgerBatchConfirmation.Recorded(2),
-            third,
-        )
+        assertEquals(LedgerBatchConfirmation.Recorded(2), third, "confirmado como otra venta, el registro procede")
         assertEquals(2, writtenPlans.size)
     }
 
@@ -267,7 +235,7 @@ class LedgerDuplicateAcrossSessionsTest {
             pageDateEpochDay = null,
             todayEpochDay = todayEpochDay,
         )
-        assertEquals("la fecha 2023 sí deja el renglón sin resolver", setOf(0), blocked)
+        assertEquals(setOf(0), blocked, "la fecha 2023 sí deja el renglón sin resolver")
     }
 
     @Test
@@ -276,8 +244,8 @@ class LedgerDuplicateAcrossSessionsTest {
         // fecha de página sí es 2023. La consulta a Room usaba sólo fechas de renglón y caía a hoy
         // (2026), así que no encontraba nada y el duplicado pasaba. Con la ventana de fecha efectiva
         // (renglón o página) la consulta cae en 2023 y el detector SÍ casa.
-        val page2023 = LocalDate.of(2023, 3, 1).toEpochDay()
-        val today2026 = LocalDate.of(2026, 9, 22).toEpochDay()
+        val page2023 = LocalDate(2023, 3, 1).toEpochDays().toLong()
+        val today2026 = LocalDate(2026, 9, 22).toEpochDays().toLong()
         val undatedPage = listOf(
             ledgerRow(0, "Laura", "99900").copy(date = null),
             ledgerRow(1, "Estef", "15000").copy(date = null),
@@ -336,7 +304,7 @@ class LedgerDuplicateAcrossSessionsTest {
             pageDateEpochDay = page2023,
             todayEpochDay = today2026,
         )
-        assertEquals("con la ventana correcta el detector sí casa", setOf(0, 1), matches.keys)
+        assertEquals(setOf(0, 1), matches.keys, "con la ventana correcta el detector sí casa")
 
         // Y por eso la segunda vez queda frenada.
         val blocked = LedgerDuplicateBlocking.blockedLineIndices(
@@ -344,6 +312,6 @@ class LedgerDuplicateAcrossSessionsTest {
             duplicateMatches = matches,
             deterministicBlockedLineIndices = emptySet(),
         )
-        assertEquals("la segunda vez queda frenada", setOf(0, 1), blocked)
+        assertEquals(setOf(0, 1), blocked, "la segunda vez queda frenada")
     }
 }

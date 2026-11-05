@@ -6,11 +6,11 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.UnreadableLedgerField
 import com.cuentivo.app.data.local.ExpectedLedgerBatchResult
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * Una página se registra **entera o no se registra**.
@@ -25,8 +25,8 @@ class LedgerSessionKeyIdempotencyTest {
 
     private val businessId = "biz-1"
     private val userId = "user-1"
-    private val pageDateEpochDay = LocalDate.of(2026, 9, 10).toEpochDay()
-    private val todayEpochDay = LocalDate.of(2026, 9, 16).toEpochDay()
+    private val pageDateEpochDay = LocalDate(2026, 9, 10).toEpochDays().toLong()
+    private val todayEpochDay = LocalDate(2026, 9, 16).toEpochDays().toLong()
     private val nowEpochMillis = 1_700_000_000_000L
 
     private fun sale(lineIndex: Int, name: String, amountCents: String) = LedgerOperation(
@@ -83,8 +83,8 @@ class LedgerSessionKeyIdempotencyTest {
         }
 
         assertEquals(LedgerBatchConfirmation.AlreadyRecorded(1), second)
-        assertEquals("el reintento no puede volver a escribir", 1, writtenPlans.size)
-        assertEquals("lo registrado es lo del primer intento, no lo editado", 25_000L, totalThatLanded)
+        assertEquals(1, writtenPlans.size, "el reintento no puede volver a escribir")
+        assertEquals(25_000L, totalThatLanded, "lo registrado es lo del primer intento, no lo editado")
     }
 
     @Test
@@ -94,16 +94,8 @@ class LedgerSessionKeyIdempotencyTest {
 
         assertEquals(2, writtenPlans.size)
         // El contenido SÍ cambió: sin esta comprobación, comparar las claves no probaría nada.
-        assertNotEquals(
-            "las dos páginas tienen que diferir en el contenido para que la prueba valga",
-            writtenPlans[0].sales.single().totalCents,
-            writtenPlans[1].sales.single().totalCents,
-        )
-        assertEquals(
-            "editar el contenido no puede crear una página nueva",
-            writtenPlans[0].batchIdempotencyKey,
-            writtenPlans[1].batchIdempotencyKey,
-        )
+        assertNotEquals(writtenPlans[0].sales.single().totalCents, writtenPlans[1].sales.single().totalCents, "las dos páginas tienen que diferir en el contenido para que la prueba valga")
+        assertEquals(writtenPlans[0].batchIdempotencyKey, writtenPlans[1].batchIdempotencyKey, "editar el contenido no puede crear una página nueva")
     }
 
     @Test
@@ -118,11 +110,7 @@ class LedgerSessionKeyIdempotencyTest {
             writtenPlans[0].sales.single().totalCents,
             writtenPlans[1].sales.single().totalCents,
         )
-        assertNotEquals(
-            "una segunda foto legítima tiene que poder escribirse",
-            writtenPlans[0].batchIdempotencyKey,
-            writtenPlans[1].batchIdempotencyKey,
-        )
+        assertNotEquals(writtenPlans[0].batchIdempotencyKey, writtenPlans[1].batchIdempotencyKey, "una segunda foto legítima tiene que poder escribirse")
     }
 
     @Test
@@ -155,7 +143,7 @@ class LedgerSessionKeyIdempotencyTest {
         }
 
         assertEquals(LedgerBatchConfirmation.AlreadyRecorded(1), result)
-        assertEquals("no se encola una página que no escribimos", 0, enqueued)
+        assertEquals(0, enqueued, "no se encola una página que no escribimos")
     }
 
     @Test
@@ -175,10 +163,7 @@ class LedgerSessionKeyIdempotencyTest {
         }
 
         assertEquals(LedgerBatchConfirmation.Failed, result)
-        assertTrue(
-            "un lote con un renglón sin resolver no puede escribir nada",
-            writtenPlans.isEmpty(),
-        )
+        assertTrue(writtenPlans.isEmpty(), "un lote con un renglón sin resolver no puede escribir nada")
     }
 
     /**
@@ -221,7 +206,7 @@ class LedgerSessionKeyIdempotencyTest {
         }
 
         assertEquals(LedgerBatchConfirmation.Failed, result)
-        assertTrue("no puede escribir ni contestar que ya estaba", writtenPlans.isEmpty())
+        assertTrue(writtenPlans.isEmpty(), "no puede escribir ni contestar que ya estaba")
     }
 
     @Test
@@ -247,7 +232,7 @@ class LedgerSessionKeyIdempotencyTest {
             nowEpochMillis = nowEpochMillis,
         )
 
-        assertTrue("debe rechazar, no saltar el renglón", result is BatchPlanningResult.Rejected)
+        assertTrue(result is BatchPlanningResult.Rejected, "debe rechazar, no saltar el renglón")
         val rejection = (result as BatchPlanningResult.Rejected).rejections.single()
         assertTrue(rejection is BatchPlanningRejection.UnresolvedRows)
         assertEquals(listOf(2), (rejection as BatchPlanningRejection.UnresolvedRows).lineIndices)

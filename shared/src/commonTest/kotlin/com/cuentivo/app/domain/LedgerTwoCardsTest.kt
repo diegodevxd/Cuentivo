@@ -4,12 +4,12 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * "Cambiar todos" (año) y "Confirmar todos" (viejos) no pueden salir juntas por los mismos renglones (v47).
@@ -24,9 +24,9 @@ import org.junit.Test
  */
 class LedgerTwoCardsTest {
 
-    private val hoy = LocalDate.of(2026, 9, 22)
-    private val hoyEpochDay = hoy.toEpochDay()
-    private val page = LocalDate.of(2026, 9, 10).toEpochDay()
+    private val hoy = LocalDate(2026, 9, 22)
+    private val hoyEpochDay = hoy.toEpochDays().toLong()
+    private val page = LocalDate(2026, 9, 10).toEpochDays().toLong()
 
     private fun row(lineIndex: Int, year: Int, month: Int, day: Int) = LedgerOperation(
         lineIndex = lineIndex,
@@ -72,10 +72,7 @@ class LedgerTwoCardsTest {
         val rows = (0 until 12).map { row(it, 2023, 3, 1) }
 
         assertEquals(12, yearCard(rows)?.lineIndices?.size)
-        assertTrue(
-            "un renglón de año distinto no puede contar para 'Confirmar todos': lo suyo es el año",
-            oldCard(rows).isEmpty(),
-        )
+        assertTrue(oldCard(rows).isEmpty(), "un renglón de año distinto no puede contar para 'Confirmar todos': lo suyo es el año")
     }
 
     @Test
@@ -93,12 +90,8 @@ class LedgerTwoCardsTest {
 
         val corrected = applyYearChange(rows)
 
-        assertNull("ya no hay años que corregir", yearCard(corrected))
-        assertEquals(
-            "y los doce siguen siendo viejos, pero ahora es lo único que queda por decir",
-            (0 until 12).toList(),
-            oldCard(corrected),
-        )
+        assertNull(yearCard(corrected), "ya no hay años que corregir")
+        assertEquals((0 until 12).toList(), oldCard(corrected), "y los doce siguen siendo viejos, pero ahora es lo único que queda por decir")
     }
 
     @Test

@@ -10,11 +10,11 @@ import com.cuentivo.app.ai.ledger.LedgerReview
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.data.local.ExpectedLedgerBatchResult
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * Una página que el modelo marca como incompleta **no se registra en silencio**.
@@ -28,8 +28,8 @@ import org.junit.Test
  */
 class LedgerPageCompletenessTest {
 
-    private val pageDateEpochDay = LocalDate.of(2026, 9, 10).toEpochDay()
-    private val todayEpochDay = LocalDate.of(2026, 9, 16).toEpochDay()
+    private val pageDateEpochDay = LocalDate(2026, 9, 10).toEpochDays().toLong()
+    private val todayEpochDay = LocalDate(2026, 9, 16).toEpochDays().toLong()
     private val nowEpochMillis = 1_700_000_000_000L
 
     private fun cleanRow() = LedgerOperation(
@@ -76,10 +76,7 @@ class LedgerPageCompletenessTest {
         // Sin esto, el renglón descartado DESAPARECE y la página se registra sin él: nadie se entera.
         val review = reviewWithDiscards()
 
-        assertTrue(
-            "un descarte tiene que contar como motivo",
-            LedgerPageCompleteness.confirmationReasons(review).contains(LedgerPageConfirmationReason.UNREADABLE_ROWS),
-        )
+        assertTrue(LedgerPageCompleteness.confirmationReasons(review).contains(LedgerPageConfirmationReason.UNREADABLE_ROWS), "un descarte tiene que contar como motivo")
         assertTrue(LedgerPageCompleteness.requiresPageConfirmation(review))
     }
 
@@ -97,10 +94,10 @@ class LedgerPageCompletenessTest {
         val review = reviewWithDiscards()
 
         val before = LedgerImportSummaryCalculator.calculate(review, emptyList(), isPageCompletenessConfirmed = false)
-        assertFalse("con un renglón descartado no se puede registrar", before.isConfirmButtonEnabled)
+        assertFalse(before.isConfirmButtonEnabled, "con un renglón descartado no se puede registrar")
 
         val after = LedgerImportSummaryCalculator.calculate(review, emptyList(), isPageCompletenessConfirmed = true)
-        assertTrue("con la palabra de la persona, sí", after.isConfirmButtonEnabled)
+        assertTrue(after.isConfirmButtonEnabled, "con la palabra de la persona, sí")
     }
 
     // ---- Una hoja que no es de cuentas (punto 4) ----
@@ -160,8 +157,8 @@ class LedgerPageCompletenessTest {
         val withDoubt = review(pageIncomplete = true)
         val result = LedgerImportSummaryCalculator.calculate(withDoubt, emptyList(), isPageCompletenessConfirmed = false)
 
-        assertTrue("el aviso tiene que seguir saliendo", result.pageIncompleteNoticeRequired)
-        assertFalse("una hoja sin confirmar no se puede registrar", result.isConfirmButtonEnabled)
+        assertTrue(result.pageIncompleteNoticeRequired, "el aviso tiene que seguir saliendo")
+        assertFalse(result.isConfirmButtonEnabled, "una hoja sin confirmar no se puede registrar")
     }
 
     @Test
@@ -218,7 +215,7 @@ class LedgerPageCompletenessTest {
         }
 
         assertEquals(LedgerBatchConfirmation.Failed, result)
-        assertEquals("no puede escribir nada", 0, writes)
+        assertEquals(0, writes, "no puede escribir nada")
     }
 
     @Test
