@@ -9,6 +9,25 @@ Manda, en este orden:
 3. El código y sus pruebas para el comportamiento real.
 4. `CLAUDE.md` — arquitectura del repo y trampas del entorno; contrástalo con el código.
 
+## iOS sin Mac (rama `diegodevxd/cuentivo-ios`, 2026-11-05)
+
+Plan: `docs/superpowers/plans/2026-11-04-cuentivo-ios-sin-mac.md`. Ruta: Kotlin Multiplatform + Compose
+Multiplatform; iOS se compila en runners macOS de GitHub Actions (xtool descartado: solo Swift).
+Implementó OpenCode, auditó Claude con gate propio (`testDebugUnitTest :shared:testAndroidHostTest
+assembleDebug assembleRelease lintDebug --rerun-tasks`): **1477 pruebas, 0 fallos** (927 app + 550 shared);
+Room en emulador 58/0; esquema v8 intacto; KSP subió a 2.3.13 (autorizado).
+
+- Hecho: F1 (dominio a `:shared`), F2 (`iosApp/` + `ios-build.yml` + `android-check.yml`), F3 (Room
+  KMP; migraciones solo Android, iOS con `BundledSQLiteDriver`), resto del dominio y `ai/ledger` puro,
+  contratos de sync en común (F4 solo interfaces), preparación F7 (Info.plist, PrivacyInfo, fastlane,
+  `ios-release.yml`, `docs/ios-dia-de-pago.md`).
+- **Nada compilado aún para iOS**: los `actual` de iOS (CommonCrypto, NSNumberFormatter, NFD) y el
+  proyecto Xcode se verifican en el primer run de `ios-build` tras el push.
+- Siguiente: F4 implementación iOS de sync/Auth (decidir GitLive vs SDK nativo), F5 UI + strings a
+  composeResources, F6 StoreKit + `verifyAppleSubscription`. `XlsxReader` sigue solo en Android.
+- Manual de Diego: push de la rama → correr `ios-build`; registrar app iOS en Firebase y guardar
+  `GoogleService-Info.plist` en base64 como secreto; pagar Apple Developer y seguir `docs/ios-dia-de-pago.md`.
+
 **Última actualización: 2026-09-23 (noche).** **v47 (`1.23.3`, versionCode 47) está en PRODUCCIÓN.**
 `diegodevxd/feature-cuentivo-ai` = `a451f47` (merge de v47), en origin. Etiquetas `v1.23.0-44`, `v1.23.1-45`,
 `v1.23.2-46`, `v1.23.3-47`. AABs en `dist/Cuentivo-v4{4..7}-*.aab`, llave SHA1 `25:05:8A:…:1D:BF`.
