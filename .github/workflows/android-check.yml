@@ -1,0 +1,70 @@
+# La CI que el proyecto nunca tuvo para Android: pruebas unitarias en cada push y PR.
+#
+# Deliberadamente mínimo: no publica nada ni firma nada. Las pruebas instrumentadas necesitan
+# emulador y no entran aquí.
+name: android-check
+
+on:
+  push:
+    branches:
+      - diegodevxd/cuentivo-ios
+      - codex/neo-fintech
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: android-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Caché de Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # google-services.json no está en el repo (es local). En CI el plugin de Google Services no
+      # puede resolverlo, así que se genera un archivo mínimo con el project id de relleno: las
+      # pruebas unitarias no hablan con Firebase, sólo compilan contra el plugin aplicado.
+      - name: google-services.json de relleno para CI
+        run: |
+          cat > app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "cuentivo-ci",
+              "storage_bucket": "cuentivo-ci.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": { "package_name": "com.cuentivo.app" }
+                },
+                "api_key": [ { "current_key": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" } ]
+              }
+            ],
+            "configuration_version": "1"
+          }
+          JSON
+
+      - name: Pruebas unitarias
+        run: ./gradlew testDebugUnitTest :shared:testAndroidHostTest --no-daemon --console=plain
