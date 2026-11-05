@@ -2,7 +2,9 @@ package com.cuentivo.app.domain
 
 import com.cuentivo.app.data.local.BusinessDao
 import com.cuentivo.app.data.local.FinancialDao
-import java.time.LocalDate
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
 
 data class DashboardActivity(
     val id: String,
@@ -37,7 +39,7 @@ data class DashboardSnapshot(
 class DashboardRepository(
     private val businessDao: BusinessDao,
     private val financialDao: FinancialDao,
-    private val todayProvider: () -> LocalDate = { LocalDate.now() },
+    private val todayProvider: () -> LocalDate,
 ) {
     /**
      * The dashboard of the business [userId] owns — never simply "the first business on the phone".
@@ -49,16 +51,16 @@ class DashboardRepository(
         val business = businessDao.firstOwnedBy(userId) ?: return null
         val today = todayProvider()
 
-        val monthStart = today.withDayOfMonth(1)
+        val monthStart = LocalDate(today.year, today.month, 1)
         // Same stretch of the previous month, not the whole thing. On the 3rd, three days of
         // collection compared against a full previous month would read as a catastrophic drop and
         // the number would be a lie. minusMonths also clamps the day, so 31 March lands on 28 Feb.
-        val previousEnd = today.minusMonths(1)
-        val previousStart = previousEnd.withDayOfMonth(1)
+        val previousEnd = today.minus(1, DateTimeUnit.MONTH)
+        val previousStart = LocalDate(previousEnd.year, previousEnd.month, 1)
 
-        val soldCents = financialDao.salesTotalCents(business.id, monthStart.toEpochDay(), today.toEpochDay())
-        val collectedCents = financialDao.collectedTotalCents(business.id, monthStart.toEpochDay(), today.toEpochDay())
-        val overdueCents = financialDao.overdueBalanceCents(business.id, today.toEpochDay())
+        val soldCents = financialDao.salesTotalCents(business.id, monthStart.toEpochDays().toLong(), today.toEpochDays().toLong())
+        val collectedCents = financialDao.collectedTotalCents(business.id, monthStart.toEpochDays().toLong(), today.toEpochDays().toLong())
+        val overdueCents = financialDao.overdueBalanceCents(business.id, today.toEpochDays().toLong())
         val dueRows = financialDao.salesWithDueDate(business.id)
         val dueSales = dueRows.map {
             DueSale(
@@ -70,7 +72,7 @@ class DashboardRepository(
             )
         }
         val dueTodayCents = dueSales
-            .filter { it.dueDateEpochDay == today.toEpochDay() }
+            .filter { it.dueDateEpochDay == today.toEpochDays().toLong() }
             .sumOf { it.outstandingCents }
         val recentActivity = financialDao.recentDashboardActivity(business.id, 5).map {
             DashboardActivity(
@@ -87,8 +89,8 @@ class DashboardRepository(
 
         val currentTotals = PeriodTotals(soldCents, collectedCents, overdueCents)
         val previousTotals = PeriodTotals(
-            soldCents = financialDao.salesTotalCents(business.id, previousStart.toEpochDay(), previousEnd.toEpochDay()),
-            collectedCents = financialDao.collectedTotalCents(business.id, previousStart.toEpochDay(), previousEnd.toEpochDay()),
+            soldCents = financialDao.salesTotalCents(business.id, previousStart.toEpochDays().toLong(), previousEnd.toEpochDays().toLong()),
+            collectedCents = financialDao.collectedTotalCents(business.id, previousStart.toEpochDays().toLong(), previousEnd.toEpochDays().toLong()),
             overdueCents = 0L,
         )
 

@@ -30,6 +30,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -419,7 +422,13 @@ class MainActivity : ComponentActivity() {
         val firestoreGateway = FirestoreSyncGateway()
         val deletionGateway = FirestoreDeletionGateway()
         val cloudRestore = CloudRestore(database, firestoreGateway, firestoreGateway, membershipBootstrap)
-        val dashboardRepository = DashboardRepository(database.businessDao(), database.financialDao())
+        // El reloj del sistema no existe en :shared sin opt-in experimental, así que la fecha de hoy la
+        // pone el llamador; es el mismo LocalDate.now() que daba el valor por defecto anterior.
+        val dashboardRepository = DashboardRepository(
+            database.businessDao(),
+            database.financialDao(),
+            todayProvider = { Clock.System.todayIn(TimeZone.currentSystemDefault()) },
+        )
         val sessionGuard = LocalSessionGuard(applicationContext, database)
         val authenticationGateway = FirebaseAuthenticationGateway()
         val creditLimitSuggestionStore = CreditLimitSuggestionStore(applicationContext)
