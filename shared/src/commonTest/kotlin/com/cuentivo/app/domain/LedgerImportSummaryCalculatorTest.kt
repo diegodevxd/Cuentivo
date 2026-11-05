@@ -9,10 +9,10 @@ import com.cuentivo.app.ai.ledger.LedgerReviewSummary
 import com.cuentivo.app.ai.ledger.OperationFinancialDiagnostic
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class LedgerImportSummaryCalculatorTest {
 

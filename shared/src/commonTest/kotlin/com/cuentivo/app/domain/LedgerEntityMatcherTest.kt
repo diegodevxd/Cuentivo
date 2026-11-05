@@ -4,11 +4,11 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.UnreadableLedgerField
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 import kotlin.system.measureTimeMillis
 
 class LedgerEntityMatcherTest {
@@ -175,8 +175,8 @@ class LedgerEntityMatcherTest {
         }
 
         assertTrue(
-            "25 renglones contra 552 productos tardaron $elapsed ms: eso ya no es ruido de maquina",
             elapsed < 2_000,
+            "25 renglones contra 552 productos tardaron $elapsed ms: eso ya no es ruido de maquina",
         )
     }
 }

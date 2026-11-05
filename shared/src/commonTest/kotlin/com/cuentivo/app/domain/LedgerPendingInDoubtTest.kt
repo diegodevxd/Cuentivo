@@ -3,8 +3,8 @@ package com.cuentivo.app.domain
 import com.cuentivo.app.ai.ledger.CustomerReviewGroup
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 /**
  * El "por revisar" que reemplaza al "Saldo: $0.00 → $0.00" de un renglón en duda.

@@ -5,10 +5,10 @@ import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class LedgerDuplicateDetectorTest {
 
@@ -138,16 +138,16 @@ class LedgerDuplicateDetectorTest {
         assertEquals(1, matches.size)
         // v44: el duplicado frena el renglón hasta que la persona confirme que es otra venta.
         assertEquals(
-            "un duplicado sin confirmar deja el renglón sin resolver",
             setOf(0),
             LedgerDuplicateBlocking.blockedLineIndices(listOf(op), matches),
+            "un duplicado sin confirmar deja el renglón sin resolver",
         )
 
         // Confirmar ("Sí, es otra venta") reutiliza la huella de las objeciones y lo desbloquea.
         val confirmed = LedgerReviewEdits.confirmObjection(listOf(op), 0)
         assertTrue(
-            "tras confirmar, el renglón deja de estar bloqueado",
             LedgerDuplicateBlocking.blockedLineIndices(confirmed, matches).isEmpty(),
+            "tras confirmar, el renglón deja de estar bloqueado",
         )
         assertTrue(isRegisterableLedgerOperation(confirmed.single()))
     }
