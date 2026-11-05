@@ -21,7 +21,12 @@ import platform.UIKit.UIViewController
  * Es la prueba de que la ruta sin Mac funciona: si esto arranca en el simulador, el mismo
  * `domain/` que usa Android compila y corre en iOS. La UI completa llega en la Fase 5.
  */
-fun MainViewController(): UIViewController = ComposeUIViewController { CuentivoIosScreen() }
+fun MainViewController(): UIViewController {
+    // Toca Firebase una vez para que el enlazador estático no descarte sus símbolos. Ver
+    // FirebaseLinkCheck.kt: no lee ni escribe nada.
+    firebaseLinkCheck()
+    return ComposeUIViewController { CuentivoIosScreen() }
+}
 
 @Composable
 private fun CuentivoIosScreen() {

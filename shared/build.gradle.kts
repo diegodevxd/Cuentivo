@@ -38,13 +38,9 @@ kotlin {
     listOf(
         iosArm64(),
         iosSimulatorArm64(),
-    ).forEach { iosTarget ->
-        // El framework que Xcode enlaza; el nombre coincide con `import Shared` en iosApp.
-        iosTarget.binaries.framework {
-            baseName = "Shared"
-            isStatic = true
-        }
-    }
+    )
+    // Sin `binaries.framework`: el framework que Xcode enlaza lo produce :iosKit, que sí enlaza
+    // Firebase. :shared queda como klib que consume :iosKit, sin GitLive ni Firebase dentro.
 
     sourceSets {
         commonMain.dependencies {
