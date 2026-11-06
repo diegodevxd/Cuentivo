@@ -24,10 +24,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.domain.CustomerNameNormalizer
 import com.cuentivo.app.domain.Money
@@ -53,7 +54,7 @@ private const val INITIAL_ROWS = 3
  * land, because the import is all-or-nothing and nothing financial can be edited afterwards.
  */
 @Composable
-internal fun OpeningBalanceImportDialog(
+fun OpeningBalanceImportDialog(
     customers: List<CustomerBalanceRow>,
     onConfirm: (List<OpeningBalanceRow>) -> Unit,
     onDismiss: () -> Unit,
@@ -74,20 +75,20 @@ internal fun OpeningBalanceImportDialog(
         .toSet()
     val rowErrors = filled.associateWith { index ->
         when {
-            names[index].isBlank() -> R.string.opening_import_error_name
-            amountCentsAt[index] == null -> R.string.opening_import_error_amount
-            index in duplicateRows -> R.string.opening_import_error_duplicate
+            names[index].isBlank() -> Res.string.opening_import_error_name
+            amountCentsAt[index] == null -> Res.string.opening_import_error_amount
+            index in duplicateRows -> Res.string.opening_import_error_duplicate
             else -> null
         }
     }
     val totalCents = filled.filter { rowErrors[it] == null }.sumOf { amountCentsAt[it] ?: 0L }
     val canConfirm = filled.isNotEmpty() && rowErrors.values.all { it == null } && !isSaving
-    val selectCustomerLabel = stringResource(R.string.opening_import_select_customer)
-    val noCustomersLabel = stringResource(R.string.opening_import_no_customers)
-    val newCustomerLabel = stringResource(R.string.opening_import_new_customer)
+    val selectCustomerLabel = stringResource(Res.string.opening_import_select_customer)
+    val noCustomersLabel = stringResource(Res.string.opening_import_no_customers)
+    val newCustomerLabel = stringResource(Res.string.opening_import_new_customer)
 
     FormDialog(
-        title = stringResource(R.string.opening_import_title),
+        title = stringResource(Res.string.opening_import_title),
         confirmEnabled = canConfirm,
         onConfirm = {
             if (canConfirm) {
@@ -97,7 +98,7 @@ internal fun OpeningBalanceImportDialog(
         onDismiss = onDismiss,
     ) {
         Text(
-            stringResource(R.string.opening_import_hint),
+            stringResource(Res.string.opening_import_hint),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -132,7 +133,7 @@ internal fun OpeningBalanceImportDialog(
                 OutlinedTextField(
                     value = amounts[index],
                     onValueChange = { raw -> amounts[index] = raw.filter { it.isDigit() || it == '.' } },
-                    label = { Text(stringResource(R.string.opening_import_amount)) },
+                    label = { Text(stringResource(Res.string.opening_import_amount)) },
                     prefix = { Text("$ ") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
@@ -150,7 +151,7 @@ internal fun OpeningBalanceImportDialog(
                     ) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = stringResource(R.string.opening_import_remove_row),
+                            contentDescription = stringResource(Res.string.opening_import_remove_row),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -169,16 +170,16 @@ internal fun OpeningBalanceImportDialog(
             onClick = { names.add(""); amounts.add("") },
             modifier = Modifier.fillMaxWidth().testTag("opening-import-add-row"),
         ) {
-            Text(stringResource(R.string.opening_import_add_row))
+            Text(stringResource(Res.string.opening_import_add_row))
         }
         if (totalCents > 0) {
             Text(
-                stringResource(R.string.opening_import_total, Money.format(totalCents)),
+                stringResource(Res.string.opening_import_total, Money.format(totalCents)),
                 style = MaterialTheme.typography.titleMedium,
             )
         }
         Text(
-            stringResource(R.string.opening_import_warning),
+            stringResource(Res.string.opening_import_warning),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

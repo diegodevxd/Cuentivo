@@ -31,12 +31,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
@@ -92,19 +93,19 @@ fun FirstDebtScreen(
                         modifier = Modifier.size(56.dp),
                     ) {
                         Image(
-                            painter = painterResource(R.mipmap.ic_launcher_foreground),
+                            painter = painterResource(Res.drawable.ic_cuentivo_logo),
                             contentDescription = "Cuentivo",
                             modifier = Modifier.fillMaxSize().scale(1.5f),
                         )
                     }
 
                     Text(
-                        text = stringResource(R.string.first_debt_title),
+                        text = stringResource(Res.string.first_debt_title),
                         style = MaterialTheme.typography.titleLarge,
                     )
 
                     Text(
-                        text = stringResource(R.string.first_debt_detail),
+                        text = stringResource(Res.string.first_debt_detail),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -114,8 +115,8 @@ fun FirstDebtScreen(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text(stringResource(R.string.first_debt_name_label)) },
-                        placeholder = { Text(stringResource(R.string.first_debt_name_placeholder)) },
+                        label = { Text(stringResource(Res.string.first_debt_name_label)) },
+                        placeholder = { Text(stringResource(Res.string.first_debt_name_placeholder)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                         shape = NeoShapes.row,
@@ -125,8 +126,8 @@ fun FirstDebtScreen(
                     OutlinedTextField(
                         value = amountText,
                         onValueChange = { amountText = it },
-                        label = { Text(stringResource(R.string.first_debt_amount_label)) },
-                        placeholder = { Text(stringResource(R.string.first_debt_amount_hint)) },
+                        label = { Text(stringResource(Res.string.first_debt_amount_label)) },
+                        placeholder = { Text(stringResource(Res.string.first_debt_amount_hint)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         shape = NeoShapes.row,
@@ -136,7 +137,7 @@ fun FirstDebtScreen(
                     Spacer(Modifier.height(NeoSpacing.sm))
 
                     NeoAction(
-                        label = stringResource(R.string.first_debt_confirm),
+                        label = stringResource(Res.string.first_debt_confirm),
                         enabled = isValid,
                         onClick = {
                             if (isValid) {
@@ -151,7 +152,7 @@ fun FirstDebtScreen(
                         enabled = !isSaving,
                         modifier = Modifier.fillMaxWidth().testTag("first-debt-skip"),
                     ) {
-                        Text(stringResource(R.string.first_debt_skip))
+                        Text(stringResource(Res.string.first_debt_skip))
                     }
                 }
             }

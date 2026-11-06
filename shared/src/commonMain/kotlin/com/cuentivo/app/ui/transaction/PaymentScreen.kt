@@ -26,8 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import com.cuentivo.app.R
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -109,31 +110,35 @@ fun PaymentScreen(
         ) {
             item {
                 NeoTaskHeader(
-                    title = stringResource(R.string.payment_title),
+                    title = stringResource(Res.string.payment_title),
                 )
             }
             item {
-                // The raw format string, resolved here because optionDetail is a plain lambda and
-                // cannot call stringResource itself.
-                val balanceFormat = stringResource(R.string.new_sale_customer_balance)
+                // optionDetail is a plain lambda and cannot call stringResource itself, so each
+                // row's detail is resolved here. `String.format` does not exist in common code, so
+                // the resource is called with its argument instead of formatting the raw string.
+                val balanceDetails = ordered.associate { row ->
+                    row.customer.id to
+                        stringResource(Res.string.new_sale_customer_balance, Money.format(row.balanceCents))
+                }
                 NeoSelectorField(
-                    label = stringResource(R.string.new_sale_customer_label),
+                    label = stringResource(Res.string.new_sale_customer_label),
                     selected = customer,
-                    placeholder = stringResource(R.string.new_sale_customer_placeholder),
+                    placeholder = stringResource(Res.string.new_sale_customer_placeholder),
                     options = ordered,
                     optionTitle = { it.customer.name },
-                    optionDetail = { balanceFormat.format(Money.format(it.balanceCents)) },
-                    emptyText = stringResource(R.string.new_sale_customer_empty),
+                    optionDetail = { balanceDetails[it.customer.id] },
+                    emptyText = stringResource(Res.string.new_sale_customer_empty),
                     onSelect = { customer = it },
                 )
             }
             customer?.let { chosen ->
                 item { BalancePanel(balanceCents = chosen.balanceCents, paymentCents = cents) }
             }
-            item { MoneyField(stringResource(R.string.payment_amount_label), amountText) { amountText = it } }
+            item { MoneyField(stringResource(Res.string.payment_amount_label), amountText) { amountText = it } }
             item {
                 Text(
-                    text = stringResource(R.string.payment_allocation_note),
+                    text = stringResource(Res.string.payment_allocation_note),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -141,7 +146,7 @@ fun PaymentScreen(
             item {
                 val chosen = customer
                 NeoAction(
-                    label = stringResource(R.string.payment_save),
+                    label = stringResource(Res.string.payment_save),
                     onClick = {
                         if (chosen != null && cents != null) {
                             onCreatePayment(chosen, cents)
@@ -167,7 +172,7 @@ private fun BalancePanel(balanceCents: Long, paymentCents: Long?) {
     ) {
         Column(Modifier.fillMaxWidth().padding(NeoSpacing.md)) {
             NeoAmountRow(
-                label = stringResource(R.string.payment_current_balance),
+                label = stringResource(Res.string.payment_current_balance),
                 amountCents = balanceCents,
                 valueModifier = Modifier.testTag(PAYMENT_BALANCE_TAG),
             )
@@ -177,7 +182,7 @@ private fun BalancePanel(balanceCents: Long, paymentCents: Long?) {
                 Spacer(Modifier.height(NeoSpacing.sm))
                 val remaining = balanceCents - paymentCents
                 NeoAmountRow(
-                    label = stringResource(R.string.payment_resulting_balance),
+                    label = stringResource(Res.string.payment_resulting_balance),
                     amountCents = remaining,
                     valueModifier = Modifier.testTag(PAYMENT_RESULT_TAG),
                     // A settled or negative balance is money the customer no longer owes, which is
@@ -191,7 +196,7 @@ private fun BalancePanel(balanceCents: Long, paymentCents: Long?) {
                 if (remaining < 0L) {
                     Spacer(Modifier.height(NeoSpacing.xs))
                     Text(
-                        text = stringResource(R.string.payment_credit_note),
+                        text = stringResource(Res.string.payment_credit_note),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
