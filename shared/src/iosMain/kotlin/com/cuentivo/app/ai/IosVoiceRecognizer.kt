@@ -43,6 +43,9 @@ class IosVoiceRecognizer(
     /** Contador de sesión, igual que en Android: un callback viejo se ignora. */
     private var sessionId: Long = 0L
 
+    /** Invalida el temporizador anterior: sólo cuenta el último que se armó. */
+    private var timerToken: Long = 0L
+
     override fun isAvailable(): Boolean = recognizer?.isAvailable() ?: false
 
     override fun startListening(
@@ -135,30 +138,81 @@ class IosVoiceRecognizer(
         engine = audioEngine
         request = recognitionRequest
         audioEngine.prepare()
-        audioEngine.startAndReturnError(null)
+        // Si el motor no arranca no llegaría ningún audio y la pantalla se quedaría escuchando.
+        if (!audioEngine.startAndReturnError(null)) {
+            sessionId++
+            releaseEngine()
+            onMain { onError(VoiceUnavailableReason.RECOGNIZER_ERROR) }
+            return
+        }
+
+        val finishAfter: (Long) -> Unit = { delayMillis ->
+            armTimer(session, delayMillis) {
+                // Mismo orden que Android: primero "se acabó el habla", después el resultado final.
+                onEndOfSpeech?.invoke()
+                finishAudio()
+                armTimer(session, FINAL_RESULT_GUARD_MILLIS) {
+                    sessionId++
+                    releaseEngine()
+                    onError(VoiceUnavailableReason.RECOGNIZER_ERROR)
+                }
+            }
+        }
 
         task = speech.recognitionTaskWithRequest(recognitionRequest) { result, error ->
             onMain {
                 if (session != sessionId) return@onMain
+                val isFinal = result?.isFinal() == true
                 if (result != null) {
                     val text = result.bestTranscription.formattedString
-                    if (result.isFinal()) {
+                    if (isFinal) {
                         onFinalResult(text)
                     } else {
                         onPartialResult(text)
+                        finishAfter(SILENCE_AFTER_SPEECH_MILLIS)
                     }
                 }
-                if (error != null) {
-                    onError(mapIosSpeechError(domain = error.domain, code = error.code))
-                    releaseEngine()
-                } else if (result?.isFinal() == true) {
-                    onEndOfSpeech?.invoke()
+                if (error != null || isFinal) {
+                    // Cancelar la tarea puede traer un error tardío: esta sesión ya terminó.
+                    sessionId++
+                    if (error != null && !isFinal) {
+                        onError(mapIosSpeechError(domain = error.domain, code = error.code))
+                    }
                     releaseEngine()
                 }
             }
         }
 
+        // Sin ninguna palabra también hay que cerrar: `endAudio` hace que llegue NO_SPEECH.
+        finishAfter(NO_SPEECH_MILLIS)
         onMain { if (session == sessionId) onListeningStarted?.invoke() }
+    }
+
+    /**
+     * Android corta solo cuando detecta silencio; `SFSpeechRecognizer` no: sigue escuchando hasta
+     * que le cierran el audio. Sin esto, el resultado final nunca llega. Corre en el hilo principal.
+     */
+    private fun armTimer(session: Long, delayMillis: Long, action: () -> Unit) {
+        val token = ++timerToken
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, delayMillis * NANOS_PER_MILLI),
+            dispatch_get_main_queue(),
+        ) {
+            if (session == sessionId && token == timerToken) action()
+        }
+    }
+
+    /** Cierra el micrófono sin cancelar la tarea: el resultado final todavía tiene que llegar. */
+    private fun finishAudio() {
+        engine?.let { audioEngine ->
+            runCatching {
+                if (audioEngine.running) audioEngine.stop()
+                audioEngine.inputNode.removeTapOnBus(0u)
+            }
+        }
+        engine = null
+        request?.endAudio()
+        request = null
     }
 
     override fun cancel() {
@@ -173,15 +227,8 @@ class IosVoiceRecognizer(
 
     /** Idempotente: quitar el tap de un motor parado no es error, y volver a pararlo tampoco. */
     private fun releaseEngine() {
-        engine?.let { audioEngine ->
-            runCatching {
-                if (audioEngine.running) audioEngine.stop()
-                audioEngine.inputNode.removeTapOnBus(0u)
-            }
-        }
-        engine = null
-        request?.endAudio()
-        request = null
+        timerToken++
+        finishAudio()
         task?.cancel()
         task = null
         runCatching { AVAudioSession.sharedInstance().setActive(false, error = null) }
@@ -202,6 +249,10 @@ class IosVoiceRecognizer(
 
     private companion object {
         const val LOCALE_ES_MX = "es-MX"
+        const val SILENCE_AFTER_SPEECH_MILLIS = 1_500L
+        const val NO_SPEECH_MILLIS = 6_000L
+        const val FINAL_RESULT_GUARD_MILLIS = 5_000L
+        const val NANOS_PER_MILLI = 1_000_000L
     }
 }
 
