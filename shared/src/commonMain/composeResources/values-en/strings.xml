@@ -257,8 +257,8 @@
     <string name="product_photo_saving">Saving…</string>
     <string name="product_photo_add">Add photo</string>
     <string name="product_photo_change">Change photo</string>
-    <string name="product_photo_camera_unavailable">We couldn\'t open the camera</string>
-    <string name="product_photo_save_failed">We couldn\'t save that photo</string>
+    <string name="product_photo_camera_unavailable">We couldn't open the camera</string>
+    <string name="product_photo_save_failed">We couldn't save that photo</string>
 
     <!-- Account and subscription (AccountSheet, SubscriptionSheet) -->
     <string name="account_title">Account</string>
@@ -456,7 +456,7 @@
     <string name="backup_export">Create backup</string>
     <string name="backup_restore">Restore a backup</string>
     <string name="backup_export_title">Set a password</string>
-    <string name="backup_export_detail">Make up a new password just for this file. It is NOT your Google password or your Cuentivo account password. The backup carries your customers\' names, phones and balances, so it is encrypted: if you forget this password there is no way to open it, because nobody stores it, not even us.</string>
+    <string name="backup_export_detail">Make up a new password just for this file. It is NOT your Google password or your Cuentivo account password. The backup carries your customers' names, phones and balances, so it is encrypted: if you forget this password there is no way to open it, because nobody stores it, not even us.</string>
     <string name="backup_export_confirm">Save backup</string>
     <string name="backup_restore_title">Restore</string>
     <string name="backup_restore_detail">Type the password you set when you created that backup (not your Google or account password). This replaces EVERYTHING on this phone with what is in the backup, and the app will restart.</string>
@@ -503,20 +503,20 @@
     <string name="ai_debug_chat_camera_unavailable">Camera capture is not available in this version</string>
     <string name="ai_debug_chat_draft_note">Draft - nothing is recorded</string>
     <string name="ai_daily_chat_greeting">Tell me about a sale, payment, or question about your business. I will prepare a draft for you to review before recording.</string>
-    <string name="ai_daily_chat_out_of_scope">I\'m CuentivoAI, an assistant for your business. I cannot discuss personal topics, but I can help you with sales, payments, customers, products, debts, and collections.</string>
+    <string name="ai_daily_chat_out_of_scope">I'm CuentivoAI, an assistant for your business. I cannot discuss personal topics, but I can help you with sales, payments, customers, products, debts, and collections.</string>
     <string name="ai_daily_chat_clear_today">Clear day</string>
-    <string name="ai_daily_chat_clear_dialog_title">Clear today\'s conversation?</string>
-    <string name="ai_daily_chat_clear_dialog_message">Today\'s messages will be deleted from this device. This action cannot be undone.</string>
+    <string name="ai_daily_chat_clear_dialog_title">Clear today's conversation?</string>
+    <string name="ai_daily_chat_clear_dialog_message">Today's messages will be deleted from this device. This action cannot be undone.</string>
     <string name="ai_daily_chat_clear_confirm">Clear</string>
     <string name="ai_daily_chat_clear_cancel">Cancel</string>
-    <string name="ai_payment_preview_customer_not_found">We could not find that customer. Payments only apply to customers with existing debts. If you meant to record a sale, say: \"sold [product] to [customer] for [amount]\" (example: \"sold a ticket to Carlos for 90\").</string>
+    <string name="ai_payment_preview_customer_not_found">We could not find that customer. Payments only apply to customers with existing debts. If you meant to record a sale, say: "sold [product] to [customer] for [amount]" (example: "sold a ticket to Carlos for 90").</string>
     <string name="ai_payment_preview_selection_required">Multiple customers found. Please type the full name:</string>
     <string name="ai_payment_preview_current_balance">Current balance: %1$s</string>
     <string name="ai_payment_preview_proposed_amount">Proposed payment: %1$s</string>
     <string name="ai_payment_preview_projected_balance">Balance after payment: %1$s</string>
     <string name="ai_payment_preview_draft_note">Draft: nothing is recorded</string>
-    <string name="ai_payment_preview_blocked_no_debt">This customer has no outstanding balance. Payments only apply to customers with debt. If it was a new sale, say: \"sold [product] to customer for [amount]\".</string>
-    <string name="ai_payment_preview_blocked_no_debt_with_name">%1$s has no outstanding balance. Payments only apply to customers with debt. If it was a new sale, say: \"sold [product] to %1$s for [amount]\".</string>
+    <string name="ai_payment_preview_blocked_no_debt">This customer has no outstanding balance. Payments only apply to customers with debt. If it was a new sale, say: "sold [product] to customer for [amount]".</string>
+    <string name="ai_payment_preview_blocked_no_debt_with_name">%1$s has no outstanding balance. Payments only apply to customers with debt. If it was a new sale, say: "sold [product] to %1$s for [amount]".</string>
     <string name="ai_payment_preview_blocked_exceeds_debt">%1$s owes %2$s and the proposed payment is %3$s. You cannot record a payment larger than the outstanding debt.</string>
     <string name="ai_payment_preview_blocked_exceeds_debt_no_details">The proposed payment exceeds the customer outstanding debt. You cannot record a payment larger than the debt.</string>
     <string name="ai_payment_confirm_action">Confirm payment</string>
@@ -525,7 +525,7 @@
     <string name="ai_payment_stale_message">The customer balance or records changed while reviewing this draft. Please request the payment again with updated data.</string>
     <string name="ai_payment_rejected_message">Could not record the payment because local validation failed (for example: inactive customer or unavailable balance). Check customer status in your list.</string>
     <string name="ai_sale_preview_customer_selection_prompt">Choose the customer for the sale:</string>
-    <string name="ai_sale_preview_product_selection_prompt">Choose the product for \"%1$s\":</string>
+    <string name="ai_sale_preview_product_selection_prompt">Choose the product for "%1$s":</string>
     <string name="ai_sale_choice_create_new">Create new</string>
     <string name="ai_entity_badge_existing">Existing</string>
     <string name="ai_entity_badge_new">New</string>
@@ -538,8 +538,8 @@
     <string name="ai_sale_preview_blocked_overpayment">The initial payment (%1$s) cannot exceed the sale total (%2$s). Adjust the initial payment or the total.</string>
     <string name="ai_sale_preview_blocked_overpayment_no_details">The initial payment cannot exceed the sale total. Adjust the initial payment or the total.</string>
     <string name="ai_sale_preview_blocked_overflow">The sale amounts are too large to process. Split the operation into smaller sales.</string>
-    <string name="ai_sale_preview_blocked_invalid_quantity">The item quantity must be greater than zero. Specify how many units you sold (for example: \"sold 2 creams to Maria\").</string>
-    <string name="ai_sale_preview_blocked_invalid_price">The unit price is not valid. Specify a price greater than zero (for example: \"at 50 pesos each\").</string>
+    <string name="ai_sale_preview_blocked_invalid_quantity">The item quantity must be greater than zero. Specify how many units you sold (for example: "sold 2 creams to Maria").</string>
+    <string name="ai_sale_preview_blocked_invalid_price">The unit price is not valid. Specify a price greater than zero (for example: "at 50 pesos each").</string>
     <string name="ai_sale_preview_blocked_inconsistent_new_product_price">The stated price does not match the registered price for this product. State the correct unit price or use the habitual price.</string>
     <string name="ai_sale_preview_blocked_invalid_line">Invalid product line. Check the quantity and price.</string>
     <string name="ai_sale_confirm_action">Confirm sale</string>
@@ -564,9 +564,9 @@
     <string name="ai_query_sales_period_collected">Total collected: %1$s</string>
     <string name="ai_query_sales_period_empty">No sales or collections recorded in this period.</string>
     <string name="ai_query_customer_selection_prompt">Choose the customer to check balance:</string>
-    <string name="ai_query_customer_not_found">No registered customer exists with the name \"%1$s\". Check the name in your customer list.</string>
-    <string name="ai_query_blocked_invalid_date">The queried date does not exist on the calendar. Try with a valid date (for example: \"yesterday sales\" or \"sales on August 15\").</string>
-    <string name="ai_query_blocked_start_after_end">The period is not valid because the start date is after the end date. Specify the earlier date first (for example: \"from August 1 to August 15\").</string>
+    <string name="ai_query_customer_not_found">No registered customer exists with the name "%1$s". Check the name in your customer list.</string>
+    <string name="ai_query_blocked_invalid_date">The queried date does not exist on the calendar. Try with a valid date (for example: "yesterday sales" or "sales on August 15").</string>
+    <string name="ai_query_blocked_start_after_end">The period is not valid because the start date is after the end date. Specify the earlier date first (for example: "from August 1 to August 15").</string>
     <string name="ai_query_blocked_period_too_long">The queried period exceeds the 366-day limit. Query a shorter date range (for example: one month or one year).</string>
     <string name="ai_query_debtor_row_format">• %1$s: %2$s</string>
     <string name="ai_query_proposal_period_format">%1$s to %2$s</string>
@@ -583,10 +583,10 @@
     <!-- AI Clarification reasons and slots -->
     <string name="ai_clarification_reason_ambiguous_customer">Multiple customers match that name. Please type the full name.</string>
     <string name="ai_clarification_reason_ambiguous_product">Multiple products match that description. Please specify the exact product name.</string>
-    <string name="ai_clarification_reason_missing_customer">Customer is missing. Specify who bought or made a payment (for example: \"to Maria\").</string>
-    <string name="ai_clarification_reason_missing_product">Product or quantity is missing. Specify what you sold and how many units (for example: \"2 creams\").</string>
-    <string name="ai_clarification_reason_missing_amount">Amount or price is missing. Specify the money amount (for example: \"for 100 pesos\" or \"50 payment\").</string>
-    <string name="ai_clarification_reason_unknown_input">We could not understand all details in the message. Please specify the operation clearly (for example: \"sold 2 creams to Maria for 100\" or \"how much did I sell yesterday\").</string>
+    <string name="ai_clarification_reason_missing_customer">Customer is missing. Specify who bought or made a payment (for example: "to Maria").</string>
+    <string name="ai_clarification_reason_missing_product">Product or quantity is missing. Specify what you sold and how many units (for example: "2 creams").</string>
+    <string name="ai_clarification_reason_missing_amount">Amount or price is missing. Specify the money amount (for example: "for 100 pesos" or "50 payment").</string>
+    <string name="ai_clarification_reason_unknown_input">We could not understand all details in the message. Please specify the operation clearly (for example: "sold 2 creams to Maria for 100" or "how much did I sell yesterday").</string>
     <string name="ai_clarification_missing_slots_format">Details to clarify: %1$s</string>
     <string name="ai_slot_customer">Customer</string>
     <string name="ai_slot_product">Product</string>
