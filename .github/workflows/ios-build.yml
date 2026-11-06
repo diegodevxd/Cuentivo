@@ -84,6 +84,7 @@ jobs:
       # El REVERSED_CLIENT_ID del plist es el URL scheme de Google, y el plist no va al repo: se
       # escribe en el Info.plist sólo durante la corrida. Nunca se imprime el valor.
       - name: URL scheme de Google desde el plist
+        if: ${{ !cancelled() }}
         run: |
           PLIST=iosApp/iosApp/GoogleService-Info.plist
           INFO=iosApp/iosApp/Info.plist
