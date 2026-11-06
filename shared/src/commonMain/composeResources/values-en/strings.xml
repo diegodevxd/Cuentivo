@@ -290,7 +290,7 @@
     <string name="reminder_setting_enable">Turn on the notice</string>
     <string name="reminder_permission_denied">Android blocked notifications from Cuentivo. Turn them on in the system settings to receive reminders.</string>
     <string name="reminder_scheduled">Reminder scheduled for %1$s</string>
-    <string name="reminder_hour_option">%1$02d:00</string>
+    <string name="reminder_hour_option">%1$s:00</string>
     <string name="reminder_hour_earlier">Notice time, one hour earlier</string>
     <string name="reminder_hour_later">Notice time, one hour later</string>
 

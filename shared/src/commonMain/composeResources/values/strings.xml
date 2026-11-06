@@ -290,7 +290,7 @@
     <string name="reminder_setting_enable">Activar aviso</string>
     <string name="reminder_permission_denied">Android bloqueó las notificaciones de Cuentivo. Actívalas en los ajustes del sistema para recibir recordatorios.</string>
     <string name="reminder_scheduled">Recordatorio programado a las %1$s</string>
-    <string name="reminder_hour_option">%1$02d:00</string>
+    <string name="reminder_hour_option">%1$s:00</string>
     <string name="reminder_hour_earlier">Hora del aviso, una hora antes</string>
     <string name="reminder_hour_later">Hora del aviso, una hora después</string>
 

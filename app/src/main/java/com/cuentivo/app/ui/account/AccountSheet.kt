@@ -173,7 +173,10 @@ fun AccountSheet(
                         style = MaterialTheme.typography.labelLarge,
                     )
                     Text(
-                        stringResource(R.string.reminder_hour_option, reminderHour),
+                        // El recurso es ahora común (composeResources) y sólo admite `%1$s`:
+                        // `%1$02d` no lo entiende el formateador de Compose y saldría literal. El
+                        // relleno a dos dígitos se hace aquí, así que el texto es el mismo: "07:00".
+                        stringResource(R.string.reminder_hour_option, reminderHour.toString().padStart(2, '0')),
                         style = MaterialTheme.typography.titleMedium,
                         color = if (reminderEnabled) MaterialTheme.colorScheme.onSurface
                         else MaterialTheme.colorScheme.onSurfaceVariant,
