@@ -90,21 +90,6 @@ class IosSharer(
         return true
     }
 
-    /** Escena `foregroundActive` → su `keyWindow` → sube por lo que haya presentado encima. */
-    private fun topViewController(): UIViewController? {
-        val window = UIApplication.sharedApplication.connectedScenes
-            .filterIsInstance<UIWindowScene>()
-            .firstOrNull {
-                it.activationState == UISceneActivationState.UISceneActivationStateForegroundActive
-            }
-            ?.keyWindow
-        var controller: UIViewController? = window?.rootViewController
-        while (controller?.presentedViewController != null) {
-            controller = controller.presentedViewController
-        }
-        return controller
-    }
-
     private companion object {
         const val DIRECTORY = "statement-share"
     }

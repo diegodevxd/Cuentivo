@@ -4,6 +4,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import com.cuentivo.app.platform.PickedImage
+import com.cuentivo.app.platform.ProductPhotoStore
 import java.io.File
 
 /**
@@ -24,7 +28,7 @@ class ProductImageStore(
         maxBytes = CACHE_BYTES,
         sizeOf = { it.byteCount.toLong() },
     ),
-) {
+) : ProductPhotoStore {
     private val directory = File(context.applicationContext.filesDir, DIRECTORY)
     private val resolver = context.applicationContext.contentResolver
 
@@ -35,6 +39,9 @@ class ProductImageStore(
      * replaced photo kept the old file name, and every screen keyed on that name — so the list went
      * on showing the previous picture, and the sync row looked unchanged.
      */
+    /** El contrato habla de PickedImage; en Android es el Uri envuelto. */
+    override fun save(source: PickedImage, productId: String): String? = save(source.uri, productId)
+
     fun save(source: Uri, productId: String): String? = runCatching {
         directory.mkdirs()
         val bitmap = decodeDownscaled(source) ?: return null
@@ -63,7 +70,10 @@ class ProductImageStore(
         bitmap
     }.getOrNull()
 
-    fun delete(fileName: String) {
+    /** El contrato habla de ImageBitmap; en Android es el mismo Bitmap, envuelto. */
+    override fun loadBitmap(fileName: String): ImageBitmap? = load(fileName)?.asImageBitmap()
+
+    override fun delete(fileName: String) {
         cache.remove(fileName)
         runCatching { File(directory, fileName).delete() }
     }
