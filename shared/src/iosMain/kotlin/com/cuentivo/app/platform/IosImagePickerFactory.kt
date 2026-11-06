@@ -152,9 +152,8 @@ private class IosPickerHost :
         picker.dismissViewControllerAnimated(true, completion = null)
         onImage = null
     }
-
-    private companion object {
-        const val PUBLIC_IMAGE = "public.image"
-        const val JPEG_QUALITY = 0.85
-    }
 }
+
+// Fuera de la clase: Kotlin/Native no admite campos en el `companion` de una subclase de Objective-C.
+private const val PUBLIC_IMAGE = "public.image"
+private const val JPEG_QUALITY = 0.85
