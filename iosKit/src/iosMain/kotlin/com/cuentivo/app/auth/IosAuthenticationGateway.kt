@@ -7,12 +7,16 @@ import dev.gitlive.firebase.auth.EmailAuthProvider
 import dev.gitlive.firebase.auth.GoogleAuthProvider
 import dev.gitlive.firebase.auth.OAuthProvider
 import dev.gitlive.firebase.auth.auth
+import dev.gitlive.firebase.auth.code
+import dev.gitlive.firebase.auth.ios
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlinx.cinterop.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import platform.Foundation.NSError
 
 /**
  * `AuthenticationGateway` en iOS: la traducción de `FirebaseAuthenticationGateway`.
@@ -28,6 +32,7 @@ import kotlinx.coroutines.launch
  * Apple no está en `AuthenticationGateway` (la interfaz se escribió para Android, donde Apple no
  * existe): sus tres flujos son métodos propios de esta clase.
  */
+@OptIn(ExperimentalForeignApi::class)
 class IosAuthenticationGateway(
     private val auth: FirebaseAuth = Firebase.auth,
     private val providers: () -> Pair<IosGoogleSignInProvider?, IosAppleSignInProvider?> =
@@ -48,8 +53,20 @@ class IosAuthenticationGateway(
     override val isEmailVerified: Boolean
         get() = auth.currentUser?.isEmailVerified == true
 
+    /**
+     * Cuándo Firebase dice que se creó la cuenta.
+     *
+     * GitLive entrega `UserMetaData.creationTime` en **segundos desde la fecha de referencia de
+     * Apple** (2001-01-01T00:00:00Z, `timeIntervalSinceReferenceDate`), no en milisegundos desde
+     * 1970. Android, en cambio, entrega `metadata.creationTimestamp` en milisegundos desde epoch, y
+     * este campo se llama `accountCreatedAtEpochMillis` para todos. Por eso se suma la diferencia
+     * entre 1970 y 2001 antes de pasar a milisegundos: `EmailVerificationPolicy` compara este valor
+     * contra un corte en epoch millis y un número en otra unidad dejaría a todo el mundo del lado
+     * equivocado.
+     */
     override val accountCreatedAtEpochMillis: Long?
-        get() = auth.currentUser?.metaData?.creationTimestamp
+        get() = auth.currentUser?.metaData?.creationTime
+            ?.let { seconds -> ((seconds + SECONDS_1970_TO_2001) * MILLIS_PER_SECOND).toLong() }
 
     // ---------------------------------------------------------------- correo y contraseña
 
@@ -91,7 +108,26 @@ class IosAuthenticationGateway(
     override fun sendPasswordReset(email: String, onComplete: (Result<Unit>) -> Unit) =
         result(onComplete) { auth.sendPasswordResetEmail(email.trim()) }
 
-    override fun signOut() = auth.signOut()
+    /**
+     * Cierra la sesión de forma síncrona.
+     *
+     * `signOut()` de GitLive es `suspend` y el contrato común no lo es, así que aquí se usa la API
+     * nativa `FIRAuth.signOut(error:)`: la sesión ya está cerrada cuando esta función regresa. No se
+     * usa `runBlocking` ni un `launch` sin esperar, porque los dos dejarían la sesión viva un rato
+     * después de que el llamador crea que terminó.
+     *
+     * Android no expone ruta de error aquí (`FirebaseAuth.signOut()` no falla), pero el SDK de iOS sí
+     * devuelve un `NSError`, y GitLive lo lanza desde su versión `suspend`. Se conserva esa
+     * semántica: un fallo no se traga en silencio.
+     */
+    override fun signOut() {
+        val error: NSError? = memScoped {
+            val errorVar = alloc<ObjCObjectVar<NSError?>>()
+            auth.ios.signOut(errorVar.ptr)
+            errorVar.value
+        }
+        check(error == null) { "Firebase could not close the session" }
+    }
 
     override fun deleteAccount(onComplete: (Result<Unit>) -> Unit) = result(onComplete) {
         (auth.currentUser ?: throw IllegalStateException()).delete()
@@ -143,7 +179,7 @@ class IosAuthenticationGateway(
                         // cuenta no vuelva a abrir el selector.
                         onComplete(
                             GoogleAuthenticationResult.fromFirebaseErrorCode(
-                                errorCode = error.code,
+                                errorCode = error.iosErrorCode(),
                                 email = null,
                                 idToken = outcome.idToken,
                             ),
@@ -189,7 +225,7 @@ class IosAuthenticationGateway(
                             else GoogleAuthenticationResult.Failed,
                         )
                     } catch (error: FirebaseAuthException) {
-                        onComplete(GoogleAuthenticationResult.fromFirebaseErrorCode(error.code))
+                        onComplete(GoogleAuthenticationResult.fromFirebaseErrorCode(error.iosErrorCode()))
                     } catch (unexpected: Throwable) {
                         onComplete(GoogleAuthenticationResult.Failed)
                     }
@@ -234,7 +270,7 @@ class IosAuthenticationGateway(
                     } catch (error: FirebaseAuthException) {
                         onComplete(
                             GoogleAuthenticationResult.fromFirebaseErrorCode(
-                                errorCode = error.code,
+                                errorCode = error.iosErrorCode(),
                                 email = null,
                                 idToken = outcome.idToken,
                             ),
@@ -305,7 +341,7 @@ class IosAuthenticationGateway(
                     try {
                         onComplete(GoogleAuthenticationResult.SignedIn(signIn(appleCredential(outcome))))
                     } catch (error: FirebaseAuthException) {
-                        onComplete(GoogleAuthenticationResult.fromFirebaseErrorCode(error.code))
+                        onComplete(GoogleAuthenticationResult.fromFirebaseErrorCode(error.iosErrorCode()))
                     } catch (unexpected: Throwable) {
                         onComplete(GoogleAuthenticationResult.Failed)
                     }
@@ -339,11 +375,34 @@ class IosAuthenticationGateway(
     private suspend fun authOutcome(signIn: suspend () -> String): GoogleAuthenticationResult = try {
         GoogleAuthenticationResult.SignedIn(signIn())
     } catch (error: FirebaseAuthException) {
-        GoogleAuthenticationResult.fromFirebaseErrorCode(error.code)
+        GoogleAuthenticationResult.fromFirebaseErrorCode(error.iosErrorCode())
     } catch (unexpected: Throwable) {
         GoogleAuthenticationResult.Failed
     }
 
     private fun dev.gitlive.firebase.auth.AuthResult.uidOrThrow(): String =
         user?.uid ?: throw IllegalStateException()
+
+    private companion object {
+        /** Segundos entre 1970-01-01 y la fecha de referencia de Apple (2001-01-01), en UTC. */
+        const val SECONDS_1970_TO_2001 = 978_307_200.0
+        const val MILLIS_PER_SECOND = 1_000.0
+    }
+}
+
+/**
+ * El código de error de Firebase Auth, en el vocabulario que habla [GoogleAuthenticationResult].
+ *
+ * GitLive publica `FirebaseAuthException.code` en iOS con el número de `AuthErrorCode` (`"17007"`),
+ * mientras que Android expone `FirebaseAuthException.errorCode` con su nombre
+ * (`"ERROR_EMAIL_ALREADY_IN_USE"`). `fromFirebaseErrorCode` distingue por ese vocabulario, así que sin
+ * esta traducción iOS convertiría en `Failed` los casos en los que Android conserva la sesión del
+ * invitado y le pide una instrucción a la persona. Los números salen de los códigos de `AuthErrors`
+ * que GitLive mismo mapea en `firebase-auth/src/appleMain/.../auth.kt`.
+ */
+private fun FirebaseAuthException.iosErrorCode(): String? = when (code) {
+    "17007" -> "ERROR_EMAIL_ALREADY_IN_USE"
+    "17012" -> "ERROR_ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL"
+    "17025" -> "ERROR_CREDENTIAL_ALREADY_IN_USE"
+    else -> code
 }

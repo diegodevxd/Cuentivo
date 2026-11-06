@@ -5,6 +5,7 @@ import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.functions.FirebaseFunctions
 import dev.gitlive.firebase.functions.functions
 import dev.gitlive.firebase.functions.ios
+import kotlinx.cinterop.ExperimentalForeignApi
 
 /**
  * El transporte del callable `interpretAiRequest` en iOS. Traducción de `FirebaseCallableAiGateway`.
@@ -21,6 +22,7 @@ import dev.gitlive.firebase.functions.ios
  * Todo fallo —error de red, timeout, forma inesperada, dato malformado— colapsa a
  * [CallableAiProposalResult.Unavailable], sin logs y sin exponer mensajes, ids ni texto.
  */
+@OptIn(ExperimentalForeignApi::class)
 class IosCallableAiGateway(
     private val functions: FirebaseFunctions = Firebase.functions(AI_FUNCTIONS_REGION),
 ) {

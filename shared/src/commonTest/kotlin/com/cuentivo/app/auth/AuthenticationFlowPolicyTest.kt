@@ -6,6 +6,15 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
+ * Un fallo de red que no depende de la JVM.
+ *
+ * La JVM lo tenía como `java.net.SocketTimeoutException`, que no existe en Native. La producción
+ * sólo mira que el nombre simple de la clase contenga "Timeout" (o "Network"), así que esta
+ * excepción recorre exactamente el mismo código y falla si esa comprobación desaparece.
+ */
+private class ConnectTimeoutException(message: String) : Exception(message)
+
+/**
  * Unit tests for [AuthenticationFlowPolicy].
  *
  * Verifies all authentication flow transitions, guest onboarding, UID preservation on linking,
@@ -118,7 +127,11 @@ class AuthenticationFlowPolicyTest {
 
     @Test
     fun classifyAnonymousFailure_with_network_exception_returns_network_unavailable() {
-        val error = java.net.SocketTimeoutException("Connect timed out")
+        // Sin `java.net.SocketTimeoutException`: `commonTest` también compila para iOS, donde no
+        // existe `java.*`. `classifyAnonymousFailure` decide por el nombre simple de la clase, así
+        // que esta excepción —con "Timeout" en el nombre— ejerce la misma rama de producción que
+        // ejercía la de la JVM, y falla si esa rama se rompe.
+        val error = ConnectTimeoutException("Connect timed out")
         assertEquals(
             AnonymousStartupFailureCause.NETWORK_UNAVAILABLE,
             AuthenticationFlowPolicy.classifyAnonymousFailure(error),

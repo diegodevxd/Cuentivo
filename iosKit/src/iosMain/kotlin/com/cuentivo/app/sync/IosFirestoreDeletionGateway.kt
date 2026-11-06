@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package com.cuentivo.app.sync
 
 import cocoapods.FirebaseFirestoreInternal.FIRDocumentReference
@@ -40,25 +42,28 @@ class IosFirestoreDeletionGateway(
 ) {
     private val db: FIRFirestore get() = firestore.ios
 
-    fun deleteBusiness(businessId: String): Result<Unit> = try {
-        if (readDocument("businesses/$businessId") == null) {
-            // Ya borrado (un reintento después de que el lote del negocio se confirmara y el
-            // teléfono muriera). No queda nada por hacer.
-            return Result.success(Unit)
-        }
-        val inventory = fetchInventory(businessId)
-        BusinessDeletionPlanner.plan(inventory).forEach { batch ->
-            val writeBatch = db.batch()
-            batch.documentPaths.forEach { path ->
-                writeBatch.deleteDocument(db.documentWithPath(path))
+    fun deleteBusiness(businessId: String): Result<Unit> {
+        return try {
+            if (readDocument("businesses/$businessId") == null) {
+                // Ya borrado (un reintento después de que el lote del negocio se confirmara y el
+                // teléfono muriera). No queda nada por hacer.
+                Result.success(Unit)
+            } else {
+                val inventory = fetchInventory(businessId)
+                BusinessDeletionPlanner.plan(inventory).forEach { batch ->
+                    val writeBatch = db.batch()
+                    batch.documentPaths.forEach { path ->
+                        writeBatch.deleteDocument(db.documentWithPath(path))
+                    }
+                    commit(writeBatch)
+                }
+                Result.success(Unit)
             }
-            commit(writeBatch)
+        } catch (error: Throwable) {
+            // Nunca se relanza al flujo de borrado: un borrado remoto a medias no puede llevarse el
+            // teléfono por delante. Sin ids ni PII, sólo la señal.
+            Result.failure(error)
         }
-        Result.success(Unit)
-    } catch (error: Throwable) {
-        // Nunca se relanza al flujo de borrado: un borrado remoto a medias no puede llevarse el
-        // teléfono por delante. Sin ids ni PII, sólo la señal.
-        Result.failure(error)
     }
 
     private fun fetchInventory(businessId: String): BusinessDeletionPlanner.Inventory {
@@ -134,9 +139,12 @@ class IosFirestoreDeletionGateway(
      */
     private fun blocking(block: ((Boolean) -> Unit) -> Unit): Boolean {
         check(!NSThread.isMainThread) { "Firestore deletion cannot run on the main thread" }
+        // Campos, no variables locales: `@Volatile` sólo aplica a campos, y el callback que los
+        // escribe corre en otra cola. Se reinician en cada espera para no arrastrar el resultado de
+        // la anterior.
+        finished = false
+        success = false
         val semaphore = dispatch_semaphore_create(0)
-        @Volatile var finished = false
-        @Volatile var success = false
         dispatch_async(dispatch_get_global_queue(0L, 0uL)) {
             block { ok ->
                 success = ok
@@ -151,6 +159,13 @@ class IosFirestoreDeletionGateway(
         check(waited == 0L && finished) { "Firestore deletion timed out" }
         return success
     }
+
+    /**
+     * Bandera de la espera en curso. El callback la escribe desde otra cola y `@Volatile` es lo que
+     * garantiza que el hilo que espera vea el valor; por eso vive en un campo y no en una local.
+     */
+    @Volatile private var finished = false
+    @Volatile private var success = false
 
     private companion object {
         const val TIMEOUT_MILLIS = 30_000L
