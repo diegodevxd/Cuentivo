@@ -181,9 +181,10 @@ class RemoteMergerIosTest {
             assertEquals(1, report.cancellationsApplied)
             val after = database.financialDao().saleForId("sale-1")
             assertEquals(true, after?.isCanceled)
-            // La fila en sí no se toca: mismo total y misma marca de tiempo.
+            // El dinero no se toca. `markSaleCanceled` sella la bandera junto con la marca de tiempo
+            // remota, igual que en Android.
             assertEquals(1_500L, after?.totalCents)
-            assertEquals(before.updatedAtEpochMillis, after?.updatedAtEpochMillis)
+            assertEquals(9_000L, after?.updatedAtEpochMillis)
         } finally {
             database.close()
         }

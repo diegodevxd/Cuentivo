@@ -53,7 +53,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
         DispatchQueue.global(qos: .utility).async {
             IosSyncBridge.shared.syncNow(completion: { success in
-                complete(success)
+                complete(success.boolValue)
             })
         }
     }
