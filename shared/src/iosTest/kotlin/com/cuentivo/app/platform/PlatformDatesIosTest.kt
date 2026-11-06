@@ -33,7 +33,7 @@ class PlatformDatesIosTest {
         val naive = NSDateFormatter()
         naive.setDateFormat("d MMM uuuu")
         naive.setLocale(NSLocale(localeIdentifier = "es_MX"))
-        naive.setTimeZone(NSTimeZone.timeZoneForSecondsFromGMT(-6 * 3_600))
+        naive.setTimeZone(NSTimeZone.timeZoneForSecondsFromGMT(-21_600L))
         val naiveText = naive.stringFromDate(NSDate.dateWithTimeIntervalSince1970(EPOCH_DAY_2025 * 86_400.0))
 
         assertTrue(naiveText.startsWith("31 "), "la trampa no se reproduce en este entorno: $naiveText")
