@@ -36,9 +36,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
-import com.cuentivo.app.R
+import org.jetbrains.compose.resources.PluralStringResource
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,10 +58,8 @@ import com.cuentivo.app.ui.NeoSectionHeader
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NavigationLayoutPolicy
 import com.cuentivo.app.ui.NeoSpacing
-import java.text.DateFormat
-import java.time.LocalDate
-import java.util.Date
-import java.util.Locale
+import com.cuentivo.app.platform.formatShortTimeEsMx
+import com.cuentivo.app.platform.todayEpochDay
 
 /**
  * The compact rows the reference uses inside a section. Kept well under the generic panel height so
@@ -102,9 +103,9 @@ fun DashboardScreen(
             when (state) {
                 DashboardUiState.NoBusiness -> item {
                     NeoEmptyState(
-                        title = stringResource(R.string.app_welcome_title),
-                        detail = stringResource(R.string.app_welcome_detail),
-                        actionLabel = stringResource(R.string.app_create_business),
+                        title = stringResource(Res.string.app_welcome_title),
+                        detail = stringResource(Res.string.app_welcome_detail),
+                        actionLabel = stringResource(Res.string.app_create_business),
                         onAction = onCreateBusiness,
                     )
                 }
@@ -139,7 +140,7 @@ private fun LazyListScope.dashboardContent(
 
     // The month, in the two numbers a shopkeeper actually asks about. Both were already being
     // computed and carried this far; until now nothing drew them.
-    item { NeoSectionHeader(title = stringResource(R.string.dashboard_month_title)) }
+    item { NeoSectionHeader(title = stringResource(Res.string.dashboard_month_title)) }
     item {
         Card(
             modifier = Modifier.fillMaxWidth().testTag("dashboard-month"),
@@ -153,12 +154,12 @@ private fun LazyListScope.dashboardContent(
             ) {
                 Row(modifier = Modifier.fillMaxWidth()) {
                     MonthFigure(
-                        label = stringResource(R.string.dashboard_month_sold),
+                        label = stringResource(Res.string.dashboard_month_sold),
                         amountCents = state.soldCents,
                         modifier = Modifier.weight(1f),
                     )
                     MonthFigure(
-                        label = stringResource(R.string.dashboard_month_collected),
+                        label = stringResource(Res.string.dashboard_month_collected),
                         amountCents = state.collectedCents,
                         modifier = Modifier.weight(1f),
                     )
@@ -171,17 +172,17 @@ private fun LazyListScope.dashboardContent(
     // this screen keeps only the action the bar does not offer as a dedicated control.
     item {
         NeoAction(
-            stringResource(R.string.detail_register_payment),
+            stringResource(Res.string.detail_register_payment),
             onRegisterPayment,
             Modifier.fillMaxWidth(),
         )
     }
 
-    val today = LocalDate.now().toEpochDay()
+    val today = todayEpochDay()
     val critical = DashboardPresentation.criticalCustomers(customers, state.dueSales, today)
     item {
         NeoSectionHeader(
-            title = stringResource(R.string.dashboard_critical_customers),
+            title = stringResource(Res.string.dashboard_critical_customers),
             trailing = {
                 TextButton(
                     onClick = onSeeAllCustomers,
@@ -190,7 +191,7 @@ private fun LazyListScope.dashboardContent(
                     // minimum height.
                     contentPadding = PaddingValues(horizontal = NeoSpacing.sm),
                 ) {
-                    Text(stringResource(R.string.dashboard_see_all), style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(Res.string.dashboard_see_all), style = MaterialTheme.typography.labelLarge)
                 }
             },
         )
@@ -199,8 +200,8 @@ private fun LazyListScope.dashboardContent(
         // No action: "nobody is late" is the good outcome, and there is nothing to do about it.
         item {
             NeoEmptyState(
-                title = stringResource(R.string.dashboard_no_urgent_title),
-                detail = stringResource(R.string.dashboard_no_urgent_detail),
+                title = stringResource(Res.string.dashboard_no_urgent_title),
+                detail = stringResource(Res.string.dashboard_no_urgent_detail),
             )
         }
     } else {
@@ -213,12 +214,12 @@ private fun LazyListScope.dashboardContent(
         }
     }
 
-    item { NeoSectionHeader(title = stringResource(R.string.dashboard_recent_activity)) }
+    item { NeoSectionHeader(title = stringResource(Res.string.dashboard_recent_activity)) }
     if (state.recentActivity.isEmpty()) {
         item {
             NeoEmptyState(
-                title = stringResource(R.string.dashboard_no_activity_title),
-                detail = stringResource(R.string.dashboard_no_activity_detail),
+                title = stringResource(Res.string.dashboard_no_activity_title),
+                detail = stringResource(Res.string.dashboard_no_activity_detail),
             )
         }
     } else {
@@ -259,7 +260,7 @@ private fun DashboardHero(state: DashboardUiState.Content) {
         accent = MaterialTheme.colorScheme.primary,
     ) {
         Text(
-            text = stringResource(R.string.dashboard_receivable_total),
+            text = stringResource(Res.string.dashboard_receivable_total),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -273,8 +274,8 @@ private fun DashboardHero(state: DashboardUiState.Content) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(NeoSpacing.lg),
         ) {
-            DashboardMetric(stringResource(R.string.dashboard_due_today), state.dueTodayCents, Modifier.weight(1f))
-            DashboardMetric(stringResource(R.string.dashboard_overdue), state.overdueCents, Modifier.weight(1f), isOverdue = true)
+            DashboardMetric(stringResource(Res.string.dashboard_due_today), state.dueTodayCents, Modifier.weight(1f))
+            DashboardMetric(stringResource(Res.string.dashboard_overdue), state.overdueCents, Modifier.weight(1f), isOverdue = true)
         }
     }
 }
@@ -341,10 +342,10 @@ private fun CriticalCustomerRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = if (status.quantity != null) {
-                    pluralStringResource(status.labelRes, status.quantity, status.quantity)
-                } else {
-                    stringResource(status.labelRes)
+                text = when (status) {
+                    is CriticalStatus.DaysOverdue ->
+                        pluralStringResource(status.label, status.days, status.days)
+                    is CriticalStatus.Label -> stringResource(status.label)
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = if (status.urgent) accent else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -364,7 +365,7 @@ private fun ActivityRow(activity: DashboardActivity) {
     val visual = DashboardActivityPresentation.from(activity.type, activity.direction)
     // Use the same localized label as the customer ledger; activity labels are rendered text too.
     val label = if (activity.isPriorDebt) {
-        stringResource(R.string.detail_movement_prior_debt)
+        stringResource(Res.string.detail_movement_prior_debt)
     } else {
         visual.label
     }
@@ -399,7 +400,7 @@ private fun ActivityRow(activity: DashboardActivity) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = stringResource(R.string.dashboard_activity_line, activity.customerName, activityTime(activity)),
+                text = stringResource(Res.string.dashboard_activity_line, activity.customerName, activityTime(activity)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -444,13 +445,23 @@ private fun SectionRowSurface(
     }
 }
 
-private data class CriticalStatus(
-    /** String resource for the reason label. */
-    val labelRes: Int,
-    val urgent: Boolean,
-    /** Day count for the plural day-overdue label; null for plain-string labels. */
-    val quantity: Int? = null,
-)
+/**
+ * The reason label: a plain string, or a day count that needs a plural.
+ *
+ * Two resources of different types cannot share one `Int` field any more, so the shape says which
+ * one it is instead of a null-and-quantity convention.
+ */
+private sealed interface CriticalStatus {
+    val urgent: Boolean
+
+    data class Label(val label: StringResource, override val urgent: Boolean) : CriticalStatus
+
+    data class DaysOverdue(
+        val label: PluralStringResource,
+        val days: Int,
+        override val urgent: Boolean,
+    ) : CriticalStatus
+}
 
 /**
  * The reason a customer is critical, worded like the reference ("15 días vencido"). The day count
@@ -468,29 +479,28 @@ private fun criticalCustomerStatus(
             .minOfOrNull { it.dueDateEpochDay }
         val days = oldestDue?.let { today - it } ?: 0L
         return if (days >= 1L) {
-            CriticalStatus(
-                labelRes = R.plurals.dashboard_critical_days_overdue,
+            CriticalStatus.DaysOverdue(
+                label = Res.plurals.dashboard_critical_days_overdue,
+                days = days.toInt(),
                 urgent = true,
-                quantity = days.toInt(),
             )
         } else {
-            CriticalStatus(labelRes = R.string.dashboard_critical_overdue_balance, urgent = true)
+            CriticalStatus.Label(label = Res.string.dashboard_critical_overdue_balance, urgent = true)
         }
     }
     val dueToday = state.dueSales.any { it.customerId == customerId && it.dueDateEpochDay == today }
     return if (dueToday) {
-        CriticalStatus(labelRes = R.string.dashboard_due_today, urgent = false)
+        CriticalStatus.Label(label = Res.string.dashboard_due_today, urgent = false)
     } else {
-        CriticalStatus(labelRes = R.string.dashboard_critical_balance_pending, urgent = false)
+        CriticalStatus.Label(label = Res.string.dashboard_critical_balance_pending, urgent = false)
     }
 }
 
-internal fun initialOf(name: String): String =
+fun initialOf(name: String): String =
     name.trim().firstOrNull()?.uppercase() ?: "?"
 
 private fun activityTime(activity: DashboardActivity): String =
-    DateFormat.getTimeInstance(DateFormat.SHORT, Locale.forLanguageTag("es-MX"))
-        .format(Date(activity.occurredAtEpochMillis))
+    formatShortTimeEsMx(activity.occurredAtEpochMillis)
 
 /** One figure of the month: the label small and quiet, the amount doing the talking. */
 @Composable

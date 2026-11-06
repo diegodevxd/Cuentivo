@@ -1,6 +1,5 @@
 package com.cuentivo.app.ui.customer
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,10 +46,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -60,7 +59,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.domain.CustomerScore
 import com.cuentivo.app.domain.CustomerStatementSummary
@@ -76,10 +74,11 @@ import com.cuentivo.app.ui.NeoMoney
 import com.cuentivo.app.ui.NeoSectionHeader
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
-import java.time.LocalDate
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.cuentivo.app.platform.PlatformBackHandler
+import com.cuentivo.app.platform.formatDayMonthYear
+import com.cuentivo.app.platform.formatHourMinute
+import com.cuentivo.app.platform.isoDateToEpochDay
+import com.cuentivo.app.platform.todayEpochDay
 
 private val MOVEMENT_ROW_HEIGHT = 60.dp
 private val MOVEMENT_ROW_HEIGHT_WITH_BALANCE = 72.dp
@@ -128,12 +127,12 @@ fun CustomerDetailSheet(
     var pendingCancel by remember { mutableStateOf<CorrectionCandidate?>(null) }
     var correctionsExpanded by remember { mutableStateOf(false) }
     var shareMenuOpen by remember { mutableStateOf(false) }
-    BackHandler(onBack = onDismiss)
+    PlatformBackHandler(onBack = onDismiss)
 
-    val today = LocalDate.now().toEpochDay()
+    val today = todayEpochDay()
     val status = CustomerDirectoryPresentation.status(customer, dueSales, today)
-    val shareSummaryLabel = stringResource(R.string.detail_share_summary)
-    val shareCsvLabel = stringResource(R.string.detail_share_csv)
+    val shareSummaryLabel = stringResource(Res.string.detail_share_summary)
+    val shareCsvLabel = stringResource(Res.string.detail_share_csv)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val layout = NeoFintechLayoutPolicy.forWidth(maxWidth.value.toInt())
@@ -171,10 +170,10 @@ fun CustomerDetailSheet(
             item { IdentityCard(customer, onCallCustomer) }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
-                    NeoAction(stringResource(R.string.detail_register_payment), onRegisterPayment, Modifier.weight(1f))
+                    NeoAction(stringResource(Res.string.detail_register_payment), onRegisterPayment, Modifier.weight(1f))
                     Box(Modifier.weight(1f)) {
                         NeoAction(
-                            label = stringResource(R.string.detail_share),
+                            label = stringResource(Res.string.detail_share),
                             onClick = { shareMenuOpen = true },
                             modifier = Modifier.fillMaxWidth(),
                             primary = false,
@@ -195,13 +194,13 @@ fun CustomerDetailSheet(
                     }
                 }
             }
-            item { NeoSectionHeader(title = stringResource(R.string.detail_history)) }
+            item { NeoSectionHeader(title = stringResource(Res.string.detail_history)) }
 
             if (entries.isEmpty()) {
                 item {
                     NeoEmptyState(
-                        title = stringResource(R.string.detail_no_movements_title),
-                        detail = stringResource(R.string.detail_no_movements_detail),
+                        title = stringResource(Res.string.detail_no_movements_title),
+                        detail = stringResource(Res.string.detail_no_movements_detail),
                     )
                 }
             } else {
@@ -219,13 +218,13 @@ fun CustomerDetailSheet(
             if (cancelables.isNotEmpty()) {
                 item {
                     NeoSectionHeader(
-                        title = stringResource(R.string.detail_correct),
+                        title = stringResource(Res.string.detail_correct),
                         trailing = {
                             TextButton(onClick = { correctionsExpanded = !correctionsExpanded }) {
                                 Text(
                                     stringResource(
-                                        if (correctionsExpanded) R.string.detail_corrections_hide
-                                        else R.string.detail_corrections_show,
+                                        if (correctionsExpanded) Res.string.detail_corrections_hide
+                                        else Res.string.detail_corrections_show,
                                     ),
                                 )
                             }
@@ -235,7 +234,7 @@ fun CustomerDetailSheet(
                 if (correctionsExpanded) {
                     item {
                         Text(
-                            stringResource(R.string.detail_correct_note),
+                            stringResource(Res.string.detail_correct_note),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -251,17 +250,17 @@ fun CustomerDetailSheet(
     pendingCancel?.let { item ->
         val isSale = item is CorrectionCandidate.Sale
         val name = customer.customer.name
-        val dialogTitle = stringResource(if (isSale) R.string.detail_cancel_sale_title else R.string.detail_cancel_payment_title)
+        val dialogTitle = stringResource(if (isSale) Res.string.detail_cancel_sale_title else Res.string.detail_cancel_payment_title)
         val dialogDetail = if (isSale) {
             val sale = item as CorrectionCandidate.Sale
-            if (sale.activePaidCents > 0L) stringResource(R.string.detail_cancel_sale_partial_detail, sale.saleNumber, Money.format(sale.totalCents), Money.format(sale.activePaidCents), Money.format(sale.outstandingCents))
-            else stringResource(R.string.detail_cancel_sale_detail, sale.saleNumber, Money.format(sale.outstandingCents), name)
+            if (sale.activePaidCents > 0L) stringResource(Res.string.detail_cancel_sale_partial_detail, sale.saleNumber, Money.format(sale.totalCents), Money.format(sale.activePaidCents), Money.format(sale.outstandingCents))
+            else stringResource(Res.string.detail_cancel_sale_detail, sale.saleNumber, Money.format(sale.outstandingCents), name)
         } else {
             val payment = item as CorrectionCandidate.Payment
-            stringResource(R.string.detail_cancel_payment_detail, stringResource(R.string.detail_payment_ordinal, payment.ordinal, payment.groupSize), name, Money.format(payment.amountCents))
+            stringResource(Res.string.detail_cancel_payment_detail, stringResource(Res.string.detail_payment_ordinal, payment.ordinal, payment.groupSize), name, Money.format(payment.amountCents))
         }
-        val confirmLabel = stringResource(R.string.detail_cancel_confirm)
-        val dismissLabel = stringResource(R.string.detail_cancel_dismiss)
+        val confirmLabel = stringResource(Res.string.detail_cancel_confirm)
+        val dismissLabel = stringResource(Res.string.detail_cancel_dismiss)
         AlertDialog(
             onDismissRequest = { pendingCancel = null },
             title = { Text(dialogTitle) },
@@ -287,12 +286,12 @@ private fun DetailTopBar(onDismiss: () -> Unit) {
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(R.string.detail_back),
+                contentDescription = stringResource(Res.string.detail_back),
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
         Text(
-            text = stringResource(R.string.detail_title),
+            text = stringResource(Res.string.detail_title),
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
@@ -315,7 +314,7 @@ private fun BalanceHero(balanceCents: Long, status: CustomerStatus, score: Custo
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = stringResource(R.string.detail_balance_total),
+                text = stringResource(Res.string.detail_balance_total),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -329,9 +328,9 @@ private fun BalanceHero(balanceCents: Long, status: CustomerStatus, score: Custo
             Text(
                 text = stringResource(
                     when (presentation.kind) {
-                        BalanceKind.OWED -> R.string.detail_balance_pending
-                        BalanceKind.SETTLED -> R.string.detail_balance_settled
-                        BalanceKind.CUSTOMER_CREDIT -> R.string.detail_balance_credit
+                        BalanceKind.OWED -> Res.string.detail_balance_pending
+                        BalanceKind.SETTLED -> Res.string.detail_balance_settled
+                        BalanceKind.CUSTOMER_CREDIT -> Res.string.detail_balance_credit
                     },
                 ),
                 style = MaterialTheme.typography.labelMedium,
@@ -357,11 +356,11 @@ private fun BalanceHero(balanceCents: Long, status: CustomerStatus, score: Custo
 private fun ScoreLine(score: CustomerScore?) {
     if (score == null) return
     val headline = score.reliability.labelRes()?.let { stringResource(it) }
-        ?: stringResource(R.string.customer_score_no_history)
+        ?: stringResource(Res.string.customer_score_no_history)
     val detail = when {
         score.reliability == PaymentReliability.NO_HISTORY -> null
-        score.averageDaysLate <= 0 -> stringResource(R.string.customer_score_on_time)
-        else -> stringResource(R.string.customer_score_average_days, score.averageDaysLate)
+        score.averageDaysLate <= 0 -> stringResource(Res.string.customer_score_on_time)
+        else -> stringResource(Res.string.customer_score_average_days, score.averageDaysLate)
     }
     Spacer(Modifier.height(NeoSpacing.xs))
     Text(
@@ -370,7 +369,7 @@ private fun ScoreLine(score: CustomerScore?) {
             detail,
             score.ratedSaleCount
                 .takeIf { it > 0 }
-                ?.let { pluralStringResource(R.plurals.customer_score_rated_sales, it, it) },
+                ?.let { pluralStringResource(Res.plurals.customer_score_rated_sales, it, it) },
         ).joinToString(" · "),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -407,38 +406,32 @@ private fun StatusPill(status: CustomerStatus) {
 
 @Composable
 private fun statusLabel(status: CustomerStatus): String = when (status.tone) {
-    CustomerTone.SETTLED -> stringResource(R.string.customer_status_settled)
-    CustomerTone.CREDIT -> stringResource(R.string.customer_status_credit)
+    CustomerTone.SETTLED -> stringResource(Res.string.customer_status_settled)
+    CustomerTone.CREDIT -> stringResource(Res.string.customer_status_credit)
     CustomerTone.PENDING -> status.daysUntilDue?.let { days ->
-        if (days == 0L) stringResource(R.string.customer_status_due_today)
-        else stringResource(R.string.customer_status_due_in_days, days)
-    } ?: stringResource(R.string.customer_status_pending)
+        if (days == 0L) stringResource(Res.string.customer_status_due_today)
+        else stringResource(Res.string.customer_status_due_in_days, days)
+    } ?: stringResource(Res.string.customer_status_pending)
     CustomerTone.OVERDUE -> stringResource(
-        if (status.overdueDays == 1L) R.string.customer_status_overdue_one
-        else R.string.customer_status_overdue_days,
+        if (status.overdueDays == 1L) Res.string.customer_status_overdue_one
+        else Res.string.customer_status_overdue_days,
         status.overdueDays ?: 0L,
     )
 }
 
 @Composable
-private fun paymentBusinessDate(paymentDateEpochDay: Long): String {
-    val locale = LocalConfiguration.current.locales[0]
-    val formatter = remember(locale) { DateTimeFormatter.ofPattern("d MMM uuuu", locale) }
-    return LocalDate.ofEpochDay(paymentDateEpochDay).format(formatter)
-}
+private fun paymentBusinessDate(paymentDateEpochDay: Long): String =
+    formatDayMonthYear(paymentDateEpochDay)
 
 @Composable
-private fun paymentRegistrationTime(createdAtEpochMillis: Long): String {
-    val locale = LocalConfiguration.current.locales[0]
-    val formatter = remember(locale) { DateTimeFormatter.ofPattern("HH:mm", locale) }
-    return Instant.ofEpochMilli(createdAtEpochMillis).atZone(ZoneId.systemDefault()).format(formatter)
-}
+private fun paymentRegistrationTime(createdAtEpochMillis: Long): String =
+    formatHourMinute(createdAtEpochMillis)
 
 @Composable
 private fun paymentMethodLabel(method: String): String = when (method.uppercase()) {
-    "CASH" -> stringResource(R.string.payment_method_cash)
-    "TRANSFER" -> stringResource(R.string.payment_method_transfer)
-    "CARD" -> stringResource(R.string.payment_method_card)
+    "CASH" -> stringResource(Res.string.payment_method_cash)
+    "TRANSFER" -> stringResource(Res.string.payment_method_transfer)
+    "CARD" -> stringResource(Res.string.payment_method_card)
     else -> method.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }
 }
 
@@ -453,14 +446,14 @@ private fun TotalsRow(totals: CustomerStatementSummary.Totals, balanceCents: Lon
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
     ) {
-        TotalsCell(stringResource(R.string.detail_sold_to_them), totals.totalChargedCents, Modifier.weight(1f))
-        TotalsCell(stringResource(R.string.detail_they_paid), totals.totalPaidCents, Modifier.weight(1f))
+        TotalsCell(stringResource(Res.string.detail_sold_to_them), totals.totalChargedCents, Modifier.weight(1f))
+        TotalsCell(stringResource(Res.string.detail_they_paid), totals.totalPaidCents, Modifier.weight(1f))
         TotalsCell(
             label = stringResource(
                 when (BalancePresenter.from(balanceCents).kind) {
-                    BalanceKind.OWED -> R.string.detail_owes_today
-                    BalanceKind.SETTLED -> R.string.detail_balance_settled
-                    BalanceKind.CUSTOMER_CREDIT -> R.string.detail_balance_credit
+                    BalanceKind.OWED -> Res.string.detail_owes_today
+                    BalanceKind.SETTLED -> Res.string.detail_balance_settled
+                    BalanceKind.CUSTOMER_CREDIT -> Res.string.detail_balance_credit
                 },
             ),
             amountCents = balanceCents,
@@ -501,14 +494,14 @@ private fun CreditLimitSuggestionCard(
     ) {
         Column(Modifier.fillMaxWidth().padding(NeoSpacing.md)) {
             Text(
-                text = stringResource(R.string.detail_credit_suggestion, customerName, Money.format(suggestedCents)),
+                text = stringResource(Res.string.detail_credit_suggestion, customerName, Money.format(suggestedCents)),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(NeoSpacing.sm))
             Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
-                NeoAction(label = stringResource(R.string.detail_credit_raise), onClick = onAccept, modifier = Modifier.weight(1f))
+                NeoAction(label = stringResource(Res.string.detail_credit_raise), onClick = onAccept, modifier = Modifier.weight(1f))
                 NeoAction(
-                    label = stringResource(R.string.detail_credit_not_now),
+                    label = stringResource(Res.string.detail_credit_not_now),
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
                     primary = false,
@@ -524,7 +517,7 @@ private fun CreditLimitRow(creditLimitCents: Long, balanceCents: Long) {
     val availableCents = (creditLimitCents - balanceCents).coerceAtLeast(0L)
     Row(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = stringResource(R.string.detail_credit_line, Money.format(creditLimitCents), Money.format(availableCents)),
+            text = stringResource(Res.string.detail_credit_line, Money.format(creditLimitCents), Money.format(availableCents)),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -537,11 +530,8 @@ private fun CreditLimitRow(creditLimitCents: Long, balanceCents: Long) {
  * saying "2 ago 2026" underneath.
  */
 @Composable
-private fun displayDate(dateIso: String): String {
-    val locale = LocalConfiguration.current.locales[0]
-    val formatter = remember(locale) { DateTimeFormatter.ofPattern("d MMM uuuu", locale) }
-    return LocalDate.parse(dateIso).format(formatter)
-}
+private fun displayDate(dateIso: String): String =
+    formatDayMonthYear(isoDateToEpochDay(dateIso))
 
 @Composable
 private fun IdentityCard(customer: CustomerBalanceRow, onCall: (String) -> Unit) {
@@ -576,7 +566,7 @@ private fun IdentityCard(customer: CustomerBalanceRow, onCall: (String) -> Unit)
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = phone ?: customer.customer.email ?: stringResource(R.string.detail_no_contact),
+                    text = phone ?: customer.customer.email ?: stringResource(Res.string.detail_no_contact),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -593,7 +583,7 @@ private fun IdentityCard(customer: CustomerBalanceRow, onCall: (String) -> Unit)
                 ) {
                     Icon(
                         Icons.Filled.Phone,
-                        contentDescription = stringResource(R.string.detail_call, customer.customer.name),
+                        contentDescription = stringResource(Res.string.detail_call, customer.customer.name),
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(18.dp),
                     )
@@ -642,7 +632,7 @@ private fun MovementRow(entry: StatementEntry, balanceAfterCents: Long, isCancel
             Column(Modifier.weight(1f).padding(start = NeoSpacing.md)) {
                 Text(
                     text = if (visual.isPriorDebt) {
-                        stringResource(R.string.detail_movement_prior_debt)
+                        stringResource(Res.string.detail_movement_prior_debt)
                     } else {
                         visual.label
                     },
@@ -680,15 +670,15 @@ private fun MovementRow(entry: StatementEntry, balanceAfterCents: Long, isCancel
                     maxLines = 1,
                 )
                 Text(
-                    text = if (isCanceled) stringResource(R.string.detail_canceled) else visual.caption,
+                    text = if (isCanceled) stringResource(Res.string.detail_canceled) else visual.caption,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     text = when (BalancePresenter.from(balanceAfterCents).kind) {
-                        BalanceKind.OWED -> stringResource(R.string.detail_balance_after, Money.format(BalancePresenter.from(balanceAfterCents).amountCents))
-                        BalanceKind.SETTLED -> stringResource(R.string.detail_balance_after_settled)
-                        BalanceKind.CUSTOMER_CREDIT -> stringResource(R.string.detail_balance_after_credit, Money.format(BalancePresenter.from(balanceAfterCents).amountCents))
+                        BalanceKind.OWED -> stringResource(Res.string.detail_balance_after, Money.format(BalancePresenter.from(balanceAfterCents).amountCents))
+                        BalanceKind.SETTLED -> stringResource(Res.string.detail_balance_after_settled)
+                        BalanceKind.CUSTOMER_CREDIT -> stringResource(Res.string.detail_balance_after_credit, Money.format(BalancePresenter.from(balanceAfterCents).amountCents))
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -707,7 +697,7 @@ private fun CorrectionRow(
 ) {
     val actionDescription = (item as? CorrectionCandidate.Payment)?.let {
         stringResource(
-            R.string.detail_payment_cancel_action_description,
+            Res.string.detail_payment_cancel_action_description,
             it.ordinal,
             Money.format(it.amountCents),
             paymentBusinessDate(it.paymentDateEpochDay),
@@ -715,7 +705,7 @@ private fun CorrectionRow(
             paymentMethodLabel(it.paymentMethod),
         )
     }
-    val cancelLabel = stringResource(R.string.detail_cancel)
+    val cancelLabel = stringResource(Res.string.detail_cancel)
     Card(
         modifier = Modifier.fillMaxWidth().then(
             // Only payments keep the whole-card shortcut: a sale row offers Editar *and* Cancelar,
@@ -734,10 +724,10 @@ private fun CorrectionRow(
             Column(Modifier.weight(1f).padding(vertical = NeoSpacing.sm)) {
                 when (item) {
                     is CorrectionCandidate.Sale -> {
-                        Text(stringResource(R.string.detail_correction_sale), style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                        Text(stringResource(Res.string.detail_correction_sale), style = MaterialTheme.typography.titleMedium, maxLines = 1)
                         Text(
                             stringResource(
-                                R.string.detail_sale_correction_amounts,
+                                Res.string.detail_sale_correction_amounts,
                                 Money.format(item.totalCents),
                                 Money.format(item.activePaidCents),
                                 Money.format(item.outstandingCents),
@@ -748,12 +738,12 @@ private fun CorrectionRow(
                     }
                     is CorrectionCandidate.Payment -> {
                         Text(
-                            stringResource(R.string.detail_payment_ordinal, item.ordinal, item.groupSize),
+                            stringResource(Res.string.detail_payment_ordinal, item.ordinal, item.groupSize),
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
                             stringResource(
-                                R.string.detail_payment_business_date,
+                                Res.string.detail_payment_business_date,
                                 paymentBusinessDate(item.paymentDateEpochDay),
                             ),
                             style = MaterialTheme.typography.labelSmall,
@@ -761,7 +751,7 @@ private fun CorrectionRow(
                         )
                         Text(
                             stringResource(
-                                R.string.detail_payment_registered_time,
+                                Res.string.detail_payment_registered_time,
                                 paymentRegistrationTime(item.createdAtEpochMillis),
                                 paymentMethodLabel(item.paymentMethod),
                             ),
@@ -770,14 +760,14 @@ private fun CorrectionRow(
                         )
                         item.reference?.let { reference ->
                             Text(
-                                stringResource(R.string.detail_payment_reference, reference),
+                                stringResource(Res.string.detail_payment_reference, reference),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         if (item.blockedByCanceledSale) {
                             Text(
-                                stringResource(R.string.detail_payment_cancel_blocked),
+                                stringResource(Res.string.detail_payment_cancel_blocked),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.error,
                             )
@@ -786,10 +776,10 @@ private fun CorrectionRow(
                 }
             }
             if (item is CorrectionCandidate.Sale) {
-                val editDescription = stringResource(R.string.detail_sale_edit_description, item.saleNumber)
+                val editDescription = stringResource(Res.string.detail_sale_edit_description, item.saleNumber)
                 TextButton(onClick = { onEdit(item) }) {
                     Text(
-                        stringResource(R.string.detail_sale_edit),
+                        stringResource(Res.string.detail_sale_edit),
                         modifier = Modifier.semantics { contentDescription = editDescription },
                     )
                 }
