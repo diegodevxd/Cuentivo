@@ -1,6 +1,7 @@
 import BackgroundTasks
 import SwiftUI
 import FirebaseCore
+import FirebaseAppCheck
 import Shared
 
 /// El delegado configura Firebase y deja listo el trabajo de sincronización de fondo.
@@ -16,6 +17,17 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // App Check primero, y por eso está aquí y no en un servicio: instalar el proveedor después
+        // de configurar Firebase dejaría la primera petición sin token. Es el mismo reparto que en
+        // Android (AppCheckInstaller corre antes de tocar Firestore o Auth): en depuración y en el
+        // simulador no hay Secure Enclave que atestigüe, así que se usa el proveedor de depuración;
+        // en un dispositivo real va App Attest.
+        #if DEBUG || targetEnvironment(simulator)
+        AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
+        #else
+        AppCheck.setAppCheckProviderFactory(AppAttestProviderFactory())
+        #endif
+
         FirebaseApp.configure()
         registerSyncTask()
         return true
