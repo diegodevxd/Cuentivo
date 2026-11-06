@@ -33,6 +33,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
+    /// Los proveedores nativos se registran antes de que nadie pida un inicio de sesión; sin ellos el
+    /// gateway devuelve fallo en los flujos de Google y Apple.
+    private func registerAuthProviders() {
+        IosAuthProviders.shared.google = IosGoogleSignInProviderImpl()
+        IosAuthProviders.shared.apple = IosAppleSignInProviderImpl()
+    }
+
     private func registerSyncTask() {
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.syncTaskIdentifier,
