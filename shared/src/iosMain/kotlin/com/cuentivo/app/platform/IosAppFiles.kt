@@ -10,6 +10,7 @@ import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSSearchPathForDirectoriesInDomains
 import platform.Foundation.NSUserDomainMask
+import platform.Foundation.writeToFile
 import platform.posix.memcpy
 
 /**
@@ -94,6 +95,7 @@ class IosAppFiles(
  * Las dos raíces de la app: `NSCachesDirectory` (el sistema puede vaciarla) y
  * `NSApplicationSupportDirectory`, que se crea si falta porque no existe en una instalación nueva.
  */
+@OptIn(ExperimentalForeignApi::class)
 fun defaultIosAppFiles(): IosAppFiles {
     val manager = NSFileManager.defaultManager
     val caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, true)

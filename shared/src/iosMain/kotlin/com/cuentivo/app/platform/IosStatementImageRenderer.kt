@@ -11,16 +11,18 @@ import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.useContents
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
-import platform.Foundation.NSFontAttributeName
-import platform.Foundation.NSForegroundColorAttributeName
 import platform.Foundation.NSString
-import platform.Foundation.NSStringDrawingUsesLineFragmentOrigin
+import platform.UIKit.NSFontAttributeName
+import platform.UIKit.NSForegroundColorAttributeName
+import platform.UIKit.NSStringDrawingUsesLineFragmentOrigin
 import platform.UIKit.UIColor
 import platform.UIKit.UIFont
 import platform.UIKit.UIGraphicsImageRenderer
 import platform.UIKit.UIGraphicsImageRendererFormat
 import platform.UIKit.UIImagePNGRepresentation
 import platform.UIKit.UIRectFill
+import platform.UIKit.boundingRectWithSize
+import platform.UIKit.drawWithRect
 
 /**
  * Pinta la imagen del estado de cuenta en iOS, con las **mismas piezas** que Android.

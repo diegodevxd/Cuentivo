@@ -2,13 +2,13 @@ package com.cuentivo.app.platform
 
 import com.cuentivo.app.domain.StatementImageContent
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.datetime.Clock
 import platform.Foundation.NSURL
+import platform.Foundation.setValue
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
-import platform.UIKit.UISceneActivationState
 import platform.UIKit.UIViewController
 import platform.UIKit.UIWindowScene
+import platform.UIKit.popoverPresentationController
 
 /**
  * [Sharer] de iOS: la hoja de compartir de UIKit y el marcador del sistema.
@@ -57,7 +57,7 @@ class IosSharer(
     private fun shareImageNow(subject: String, text: String, content: StatementImageContent): Boolean {
         val bytes = IosStatementImageRenderer.renderPng(content) ?: return false
         files.clear(FileArea.CACHE, DIRECTORY)
-        val name = "statement-${Clock.System.now().toEpochMilliseconds()}.png"
+        val name = "statement-${iosNowEpochMillis()}.png"
         if (!files.writeBytes(FileArea.CACHE, DIRECTORY, name, bytes)) return false
         val path = files.absolutePath(FileArea.CACHE, DIRECTORY, name) ?: return false
         val presented = present(

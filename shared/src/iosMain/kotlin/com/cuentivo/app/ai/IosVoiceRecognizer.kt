@@ -179,7 +179,7 @@ class IosVoiceRecognizer(
                     // Cancelar la tarea puede traer un error tardío: esta sesión ya terminó.
                     sessionId++
                     if (error != null && !isFinal) {
-                        onError(mapIosSpeechError(domain = error.domain, code = error.code))
+                        onError(mapIosSpeechError(domain = error.domain ?: "", code = error.code))
                     }
                     releaseEngine()
                 }

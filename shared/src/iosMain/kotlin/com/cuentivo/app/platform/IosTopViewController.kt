@@ -2,7 +2,7 @@ package com.cuentivo.app.platform
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.UIKit.UIApplication
-import platform.UIKit.UISceneActivationState
+import platform.UIKit.UISceneActivationStateForegroundActive
 import platform.UIKit.UIViewController
 import platform.UIKit.UIWindowScene
 
@@ -18,7 +18,7 @@ internal fun topViewController(): UIViewController? {
     val window = UIApplication.sharedApplication.connectedScenes
         .filterIsInstance<UIWindowScene>()
         .firstOrNull {
-            it.activationState == UISceneActivationState.UISceneActivationStateForegroundActive
+            it.activationState == UISceneActivationStateForegroundActive
         }
         ?.keyWindow
     var controller: UIViewController? = window?.rootViewController

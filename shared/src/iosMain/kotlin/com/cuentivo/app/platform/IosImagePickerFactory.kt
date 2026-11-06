@@ -2,7 +2,7 @@ package com.cuentivo.app.platform
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.remember as composeRemember
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
@@ -45,11 +45,11 @@ class IosImagePickerFactory(
     @Composable
     override fun remember(onPicked: suspend (PickedImage) -> Unit): ImagePicker {
         val scope = rememberCoroutineScope()
-        val pickerHost = remember { IosPickerHost() }
+        val pickerHost = composeRemember { IosPickerHost() }
         DisposableEffect(pickerHost) {
             onDispose { pickerHost.release() }
         }
-        return remember(pickerHost, scope, onPicked) {
+        return composeRemember(pickerHost, scope, onPicked) {
             IosImagePicker(pickerHost = pickerHost, host = host, scope = scope, onPicked = onPicked)
         }
     }
@@ -71,7 +71,7 @@ private class IosImagePicker(
 
         val picker = PHPickerViewController(configuration = configuration)
         picker.delegate = pickerHost
-        pickerHost.onImage = { data ->
+        pickerHost.onImage = onImage@{ data ->
             if (data == null) return@onImage
             // El selector corre `onPicked` en su propio scope y limpia lo temporal en `finally`.
             scope.launch {
@@ -93,7 +93,7 @@ private class IosImagePicker(
         val picker = UIImagePickerController()
         picker.sourceType = UIImagePickerControllerSourceType.UIImagePickerControllerSourceTypeCamera
         picker.delegate = pickerHost
-        pickerHost.onImage = { data ->
+        pickerHost.onImage = onImage@{ data ->
             if (data == null) return@onImage
             scope.launch {
                 try {
