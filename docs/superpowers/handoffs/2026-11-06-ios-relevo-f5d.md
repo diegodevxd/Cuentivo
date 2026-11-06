@@ -1,5 +1,7 @@
 # Relevo iOS: de F5-C en rojo a compilar y seguir con pantallas
 
+**La meta, confirmada por Diego el 2026-11-06:** Cuentivo en iOS sin Mac, de modo que lo único pendiente sea pagar la cuenta de Apple Developer. No te detengas al cerrar una tanda: sigue con la siguiente fase, y deja lo manual de Diego para el final.
+
 **Lee primero** `docs/superpowers/handoffs/2026-11-05-ios-relevo.md` (papel, OpenCode, cómo auditar, trampas de iOS, reglas), y de `2026-11-06-ios-relevo-f5c.md` las secciones "Puerta abierta", "Tandas que siguen", "Pendientes que siguen vivos" y "Lista manual de Diego". Sus secciones de estado y primer paso ya caducaron; manda este archivo. Lee también `CLAUDE.md` y la memoria `cuentivo-ios-sin-mac`, `cuentivo-reparto-de-agentes`, `relevo-de-sesiones-caras` y `working-agreements`.
 
 ## Estado al 2026-11-06
@@ -13,7 +15,7 @@
 
 ## Tu primer paso
 
-Corregir estos errores (44 en total). Log completo en `C:/tmp/ios-relevo/log-f5c-1.txt`. Terminal de OpenCode `term_c2b793b3-78cb-45e2-b857-d2d200590bc8`, al 62% de contexto; si pasó de ~80%, abre otra. Cada envío lleva Monitor. Salen por capas: al corregir estos aparecerán `iosTest` y luego Swift.
+Corregir estos errores (44 en total). Log completo en `C:/tmp/ios-relevo/log-f5c-1.txt`. **La terminal de OpenCode ya no existe: la PC se reinició.** Crea otra con `orca terminal create`, espera a que cargue el TUI y concede "Allow always" a `C:\tmp\*` al primer aviso (Flecha derecha + Enter + Enter), como dice el relevo del 2026-11-05. Cada envío lleva Monitor. Salen por capas: al corregir estos aparecerán `iosTest` y luego Swift.
 
 | Archivo | Error | Pista |
 |---|---|---|
