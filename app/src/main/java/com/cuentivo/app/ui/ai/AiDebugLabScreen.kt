@@ -488,8 +488,11 @@ fun AiDebugLabScreen(
             onFinalResult = { text ->
                 val nextModel = VoiceCaptureMachine.onFinalResult(voiceModel, text, generation)
                 voiceModel = nextModel
-                if (nextModel.state is VoiceCaptureState.Transcribed) {
-                    val transcribedText = nextModel.state.text
+                // `state` ya vive en :shared, así que el compilador no puede smart-castear una
+                // propiedad pública de otro módulo: se guarda en local antes de preguntar.
+                val nextState = nextModel.state
+                if (nextState is VoiceCaptureState.Transcribed) {
+                    val transcribedText = nextState.text
                     // The recognized text enters the editable field without auto-submitting
                     model = AiDebugLabMachine.onTextChanged(model, transcribedText)
                     voiceModel = VoiceCaptureMachine.onCancel(nextModel)

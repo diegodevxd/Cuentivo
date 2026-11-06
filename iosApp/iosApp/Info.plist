@@ -37,9 +37,13 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Cuentivo usa la cámara para leer la foto de tu libreta de fiado.</string>
+	<string>Cuentivo usa la cámara para leer la foto de tu libreta de fiado y para tomar la foto de tus productos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Cuentivo usa tus fotos para elegir la foto de tu libreta.</string>
+	<string>Cuentivo usa tus fotos para elegir la de tu libreta de fiado y la de tus productos.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Cuentivo usa el dictado para que escribas lo que quieres decirle en lugar de teclearlo.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cuentivo usa el micrófono sólo mientras mantienes el dictado activo; no guarda ni envía el audio.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

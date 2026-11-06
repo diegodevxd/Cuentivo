@@ -48,24 +48,6 @@ fun mapSpeechRecognizerError(errorCode: Int): VoiceUnavailableReason =
 fun shouldPreferOfflineRecognition(isOnDeviceAvailable: Boolean): Boolean = isOnDeviceAvailable
 
 /**
- * Narrow seam for speech-to-text recognition.
- * Decouples speech recognition implementation from state machines and test runners.
- */
-interface VoiceRecognizer {
-    fun isAvailable(): Boolean
-    fun startListening(
-        onPartialResult: (String) -> Unit,
-        onFinalResult: (String) -> Unit,
-        onError: (VoiceUnavailableReason) -> Unit,
-        onRmsChanged: ((Float) -> Unit)? = null,
-        onEndOfSpeech: (() -> Unit)? = null,
-        onListeningStarted: (() -> Unit)? = null,
-    )
-    fun cancel()
-    fun destroy()
-}
-
-/**
  * Android framework [SpeechRecognizer] wrapper.
  * Prefers on-device recognition when available with EXTRA_PREFER_OFFLINE; falls back to
  * system/network recognition without forcing offline mode if the on-device engine lacks
