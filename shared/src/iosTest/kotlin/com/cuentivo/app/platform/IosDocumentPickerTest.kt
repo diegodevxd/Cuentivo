@@ -48,5 +48,6 @@ class IosDocumentPickerTest {
         deleteDocumentTempFile(url)
 
         assertFalse(NSFileManager.defaultManager.fileExistsAtPath(path))
+        assertFalse(NSFileManager.defaultManager.fileExistsAtPath(path.substringBeforeLast('/')))
     }
 }

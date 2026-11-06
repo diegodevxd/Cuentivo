@@ -35,7 +35,7 @@ internal fun appleInflateRaw(compressed: ByteArray, uncompressedSize: Int): Byte
             compression_decode_buffer(
                 dst_buffer = destination.addressOf(0).reinterpret<UByteVar>(),
                 dst_size = uncompressedSize.convert(),
-                src_buffer = source.addressOf(0),
+                src_buffer = source.addressOf(0).reinterpret<UByteVar>(),
                 src_size = compressed.size.convert(),
                 scratch_buffer = null,
                 algorithm = COMPRESSION_ZLIB,

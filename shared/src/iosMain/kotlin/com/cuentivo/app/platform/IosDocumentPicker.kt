@@ -79,12 +79,12 @@ actual fun rememberDocumentSaver(
 @OptIn(ExperimentalForeignApi::class)
 internal class IosPickedDocument(private val url: NSURL) : PickedDocument {
 
-    override suspend fun readBytes(): ByteArray? {
-        val path = url.path ?: return null
-        val data = NSFileManager.defaultManager.contentsAtPath(path) ?: return null
+    override suspend fun readBytes(): ByteArray? = withContext(Dispatchers.Default) {
+        val path = url.path ?: return@withContext null
+        val data = NSFileManager.defaultManager.contentsAtPath(path) ?: return@withContext null
         // Leer es lo último que se hace con la copia: no se queda en la carpeta temporal.
         NSFileManager.defaultManager.removeItemAtPath(path, error = null)
-        return data.toByteArray()
+        data.toByteArray()
     }
 }
 
@@ -99,7 +99,9 @@ private class IosDocumentSaveTarget(
         return try {
             withContext(Dispatchers.Main) { host.presentExport(url) }
         } finally {
-            withContext(Dispatchers.Default) { deleteDocumentTempFile(url) }
+            // Sin `withContext`: en una corrutina cancelada lanzaría antes de borrar, y el respaldo se
+            // quedaría en la carpeta temporal.
+            deleteDocumentTempFile(url)
         }
     }
 }
@@ -113,7 +115,7 @@ private class IosDocumentSaveTarget(
 @OptIn(ExperimentalForeignApi::class)
 private class IosDocumentPickerHost : NSObject(), UIDocumentPickerDelegateProtocol {
 
-    private var onOpen: ((NSURL) -> Unit)? = null
+    var onOpen: ((NSURL) -> Unit)? = null
     private var onExport: ((Boolean) -> Unit)? = null
 
     fun release() {
