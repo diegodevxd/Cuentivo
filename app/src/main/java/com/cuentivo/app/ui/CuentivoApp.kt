@@ -109,6 +109,7 @@ import com.cuentivo.app.ui.customer.CustomerDetailSheet
 import com.cuentivo.app.ui.customer.CustomerFilter
 import com.cuentivo.app.ui.customer.CustomersScreen
 import com.cuentivo.app.ui.dashboard.DashboardScreen
+import com.cuentivo.app.ui.product.AndroidImagePickerFactory
 import com.cuentivo.app.ui.product.ProductsScreen
 import com.cuentivo.app.ui.transaction.NewSaleScreen
 import com.cuentivo.app.ui.transaction.PaymentScreen
@@ -319,6 +320,9 @@ fun CuentivoApp(
     customerFormNotice: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
+    // One store for both screens: sharing the instance also shares its 6 MiB bounded bitmap cache.
+    val context = LocalContext.current
+    val photoStore = remember(context) { ProductImageStore(context) }
     var destination by remember { mutableStateOf(MainDestination.HOME) }
     var showNewSale by remember { mutableStateOf(false) }
     var showAccount by remember { mutableStateOf(false) }
@@ -685,6 +689,8 @@ fun CuentivoApp(
             )
             MainDestination.PRODUCTS -> ProductsScreen(
                 products = products,
+                photoStore = photoStore,
+                imagePickers = AndroidImagePickerFactory,
                 modifier = Modifier.padding(padding),
                 showForm = showProductForm,
                 onShowFormChange = { showProductForm = it },

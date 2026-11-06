@@ -47,16 +47,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.platform.LocalContext
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.data.local.ProductEntity
-import com.cuentivo.app.data.local.ProductImageStore
+import com.cuentivo.app.platform.ImagePickerFactory
+import com.cuentivo.app.platform.ProductPhotoStore
+import com.cuentivo.app.platform.newUuid
 import com.cuentivo.app.domain.Money
 import com.cuentivo.app.platform.PickedDocument
 import com.cuentivo.app.platform.rememberDocumentOpener
@@ -70,7 +72,6 @@ import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NavigationLayoutPolicy
 import com.cuentivo.app.ui.NeoSpacing
 import com.cuentivo.app.ui.pesosToCents
-import java.util.UUID
 
 /** Name plus one secondary line, matching the density of the customer directory. */
 private val CATALOG_ROW_HEIGHT = 72.dp
@@ -90,6 +91,8 @@ const val PRODUCTS_LIST_TAG = "products-list"
 @Composable
 fun ProductsScreen(
     products: List<ProductEntity>,
+    photoStore: ProductPhotoStore,
+    imagePickers: ImagePickerFactory,
     modifier: Modifier = Modifier,
     showForm: Boolean = false,
     onShowFormChange: (Boolean) -> Unit = {},
@@ -122,7 +125,7 @@ fun ProductsScreen(
      */
     resetToken: Int = 0,
 ) {
-    val productsAddDescription = stringResource(R.string.products_add_description)
+    val productsAddDescription = stringResource(Res.string.products_add_description)
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<ProductEntity?>(null) }
     // Ids rather than entities: the list reloads after every write, and a held entity would go
@@ -131,8 +134,6 @@ fun ProductsScreen(
     var confirmBulkDelete by remember { mutableStateOf(false) }
     val selectionActive = selectedIds.isNotEmpty()
     var archiving by remember { mutableStateOf<ProductEntity?>(null) }
-    val context = LocalContext.current
-    val imageStore = remember(context) { ProductImageStore(context) }
     // Tapping the tab you are already on returns to the root: no search, no selection, no dialogs.
     // Guarded on > 0 so the very first composition is not treated as a tap.
     LaunchedEffect(resetToken) {
@@ -177,11 +178,11 @@ fun ProductsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            text = stringResource(R.string.products_eyebrow),
+                            text = stringResource(Res.string.products_eyebrow),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        Text(stringResource(R.string.products_title), style = MaterialTheme.typography.titleLarge)
+                        Text(stringResource(Res.string.products_title), style = MaterialTheme.typography.titleLarge)
                     }
                     // Importing is useful but occasional; it belongs beside the catalog title rather
                     // than occupying the first full-width action on every visit.
@@ -195,8 +196,8 @@ fun ProductsScreen(
                         modifier = Modifier.heightIn(min = 48.dp),
                     ) {
                         Text(
-                            if (isImportingProducts) stringResource(R.string.products_importing)
-                            else stringResource(R.string.products_import),
+                            if (isImportingProducts) stringResource(Res.string.products_importing)
+                            else stringResource(Res.string.products_import),
                         )
                     }
                     // The bottom bar's central + belongs to Nueva venta, so adding a product needs
@@ -220,7 +221,7 @@ fun ProductsScreen(
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = {
-                        Text(stringResource(R.string.products_search_placeholder), style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(Res.string.products_search_placeholder), style = MaterialTheme.typography.bodyLarge)
                     },
                     leadingIcon = {
                         Icon(
@@ -239,13 +240,13 @@ fun ProductsScreen(
                 item {
                     val pristine = query.isBlank()
                     NeoEmptyState(
-                        title = if (pristine) stringResource(R.string.products_empty_title) else stringResource(R.string.products_no_match_title),
+                        title = if (pristine) stringResource(Res.string.products_empty_title) else stringResource(Res.string.products_no_match_title),
                         detail = if (pristine) {
-                            stringResource(R.string.products_empty_detail)
+                            stringResource(Res.string.products_empty_detail)
                         } else {
-                            stringResource(R.string.products_no_match_detail)
+                            stringResource(Res.string.products_no_match_detail)
                         },
-                        actionLabel = if (pristine) stringResource(R.string.products_add_description) else null,
+                        actionLabel = if (pristine) stringResource(Res.string.products_add_description) else null,
                         onAction = if (pristine) ({ onShowFormChange(true) }) else null,
                     )
                 }
@@ -263,7 +264,7 @@ fun ProductsScreen(
                 items(visible, key = { it.id }) { product ->
                     ProductRow(
                         product = product,
-                        store = imageStore,
+                        store = photoStore,
                         selectionActive = selectionActive,
                         isSelected = product.id in selectedIds,
                         onToggleSelected = {
@@ -284,14 +285,15 @@ fun ProductsScreen(
     if (showForm) {
         // The photo is picked before the product exists, so it is filed under an id minted here.
         // ProductEntity.imageUri stores the file name, not the id, so the two never have to match.
-        val draftId = remember { UUID.randomUUID().toString() }
+        val draftId = remember { newUuid() }
         ProductFormDialog(
-            title = stringResource(R.string.products_form_new_title),
+            title = stringResource(Res.string.products_form_new_title),
             initialName = "",
             initialPrice = "",
             initialPhoto = null,
             photoTargetId = draftId,
-            store = imageStore,
+            store = photoStore,
+            imagePickers = imagePickers,
             // No eager close: it used to hide a failed insert as thoroughly as the customer form
             // did. The host closes this once onCreateProduct actually succeeds.
             onConfirm = { name, cents, photo -> onCreateProduct(name, cents, photo) },
@@ -301,14 +303,15 @@ fun ProductsScreen(
     }
     editing?.let { product ->
         ProductFormDialog(
-            title = stringResource(R.string.products_form_edit_title),
+            title = stringResource(Res.string.products_form_edit_title),
             initialName = product.name,
             initialPrice = Money.pesosText(product.salePriceCents),
             initialPhoto = product.imageUri,
             photoTargetId = product.id,
-            store = imageStore,
+            store = photoStore,
+            imagePickers = imagePickers,
             formKey = product.id,
-            note = stringResource(R.string.products_form_edit_note),
+            note = stringResource(Res.string.products_form_edit_note),
             onConfirm = { name, cents, photo ->
                 onEditProduct(product, name, cents, photo)
                 editing = null
@@ -319,18 +322,18 @@ fun ProductsScreen(
     archiving?.let { product ->
         AlertDialog(
             onDismissRequest = { archiving = null },
-            title = { Text(stringResource(R.string.products_delete_title, product.name)) },
+            title = { Text(stringResource(Res.string.products_delete_title, product.name)) },
             text = {
                 // True because sale_items keeps the name and price charged that day, so removing the
                 // product from the catalog cannot rewrite what anyone was charged.
-                Text(stringResource(R.string.products_delete_detail))
+                Text(stringResource(Res.string.products_delete_detail))
             },
             confirmButton = {
                 TextButton(onClick = { archiving = null; onArchiveProduct(product) }) {
-                    Text(stringResource(R.string.products_delete_confirm), color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(Res.string.products_delete_confirm), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { archiving = null }) { Text(stringResource(R.string.form_cancel)) } },
+            dismissButton = { TextButton(onClick = { archiving = null }) { Text(stringResource(Res.string.form_cancel)) } },
         )
     }
     if (confirmBulkDelete) {
@@ -338,11 +341,11 @@ fun ProductsScreen(
         AlertDialog(
             onDismissRequest = { confirmBulkDelete = false },
             title = {
-                Text(pluralStringResource(R.plurals.products_delete_selected_title, chosen.size, chosen.size))
+                Text(pluralStringResource(Res.plurals.products_delete_selected_title, chosen.size, chosen.size))
             },
             // Same promise as deleting one: sale_items keeps the name and the price charged that
             // day, so clearing the catalog cannot rewrite what anyone was charged.
-            text = { Text(stringResource(R.string.products_delete_detail)) },
+            text = { Text(stringResource(Res.string.products_delete_detail)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -354,11 +357,11 @@ fun ProductsScreen(
                         selectedIds = emptySet()
                     },
                 ) {
-                    Text(stringResource(R.string.products_delete_confirm), color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(Res.string.products_delete_confirm), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmBulkDelete = false }) { Text(stringResource(R.string.form_cancel)) }
+                TextButton(onClick = { confirmBulkDelete = false }) { Text(stringResource(Res.string.form_cancel)) }
             },
         )
     }
@@ -383,14 +386,14 @@ private fun SelectionBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = pluralStringResource(R.plurals.products_selected_count, count, count),
+            text = pluralStringResource(Res.plurals.products_selected_count, count, count),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.weight(1f),
         )
-        TextButton(onClick = onSelectAll) { Text(stringResource(R.string.products_select_all)) }
-        TextButton(onClick = onClear) { Text(stringResource(R.string.form_cancel)) }
+        TextButton(onClick = onSelectAll) { Text(stringResource(Res.string.products_select_all)) }
+        TextButton(onClick = onClear) { Text(stringResource(Res.string.form_cancel)) }
         TextButton(onClick = onDelete) {
-            Text(stringResource(R.string.products_delete), color = MaterialTheme.colorScheme.error)
+            Text(stringResource(Res.string.products_delete), color = MaterialTheme.colorScheme.error)
         }
     }
 }
@@ -402,7 +405,8 @@ private fun ProductFormDialog(
     initialPrice: String,
     initialPhoto: String?,
     photoTargetId: String,
-    store: ProductImageStore,
+    store: ProductPhotoStore,
+    imagePickers: ImagePickerFactory,
     onConfirm: (String, Long, String?) -> Unit,
     onDismiss: () -> Unit,
     formKey: Any? = Unit,
@@ -430,12 +434,12 @@ private fun ProductFormDialog(
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text(stringResource(R.string.products_form_name_label)) },
+            label = { Text(stringResource(Res.string.products_form_name_label)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        MoneyField(stringResource(R.string.products_form_price_label), priceText) { priceText = it }
-        ProductPhotoPicker(photo, store, AndroidImagePickerFactory, photoTargetId) { photo = it }
+        MoneyField(stringResource(Res.string.products_form_price_label), priceText) { priceText = it }
+        ProductPhotoPicker(photo, store, imagePickers, photoTargetId) { photo = it }
         note?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
     }
 }
@@ -444,7 +448,7 @@ private fun ProductFormDialog(
 @OptIn(ExperimentalFoundationApi::class)
 private fun ProductRow(
     product: ProductEntity,
-    store: ProductImageStore,
+    store: ProductPhotoStore,
     selectionActive: Boolean,
     isSelected: Boolean,
     onToggleSelected: () -> Unit,
@@ -452,7 +456,7 @@ private fun ProductRow(
     onArchive: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val selectDescription = stringResource(R.string.products_select_description, product.name)
+    val selectDescription = stringResource(Res.string.products_select_description, product.name)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -529,18 +533,18 @@ private fun ProductRow(
                 IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = stringResource(R.string.products_options_description, product.name),
+                        contentDescription = stringResource(Res.string.products_options_description, product.name),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.products_edit)) },
+                        text = { Text(stringResource(Res.string.products_edit)) },
                         onClick = { menuOpen = false; onEdit() },
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.products_delete), color = MaterialTheme.colorScheme.error) },
+                        text = { Text(stringResource(Res.string.products_delete), color = MaterialTheme.colorScheme.error) },
                         onClick = { menuOpen = false; onArchive() },
                     )
                 }
