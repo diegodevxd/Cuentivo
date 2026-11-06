@@ -6,7 +6,6 @@ import kotlin.math.min
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.autoreleasepool
 import kotlinx.cinterop.useContents
-import kotlinx.datetime.Clock
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.decodeToImageBitmap
 import platform.CoreGraphics.CGRectMake
@@ -35,7 +34,7 @@ import platform.UIKit.UIImagePNGRepresentation
 @OptIn(ExperimentalForeignApi::class, ExperimentalResourceApi::class)
 class IosProductPhotoStore(
     private val files: AppFiles,
-    private val now: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    private val now: () -> Long = { iosNowEpochMillis() },
 ) : ProductPhotoStore {
 
     private val cache = BoundedImageCache<ImageBitmap>(

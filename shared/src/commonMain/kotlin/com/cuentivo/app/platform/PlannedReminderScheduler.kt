@@ -12,10 +12,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 
 /** El título y el cuerpo de una notificación, ya resueltos en el idioma del teléfono. */
 data class ReminderText(val title: String, val body: String)
@@ -46,6 +43,10 @@ interface LocalReminderCenter {
  *
  * Si `sync` falla, lo programado se queda como estaba (`CancellationException` se relanza): igual que
  * el `Worker` de Android, que nunca reintenta en bucle por una notificación.
+ *
+ * **[now] es obligatorio a propósito.** `commonMain` no puede nombrar un reloj: Android compila
+ * contra `kotlinx-datetime` 0.6.2 e iOS contra 0.7.1, y el `Instant` de cada reloj es otro tipo.
+ * Cada plataforma pasa el suyo.
  */
 @OptIn(ExperimentalAtomicApi::class)
 class PlannedReminderScheduler(
@@ -54,9 +55,7 @@ class PlannedReminderScheduler(
     private val loadDueSales: suspend () -> List<DueSale>?,
     private val texts: suspend (OverdueReminder) -> ReminderText,
     private val scope: CoroutineScope,
-    private val now: () -> LocalDateTime = {
-        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
-    },
+    private val now: () -> LocalDateTime,
 ) : ReminderScheduler {
 
     private val generation = AtomicLong(0L)
