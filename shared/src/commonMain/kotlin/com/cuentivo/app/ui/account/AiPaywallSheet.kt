@@ -24,10 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import org.jetbrains.compose.resources.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.unit.dp
 import com.cuentivo.shared.resources.*
-import com.cuentivo.app.R
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoShapes
@@ -80,13 +79,13 @@ fun AiPaywallSheet(
                     modifier = Modifier.size(32.dp),
                 )
                 Text(
-                    text = stringResource(R.string.ai_paywall_title),
+                    text = stringResource(Res.string.ai_paywall_title),
                     style = MaterialTheme.typography.headlineSmall,
                 )
             }
 
             Text(
-                text = stringResource(R.string.ai_paywall_subtitle),
+                text = stringResource(Res.string.ai_paywall_subtitle),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -103,12 +102,12 @@ fun AiPaywallSheet(
                     verticalArrangement = Arrangement.spacedBy(NeoSpacing.xs),
                 ) {
                     Text(
-                        text = stringResource(R.string.ai_paywall_example_quote),
+                        text = stringResource(Res.string.ai_paywall_example_quote),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
-                        text = stringResource(R.string.ai_paywall_example_result),
+                        text = stringResource(Res.string.ai_paywall_example_result),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -119,14 +118,14 @@ fun AiPaywallSheet(
                 verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                PaywallBenefitLine(stringResource(R.string.ai_paywall_feature_execution))
-                PaywallBenefitLine(stringResource(R.string.ai_paywall_feature_pro_included))
-                PaywallBenefitLine(stringResource(R.string.ai_paywall_feature_queries))
+                PaywallBenefitLine(stringResource(Res.string.ai_paywall_feature_execution))
+                PaywallBenefitLine(stringResource(Res.string.ai_paywall_feature_pro_included))
+                PaywallBenefitLine(stringResource(Res.string.ai_paywall_feature_queries))
             }
 
             // Price loaded from Play or fallback
             val formattedPrice = aiPrice?.let { planPriceText(it, aiTrialMonths) }
-                ?: stringResource(R.string.subscription_price_unknown)
+                ?: stringResource(Res.string.subscription_price_unknown)
             Text(
                 text = formattedPrice,
                 style = MaterialTheme.typography.titleLarge,
@@ -134,9 +133,9 @@ fun AiPaywallSheet(
             )
 
             val actionLabel = if (currentTier == SubscriptionTier.PRO) {
-                stringResource(R.string.ai_paywall_action_upgrade)
+                stringResource(Res.string.ai_paywall_action_upgrade)
             } else {
-                stringResource(R.string.ai_paywall_action_buy)
+                stringResource(Res.string.ai_paywall_action_buy)
             }
 
             NeoAction(
@@ -153,11 +152,11 @@ fun AiPaywallSheet(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(stringResource(R.string.ai_paywall_dismiss))
+                Text(stringResource(Res.string.ai_paywall_dismiss))
             }
 
             Text(
-                text = stringResource(R.string.subscription_billing_note),
+                text = stringResource(Res.string.subscription_billing_note),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

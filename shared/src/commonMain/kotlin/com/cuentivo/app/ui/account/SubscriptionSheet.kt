@@ -15,11 +15,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.unit.dp
 import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.PaidFeature
-import com.cuentivo.app.R
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoShapes
@@ -42,7 +43,7 @@ import com.cuentivo.app.ui.NeoSpacing
  * the usual path, and until it does the account is still on the plan shown here.
  */
 @Composable
-internal fun SubscriptionContent(
+fun SubscriptionContent(
     tier: SubscriptionTier,
     onUpgrade: (SubscriptionTier) -> Unit,
     modifier: Modifier = Modifier,
@@ -73,9 +74,9 @@ internal fun SubscriptionContent(
         verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
     ) {
         PlanCard(
-            name = stringResource(R.string.subscription_plan_free),
+            name = stringResource(Res.string.subscription_plan_free),
             headline = stringResource(
-                R.string.subscription_free_limits,
+                Res.string.subscription_free_limits,
                 FeatureAccessManager.FREE_CUSTOMER_LIMIT,
                 FeatureAccessManager.FREE_SALE_LIMIT,
             ),
@@ -83,15 +84,15 @@ internal fun SubscriptionContent(
         )
 
         PlanCard(
-            name = stringResource(R.string.subscription_plan_pro),
-            headline = stringResource(R.string.subscription_pro_limits),
+            name = stringResource(Res.string.subscription_plan_pro),
+            headline = stringResource(Res.string.subscription_pro_limits),
             price = proPrice?.let { planPriceText(it, proTrialMonths) }
-                ?: stringResource(R.string.subscription_price_unknown),
+                ?: stringResource(Res.string.subscription_price_unknown),
             isCurrent = isPro,
         ) {
             Text(
                 text = stringResource(
-                    if (free) R.string.subscription_pro_adds else R.string.subscription_pro_includes
+                    if (free) Res.string.subscription_pro_adds else Res.string.subscription_pro_includes
                 ),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -100,7 +101,7 @@ internal fun SubscriptionContent(
             if (free) {
                 Spacer(Modifier.width(NeoSpacing.xs))
                 NeoAction(
-                    label = stringResource(R.string.subscription_upgrade_action),
+                    label = stringResource(Res.string.subscription_upgrade_action),
                     onClick = { onUpgrade(SubscriptionTier.PRO) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = proPrice != null,
@@ -109,26 +110,26 @@ internal fun SubscriptionContent(
         }
 
         PlanCard(
-            name = stringResource(R.string.subscription_plan_ai),
-            headline = stringResource(R.string.subscription_ai_limits),
+            name = stringResource(Res.string.subscription_plan_ai),
+            headline = stringResource(Res.string.subscription_ai_limits),
             price = aiPrice?.let { planPriceText(it, aiTrialMonths) }
-                ?: stringResource(R.string.subscription_price_unknown),
+                ?: stringResource(Res.string.subscription_price_unknown),
             isCurrent = isAi,
         ) {
             Text(
                 text = stringResource(
-                    if (isAi) R.string.subscription_ai_includes else R.string.subscription_ai_adds
+                    if (isAi) Res.string.subscription_ai_includes else Res.string.subscription_ai_adds
                 ),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            BulletLine(stringResource(R.string.subscription_ai_feature_pro_all))
-            BulletLine(stringResource(R.string.subscription_ai_feature_execution))
-            BulletLine(stringResource(R.string.subscription_ai_feature_text))
+            BulletLine(stringResource(Res.string.subscription_ai_feature_pro_all))
+            BulletLine(stringResource(Res.string.subscription_ai_feature_execution))
+            BulletLine(stringResource(Res.string.subscription_ai_feature_text))
             if (free) {
                 Spacer(Modifier.width(NeoSpacing.xs))
                 NeoAction(
-                    label = stringResource(R.string.subscription_upgrade_ai_action),
+                    label = stringResource(Res.string.subscription_upgrade_ai_action),
                     onClick = { onUpgrade(SubscriptionTier.AI) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = aiPrice != null,
@@ -136,7 +137,7 @@ internal fun SubscriptionContent(
             } else if (isPro) {
                 Spacer(Modifier.width(NeoSpacing.xs))
                 NeoAction(
-                    label = stringResource(R.string.subscription_switch_to_ai_action),
+                    label = stringResource(Res.string.subscription_switch_to_ai_action),
                     onClick = { onUpgrade(SubscriptionTier.AI) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = aiPrice != null,
@@ -146,14 +147,14 @@ internal fun SubscriptionContent(
 
         val billingNote = if (isAnonymous) {
             if (customerCount > 0) {
-                stringResource(R.string.subscription_guest_pro_note_with_count, customerCount)
+                stringResource(Res.string.subscription_guest_pro_note_with_count, customerCount)
             } else {
-                stringResource(R.string.subscription_guest_pro_note_generic)
+                stringResource(Res.string.subscription_guest_pro_note_generic)
             }
         } else if (free) {
-            stringResource(R.string.subscription_billing_note)
+            stringResource(Res.string.subscription_billing_note)
         } else {
-            stringResource(R.string.subscription_play_note)
+            stringResource(Res.string.subscription_play_note)
         }
         Text(
             text = billingNote,
@@ -230,7 +231,7 @@ private fun CurrentPlanBadge() {
         contentColor = MaterialTheme.colorScheme.onPrimary,
     ) {
         Text(
-            text = stringResource(R.string.subscription_current_badge),
+            text = stringResource(Res.string.subscription_current_badge),
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = NeoSpacing.sm, vertical = 2.dp),
         )

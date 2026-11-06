@@ -7,7 +7,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /** "$299.00 al mes", or "2 meses gratis, luego $299.00 al mes" when Play offers a free trial. */
 @Composable
-fun planPriceText(recurringPrice: String, freeTrialMonths: Int): String =
+internal fun planPriceText(recurringPrice: String, freeTrialMonths: Int): String =
     if (freeTrialMonths > 1) {
         stringResource(Res.string.subscription_price_with_trial, freeTrialMonths, recurringPrice)
     } else {

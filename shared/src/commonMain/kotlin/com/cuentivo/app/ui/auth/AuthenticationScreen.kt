@@ -34,15 +34,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
+import org.jetbrains.compose.resources.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.auth.CredentialsValidation
 import com.cuentivo.app.auth.CredentialsValidator
 import com.cuentivo.app.ui.NeoAction
@@ -118,7 +119,7 @@ fun AuthenticationScreen(
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = { Text(stringResource(R.string.auth_email_label)) },
+                label = { Text(stringResource(Res.string.auth_email_label)) },
                 singleLine = true,
                 isError = email.isNotBlank() && validation == CredentialsValidation.InvalidEmail,
                 shape = NeoShapes.row,
@@ -127,13 +128,13 @@ fun AuthenticationScreen(
             // Beside the field it belongs to, and only once there is something to judge: an error
             // shown before the first character is typed is just noise.
             if (email.isNotBlank() && validation == CredentialsValidation.InvalidEmail) {
-                FieldError(stringResource(R.string.auth_invalid_email))
+                FieldError(stringResource(Res.string.auth_invalid_email))
             }
 
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text(stringResource(R.string.auth_password_label)) },
+                label = { Text(stringResource(Res.string.auth_password_label)) },
                 singleLine = true,
                 isError = password.isNotBlank() && validation == CredentialsValidation.PasswordTooShort,
                 visualTransformation = PasswordVisualTransformation(),
@@ -141,14 +142,14 @@ fun AuthenticationScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             if (password.isNotBlank() && validation == CredentialsValidation.PasswordTooShort) {
-                FieldError(stringResource(R.string.auth_password_too_short))
+                FieldError(stringResource(Res.string.auth_password_too_short))
             }
 
             if (isSignUp) {
                 OutlinedTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
-                    label = { Text(stringResource(R.string.auth_confirm_password_label)) },
+                    label = { Text(stringResource(Res.string.auth_confirm_password_label)) },
                     singleLine = true,
                     isError = confirmPassword.isNotEmpty() && confirmPassword != password,
                     visualTransformation = PasswordVisualTransformation(),
@@ -156,7 +157,7 @@ fun AuthenticationScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (confirmPassword.isNotEmpty() && confirmPassword != password) {
-                    FieldError(stringResource(R.string.auth_password_mismatch))
+                    FieldError(stringResource(Res.string.auth_password_mismatch))
                 }
             }
 
@@ -169,12 +170,12 @@ fun AuthenticationScreen(
                     enabled = !isWorking,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 ) {
-                    Text(stringResource(R.string.auth_collision_sign_in_action))
+                    Text(stringResource(Res.string.auth_collision_sign_in_action))
                 }
             }
 
             NeoAction(
-                label = stringResource(R.string.auth_continue),
+                label = stringResource(Res.string.auth_continue),
                 onClick = {
                     if (canSubmit) {
                         if (isSignUp) onSignUp(email.trim(), password) else onSignIn(email.trim(), password)
@@ -197,7 +198,7 @@ fun AuthenticationScreen(
             ) {
                 HorizontalDivider(modifier = Modifier.weight(1f))
                 Text(
-                    text = stringResource(R.string.auth_google_or),
+                    text = stringResource(Res.string.auth_google_or),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = NeoSpacing.md),
@@ -208,7 +209,7 @@ fun AuthenticationScreen(
             // 48 dp minimum, like every action on this screen, so the elderly target audience can
             // land on it. The description repeats the label on purpose: tests and TalkBack must see
             // one unambiguous "Continue with Google" action.
-            val googleContinueLabel = stringResource(R.string.auth_google_continue)
+            val googleContinueLabel = stringResource(Res.string.auth_google_continue)
             OutlinedButton(
                 onClick = onGoogleSignIn,
                 enabled = !isWorking,
@@ -232,7 +233,7 @@ fun AuthenticationScreen(
                 },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) {
-                Text(stringResource(if (isSignUp) R.string.auth_switch_to_sign_in else R.string.auth_switch_to_sign_up))
+                Text(stringResource(if (isSignUp) Res.string.auth_switch_to_sign_in else Res.string.auth_switch_to_sign_up))
             }
             // Only on the sign-in side: offering it while someone is choosing a password reads as
             // an error message about the password they are still typing.
@@ -245,13 +246,13 @@ fun AuthenticationScreen(
                     enabled = !isWorking && validation != CredentialsValidation.InvalidEmail && email.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("auth-forgot-password"),
                 ) {
-                    Text(stringResource(R.string.auth_forgot_password))
+                    Text(stringResource(Res.string.auth_forgot_password))
                 }
                 // Says the same thing whether or not that address has an account. Confirming which
                 // addresses are registered hands an attacker the customer list.
                 if (resetRequested) {
                     Text(
-                        text = stringResource(R.string.auth_reset_sent),
+                        text = stringResource(Res.string.auth_reset_sent),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -277,25 +278,25 @@ private fun BrandHeader(isSignUp: Boolean, customerCount: Int = 0) {
             // The adaptive foreground carries the icon's safe-zone padding, so it is scaled up to
             // fill this tile the way the launcher's own mask crops it.
             Image(
-                painter = painterResource(R.mipmap.ic_launcher_foreground),
+                painter = painterResource(Res.drawable.ic_cuentivo_logo),
                 contentDescription = "Cuentivo",
                 modifier = Modifier.fillMaxSize().scale(1.5f),
             )
         }
         Spacer(Modifier.height(NeoSpacing.md))
         Text(
-            text = stringResource(if (isSignUp) R.string.auth_sign_up_title else R.string.auth_sign_in_title),
+            text = stringResource(if (isSignUp) Res.string.auth_sign_up_title else Res.string.auth_sign_in_title),
             style = MaterialTheme.typography.titleLarge,
         )
         Spacer(Modifier.height(NeoSpacing.xs))
         val tagline = if (isSignUp) {
             if (customerCount > 0) {
-                stringResource(R.string.auth_sign_up_tagline_with_count, customerCount)
+                stringResource(Res.string.auth_sign_up_tagline_with_count, customerCount)
             } else {
-                stringResource(R.string.auth_sign_up_tagline_generic)
+                stringResource(Res.string.auth_sign_up_tagline_generic)
             }
         } else {
-            stringResource(R.string.auth_tagline)
+            stringResource(Res.string.auth_tagline)
         }
         Text(
             text = tagline,

@@ -22,10 +22,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoPanel
@@ -66,12 +67,12 @@ fun EmailVerificationScreen(
             NeoPanel(modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.md)) {
                     Text(
-                        text = stringResource(R.string.verify_title),
+                        text = stringResource(Res.string.verify_title),
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Text(
-                        text = email?.let { stringResource(R.string.verify_detail, it) }
-                            ?: stringResource(R.string.verify_detail_no_email),
+                        text = email?.let { stringResource(Res.string.verify_detail, it) }
+                            ?: stringResource(Res.string.verify_detail_no_email),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -84,7 +85,7 @@ fun EmailVerificationScreen(
                         )
                     }
                     NeoAction(
-                        label = stringResource(R.string.verify_check),
+                        label = stringResource(Res.string.verify_check),
                         onClick = onCheck,
                         modifier = Modifier.fillMaxWidth().testTag("verify-check"),
                         enabled = !isWorking,
@@ -98,11 +99,11 @@ fun EmailVerificationScreen(
                         onClick = onResend,
                         enabled = !isWorking,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("verify-resend"),
-                    ) { Text(stringResource(R.string.verify_resend)) }
+                    ) { Text(stringResource(Res.string.verify_resend)) }
                     TextButton(
                         onClick = onUseAnotherAccount,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("verify-sign-out"),
-                    ) { Text(stringResource(R.string.verify_use_another_account)) }
+                    ) { Text(stringResource(Res.string.verify_use_another_account)) }
                 }
             }
         }
