@@ -7,7 +7,7 @@ import kotlin.test.Test
 class FirstDebtPolicyTest {
 
     @Test
-    fun `shouldShow returns true when empty customers, not dismissed, and no activity`() {
+    fun `shouldShow returns true when empty customers not dismissed and no activity`() {
         assertTrue(
             FirstDebtPolicy.shouldShow(
                 customerCount = 0,
