@@ -1,7 +1,7 @@
 package com.cuentivo.app.ui.customer
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 /**
  * The customer's history reads the debt, not the till. These expectations are intentionally the

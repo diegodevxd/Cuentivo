@@ -3,8 +3,8 @@ package com.cuentivo.app.ui.dashboard
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.domain.DueSale
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 class DashboardPresentationTest {
     /**

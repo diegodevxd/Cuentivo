@@ -4,8 +4,9 @@ import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.CancelablePaymentRow
 import com.cuentivo.app.domain.DueSale
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import com.cuentivo.app.domain.PaymentReliability
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 class CustomerDirectoryPresentationTest {
     @Test
@@ -123,6 +124,23 @@ class CustomerDirectoryPresentationTest {
         assertEquals("JP", CustomerDirectoryPresentation.initials("  Juan   Pérez "))
         assertEquals("BO", CustomerDirectoryPresentation.initials("Bodega"))
         assertEquals("?", CustomerDirectoryPresentation.initials("   "))
+    }
+
+    @Test
+    fun the_reliability_dot_is_absent_only_without_history() {
+        // The dot is the only place these words appear, and it must stay absent for a customer with
+        // no history. Turning the Int into a StringResource is the kind of change that can quietly
+        // point two levels at the same text, so the three labels have to stay distinct.
+        assertEquals(null, PaymentReliability.NO_HISTORY.labelRes())
+
+        val labels = listOf(
+            PaymentReliability.PUNCTUAL,
+            PaymentReliability.SLOW,
+            PaymentReliability.DELINQUENT,
+        ).map { it.labelRes() }
+
+        assertEquals(3, labels.filterNotNull().size)
+        assertEquals(3, labels.toSet().size)
     }
 
     private fun filtered(

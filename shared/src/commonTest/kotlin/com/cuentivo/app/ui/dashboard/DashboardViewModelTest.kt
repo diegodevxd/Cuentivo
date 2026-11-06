@@ -3,29 +3,29 @@ package com.cuentivo.app.ui.dashboard
 import com.cuentivo.app.domain.DashboardActivity
 import com.cuentivo.app.domain.DashboardSnapshot
 import com.cuentivo.app.domain.DueSale
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 class DashboardViewModelTest {
     @Test
-    fun no_business_becomes_an_empty_dashboard() = runBlocking {
+    fun no_business_becomes_an_empty_dashboard() = runTest {
         val viewModel = DashboardViewModel { null }
 
         assertEquals(DashboardUiState.NoBusiness, viewModel.load())
     }
 
     @Test
-    fun snapshot_becomes_dashboard_content() = runBlocking {
+    fun snapshot_becomes_dashboard_content() = runTest {
         val viewModel = DashboardViewModel {
             DashboardSnapshot("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2)
         }
 
-        assertEquals(12_500, (viewModel.load() as DashboardUiState.Content).receivableCents)
+        assertEquals(12_500L, (viewModel.load() as DashboardUiState.Content).receivableCents)
     }
 
     @Test
-    fun snapshot_keeps_the_dashboard_feed_data() = runBlocking {
+    fun snapshot_keeps_the_dashboard_feed_data() = runTest {
         val dueSale = DueSale("sale-1", "customer-1", "Ana", 100, 2_500)
         val activity = DashboardActivity(
             id = "movement-1",
@@ -53,7 +53,7 @@ class DashboardViewModelTest {
 
         val content = viewModel.load() as DashboardUiState.Content
 
-        assertEquals(2_500, content.dueTodayCents)
+        assertEquals(2_500L, content.dueTodayCents)
         assertEquals(listOf(dueSale), content.dueSales)
         assertEquals(listOf(activity), content.recentActivity)
     }

@@ -1,13 +1,13 @@
 package com.cuentivo.app.ui.dashboard
 
 /** The visual cash meaning of a persisted ledger activity. */
-internal data class DashboardActivityVisual(
+data class DashboardActivityVisual(
     val label: String,
     val sign: String,
     val accent: DashboardActivityAccent,
 )
 
-internal enum class DashboardActivityAccent {
+enum class DashboardActivityAccent {
     SALE,
     PAYMENT,
     REFUND,
@@ -32,7 +32,7 @@ internal enum class DashboardActivityAccent {
  * `PaymentRepository` all `require` a fixed direction per type; ADJUSTMENT is the only type whose
  * direction genuinely varies, so it is the only one that reads `direction`.
  */
-internal object DashboardActivityPresentation {
+object DashboardActivityPresentation {
     fun from(type: String, direction: String): DashboardActivityVisual = when (type) {
         // Credit sale: the debt grows, but no cash changes hands, so no sign.
         "CHARGE" -> DashboardActivityVisual("Nueva venta", "", DashboardActivityAccent.SALE)

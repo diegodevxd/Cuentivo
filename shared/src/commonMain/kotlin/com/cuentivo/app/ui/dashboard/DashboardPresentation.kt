@@ -3,12 +3,12 @@ package com.cuentivo.app.ui.dashboard
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.domain.DueSale
 
-internal data class CriticalCustomer(
+data class CriticalCustomer(
     val customer: CustomerBalanceRow,
     val overdueCents: Long,
 )
 
-internal object DashboardPresentation {
+object DashboardPresentation {
     fun criticalCustomers(
         customers: List<CustomerBalanceRow>,
         dueSales: List<DueSale>,

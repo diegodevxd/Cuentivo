@@ -1,8 +1,8 @@
 package com.cuentivo.app.ui.customer
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.Test
 
 class BalancePresentationTest {
     @Test
@@ -33,7 +33,7 @@ class BalancePresentationTest {
 
     @Test
     fun minimum_long_balance_fails_explicitly_instead_of_returning_negative_magnitude() {
-        assertThrows(IllegalArgumentException::class.java) {
+        assertFailsWith<IllegalArgumentException> {
             BalancePresenter.from(Long.MIN_VALUE)
         }
     }

@@ -7,14 +7,14 @@ package com.cuentivo.app.ui.product
  * the form would save right now. [provisional] are files this dialog itself created — they exist on
  * disk but no row references them yet, so they are the only ones it may delete.
  */
-internal data class PhotoDraft(
+data class PhotoDraft(
     val original: String?,
     val current: String?,
     val provisional: Set<String> = emptySet(),
 )
 
 /** A new draft plus the files that became garbage at that exact moment. */
-internal data class PhotoDraftUpdate(
+data class PhotoDraftUpdate(
     val draft: PhotoDraft,
     val deleteNow: List<String>,
 )
@@ -30,7 +30,7 @@ internal data class PhotoDraftUpdate(
  * `ProductImageStore.save` mints a fresh timestamped name on every call, so picking twice really
  * does create two files; the replaced one has to be cleaned up rather than left behind.
  */
-internal object ProductPhotoDraftPolicy {
+object ProductPhotoDraftPolicy {
     fun start(original: String?): PhotoDraft = PhotoDraft(original = original, current = original)
 
     /** Choosing a photo. Only a file this dialog created can be thrown away here. */

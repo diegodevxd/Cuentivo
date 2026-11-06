@@ -4,10 +4,10 @@ import com.cuentivo.app.domain.AccessDecision
 import com.cuentivo.app.domain.FeatureAccessManager
 import com.cuentivo.app.domain.PaidFeature
 import com.cuentivo.app.domain.SubscriptionTier
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class SubscriptionUiPolicyTest {
 

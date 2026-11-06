@@ -1,7 +1,7 @@
 package com.cuentivo.app.ui.product
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 /**
  * The six transitions that decide whether a product ends up pointing at a file that no longer

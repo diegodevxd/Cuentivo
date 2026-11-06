@@ -1,10 +1,10 @@
 package com.cuentivo.app.ui.product
 
 import com.cuentivo.app.domain.AccessDecision
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * Guards the reason the Importar button used to stick on "Importando…" forever: progress was tied

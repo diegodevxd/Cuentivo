@@ -10,7 +10,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * including when the file turns out to be unreadable — the route that used to leave the button on
  * "Importando…" with no way to retry.
  */
-internal object ProductImportRunner {
+object ProductImportRunner {
     /**
      * Runs [block] with progress raised, and lowers it in a `finally` so a thrown exception cannot
      * strand it. Returns null when [start] never began, in which case progress is never touched.

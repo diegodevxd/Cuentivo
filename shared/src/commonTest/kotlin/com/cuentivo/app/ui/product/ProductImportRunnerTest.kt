@@ -2,13 +2,13 @@ package com.cuentivo.app.ui.product
 
 import com.cuentivo.app.domain.AccessDecision
 import kotlin.coroutines.cancellation.CancellationException
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
+import kotlin.test.fail
+import kotlin.test.Test
 
 /**
  * The transition itself, not just the decision to start.
@@ -21,7 +21,7 @@ class ProductImportRunnerTest {
     private val transitions = mutableListOf<Boolean>()
 
     @Test
-    fun a_successful_import_raises_then_lowers_the_flag() = runBlocking {
+    fun a_successful_import_raises_then_lowers_the_flag() = runTest {
         val outcome = ProductImportRunner.runIfStarted(BEGIN, ::record) { businessId ->
             assertEquals("business-1", businessId)
             "imported"
@@ -32,7 +32,7 @@ class ProductImportRunnerTest {
     }
 
     @Test
-    fun an_unreadable_file_still_lowers_the_flag_and_reports_the_failure() = runBlocking {
+    fun an_unreadable_file_still_lowers_the_flag_and_reports_the_failure() = runTest {
         val boom = IllegalStateException("No se pudo abrir el archivo")
 
         val outcome = ProductImportRunner.runIfStarted(BEGIN, ::record) { throw boom }
@@ -44,7 +44,7 @@ class ProductImportRunnerTest {
     }
 
     @Test
-    fun a_failure_after_partial_work_still_lowers_the_flag() = runBlocking {
+    fun a_failure_after_partial_work_still_lowers_the_flag() = runTest {
         var inserted = 0
 
         val outcome = ProductImportRunner.runIfStarted(BEGIN, ::record) {
@@ -58,7 +58,7 @@ class ProductImportRunnerTest {
     }
 
     @Test
-    fun a_cancellation_propagates_instead_of_becoming_a_failed_result() = runBlocking {
+    fun a_cancellation_propagates_instead_of_becoming_a_failed_result() = runTest {
         val cancellation = CancellationException("the scope went away")
         var caught: Throwable? = null
 
@@ -76,7 +76,7 @@ class ProductImportRunnerTest {
     }
 
     @Test
-    fun a_blocked_plan_never_touches_the_flag() = runBlocking {
+    fun a_blocked_plan_never_touches_the_flag() = runTest {
         var ran = false
 
         val outcome = ProductImportRunner.runIfStarted(ImportStart.Denied(BLOCKED), ::record) {
@@ -89,7 +89,7 @@ class ProductImportRunnerTest {
     }
 
     @Test
-    fun no_active_business_never_touches_the_flag() = runBlocking {
+    fun no_active_business_never_touches_the_flag() = runTest {
         var ran = false
 
         val outcome = ProductImportRunner.runIfStarted(ImportStart.NoBusiness, ::record) {

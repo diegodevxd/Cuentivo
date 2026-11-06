@@ -4,7 +4,7 @@ import com.cuentivo.app.data.local.CancelablePaymentRow
 import com.cuentivo.app.ui.CorrectionCandidate
 
 /** Pure, stable mapping for correction rows. The database remains the source of truth. */
-internal object CorrectionCandidatePresentation {
+object CorrectionCandidatePresentation {
     fun paymentCandidates(rows: List<CancelablePaymentRow>): List<CorrectionCandidate.Payment> {
         val groups = rows.groupBy { it.amountCents to it.paymentDateEpochDay }
             .mapValues { (_, group) -> group.sortedWith(compareBy({ it.createdAtEpochMillis }, { it.id })) }

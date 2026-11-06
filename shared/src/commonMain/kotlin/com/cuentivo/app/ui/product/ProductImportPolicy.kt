@@ -3,7 +3,7 @@ package com.cuentivo.app.ui.product
 import com.cuentivo.app.domain.AccessDecision
 
 /** What should happen when someone picks a spreadsheet to import. */
-internal sealed interface ImportStart {
+sealed interface ImportStart {
     /** Cleared to run, and the only outcome that may show progress. */
     data class Begin(val businessId: String) : ImportStart
 
@@ -23,7 +23,7 @@ internal sealed interface ImportStart {
  * and an unreadable file — so the button stayed on "Importando…" forever and the user could not try
  * again. Progress now belongs to the caller that actually launched the work.
  */
-internal object ProductImportPolicy {
+object ProductImportPolicy {
     fun start(businessId: String?, decision: AccessDecision): ImportStart = when {
         businessId == null -> ImportStart.NoBusiness
         decision is AccessDecision.Blocked -> ImportStart.Denied(decision)

@@ -1,7 +1,7 @@
 package com.cuentivo.app.ui.customer
 
 /** One history row, read from the customer's side of the ledger. */
-internal data class LedgerVisual(
+data class LedgerVisual(
     val label: String,
     val sign: String,
     val caption: String,
@@ -13,7 +13,7 @@ internal data class LedgerVisual(
     val isPriorDebt: Boolean = false,
 )
 
-internal enum class LedgerTone {
+enum class LedgerTone {
     /** Raises what this customer owes. */
     DEBT,
 
@@ -34,7 +34,7 @@ internal enum class LedgerTone {
  * `CASE WHEN direction = 'DEBIT' THEN amountCents ELSE -amountCents END`: DEBIT raises the debt,
  * CREDIT lowers it.
  */
-internal object CustomerLedgerPresentation {
+object CustomerLedgerPresentation {
     fun from(type: String, direction: String, isPriorDebt: Boolean = false): LedgerVisual {
         val debit = direction != CREDIT
         return when (type) {

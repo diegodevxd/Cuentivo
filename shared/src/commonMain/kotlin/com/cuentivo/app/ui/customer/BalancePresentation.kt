@@ -1,13 +1,13 @@
 package com.cuentivo.app.ui.customer
 
-internal enum class BalanceKind { OWED, SETTLED, CUSTOMER_CREDIT }
+enum class BalanceKind { OWED, SETTLED, CUSTOMER_CREDIT }
 
-internal data class BalancePresentation(
+data class BalancePresentation(
     val kind: BalanceKind,
     val amountCents: Long,
 )
 
-internal object BalancePresenter {
+object BalancePresenter {
     fun from(balanceCents: Long): BalancePresentation {
         require(balanceCents != Long.MIN_VALUE) {
             "balanceCents must not be Long.MIN_VALUE because its magnitude cannot be represented as a positive Long"
