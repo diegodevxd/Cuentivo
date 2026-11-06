@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.Manifest
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.net.Uri
 import android.os.Bundle
 import android.os.LocaleList
@@ -248,6 +249,14 @@ class MainActivity : ComponentActivity() {
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             LanguagePreference.migrateLegacyToPlatformIfNeeded(newBase)
             val locales = newBase.getSystemService(LocaleManager::class.java)?.applicationLocales
+            val chosenTag = if (locales != null && !locales.isEmpty) locales[0].toLanguageTag() else null
+            // El `Locale` del proceso es lo que Compose lee para `Locale.current` (y por tanto para
+            // `Res.string`); la configuración del Context sólo alimenta `R.string`. Se mueven juntos
+            // o la pantalla mezcla idiomas. Con `chosenTag` nulo se vuelve al del sistema: quien
+            // regresa a "seguir al sistema" no puede quedarse con el idioma anterior hasta reiniciar.
+            Locale.setDefault(
+                LanguagePreference.processLocale(chosenTag, Resources.getSystem().configuration.locales[0]),
+            )
             val wrapped = if (locales != null && !locales.isEmpty) {
                 val configuration = Configuration(newBase.resources.configuration).apply { setLocales(locales) }
                 newBase.createConfigurationContext(configuration)
@@ -259,6 +268,9 @@ class MainActivity : ComponentActivity() {
         }
 
         val tag = LanguagePreference.effectiveTag(newBase)
+        Locale.setDefault(
+            LanguagePreference.processLocale(tag, Resources.getSystem().configuration.locales[0]),
+        )
         val wrapped = if (tag == null) {
             newBase
         } else {

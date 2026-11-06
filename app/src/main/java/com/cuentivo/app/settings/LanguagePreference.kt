@@ -32,6 +32,18 @@ object LanguagePreference {
             .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .getString(TAG, null)
 
+    /**
+     * El `Locale` que debe ser el default del proceso. `tag` nulo significa seguir al sistema.
+     *
+     * Compose resuelve `Locale.current` —y con él `Res.string`— desde el `Locale` por defecto del
+     * proceso, mientras que `R.string` lo resuelve desde la configuración del `Context`. Si el
+     * default no sigue a la elección, una misma pantalla mezcla los dos idiomas en cuanto lee una
+     * clave con `Res.string`. Pura a propósito: el caso "seguir al sistema" tiene que devolver el
+     * del sistema, no el que quedó del arranque anterior.
+     */
+    fun processLocale(tag: String?, systemLocale: Locale): Locale =
+        if (tag == null) systemLocale else Locale.forLanguageTag(tag)
+
     /** The platform-owned choice on API 33+, or the legacy choice below it. */
     fun effectiveTag(context: Context): String? {
         if (Build.VERSION.SDK_INT >= 33) {
