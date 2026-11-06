@@ -1,8 +1,9 @@
 package com.cuentivo.app.auth
 
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 /**
  * Unit tests for [GuestAccountSwitchPolicy].
@@ -20,7 +21,7 @@ class GuestAccountSwitchPolicyTest {
             customerCount = 5,
             hasFinancialActivity = false,
         )
-        assertTrue("Un invitado con clientes debe recibir confirmación antes de cambiar de cuenta", requiresConfirmation)
+        assertTrue(requiresConfirmation, "Un invitado con clientes debe recibir confirmación antes de cambiar de cuenta")
     }
 
     @Test
@@ -30,7 +31,7 @@ class GuestAccountSwitchPolicyTest {
             customerCount = 0,
             hasFinancialActivity = true,
         )
-        assertTrue("Un invitado con actividad financiera debe recibir confirmación", requiresConfirmation)
+        assertTrue(requiresConfirmation, "Un invitado con actividad financiera debe recibir confirmación")
     }
 
     @Test
@@ -40,7 +41,7 @@ class GuestAccountSwitchPolicyTest {
             customerCount = 0,
             hasFinancialActivity = false,
         )
-        assertFalse("Un invitado sin datos no necesita advertencia", requiresConfirmation)
+        assertFalse(requiresConfirmation, "Un invitado sin datos no necesita advertencia")
     }
 
     @Test
@@ -50,7 +51,7 @@ class GuestAccountSwitchPolicyTest {
             customerCount = 10,
             hasFinancialActivity = true,
         )
-        assertFalse("Una cuenta registrada normal no aplica para advertencia de invitado", requiresConfirmation)
+        assertFalse(requiresConfirmation, "Una cuenta registrada normal no aplica para advertencia de invitado")
     }
 
     @Test
@@ -70,7 +71,7 @@ class GuestAccountSwitchPolicyTest {
             customerCount = 3,
             hasFinancialActivity = false,
         )
-        org.junit.Assert.assertEquals(AccountCollisionResolution.CONFIRM_BEFORE_SIGN_IN, resolution)
+        assertEquals(AccountCollisionResolution.CONFIRM_BEFORE_SIGN_IN, resolution)
     }
 
     @Test
@@ -80,7 +81,7 @@ class GuestAccountSwitchPolicyTest {
             customerCount = 0,
             hasFinancialActivity = false,
         )
-        org.junit.Assert.assertEquals(AccountCollisionResolution.DIRECT_SIGN_IN, resolution)
+        assertEquals(AccountCollisionResolution.DIRECT_SIGN_IN, resolution)
     }
 
     @Test
@@ -90,7 +91,7 @@ class GuestAccountSwitchPolicyTest {
             customerCount = 10,
             hasFinancialActivity = true,
         )
-        org.junit.Assert.assertEquals(AccountCollisionResolution.DIRECT_SIGN_IN, resolution)
+        assertEquals(AccountCollisionResolution.DIRECT_SIGN_IN, resolution)
     }
 
     @Test
@@ -101,7 +102,7 @@ class GuestAccountSwitchPolicyTest {
             hasFinancialActivity = false,
             targetEmail = "diego@cuentivo.com",
         )
-        org.junit.Assert.assertEquals(
+        assertEquals(
             AccountSwitchDecision.Confirm(targetEmail = "diego@cuentivo.com"),
             decision,
         )
@@ -115,7 +116,7 @@ class GuestAccountSwitchPolicyTest {
             hasFinancialActivity = false,
             targetEmail = "diego@cuentivo.com",
         )
-        org.junit.Assert.assertEquals(AccountSwitchDecision.Direct, decision)
+        assertEquals(AccountSwitchDecision.Direct, decision)
     }
 
     @Test
@@ -126,6 +127,6 @@ class GuestAccountSwitchPolicyTest {
             hasFinancialActivity = true,
             targetEmail = "diego@cuentivo.com",
         )
-        org.junit.Assert.assertEquals(AccountSwitchDecision.Direct, decision)
+        assertEquals(AccountSwitchDecision.Direct, decision)
     }
 }

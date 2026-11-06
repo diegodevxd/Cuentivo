@@ -1,9 +1,9 @@
 package com.cuentivo.app.auth
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * Unit tests for [AuthenticationFlowPolicy].
@@ -162,7 +162,7 @@ class AuthenticationFlowPolicyTest {
             expectedUid = "guest_123",
             resultUid = "other_user_456",
         )
-        assertFalse("Account linking with a differing UID must be rejected", result.isSuccess)
+        assertFalse(result.isSuccess, "Account linking with a differing UID must be rejected")
         assertTrue(result.exceptionOrNull() is IllegalStateException)
     }
 
@@ -172,7 +172,7 @@ class AuthenticationFlowPolicyTest {
             expectedUid = "guest_123",
             resultUid = null,
         )
-        assertFalse("Account linking with null UID must be rejected", result.isSuccess)
+        assertFalse(result.isSuccess, "Account linking with null UID must be rejected")
     }
 
     @Test

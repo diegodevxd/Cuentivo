@@ -1,7 +1,7 @@
 package com.cuentivo.app.auth
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 /**
  * Regresión del hallazgo v45: entrar con Google desde una sesión de invitada pedía elegir la cuenta
