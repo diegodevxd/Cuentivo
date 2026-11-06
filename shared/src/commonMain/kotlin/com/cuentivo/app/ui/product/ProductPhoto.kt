@@ -54,7 +54,7 @@ import org.jetbrains.compose.resources.stringResource
  * `Dispatchers.IO`, because a list of products would otherwise stutter on a cheap phone.
  */
 @Composable
-fun ProductPhoto(
+internal fun ProductPhoto(
     fileName: String?,
     store: ProductPhotoStore,
     size: Dp,
@@ -107,7 +107,7 @@ fun ProductPhoto(
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun ProductPhotoPicker(
+internal fun ProductPhotoPicker(
     draft: PhotoDraft,
     store: ProductPhotoStore,
     pickers: ImagePickerFactory,
