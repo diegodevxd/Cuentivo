@@ -14,4 +14,4 @@ import androidx.room.useWriterConnection
  * porque corren sobre la misma conexión de escritura.
  */
 actual suspend fun <R> CuentivoDatabase.inTransaction(block: suspend () -> R): R =
-    useWriterConnection { transactor -> transactor.immediateTransaction(block) }
+    useWriterConnection { transactor -> transactor.immediateTransaction { block() } }
