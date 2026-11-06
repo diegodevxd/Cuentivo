@@ -5,7 +5,6 @@ import android.content.Intent
 import android.Manifest
 import android.content.res.Configuration
 import android.content.res.Resources
-import android.net.Uri
 import android.os.Bundle
 import android.os.LocaleList
 import android.os.Build
@@ -94,7 +93,6 @@ import com.cuentivo.app.domain.PaidFeature
 import com.cuentivo.app.domain.PaymentAllocator
 import com.cuentivo.app.domain.ProductSheetParser
 import com.cuentivo.app.domain.SheetImport
-import com.cuentivo.app.domain.XlsxReader
 import com.cuentivo.app.domain.OpeningBalance
 import com.cuentivo.app.domain.OpeningBalancePlanner
 import com.cuentivo.app.domain.SaleLineSummary
@@ -2364,7 +2362,7 @@ class MainActivity : ComponentActivity() {
                         refreshKey++
                         uiMessage = getString(R.string.message_removed, product.name)
                     }
-                }, onImportProducts = { uri ->
+                }, onImportProducts = { doc ->
                     // Announced as part of Pro, so it is gated like every other paid feature. Until
                     // Billing exists `tier` is pinned to FREE above, so flip that one line to test it.
                     val businessId = (state as? DashboardUiState.Content)?.businessId
@@ -2378,19 +2376,12 @@ class MainActivity : ComponentActivity() {
                                 start = start,
                                 setProgress = { isImportingProducts = it },
                             ) { importBusinessId ->
-                                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                                    ?: error("No se pudo abrir el archivo")
+                                val bytes = doc.readBytes() ?: error("No se pudo abrir el archivo")
                                 val existing = database.productDao().searchActive(importBusinessId, "", "")
                                 val existingNames = existing.map { CustomerNameNormalizer.key(it.name) }.toSet()
-                                // Excel keeps its cells in a zip of XML; a CSV is just text. The
-                                // zip signature decides, because a file picked from a cloud drive
-                                // often arrives without a usable name or MIME type.
-                                val isXlsx = bytes.size > 1 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()
-                                val result = if (isXlsx) {
-                                    ProductSheetParser.parse(XlsxReader.read(bytes), existingNames)
-                                } else {
-                                    ProductSheetParser.parseCsv(bytes.toString(Charsets.UTF_8), existingNames)
-                                }
+                                // The signature decides between a zip of XML and plain text; the
+                                // decision lives in the parser so iOS inherits the same one.
+                                val result = ProductSheetParser.parseFile(bytes, existingNames)
                                 result.accepted.forEach { parsed ->
                                     val now = System.currentTimeMillis()
                                     val product = ProductEntity(UUID.randomUUID().toString(), importBusinessId, parsed.name, parsed.description, parsed.sku, parsed.category, parsed.priceCents, null, null, null, true, now, now, null)
@@ -2635,16 +2626,17 @@ class MainActivity : ComponentActivity() {
                         hasCloudBackup = SyncEntitlement.allowsCloudSync(tier),
                         isAnonymous = authenticationGateway.isAnonymous,
                         customerCount = customers.size,
-                        onExport = { uri, password ->
+                        suggestedFileName = { DatabaseBackup.suggestedFileName(LocalDate.now().toString()) },
+                        onExport = { target, password ->
                             lifecycleScope.launch {
                                 isBackupWorking = true
                                 try {
-                                    withContext(Dispatchers.IO) {
-                                        val bytes = DatabaseBackup.export(applicationContext, database, password.toCharArray())
-                                        contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                                            ?: error("El destino del respaldo no se pudo abrir")
+                                    val bytes = withContext(Dispatchers.IO) {
+                                        DatabaseBackup.export(applicationContext, database, password.toCharArray())
                                     }
-                                    uiMessage = exportDone
+                                    // `write` contesta false si la persona canceló el selector: no es
+                                    // un fallo y no se anuncia nada.
+                                    if (target.write(bytes)) uiMessage = exportDone
                                 } catch (cancellation: CancellationException) {
                                     throw cancellation
                                 } catch (error: Exception) {
@@ -2657,13 +2649,12 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         },
-                        onRestore = { uri, password ->
+                        onRestore = { doc, password ->
                             lifecycleScope.launch {
                                 isBackupWorking = true
                                 try {
+                                    val bytes = doc.readBytes() ?: error("El respaldo no se pudo abrir")
                                     withContext(Dispatchers.IO) {
-                                        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                                            ?: error("El respaldo no se pudo abrir")
                                         DatabaseBackup.restore(applicationContext, database, bytes, password.toCharArray())
                                     }
                                     // Past this point the file on disk is somebody else's database

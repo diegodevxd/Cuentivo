@@ -1,8 +1,5 @@
 package com.cuentivo.app.ui.product
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -61,6 +58,8 @@ import com.cuentivo.app.R
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
 import com.cuentivo.app.domain.Money
+import com.cuentivo.app.platform.PickedDocument
+import com.cuentivo.app.platform.rememberDocumentOpener
 import com.cuentivo.app.ui.FormDialog
 import com.cuentivo.app.ui.MoneyField
 import com.cuentivo.app.ui.NeoAction
@@ -97,7 +96,7 @@ fun ProductsScreen(
     onCreateProduct: (String, Long, String?) -> Unit = { _, _, _ -> },
     onEditProduct: (ProductEntity, String, Long, String?) -> Unit = { _, _, _, _ -> },
     onArchiveProduct: (ProductEntity) -> Unit = {},
-    onImportProducts: (Uri) -> Unit = {},
+    onImportProducts: (PickedDocument) -> Unit = {},
     /**
      * False when the plan does not include the spreadsheet feature. The check lives here, before
      * the file picker, because deciding it afterwards made people choose a file and only then meet
@@ -148,11 +147,7 @@ fun ProductsScreen(
 
     // Wide-open MIME list: phones and cloud drives label .csv and .xlsx inconsistently, and a
     // strict filter greys out the very file the person came to pick.
-    val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri?.let(onImportProducts)
-    }
+    val importOpener = rememberDocumentOpener(onImportProducts)
 
     val visible = products.filter {
         query.isBlank() ||
@@ -192,7 +187,7 @@ fun ProductsScreen(
                     // than occupying the first full-width action on every visit.
                     TextButton(
                         onClick = {
-                            if (canImportProducts) importLauncher.launch(arrayOf("*/*")) else onImportBlocked()
+                            if (canImportProducts) importOpener.open() else onImportBlocked()
                         },
                         enabled = !isImportingProducts,
                         // The row's own 48 dp target: a bare TextButton measures 40 dp, below the

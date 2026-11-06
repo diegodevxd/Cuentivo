@@ -95,6 +95,11 @@ kotlin {
             // SQLite empaquetado: iOS no trae un driver utilizable desde Room.
             implementation(libs.androidx.sqlite.bundled)
         }
+        androidMain.dependencies {
+            // `rememberLauncherForActivityResult` vive aquí, y el selector de documentos de Android
+            // (`DocumentPicker.android.kt`) lo necesita. `:app` ya la tiene: no agrega nada al APK.
+            implementation(libs.androidx.activity.compose)
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
             // `runTest` para las pruebas de `PlannedReminderScheduler` y del contrato de archivos.

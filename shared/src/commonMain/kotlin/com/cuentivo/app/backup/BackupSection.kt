@@ -1,8 +1,5 @@
 package com.cuentivo.app.backup
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,26 +15,39 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import com.cuentivo.app.R
+import com.cuentivo.app.platform.DocumentSaveTarget
+import com.cuentivo.app.platform.PickedDocument
+import com.cuentivo.app.platform.rememberDocumentOpener
+import com.cuentivo.app.platform.rememberDocumentSaver
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoSpacing
-import java.time.LocalDate
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 /** Shortest password worth calling one. Below this the encryption is theatre. */
 private const val MIN_PASSWORD = 8
+
+/** Un `.cuentivo` no tiene tipo propio: se pide binario y el nombre lo pone [suggestedFileName]. */
+private const val MIME_TYPE = "application/octet-stream"
 
 /**
  * Export and restore, inside the account sheet.
  *
  * Free on every plan on purpose: this is not a feature, it is the difference between losing a
  * phone and losing a business's books.
+ *
+ * La selección de archivos no vive aquí: Android e iOS no eligen igual. Android pregunta dónde
+ * guardar antes de cifrar, así que recibe un [DocumentSaveTarget] ya apuntado; iOS necesita el
+ * archivo hecho para presentar su exportador, así que lo escribe primero. Por eso las dos firmas
+ * reciben el destino y el documento, no una `Uri`.
  */
 @Composable
 fun BackupSection(
-    onExport: (Uri, String) -> Unit,
-    onRestore: (Uri, String) -> Unit,
+    onExport: (DocumentSaveTarget, String) -> Unit,
+    onRestore: (PickedDocument, String) -> Unit,
+    suggestedFileName: () -> String,
     isWorking: Boolean = false,
     /**
      * Whether this account's data is already being kept in the cloud.
@@ -55,49 +65,43 @@ fun BackupSection(
 ) {
     var exportPassword by remember { mutableStateOf<String?>(null) }
     var askExportPassword by remember { mutableStateOf(false) }
-    var restoreUri by remember { mutableStateOf<Uri?>(null) }
+    var restoreDocument by remember { mutableStateOf<PickedDocument?>(null) }
 
-    val createLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/octet-stream")
-    ) { uri ->
+    val saver = rememberDocumentSaver(MIME_TYPE) { target ->
         val password = exportPassword
         exportPassword = null
-        if (uri != null && password != null) onExport(uri, password)
+        if (password != null) onExport(target, password)
     }
-    // Wide open rather than a custom MIME: file managers and cloud drives label an unknown
-    // extension inconsistently, and a strict filter greys out the very file they came to pick.
-    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) restoreUri = uri
-    }
+    val opener = rememberDocumentOpener { document -> restoreDocument = document }
 
     val detailText = if (isAnonymous) {
         if (customerCount > 0) {
-            stringResource(R.string.backup_guest_detail_with_count, customerCount)
+            stringResource(Res.string.backup_guest_detail_with_count, customerCount)
         } else {
-            stringResource(R.string.backup_guest_detail_generic)
+            stringResource(Res.string.backup_guest_detail_generic)
         }
     } else if (hasCloudBackup) {
-        stringResource(R.string.backup_detail_cloud)
+        stringResource(Res.string.backup_detail_cloud)
     } else {
-        stringResource(R.string.backup_detail)
+        stringResource(Res.string.backup_detail)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm), modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(Res.string.backup_title), style = MaterialTheme.typography.titleMedium)
         Text(
             text = detailText,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         NeoAction(
-            label = stringResource(R.string.backup_export),
+            label = stringResource(Res.string.backup_export),
             onClick = { askExportPassword = true },
             modifier = Modifier.fillMaxWidth().testTag("backup-export"),
             enabled = !isWorking,
         )
         NeoAction(
-            label = stringResource(R.string.backup_restore),
-            onClick = { openLauncher.launch(arrayOf("*/*")) },
+            label = stringResource(Res.string.backup_restore),
+            onClick = { opener.open() },
             modifier = Modifier.fillMaxWidth().testTag("backup-restore"),
             enabled = !isWorking,
             primary = false,
@@ -106,32 +110,32 @@ fun BackupSection(
 
     if (askExportPassword) {
         PasswordDialog(
-            title = stringResource(R.string.backup_export_title),
+            title = stringResource(Res.string.backup_export_title),
             // Said before they choose it, not after they forget it: there is no way to recover a
             // backup whose password is lost, because nothing about it is stored anywhere.
-            detail = stringResource(R.string.backup_export_detail),
-            confirmLabel = stringResource(R.string.backup_export_confirm),
+            detail = stringResource(Res.string.backup_export_detail),
+            confirmLabel = stringResource(Res.string.backup_export_confirm),
             requireRepeat = true,
             onAccept = { password ->
                 askExportPassword = false
                 exportPassword = password
-                createLauncher.launch(DatabaseBackup.suggestedFileName(LocalDate.now().toString()))
+                saver.create(suggestedFileName())
             },
             onDismiss = { askExportPassword = false },
         )
     }
 
-    restoreUri?.let { uri ->
+    restoreDocument?.let { document ->
         PasswordDialog(
-            title = stringResource(R.string.backup_restore_title),
-            detail = stringResource(R.string.backup_restore_detail),
-            confirmLabel = stringResource(R.string.backup_restore_confirm),
+            title = stringResource(Res.string.backup_restore_title),
+            detail = stringResource(Res.string.backup_restore_detail),
+            confirmLabel = stringResource(Res.string.backup_restore_confirm),
             requireRepeat = false,
             onAccept = { password ->
-                restoreUri = null
-                onRestore(uri, password)
+                restoreDocument = null
+                onRestore(document, password)
             },
-            onDismiss = { restoreUri = null },
+            onDismiss = { restoreDocument = null },
         )
     }
 }
@@ -158,7 +162,7 @@ private fun PasswordDialog(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text(stringResource(R.string.backup_password_label)) },
+                    label = { Text(stringResource(Res.string.backup_password_label)) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     isError = password.isNotEmpty() && !longEnough,
@@ -166,7 +170,7 @@ private fun PasswordDialog(
                 )
                 if (password.isNotEmpty() && !longEnough) {
                     Text(
-                        stringResource(R.string.backup_password_too_short, MIN_PASSWORD),
+                        stringResource(Res.string.backup_password_too_short, MIN_PASSWORD),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -175,7 +179,7 @@ private fun PasswordDialog(
                     OutlinedTextField(
                         value = repeated,
                         onValueChange = { repeated = it },
-                        label = { Text(stringResource(R.string.backup_password_repeat)) },
+                        label = { Text(stringResource(Res.string.backup_password_repeat)) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         isError = repeated.isNotEmpty() && repeated != password,
@@ -192,7 +196,7 @@ private fun PasswordDialog(
             ) { Text(confirmLabel) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.form_cancel)) }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.form_cancel)) }
         },
     )
 }

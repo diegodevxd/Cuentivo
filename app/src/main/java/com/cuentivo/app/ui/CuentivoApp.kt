@@ -1,11 +1,7 @@
 package com.cuentivo.app.ui
 
 import android.graphics.Bitmap
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -105,6 +101,7 @@ import com.cuentivo.app.domain.SaleDraftLine
 import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
+import com.cuentivo.app.platform.PickedDocument
 import com.cuentivo.app.ui.account.AccountSheet
 import com.cuentivo.app.ui.account.AiPaywallSheet
 import com.cuentivo.app.ui.account.LanguageSheet
@@ -230,7 +227,7 @@ fun CuentivoApp(
     isSavingProduct: Boolean = false,
     /** Same shape as [customerSavedToken], for the product create form. */
     productSavedToken: Int = 0,
-    onImportProducts: (Uri) -> Unit = {},
+    onImportProducts: (PickedDocument) -> Unit = {},
     importReport: SheetImport? = null,
     onDismissImportReport: () -> Unit = {},
     canImportProducts: Boolean = true,
