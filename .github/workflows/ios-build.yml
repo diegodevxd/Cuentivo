@@ -81,6 +81,22 @@ jobs:
           fi
           echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > iosApp/iosApp/GoogleService-Info.plist
 
+      # El REVERSED_CLIENT_ID del plist es el URL scheme de Google, y el plist no va al repo: se
+      # escribe en el Info.plist sólo durante la corrida. Nunca se imprime el valor.
+      - name: URL scheme de Google desde el plist
+        run: |
+          PLIST=iosApp/iosApp/GoogleService-Info.plist
+          INFO=iosApp/iosApp/Info.plist
+          REVERSED=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID" "$PLIST" 2>/dev/null || true)
+          if [ -z "$REVERSED" ]; then
+            echo "::error::GoogleService-Info.plist sin REVERSED_CLIENT_ID: activar Google para iOS en Firebase y volver a descargarlo"
+            exit 1
+          fi
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$INFO" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$INFO"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$INFO"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$INFO"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $REVERSED" "$INFO"
       # Corre aunque falle una prueba: el job sigue en rojo, pero una sola corrida da los dos veredictos.
       - name: Compilar la app de iOS (sin firma)
         if: ${{ !cancelled() }}

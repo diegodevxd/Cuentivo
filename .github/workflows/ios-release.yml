@@ -49,6 +49,22 @@ jobs:
           grep -q "<plist" iosApp/iosApp/GoogleService-Info.plist \
             || { echo "::error::GOOGLE_SERVICE_INFO_PLIST no es base64 de un plist"; exit 1; }
 
+      # El REVERSED_CLIENT_ID del plist es el URL scheme de Google, y el plist no va al repo: se
+      # escribe en el Info.plist sólo durante la corrida. Nunca se imprime el valor.
+      - name: URL scheme de Google desde el plist
+        run: |
+          PLIST=iosApp/iosApp/GoogleService-Info.plist
+          INFO=iosApp/iosApp/Info.plist
+          REVERSED=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID" "$PLIST" 2>/dev/null || true)
+          if [ -z "$REVERSED" ]; then
+            echo "::error::GoogleService-Info.plist sin REVERSED_CLIENT_ID: activar Google para iOS en Firebase y volver a descargarlo"
+            exit 1
+          fi
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$INFO" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$INFO"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$INFO"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$INFO"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $REVERSED" "$INFO"
       - name: JDK 21
         uses: actions/setup-java@v4
         with:
