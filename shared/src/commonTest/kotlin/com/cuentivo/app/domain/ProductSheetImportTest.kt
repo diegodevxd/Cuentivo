@@ -91,7 +91,7 @@ class ProductSheetImportTest {
     }
 
     @Test
-    fun `reads an xlsx with shared strings, inline strings and a gap in the row`() {
+    fun `reads an xlsx with shared strings inline strings and a gap in the row`() {
         val rows = XlsxReader.read(XlsxFixtures.NORMAL)
 
         assertEquals(listOf("nombre", "precio"), rows[0])
