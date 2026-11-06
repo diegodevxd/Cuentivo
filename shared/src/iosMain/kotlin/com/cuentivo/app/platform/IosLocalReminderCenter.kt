@@ -8,7 +8,6 @@ import platform.Foundation.NSCalendarUnitHour
 import platform.Foundation.NSCalendarUnitMonth
 import platform.Foundation.NSCalendarUnitYear
 import platform.Foundation.NSDateComponents
-import platform.Foundation.setValue
 import platform.UserNotifications.UNAuthorizationOptionAlert
 import platform.UserNotifications.UNAuthorizationOptionBadge
 import platform.UserNotifications.UNAuthorizationOptionSound
@@ -47,11 +46,10 @@ class IosLocalReminderCenter : LocalReminderCenter {
 
             val content = UNMutableNotificationContent()
             // `title`, `body` y `sound` los ve Kotlin como `val` (la clase mutable hereda la
-            // declaración de solo lectura de `UNNotificationContent`), así que la asignación va por
-            // KVC, igual que `subject` en `IosSharer`.
-            content.setValue(reminder.title, forKey = "title")
-            content.setValue(reminder.body, forKey = "body")
-            content.setValue(UNNotificationSound.defaultSound, forKey = "sound")
+            // declaración de solo lectura de `UNNotificationContent`), así que van por sus setters.
+            content.setTitle(reminder.title)
+            content.setBody(reminder.body)
+            content.setSound(UNNotificationSound.defaultSound)
 
             val trigger = UNCalendarNotificationTrigger.triggerWithDateMatchingComponents(
                 dateComponents = components,
