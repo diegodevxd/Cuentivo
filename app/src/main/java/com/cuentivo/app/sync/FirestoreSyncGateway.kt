@@ -14,26 +14,30 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
 import org.json.JSONObject
 
+/**
+ * La ruta del documento, resolviendo aquí el id del padre que va dentro del payload.
+ *
+ * La tabla de rutas es `FirestorePaths` en `:shared`: una sola para Android y para iOS. Lo único
+ * Android de esta función es leer el JSON con `org.json`.
+ */
 object FirestoreDocumentPath {
-    fun forOperation(operation: PendingSyncOperation): String = when (operation.entityType) {
-        "BUSINESS" -> "businesses/${operation.entityId}"
-        "MEMBER" -> "businesses/${operation.businessId}/members/${operation.entityId}"
-        "CUSTOMER" -> "businesses/${operation.businessId}/customers/${operation.entityId}"
-        "PRODUCT" -> "businesses/${operation.businessId}/products/${operation.entityId}"
-        "SALE" -> "businesses/${operation.businessId}/sales/${operation.entityId}"
-        "SALE_ITEM" -> "businesses/${operation.businessId}/sales/${JSONObject(operation.payload).getString("saleId")}/items/${operation.entityId}"
-        "PAYMENT" -> "businesses/${operation.businessId}/payments/${operation.entityId}"
-        "PAYMENT_ALLOCATION" -> "businesses/${operation.businessId}/payments/${JSONObject(operation.payload).getString("paymentId")}/allocations/${operation.entityId}"
-        "MOVEMENT" -> "businesses/${operation.businessId}/movements/${operation.entityId}"
-        else -> throw IllegalArgumentException("Unsupported sync entity type: ${operation.entityType}")
-    }
+    fun forOperation(operation: PendingSyncOperation): String = FirestorePaths.pathFor(
+        entityType = operation.entityType,
+        businessId = operation.businessId,
+        entityId = operation.entityId,
+        parentId = when (operation.entityType) {
+            "SALE_ITEM" -> JSONObject(operation.payload).getString("saleId")
+            "PAYMENT_ALLOCATION" -> JSONObject(operation.payload).getString("paymentId")
+            else -> null
+        },
+    )
 }
 
 /**
  * Which timestamp field each collection is ordered by. They do not share a name, so the puller
  * needs this table to build the range query and to stamp [RemoteDocument.watermarkEpochMillis].
  */
-private data class PullSpec(val collection: String, val entityType: String, val watermarkField: String)
+
 
 class FirestoreSyncGateway(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
@@ -263,7 +267,7 @@ class FirestoreSyncGateway(
             root.collection(spec.collection)
                 .whereGreaterThan(spec.watermarkField, sinceEpochMillis)
                 .orderBy(spec.watermarkField, Query.Direction.ASCENDING)
-                .limit(PAGE_SIZE)
+                .limit(SYNC_PAGE_SIZE)
                 .get(Source.SERVER)
         ).documents.mapNotNull { snapshot ->
             val data = snapshot.data ?: return@mapNotNull null
@@ -291,40 +295,12 @@ class FirestoreSyncGateway(
             .firstOrNull()
             ?.code
         val message = exception.message ?: "Firestore call failed"
-        return when (code) {
-            FirebaseFirestoreException.Code.PERMISSION_DENIED,
-            FirebaseFirestoreException.Code.INVALID_ARGUMENT,
-            FirebaseFirestoreException.Code.NOT_FOUND,
-            FirebaseFirestoreException.Code.ALREADY_EXISTS,
-            FirebaseFirestoreException.Code.FAILED_PRECONDITION,
-            FirebaseFirestoreException.Code.OUT_OF_RANGE,
-            FirebaseFirestoreException.Code.UNIMPLEMENTED,
-            FirebaseFirestoreException.Code.DATA_LOSS,
-            -> SyncFailure.Permanent("$code: $message")
-
-            // No Firestore code in the chain: the failure came from somewhere else entirely, so
-            // fall back to the message. Keep this narrow.
-            null -> if (message.contains("PERMISSION_DENIED", ignoreCase = true)) {
-                SyncFailure.Permanent(message)
-            } else {
-                SyncFailure.Transient(message)
-            }
-
-            else -> SyncFailure.Transient("$code: $message")
-        }
+        // La tabla de códigos vive en `:shared` (classifyFirestoreFailure) para que iOS decida igual.
+        return classifyFirestoreFailure(code?.name, message)
     }
 
     private companion object {
         const val TAG = "CuentivoSync"
-        const val PAGE_SIZE = 200L
-
-        val PULL_SPECS = listOf(
-            PullSpec("customers", "CUSTOMER", "updatedAtEpochMillis"),
-            PullSpec("products", "PRODUCT", "updatedAtEpochMillis"),
-            PullSpec("sales", "SALE", "updatedAtEpochMillis"),
-            PullSpec("payments", "PAYMENT", "createdAtEpochMillis"),
-            PullSpec("movements", "MOVEMENT", "occurredAtEpochMillis"),
-        )
     }
 }
 

@@ -21,66 +21,29 @@ import org.json.JSONObject
  * customers, products and the business itself accept updates, so a denial there can mean a payload
  * that stopped validating over a document holding older content, and treating that as done would
  * throw the correction away.
+ *
+ * Las reglas en sí viven en `:shared` (`SyncRemoteImmutabilityRules`) para que el gateway de iOS
+ * decida exactamente igual. Este objeto sólo añade lo que necesita el payload en texto: sacar el
+ * `role` con `org.json`.
  */
 object SyncRemoteImmutability {
 
-    private val ALWAYS_IMMUTABLE = setOf(
-        "SALE",
-        "SALE_ITEM",
-        "PAYMENT",
-        "PAYMENT_ALLOCATION",
-        "MOVEMENT",
-    )
-
-    /**
-     * Whether a rejected upload is worth one extra read of the server.
-     *
-     * Two conditions, both required. The denial has to be PERMISSION_DENIED -- no other status means
-     * "the rules said no". And the document has to be one this client could never rewrite, so that
-     * finding it there settles the row instead of hiding a pending change.
-     *
-     * Kept as a decision of its own so the ordering is testable: the read must happen only after a
-     * denial, never on the normal path.
-     */
     fun shouldCheckWhetherAlreadyPublished(
         entityType: String,
         payload: String,
         isPermissionDenied: Boolean,
-    ): Boolean = isPermissionDenied && isSettledByExistence(entityType, payload)
+    ): Boolean = SyncRemoteImmutabilityRules.shouldCheckWhetherAlreadyPublished(
+        entityType = entityType,
+        role = roleOf(payload),
+        isPermissionDenied = isPermissionDenied,
+    )
 
     /** True when an existing remote document leaves this operation with nothing left to do. */
-    fun isSettledByExistence(entityType: String, payload: String): Boolean = when (entityType) {
-        in ALWAYS_IMMUTABLE -> true
-        // Only the OWNER row. A member the owner may still promote or deactivate is a document the
-        // rules let this client update, so a denial there is a real rejection.
-        "MEMBER" -> roleOf(payload) == "OWNER"
-        else -> false
-    }
+    fun isSettledByExistence(entityType: String, payload: String): Boolean =
+        SyncRemoteImmutabilityRules.isSettledByExistence(entityType, roleOf(payload))
 
-    /**
-     * Whether the document already up there is the very one this row was trying to publish.
-     *
-     * Existing is not the same as matching, and the difference matters. If the remote copy holds
-     * something else under the same id, the row is not done -- it is a divergence, and these
-     * documents can never be rewritten, so nobody would ever notice it again if the row were quietly
-     * dropped. So: identical means finished, different means parked with an error that says so.
-     *
-     * Compared after normalising numbers, because the same cents arrive as Int from the queued JSON
-     * and as Long from Firestore, and an amount that matches must not read as a conflict.
-     */
-    fun isAlreadyTheSameDocument(payload: Map<String, Any?>, remote: Map<String, Any?>): Boolean {
-        if (payload.keys != remote.keys) return false
-        return payload.keys.all { normalize(payload[it]) == normalize(remote[it]) }
-    }
-
-    private fun normalize(value: Any?): Any? = when (value) {
-        null -> null
-        is Double -> if (value == Math.floor(value) && !value.isInfinite()) value.toLong() else value
-        is Float -> normalize(value.toDouble())
-        is Number -> value.toLong()
-        is Boolean, is String -> value
-        else -> value.toString()
-    }
+    fun isAlreadyTheSameDocument(payload: Map<String, Any?>, remote: Map<String, Any?>): Boolean =
+        SyncRemoteImmutabilityRules.isAlreadyTheSameDocument(payload, remote)
 
     private fun roleOf(payload: String): String? = runCatching {
         JSONObject(payload).optString("role").takeIf { it.isNotEmpty() }
