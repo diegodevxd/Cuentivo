@@ -6,8 +6,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import platform.Security.SecRandomCopyBytes
+import platform.Security.errSecSuccess
 import platform.Security.kSecRandomDefault
-import platform.Security.kSecSuccess
 
 /**
  * El nonce de Sign in with Apple.
@@ -33,7 +33,7 @@ object AppleNonce {
         val status = bytes.usePinned { pinned ->
             SecRandomCopyBytes(kSecRandomDefault, length.toULong(), pinned.addressOf(0))
         }
-        check(status == kSecSuccess) { "The system could not produce secure random bytes" }
+        check(status == errSecSuccess) { "The system could not produce secure random bytes" }
         return hexDigest(bytes)
     }
 
