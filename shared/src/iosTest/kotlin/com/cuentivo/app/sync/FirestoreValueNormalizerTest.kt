@@ -16,14 +16,14 @@ class FirestoreValueNormalizerTest {
 
     @Test
     fun a_long_long_number_stays_an_exact_long() {
-        val normalized = normalizeFirestoreValue(NSNumber.numberWithLongLong(9007199254740993L))
+        val normalized = normalizeFirestoreValue(NSNumber(longLong = 9007199254740993L))
         assertEquals(9007199254740993L, normalized)
         assertTrue(normalized is Long)
     }
 
     @Test
     fun a_decimal_does_not_become_a_long() {
-        val normalized = normalizeFirestoreValue(NSNumber.numberWithDouble(10.5))
+        val normalized = normalizeFirestoreValue(NSNumber(double = 10.5))
         assertEquals(10.5, normalized)
         assertTrue(normalized is Double)
     }
@@ -31,18 +31,18 @@ class FirestoreValueNormalizerTest {
     @Test
     fun a_whole_double_stays_a_double() {
         // 10.0 es Double en Firestore; convertirlo a Long escondería que el campo no es un centavo.
-        val normalized = normalizeFirestoreValue(NSNumber.numberWithDouble(10.0))
+        val normalized = normalizeFirestoreValue(NSNumber(double = 10.0))
         assertEquals(10.0, normalized)
         assertTrue(normalized is Double)
     }
 
     @Test
     fun a_boolean_is_a_boolean_and_an_integer_one_is_not() {
-        assertEquals(true, normalizeFirestoreValue(NSNumber.numberWithBool(true)))
-        assertEquals(false, normalizeFirestoreValue(NSNumber.numberWithBool(false)))
+        assertEquals(true, normalizeFirestoreValue(NSNumber(bool = true)))
+        assertEquals(false, normalizeFirestoreValue(NSNumber(bool = false)))
 
         // El caso que la frontera prohíbe: un entero 1 no puede volverse `true`.
-        val one = normalizeFirestoreValue(NSNumber.numberWithLongLong(1L))
+        val one = normalizeFirestoreValue(NSNumber(longLong = 1L))
         assertEquals(1L, one)
         assertTrue(one is Long)
     }
@@ -53,9 +53,9 @@ class FirestoreValueNormalizerTest {
         assertEquals(null, normalizeFirestoreValue(NSNull()))
 
         val nested = mapOf<Any?, Any?>(
-            "customer" to mapOf<Any?, Any?>("name" to "Rosa", "balance" to NSNumber.numberWithLongLong(1500L)),
-            "items" to listOf(NSNumber.numberWithLongLong(1L), NSNumber.numberWithDouble(2.5)),
-            "flag" to NSNumber.numberWithBool(true),
+            "customer" to mapOf<Any?, Any?>("name" to "Rosa", "balance" to NSNumber(longLong = 1500L)),
+            "items" to listOf(NSNumber(longLong = 1L), NSNumber(double = 2.5)),
+            "flag" to NSNumber(bool = true),
         )
         @Suppress("UNCHECKED_CAST")
         val normalized = normalizeFirestoreValue(nested) as Map<Any?, Any?>

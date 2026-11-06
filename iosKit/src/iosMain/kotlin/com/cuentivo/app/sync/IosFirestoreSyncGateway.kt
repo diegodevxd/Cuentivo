@@ -1,9 +1,18 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package com.cuentivo.app.sync
 
 import com.cuentivo.app.domain.BusinessClaimPolicy
 import com.cuentivo.app.domain.BusinessName
 import com.cuentivo.app.domain.DeletionRequestPolicy
 import com.cuentivo.app.domain.RemoteBusiness
+import cocoapods.FirebaseFirestoreInternal.FIRDocumentReference
+import cocoapods.FirebaseFirestoreInternal.FIRDocumentSnapshot
+import cocoapods.FirebaseFirestoreInternal.FIRFilter
+import cocoapods.FirebaseFirestoreInternal.FIRFirestore
+import cocoapods.FirebaseFirestoreInternal.FIRFirestoreSource
+import cocoapods.FirebaseFirestoreInternal.FIRQuery
+import cocoapods.FirebaseFirestoreInternal.FIRQuerySnapshot
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.firestore.FirebaseFirestore
 import dev.gitlive.firebase.firestore.firestore
@@ -12,13 +21,6 @@ import kotlin.concurrent.Volatile
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSError
 import platform.Foundation.NSThread
-import platform.FirebaseFirestore.FIRCollectionReference
-import platform.FirebaseFirestore.FIRDocumentReference
-import platform.FirebaseFirestore.FIRDocumentSnapshot
-import platform.FirebaseFirestore.FIRFirestore
-import platform.FirebaseFirestore.FIRFirestoreSourceServer
-import platform.FirebaseFirestore.FIRQuery
-import platform.FirebaseFirestore.FIRQuerySnapshot
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_semaphore_create
@@ -39,9 +41,14 @@ import platform.darwin.dispatch_time
  * si se hace, devuelve un fallo en vez de congelar la app (`NSThread.isMainThread`). La llamada a
  * Firestore se despacha a una cola global para que el callback no aterrice en la principal.
  *
- * Todo lee con `Source.SERVER` (`FIRFirestoreSourceServer`), igual que Android: la caché responde
- * *sin error* cuando no hay red, y en un teléfono recién instalado eso responde "no hay nada", que es
- * exactamente la confusión que la descarga no se puede permitir.
+ * Todo lee con `Source.SERVER` (`FIRFirestoreSource.FIRFirestoreSourceServer`), igual que Android: la
+ * caché responde *sin error* cuando no hay red, y en un teléfono recién instalado eso responde "no hay
+ * nada", que es exactamente la confusión que la descarga no se puede permitir.
+ *
+ * Los nombres nativos salen de GitLive v2.8.0 (`firebase-firestore/src/appleMain/...`): los wrappers
+ * usan `collectionWithPath`, `documentWithPath`, `getDocumentWithSource`, `getDocumentsWithSource`,
+ * `setData(data, merge, completion)`, `queryWhereFilter(FIRFilter...)`, `queryOrderedByField`,
+ * `queryLimitedTo`, `documentID`, `exists` y `documents`.
  */
 class IosFirestoreSyncGateway(
     private val firestore: FirebaseFirestore = Firebase.firestore,
@@ -53,9 +60,9 @@ class IosFirestoreSyncGateway(
 
     override fun findBusinessOwnedBy(userId: String): BusinessLookupResult {
         val documents = try {
-            readQueryOrThrow(
+            readDocuments(
                 db.collectionWithPath("businesses")
-                    .queryWhereField("ownerUserId", isEqualTo = userId),
+                    .queryWhereFilter(FIRFilter.filterWhereField("ownerUserId", isEqualTo = userId)),
             )
         } catch (error: Throwable) {
             return BusinessLookupResult.Failure(classify(error))
@@ -102,7 +109,7 @@ class IosFirestoreSyncGateway(
         // misma clasificación que allá (transitorio) y no se estaciona con un criterio distinto.
         return try {
             val payload = parseJsonToFirestoreMap(operation.payload)
-            setDocument(db.documentWithPath(path), payload, merge = false)
+            setDocument(document = db.documentWithPath(path), payload = payload, merge = false)
             SyncUploadResult.Success
         } catch (error: Throwable) {
             val failure = classify(error)
@@ -164,8 +171,8 @@ class IosFirestoreSyncGateway(
             )
         }
 
-        readCollection(root.collectionWithPath("members")).forEach { (id, data) ->
-            documents += RemoteDocument("MEMBER", id, 0L, data)
+        readDocuments(root.collectionWithPath("members")).forEach { snapshot ->
+            documents += RemoteDocument("MEMBER", snapshot.documentID, 0L, normalizedData(snapshot))
         }
 
         PULL_SPECS.forEach { spec -> documents += pull(root, spec, sinceEpochMillis) }
@@ -196,10 +203,10 @@ class IosFirestoreSyncGateway(
 
     private fun pull(root: FIRDocumentReference, spec: PullSpec, sinceEpochMillis: Long): List<RemoteDocument> {
         val query: FIRQuery = root.collectionWithPath(spec.collection)
-            .queryWhereField(spec.watermarkField, isGreaterThan = sinceEpochMillis)
+            .queryWhereFilter(FIRFilter.filterWhereField(spec.watermarkField, isGreaterThan = sinceEpochMillis))
             .queryOrderedByField(spec.watermarkField, descending = false)
             .queryLimitedTo(SYNC_PAGE_SIZE)
-        return readQueryOrThrow(query).mapNotNull { snapshot ->
+        return readDocuments(query).mapNotNull { snapshot ->
             val data = normalizedData(snapshot)
             val watermark = data[spec.watermarkField] as? Long ?: return@mapNotNull null
             RemoteDocument(spec.entityType, snapshot.documentID, watermark, data)
@@ -212,7 +219,7 @@ class IosFirestoreSyncGateway(
         entityType: String,
         watermark: Long,
     ): List<RemoteDocument> =
-        readQueryOrThrow(parent.collectionWithPath(collection)).map { snapshot ->
+        readDocuments(parent.collectionWithPath(collection)).map { snapshot ->
             RemoteDocument(entityType, snapshot.documentID, watermark, normalizedData(snapshot))
         }
 
@@ -228,10 +235,12 @@ class IosFirestoreSyncGateway(
     fun requestBusinessDeletion(businessId: String, nowEpochMillis: Long): Result<Unit> = try {
         val document = db.documentWithPath("businesses/$businessId")
         val snapshot = readDocumentSnapshot(document)
-        when (DeletionRequestPolicy.decide(
-            exists = snapshot.exists,
-            deletionRequestedAtEpochMillis = snapshot.data?.get("deletionRequestedAtEpochMillis") as? Long,
-        )) {
+        when (
+            DeletionRequestPolicy.decide(
+                exists = snapshot.exists,
+                deletionRequestedAtEpochMillis = snapshot.data?.get("deletionRequestedAtEpochMillis") as? Long,
+            )
+        ) {
             DeletionRequestPolicy.Outcome.AlreadyGone -> Unit
             is DeletionRequestPolicy.Outcome.AlreadyRequested -> Unit
             DeletionRequestPolicy.Outcome.NeedsWrite -> setDocument(
@@ -250,59 +259,59 @@ class IosFirestoreSyncGateway(
     /** El documento del servidor, normalizado, o `null` si no existe. */
     private fun readDocument(document: FIRDocumentReference): Map<String, Any?>? {
         val snapshot = readDocumentSnapshot(document)
+        // `exists` es una propiedad en el binding de Foundation, no una función.
         if (!snapshot.exists) return null
         return snapshot.data
     }
 
-    private fun readDocumentSnapshot(document: FIRDocumentReference): DocumentRead =
-        blocking { done ->
-            document.getDocumentWithSource(FIRFirestoreSourceServer) { snapshot, error ->
+    private fun readDocumentSnapshot(document: FIRDocumentReference): DocumentRead {
+        val outcome = blocking<FIRDocumentSnapshot?> { done ->
+            document.getDocumentWithSource(FIRFirestoreSource.FIRFirestoreSourceServer) {
+                    snapshot: FIRDocumentSnapshot?,
+                    error: NSError?,
+                ->
                 if (error != null) done(Failure(error)) else done(Success(snapshot))
             }
-        }.let { outcome ->
-            when (outcome) {
-                is Success<*> -> {
-                    val snapshot = outcome.value as? FIRDocumentSnapshot
-                    DocumentRead(
-                        exists = snapshot?.exists() == true,
-                        data = snapshot?.let { normalizedData(it) },
-                    )
-                }
-                is Failure -> throw FirestoreSyncException(outcome.error.localizedDescription ?: "Firestore call failed", outcome.error)
-            }
         }
+        return when (outcome) {
+            is Success<*> -> {
+                val snapshot = outcome.value as? FIRDocumentSnapshot
+                DocumentRead(exists = snapshot?.exists == true, data = snapshot?.let { normalizedData(it) })
+            }
+            is Failure -> throw FirestoreSyncException(failureMessage(outcome.error), outcome.error)
+            TimedOut -> throw FirestoreSyncException(TIMEOUT_MESSAGE)
+        }
+    }
 
-    private fun readQueryOrThrow(query: FIRQuery): List<FIRDocumentSnapshot> =
-        blocking { done ->
-            query.getDocumentsWithSource(FIRFirestoreSourceServer) { snapshot, error ->
+    private fun readDocuments(query: FIRQuery): List<FIRDocumentSnapshot> {
+        val outcome = blocking<FIRQuerySnapshot?> { done ->
+            query.getDocumentsWithSource(FIRFirestoreSource.FIRFirestoreSourceServer) {
+                    snapshot: FIRQuerySnapshot?,
+                    error: NSError?,
+                ->
                 if (error != null) done(Failure(error)) else done(Success(snapshot))
             }
-        }.let { outcome ->
-            when (outcome) {
-                is Success<*> -> {
-                    val snapshot = outcome.value as? FIRQuerySnapshot
-                    snapshot?.documents.orEmpty().filterIsInstance<FIRDocumentSnapshot>()
-                }
-                is Failure -> throw FirestoreSyncException(outcome.error.localizedDescription ?: "Firestore call failed", outcome.error)
-            }
         }
-
-    private fun readCollection(collection: FIRCollectionReference): List<Pair<String, Map<String, Any?>>> =
-        readQueryOrThrow(collection).mapNotNull { snapshot ->
-            val data = normalizedData(snapshot)
-            if (data.isEmpty()) null else snapshot.documentID to data
+        return when (outcome) {
+            is Success<*> -> (outcome.value as? FIRQuerySnapshot)
+                ?.documents
+                ?.filterIsInstance<FIRDocumentSnapshot>()
+                .orEmpty()
+            is Failure -> throw FirestoreSyncException(failureMessage(outcome.error), outcome.error)
+            TimedOut -> throw FirestoreSyncException(TIMEOUT_MESSAGE)
         }
+    }
 
     private fun setDocument(document: FIRDocumentReference, payload: Map<Any?, Any?>, merge: Boolean) {
-        blocking<Unit> { done ->
-            val handler: (NSError?) -> Unit = { error ->
+        val outcome = blocking<Unit> { done ->
+            document.setData(payload, merge) { error: NSError? ->
                 if (error != null) done(Failure(error)) else done(Success(Unit))
             }
-            if (merge) {
-                document.setData(payload, merge = true, completion = handler)
-            } else {
-                document.setData(payload, completion = handler)
-            }
+        }
+        when (outcome) {
+            is Success<*> -> Unit
+            is Failure -> throw FirestoreSyncException(failureMessage(outcome.error), outcome.error)
+            TimedOut -> throw FirestoreSyncException(TIMEOUT_MESSAGE)
         }
     }
 
@@ -329,6 +338,9 @@ class IosFirestoreSyncGateway(
         classifyFirestoreFailure(firestoreCodeName(error), error.message ?: "Firestore call failed")
 
     private fun isPermissionDenied(error: Throwable): Boolean = firestoreCodeName(error) == "PERMISSION_DENIED"
+
+    private fun failureMessage(error: NSError): String =
+        error.localizedDescription.ifEmpty { "Firestore call failed" }
 
     /**
      * El nombre del código de Firestore, para usar la **misma** tabla de clasificación que Android.
@@ -359,8 +371,8 @@ class IosFirestoreSyncGateway(
     }
 
     /**
-     * Puente bloqueante: despacha a una cola global, espera el callback con semáforo y falla si se
-     * agota el tiempo. Nunca se llama desde el hilo principal.
+     * Puente bloqueante: despacha a una cola global, espera el callback con semáforo y devuelve
+     * [TimedOut] si se agota el tiempo. Nunca se llama desde el hilo principal.
      */
     private fun <T> blocking(block: ((Outcome<T>) -> Unit) -> Unit): Outcome<T> {
         if (NSThread.isMainThread) {
@@ -369,7 +381,7 @@ class IosFirestoreSyncGateway(
         val gate = Gate<T>()
         // Prioridad por defecto (0) y cola concurrente: bloquear un worker no frena el callback.
         dispatch_async(dispatch_get_global_queue(0L, 0uL)) {
-            block { outcome -> gate.complete(outcome) }
+            block { outcome: Outcome<T> -> gate.complete(outcome) }
         }
         return gate.await()
     }
@@ -388,10 +400,8 @@ class IosFirestoreSyncGateway(
                 semaphore,
                 dispatch_time(0uL, TIMEOUT_MILLIS * 1_000_000L),
             )
-            if (waited != 0L) {
-                return Failure(NSError.errorWithDomain(FIRESTORE_ERROR_DOMAIN, TIMEOUT_ERROR_CODE, null))
-            }
-            return outcome ?: Failure(NSError.errorWithDomain(FIRESTORE_ERROR_DOMAIN, TIMEOUT_ERROR_CODE, null))
+            if (waited != 0L) return TimedOut
+            return outcome ?: TimedOut
         }
     }
 
@@ -400,7 +410,7 @@ class IosFirestoreSyncGateway(
     private companion object {
         const val FIRESTORE_ERROR_DOMAIN = "FIRFirestoreErrorDomain"
         const val TIMEOUT_MILLIS = 30_000L
-        const val TIMEOUT_ERROR_CODE = 4L // DEADLINE_EXCEEDED
+        const val TIMEOUT_MESSAGE = "Firestore did not answer within 30000 ms"
         const val MAIN_THREAD_MESSAGE = "Firestore sync cannot be called from the main thread"
     }
 }
@@ -412,9 +422,11 @@ private class FirestoreSyncException(
     val error: NSError? = null,
 ) : Exception(message)
 
-/** Resultado de un callback de Firestore, para no bloquear con dos tipos distintos. */
+/** Resultado de un callback de Firestore, para no mezclar el valor con el error. */
 private sealed interface Outcome<out T>
 
 private class Success<T>(val value: T) : Outcome<T>
 
 private class Failure(val error: NSError) : Outcome<Nothing>
+
+private data object TimedOut : Outcome<Nothing>
