@@ -13,6 +13,11 @@ ksp = "2.3.13"
 sqlite = "2.5.1"
 kotlinxDatetime = "0.6.2"
 composeMultiplatform = "1.9.3"
+# Congelada a propósito: es la última versión publicada de los íconos Material para comunes.
+# Compose Multiplatform 1.8.2 quitó la dependencia implícita en `material-icons-core` y su propia
+# documentación manda añadirla explícitamente con esta coordenada (What's new in 1.8.2 › Implicit
+# dependency on material-icons-core removed). No se sube: por encima de 1.7.3 no existe.
+composeMaterialIcons = "1.7.3"
 gitlive = "2.8.0"
 
 [libraries]
@@ -40,6 +45,9 @@ firebase-auth = { group = "dev.gitlive", name = "firebase-auth", version.ref = "
 firebase-firestore = { group = "dev.gitlive", name = "firebase-firestore", version.ref = "gitlive" }
 firebase-functions = { group = "dev.gitlive", name = "firebase-functions", version.ref = "gitlive" }
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinxDatetime" }
+# `Icons.Filled.*` en commonMain. Android redirige a androidx.compose.material:material-icons-core
+# (lo fija el BOM de :app); iOS usa el klib `uikitSimArm64`/`uikitArm64` de esta misma versión.
+compose-material-icons-core = { group = "org.jetbrains.compose.material", name = "material-icons-core", version.ref = "composeMaterialIcons" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -66,10 +66,22 @@ kotlin {
 
             // La pantalla mínima de iOS. En Android, Compose Multiplatform resuelve a los mismos
             // artefactos de androidx.compose que ya usa la app.
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.material3)
-            implementation(compose.ui)
+            //
+            // `api`, no `implementation`: desde F5-B los tipos de Compose aparecen en la superficie
+            // pública de `:shared` (el tema, las piezas base y la barra que `:app` llama), así que
+            // tienen que llegar al classpath de compilación del consumidor. `:app` los tiene además
+            // por su BOM; esto es lo que hace que el contrato sea explícito en vez de depender de
+            // una transitiva de material3.
+            api(compose.runtime)
+            api(compose.foundation)
+            api(compose.material3)
+            api(compose.ui)
+
+            // `Icons.Filled.*` para la barra de navegación. Compose Multiplatform 1.8.2 dejó de
+            // traerla como transitiva y el artefacto quedó congelado en 1.7.3; es la coordenada que
+            // documenta la propia release. Android la resuelve contra androidx (versión del BOM de
+            // `:app`) y iOS contra el klib de esta misma versión.
+            implementation(libs.compose.material.icons.core)
         }
         iosMain.dependencies {
             // SQLite empaquetado: iOS no trae un driver utilizable desde Room.
