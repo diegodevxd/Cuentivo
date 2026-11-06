@@ -1,0 +1,39 @@
+package com.cuentivo.app.domain
+
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+
+/**
+ * Zips de verdad en Base64, generados por `shared/src/commonTest/fixtures/generar_xlsx_fixtures.py`.
+ *
+ * No se escriben a mano a propósito: lo que hay que probar es el lector contra un zip real, no
+ * contra la idea que tenemos de un zip. `date_time` es fijo, así que correr el script otra vez
+ * produce exactamente el mismo archivo.
+ *
+ * Los cuatro llevan el mismo libro salvo `PREFIXED`, que es el archivo con prefijo `x:`:
+ * `STREAMING` deja los tamaños en cero en el encabezado local (bit 3), y `STORED` no comprime.
+ */
+@OptIn(ExperimentalEncodingApi::class)
+internal object XlsxFixtures {
+
+    /** DEFLATE sobre un archivo posicionable: el caso normal. */
+    val NORMAL: ByteArray = Base64.decode(NORMAL_B64)
+
+    /** DEFLATE escrito sobre un flujo no posicionable: tamaños en cero en el encabezado local. */
+    val STREAMING: ByteArray = Base64.decode(STREAMING_B64)
+
+    /** Las mismas entradas, sin comprimir. */
+    val STORED: ByteArray = Base64.decode(STORED_B64)
+
+    /** El mismo libro con los elementos prefijados con `x:` y los valores como `t="str"`. */
+    val PREFIXED: ByteArray = Base64.decode(PREFIXED_B64)
+
+    private const val NORMAL_B64 = "UEsDBBQAAAAIAABIZl0eOTzSTAAAAG0AAAAUAAAAeGwvc2hhcmVkU3RyaW5ncy54bWyzsa/IzVEoSy0qzszPs1Uy1DNQsrezKS4uARKZdjYldnn5uUlFqTb6QAF9kAhEtKAoNTkzH13UKzEpP09BLTG3wFohC8RGKNAHGQkAUEsDBBQAAAAIAABIZl1UYdSSsQAAAIwBAAAYAAAAeGwvd29ya3NoZWV0cy9zaGVldDEueG1sddDRCoMgFAbgVxEfIMuMLTgZq+1ud3sCC2GylqCu9vgzGS6iXan/OXwHD9Tv54AmaazSY4WzJMU1h1mbh71L6TiE4yyc4GD0jIzvwRz65XLKMHIVtv498RTIxIH031qzrmWxRrwRIRohumqmG4iGlBVJsa/kUcmDosZBjfLmjM+V5eD4xfa6E0D8b8iSRLvNg33Yh1mE2R+4fXXSCURTdN3RGxb0Y5mUmwFktVTy2/UHUEsBAhQAFAAAAAgAAEhmXR45PNJMAAAAbQAAABQAAAAAAAAAAAAAAIABAAAAAHhsL3NoYXJlZFN0cmluZ3MueG1sUEsBAhQAFAAAAAgAAEhmXVRh1JKxAAAAjAEAABgAAAAAAAAAAAAAAIABfgAAAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbFBLBQYAAAAAAgACAIgAAABlAQAAAAA="
+
+    private const val STREAMING_B64 = "UEsDBBQACAAIAABIZl0AAAAAAAAAAAAAAAAUAAAAeGwvc2hhcmVkU3RyaW5ncy54bWyzsa/IzVEoSy0qzszPs1Uy1DNQsrezKS4uARKZdjYldnn5uUlFqTb6QAF9kAhEtKAoNTkzH13UKzEpP09BLTG3wFohC8RGKNAHGQkAUEsHCB45PNJMAAAAbQAAAFBLAwQUAAgACAAASGZdAAAAAAAAAAAAAAAAGAAAAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbHXQ0QqDIBQG4FcRHyDLjC04Gavtbnd7Agthspagrvb4Mxkuol2p/zl8Bw/U7+eAJmms0mOFsyTFNYdZm4e9S+k4hOMsnOBg9IyM78Ec+uVyyjByFbb+PfEUyMSB9N9as65lsUa8ESEaIbpqphuIhpQVSbGv5FHJg6LGQY3y5ozPleXg+MX2uhNA/G/IkkS7zYN92IdZhNkfuH110glEU3Td0RsW9GOZlJsBZLVU8tv1B1BLBwhUYdSSsQAAAIwBAABQSwECFAAUAAgACAAASGZdHjk80kwAAABtAAAAFAAAAAAAAAAAAAAAgAEAAAAAeGwvc2hhcmVkU3RyaW5ncy54bWxQSwECFAAUAAgACAAASGZdVGHUkrEAAACMAQAAGAAAAAAAAAAAAAAAgAGOAAAAeGwvd29ya3NoZWV0cy9zaGVldDEueG1sUEsFBgAAAAACAAIAiAAAAIUBAAAAAA=="
+
+    private const val STORED_B64 = "UEsDBBQAAAAAAABIZl0eOTzSbQAAAG0AAAAUAAAAeGwvc2hhcmVkU3RyaW5ncy54bWw8P3htbCB2ZXJzaW9uPSIxLjAiPz48c3N0PjxzaT48dD5ub21icmU8L3Q+PC9zaT48c2k+PHQ+cHJlY2lvPC90Pjwvc2k+PHNpPjx0PkphYm9uICZhbXA7IGphYm9uPC90Pjwvc2k+PC9zc3Q+UEsDBBQAAAAAAABIZl1UYdSSjAEAAIwBAAAYAAAAeGwvd29ya3NoZWV0cy9zaGVldDEueG1sPD94bWwgdmVyc2lvbj0iMS4wIj8+PHdvcmtzaGVldD48c2hlZXREYXRhPjxyb3cgcj0iMSI+PGMgcj0iQTEiIHQ9InMiPjx2PjA8L3Y+PC9jPjxjIHI9IkIxIiB0PSJzIj48dj4xPC92PjwvYz48L3Jvdz48cm93IHI9IjIiPjxjIHI9IkEyIiB0PSJzIj48dj4yPC92PjwvYz48YyByPSJCMiI+PHY+NDUuNTwvdj48L2M+PC9yb3c+PHJvdyByPSIzIj48YyByPSJBMyIgdD0iaW5saW5lU3RyIj48aXM+PHQ+RXNjb2JhPC90PjwvaXM+PC9jPjxjIHI9IkMzIj48dj43PC92PjwvYz48L3Jvdz48cm93IHI9IjQiPjxjIHI9IkE0IiB0PSJpbmxpbmVTdHIiPjxpcz48dD5DdWJldGEgMjAgTDwvdD48L2lzPjwvYz48YyByPSJCNCI+PHY+ODkuOTwvdj48L2M+PC9yb3c+PC9zaGVldERhdGE+PC93b3Jrc2hlZXQ+UEsBAhQAFAAAAAAAAEhmXR45PNJtAAAAbQAAABQAAAAAAAAAAAAAAIABAAAAAHhsL3NoYXJlZFN0cmluZ3MueG1sUEsBAhQAFAAAAAAAAEhmXVRh1JKMAQAAjAEAABgAAAAAAAAAAAAAAIABnwAAAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbFBLBQYAAAAAAgACAIgAAABhAgAAAAA="
+
+    private const val PREFIXED_B64 = "UEsDBBQAAAAIAABIZl3HehEhWAAAAGIAAAAUAAAAeGwvc2hhcmVkU3RyaW5ncy54bWwNycENgCAMAMBVSAew6MMHQZ2FaBUSC4Q2hvHleTl/dH7NR01SyRvMk4Vj992JqBmTxfUNomp1iHJG4iBTqZTH3aVx0MH2oNRG4ZJIpPziYu2KHFIGg/sPUEsDBBQAAAAIAABIZl3F3I6u6QAAAPUBAAAYAAAAeGwvd29ya3NoZWV0cy9zaGVldDEueG1sfZFbTsMwEEW3YnkBcR5SRaMkFdBvYAuDYxoL22ON3TZi9SQGoSSK+LHmce+c0bg5jdawm6Kg0bW8yHJ+6pqxviN9hkGpyKa+C/XY8iFGXwsR5KAshAy9clPvA8lCnFK6iOBJQZ9s1ogyzw/CgnZ8HpiqZ4gwJ4R3RhMtdeQcPhacxZaHSKl2617QvpNqxBzPr/yTPm2lb6SkxpVUJMYCVS5Q5cb/Shdw+gt6JGavJuprwMCs6jU43N3gZ4L79RflMTv+j68W+GqDf1ZeG4PMaOt1WsIDAZMotYNdfLXCP+yzxermYvGl3TdQSwECFAAUAAAACAAASGZdx3oRIVgAAABiAAAAFAAAAAAAAAAAAAAAgAEAAAAAeGwvc2hhcmVkU3RyaW5ncy54bWxQSwECFAAUAAAACAAASGZdxdyOrukAAAD1AQAAGAAAAAAAAAAAAAAAgAGKAAAAeGwvd29ya3NoZWV0cy9zaGVldDEueG1sUEsFBgAAAAACAAIAiAAAAKkBAAAAAA=="
+
+}

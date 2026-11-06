@@ -1,16 +1,15 @@
 package com.cuentivo.app.domain
 
-import java.io.ByteArrayInputStream
-import java.util.zip.ZipInputStream
-
 /**
  * Reads the first sheet of an .xlsx into plain rows of text.
  *
- * An .xlsx is a zip of XML, so `java.util.zip` plus a small tag scanner is enough. That matters:
+ * An .xlsx is a zip of XML, so a zip reader plus a small tag scanner is enough. That matters:
  * Apache POI would add megabytes to the APK and fight R8, and the shop owners this is for keep their
  * catalog in Excel — telling them to "save as CSV" first is exactly the manual work being removed.
  *
- * Pure JVM on purpose (no XmlPullParser), so it runs under testDebugUnitTest.
+ * Pure and common on purpose (no XmlPullParser, no `java.util.zip`), so it runs under
+ * `testDebugUnitTest` on the JVM and under the iOS test task on CI. The zip itself comes from
+ * [readZipEntries]: `ZipInputStream` on Android, the central directory on iOS.
  *
  * Values come back as Excel stored them: a price typed as 45.50 is stored as "45.5". Turning text
  * into money stays with [ProductSheetParser], which routes everything through [Money] and so never
@@ -19,8 +18,11 @@ import java.util.zip.ZipInputStream
 object XlsxReader {
 
     fun read(bytes: ByteArray): List<List<String>> {
-        val entries = unzip(bytes)
+        val entries = readZipEntries(bytes) { name ->
+            name == SHARED_STRINGS || (name.startsWith(WORKSHEETS) && name.endsWith(".xml"))
+        }
         val sharedStrings = entries[SHARED_STRINGS]
+            ?.decodeToString()
             ?.let(::stripNamespacePrefixes)
             ?.let(::readSharedStrings)
             ?: emptyList()
@@ -28,20 +30,9 @@ object XlsxReader {
             .filter { it.key.startsWith(WORKSHEETS) && it.key.endsWith(".xml") }
             .minByOrNull { it.key }
             ?.value
+            ?.decodeToString()
             ?: return emptyList()
         return readSheet(stripNamespacePrefixes(sheet), sharedStrings)
-    }
-
-    private fun unzip(bytes: ByteArray): Map<String, String> {
-        val files = mutableMapOf<String, String>()
-        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                if (!entry.isDirectory) files[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
-                zip.closeEntry()
-            }
-        }
-        return files
     }
 
     /**

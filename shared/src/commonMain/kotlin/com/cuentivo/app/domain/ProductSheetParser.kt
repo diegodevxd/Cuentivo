@@ -44,6 +44,23 @@ object ProductSheetParser {
         parse(readCsv(text), existingNames)
 
     /**
+     * Reads whatever the person picked, deciding by signature instead of by name or MIME type.
+     *
+     * Lives here rather than in `MainActivity` so iOS inherits the same decision and a test can call
+     * it: a `.xlsx` and a `.csv` reach this point as bytes with no trustworthy label.
+     */
+    fun parseFile(bytes: ByteArray, existingNames: Set<String>): SheetImport {
+        // Excel keeps its cells in a zip of XML; a CSV is just text. The zip signature decides,
+        // because a file picked from a cloud drive often arrives without a usable name or MIME type.
+        val isXlsx = bytes.size > 1 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()
+        return if (isXlsx) {
+            parse(XlsxReader.read(bytes), existingNames)
+        } else {
+            parseCsv(bytes.decodeToString(), existingNames)
+        }
+    }
+
+    /**
      * @param existingNames normalized names already in the catalog, from [CustomerNameNormalizer.key].
      */
     fun parse(rows: List<List<String>>, existingNames: Set<String>): SheetImport {

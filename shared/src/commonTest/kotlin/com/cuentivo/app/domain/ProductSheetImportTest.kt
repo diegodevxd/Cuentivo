@@ -1,11 +1,9 @@
 package com.cuentivo.app.domain
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
-import java.io.ByteArrayOutputStream
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFails
+import kotlin.test.assertTrue
 
 class ProductSheetImportTest {
 
@@ -94,14 +92,7 @@ class ProductSheetImportTest {
 
     @Test
     fun `reads an xlsx with shared strings, inline strings and a gap in the row`() {
-        val bytes = xlsx(
-            sharedStrings = listOf("nombre", "precio", "Jabon & jabon"),
-            sheet = "<row r=\"1\"><c r=\"A1\" t=\"s\"><v>0</v></c><c r=\"B1\" t=\"s\"><v>1</v></c></row>" +
-                "<row r=\"2\"><c r=\"A2\" t=\"s\"><v>2</v></c><c r=\"B2\"><v>45.5</v></c></row>" +
-                "<row r=\"3\"><c r=\"A3\" t=\"inlineStr\"><is><t>Escoba</t></is></c><c r=\"C3\"><v>7</v></c></row>",
-        )
-
-        val rows = XlsxReader.read(bytes)
+        val rows = XlsxReader.read(XlsxFixtures.NORMAL)
 
         assertEquals(listOf("nombre", "precio"), rows[0])
         // The entity is decoded, not left as &amp;.
@@ -112,16 +103,14 @@ class ProductSheetImportTest {
 
     @Test
     fun `an xlsx imports end to end`() {
-        val bytes = xlsx(
-            sharedStrings = listOf("nombre", "precio", "Cubeta 20 L"),
-            sheet = "<row r=\"1\"><c r=\"A1\" t=\"s\"><v>0</v></c><c r=\"B1\" t=\"s\"><v>1</v></c></row>" +
-                "<row r=\"2\"><c r=\"A2\" t=\"s\"><v>2</v></c><c r=\"B2\"><v>89.9</v></c></row>",
-        )
+        val result = ProductSheetParser.parse(XlsxReader.read(XlsxFixtures.NORMAL), existingNames = emptySet())
 
-        val result = ProductSheetParser.parse(XlsxReader.read(bytes), existingNames = emptySet())
-
-        assertEquals(listOf("Cubeta 20 L"), result.accepted.map { it.name })
-        assertEquals(listOf(8_990L), result.accepted.map { it.priceCents })
+        assertEquals(listOf("Jabon & jabon", "Cubeta 20 L"), result.accepted.map { it.name })
+        assertEquals(listOf(4_550L, 8_990L), result.accepted.map { it.priceCents })
+        // The third row of the fixture has its price in the third column and the header only names
+        // two, so it is reported instead of importing something with a made-up price.
+        assertEquals(1, result.rejected.size)
+        assertTrue(result.rejected.first().reason.contains("sin precio"))
     }
 
     @Test
@@ -129,16 +118,7 @@ class ProductSheetImportTest {
         // Shaped after a file a shop owner actually brought in: every element prefixed with `x:`,
         // an empty sharedStrings table, and text stored as t="str" with the value inline. The
         // reader used to find no rows at all in this and report an empty catalog with no errors.
-        val bytes = prefixedXlsx(
-            "<x:row r=\"1\"><x:c r=\"A1\" t=\"str\"><x:v>Nombre</x:v></x:c>" +
-                "<x:c r=\"B1\" t=\"str\"><x:v>Precio</x:v></x:c></x:row>" +
-                "<x:row r=\"2\"><x:c r=\"A2\" t=\"str\"><x:v>Organizador multiusos mediano</x:v></x:c>" +
-                "<x:c r=\"B2\" t=\"n\"><x:v>129.9</x:v></x:c></x:row>" +
-                "<x:row r=\"3\"><x:c r=\"A3\" t=\"str\"><x:v>Cepillo limpiador para cocina</x:v></x:c>" +
-                "<x:c r=\"B3\" t=\"n\"><x:v>89</x:v></x:c></x:row>",
-        )
-
-        val rows = XlsxReader.read(bytes)
+        val rows = XlsxReader.read(XlsxFixtures.PREFIXED)
 
         assertEquals(listOf("Nombre", "Precio"), rows[0])
         assertEquals(listOf("Organizador multiusos mediano", "129.9"), rows[1])
@@ -147,55 +127,87 @@ class ProductSheetImportTest {
 
     @Test
     fun `a prefixed xlsx imports end to end`() {
-        val bytes = prefixedXlsx(
-            "<x:row r=\"1\"><x:c r=\"A1\" t=\"str\"><x:v>Nombre</x:v></x:c>" +
-                "<x:c r=\"B1\" t=\"str\"><x:v>Precio</x:v></x:c></x:row>" +
-                "<x:row r=\"2\"><x:c r=\"A2\" t=\"str\"><x:v>Contenedor hermetico 1 litro</x:v></x:c>" +
-                "<x:c r=\"B2\" t=\"n\"><x:v>74.5</x:v></x:c></x:row>",
+        val result = ProductSheetParser.parse(XlsxReader.read(XlsxFixtures.PREFIXED), existingNames = emptySet())
+
+        assertEquals(
+            listOf("Organizador multiusos mediano", "Cepillo limpiador para cocina"),
+            result.accepted.map { it.name },
         )
-
-        val result = ProductSheetParser.parse(XlsxReader.read(bytes), existingNames = emptySet())
-
-        assertEquals(listOf("Contenedor hermetico 1 litro"), result.accepted.map { it.name })
-        assertEquals(listOf(7_450L), result.accepted.map { it.priceCents })
+        assertEquals(listOf(12_990L, 8_900L), result.accepted.map { it.priceCents })
         assertEquals(emptyList<RejectedRow>(), result.rejected)
     }
 
-    /** The same workbook written the other legal way: namespace on a prefix instead of the default. */
-    private fun prefixedXlsx(sheet: String): ByteArray {
-        val output = ByteArrayOutputStream()
-        ZipOutputStream(output).use { zip ->
-            zip.putNextEntry(ZipEntry("xl/sharedStrings.xml"))
-            zip.write("<?xml version=\"1.0\"?><x:sst xmlns:x=\"$SPREADSHEET_NS\" />".toByteArray())
-            zip.closeEntry()
-
-            zip.putNextEntry(ZipEntry("xl/worksheets/sheet1.xml"))
-            zip.write(
-                ("<?xml version=\"1.0\"?><x:worksheet xmlns:x=\"$SPREADSHEET_NS\">" +
-                    "<x:sheetData>$sheet</x:sheetData></x:worksheet>").toByteArray(),
-            )
-            zip.closeEntry()
-        }
-        return output.toByteArray()
+    @Test
+    fun `a streaming xlsx gives the same rows as a normal one`() {
+        // Written to a non-seekable stream, so the local headers say 0 bytes and the real sizes live
+        // in a trailing data descriptor. Reading local headers would return nothing here.
+        assertEquals(XlsxReader.read(XlsxFixtures.NORMAL), XlsxReader.read(XlsxFixtures.STREAMING))
     }
 
-    /** The smallest zip the reader needs: shared strings plus one worksheet. */
-    private fun xlsx(sharedStrings: List<String>, sheet: String): ByteArray {
-        val output = ByteArrayOutputStream()
-        ZipOutputStream(output).use { zip ->
-            zip.putNextEntry(ZipEntry("xl/sharedStrings.xml"))
-            val items = sharedStrings.joinToString("") { "<si><t>${it.replace("&", "&amp;")}</t></si>" }
-            zip.write("<?xml version=\"1.0\"?><sst>$items</sst>".toByteArray())
-            zip.closeEntry()
-
-            zip.putNextEntry(ZipEntry("xl/worksheets/sheet1.xml"))
-            zip.write("<?xml version=\"1.0\"?><worksheet><sheetData>$sheet</sheetData></worksheet>".toByteArray())
-            zip.closeEntry()
-        }
-        return output.toByteArray()
+    @Test
+    fun `a stored xlsx gives the same rows as a normal one`() {
+        assertEquals(XlsxReader.read(XlsxFixtures.NORMAL), XlsxReader.read(XlsxFixtures.STORED))
     }
 
-    private companion object {
-        const val SPREADSHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    @Test
+    fun `bytes that are not a zip give no rows`() {
+        assertEquals(emptyList<List<String>>(), XlsxReader.read("PK,precio\nA,1".encodeToByteArray()))
+    }
+
+    @Test
+    fun `a truncated fixture fails instead of reporting an empty catalog`() {
+        assertFails { XlsxReader.read(XlsxFixtures.NORMAL.copyOf(XlsxFixtures.NORMAL.size / 2)) }
+    }
+
+    @Test
+    fun `a flipped byte inside the compressed data fails instead of importing garbage`() {
+        val broken = XlsxFixtures.NORMAL.copyOf()
+        val payload = firstPayloadOffset(broken) + 4
+        broken[payload] = (broken[payload].toInt() xor 0xFF).toByte()
+
+        assertFails { XlsxReader.read(broken) }
+    }
+
+    @Test
+    fun `parseFile picks xlsx by signature`() {
+        val result = ProductSheetParser.parseFile(XlsxFixtures.NORMAL, existingNames = emptySet())
+
+        assertEquals(listOf("Jabon & jabon", "Cubeta 20 L"), result.accepted.map { it.name })
+    }
+
+    @Test
+    fun `parseFile picks csv when there is no zip signature`() {
+        val result = ProductSheetParser.parseFile("nombre,precio\nCubeta,89".encodeToByteArray(), emptySet())
+
+        assertEquals(listOf("Cubeta"), result.accepted.map { it.name })
+        assertEquals(listOf(8_900L), result.accepted.map { it.priceCents })
+    }
+
+    @Test
+    fun `parseFile on an empty file reports nothing and does not throw`() {
+        val result = ProductSheetParser.parseFile(ByteArray(0), emptySet())
+
+        assertEquals(emptyList<ParsedProduct>(), result.accepted)
+        assertEquals(emptyList<RejectedRow>(), result.rejected)
+    }
+
+    @Test
+    fun `a csv that starts with PK is read as xlsx and simply yields no products`() {
+        // The signature wins over the content: this is the price of deciding by the first two bytes,
+        // and it must not throw — the person sees "no products", not a crash.
+        val result = ProductSheetParser.parseFile("PK,precio\nA,1".encodeToByteArray(), emptySet())
+
+        assertEquals(emptyList<ParsedProduct>(), result.accepted)
+    }
+
+    /**
+     * Offset of the first entry's payload, read from its local header.
+     *
+     * Only used to corrupt the fixture on purpose; the reading itself is what the other tests check.
+     */
+    private fun firstPayloadOffset(bytes: ByteArray): Int {
+        val nameLength = (bytes[26].toInt() and 0xFF) or ((bytes[27].toInt() and 0xFF) shl 8)
+        val extraLength = (bytes[28].toInt() and 0xFF) or ((bytes[29].toInt() and 0xFF) shl 8)
+        return 30 + nameLength + extraLength
     }
 }
