@@ -1,6 +1,5 @@
 package com.cuentivo.app.ai
 
-import java.util.Collections
 
 /**
  * Immutable, versioned contracts for CuentivoAI interpretation.
@@ -40,7 +39,7 @@ sealed interface AiIntent {
         ) : Draft {
 
             /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
-            val lines: List<AiSaleLineDraft> = Collections.unmodifiableList(rawLines.toMutableList())
+            val lines: List<AiSaleLineDraft> = rawLines.toList()
 
             companion object {
                 operator fun invoke(
@@ -164,7 +163,7 @@ class CreateSaleProposal private constructor(
     override val schemaVersion: Int = 1
 
     /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
-    val lines: List<AiProposalSaleLine> = Collections.unmodifiableList(rawLines.toMutableList())
+    val lines: List<AiProposalSaleLine> = rawLines.toList()
 
     companion object {
         operator fun invoke(
@@ -289,7 +288,7 @@ class RequiresClarificationProposal private constructor(
 
     /** Truly unmodifiable canonical set: mutation attempts throw [UnsupportedOperationException]. */
     val unresolvedSlots: Set<UnresolvedSlot> =
-        Collections.unmodifiableSet(LinkedHashSet(rawSlots))
+        rawSlots.toSet()
 
     companion object {
         operator fun invoke(

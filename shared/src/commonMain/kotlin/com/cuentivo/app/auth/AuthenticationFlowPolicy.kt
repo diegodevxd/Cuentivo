@@ -77,7 +77,7 @@ object AuthenticationFlowPolicy {
      */
     fun classifyAnonymousFailure(error: Throwable?): AnonymousStartupFailureCause {
         if (error == null) return AnonymousStartupFailureCause.NETWORK_UNAVAILABLE
-        val className = error.javaClass.simpleName
+        val className = error::class.simpleName.orEmpty()
         if (className.contains("Network", ignoreCase = true) ||
             className.contains("Timeout", ignoreCase = true) ||
             className.contains("UnknownHost", ignoreCase = true)

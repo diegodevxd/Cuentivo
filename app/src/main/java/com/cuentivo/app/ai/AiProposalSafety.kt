@@ -94,18 +94,19 @@ object SafeAiProposalValidator {
         proposal: BusinessQueryProposal,
     ): AiProposalValidationResult {
         val shapeOk = when (proposal.queryType) {
-            BusinessQueryType.CUSTOMER_BALANCE ->
-                proposal.customerName != null &&
-                    proposal.customerName.isNotBlank() &&
-                    proposal.period == null
+            // A una local: el smart cast no cruza el borde de módulo (el contrato vive en :shared).
+            BusinessQueryType.CUSTOMER_BALANCE -> {
+                val customerName = proposal.customerName
+                customerName != null && customerName.isNotBlank() && proposal.period == null
+            }
 
             BusinessQueryType.CUSTOMERS_WITH_DEBT ->
                 proposal.customerName == null && proposal.period == null
 
-            BusinessQueryType.SALES_FOR_PERIOD ->
-                proposal.customerName == null &&
-                    proposal.period != null &&
-                    isValidPeriod(proposal.period)
+            BusinessQueryType.SALES_FOR_PERIOD -> {
+                val period = proposal.period
+                proposal.customerName == null && period != null && isValidPeriod(period)
+            }
         }
         return if (shapeOk) {
             AiProposalValidationResult.Accepted(proposal)

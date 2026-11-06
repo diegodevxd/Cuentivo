@@ -12,11 +12,11 @@ import kotlinx.coroutines.withContext
  * performs no execution and exposes no error messages, ids, balances or raw text.
  */
 
-private const val CALLABLE_NAME = "interpretAiRequest"
+private const val CALLABLE_NAME = AI_CALLABLE_NAME
 
-private const val CONTRACT_VERSION_FIELD = 2
+private const val CONTRACT_VERSION_FIELD = AI_CONTRACT_VERSION_FIELD
 
-private const val ACTION_VALUE = "interpret_text_proposal"
+private const val ACTION_VALUE = AI_ACTION_VALUE
 
 /** Exact v2 request payload: contractVersion 2, requestId, action and the original text. */
 internal fun buildCallablePayload2(request: AiInterpretRequest): Map<String, Any> = mapOf(

@@ -1339,7 +1339,7 @@ fun AiDebugLabScreen(
                                             result.proposal is RecordPaymentProposal &&
                                             nextModel.state is AiDebugLabState.ProposalPreview
                                         ) {
-                                            val paymentProposal = result.proposal
+                                            val paymentProposal = result.proposal as RecordPaymentProposal
                                             val resolutionResult = if (paymentPreviewResolver != null && activeBusinessId?.isNotBlank() == true) {
                                                 withContext(Dispatchers.IO) {
                                                     try {
@@ -1358,7 +1358,7 @@ fun AiDebugLabScreen(
                                             result.proposal is CreateSaleProposal &&
                                             nextModel.state is AiDebugLabState.ProposalPreview
                                         ) {
-                                            val saleProposal = result.proposal
+                                            val saleProposal = result.proposal as CreateSaleProposal
                                             val resolutionResult = if (salePreviewResolver != null && activeBusinessId?.isNotBlank() == true) {
                                                 withContext(Dispatchers.IO) {
                                                     try {
@@ -1377,7 +1377,7 @@ fun AiDebugLabScreen(
                                             result.proposal is BusinessQueryProposal &&
                                             nextModel.state is AiDebugLabState.ProposalPreview
                                         ) {
-                                            val queryProposal = result.proposal
+                                            val queryProposal = result.proposal as BusinessQueryProposal
                                             val queryResolutionResult = if (businessQueryResolver != null && activeBusinessId?.isNotBlank() == true) {
                                                 withContext(Dispatchers.IO) {
                                                     try {

@@ -2,6 +2,7 @@ package com.cuentivo.app.sync
 
 import com.cuentivo.app.data.local.CuentivoDatabase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 
 /** Which half of the restore broke. Both used to collapse into one message, which cost three rounds
