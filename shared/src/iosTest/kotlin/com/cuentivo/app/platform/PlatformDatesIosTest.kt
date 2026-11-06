@@ -7,6 +7,8 @@ import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSLocale
 import platform.Foundation.NSTimeZone
+import platform.Foundation.dateWithTimeIntervalSince1970
+import platform.Foundation.timeZoneForSecondsFromGMT
 
 /**
  * Los formatos de iOS, contra el día y la hora que se escribieron.

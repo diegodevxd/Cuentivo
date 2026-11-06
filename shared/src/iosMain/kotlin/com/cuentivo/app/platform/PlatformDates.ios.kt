@@ -9,6 +9,12 @@ import platform.Foundation.NSDateFormatterShortStyle
 import platform.Foundation.NSLocale
 import platform.Foundation.NSTimeZone
 import platform.Foundation.NSUUID
+import platform.Foundation.currentLocale
+import platform.Foundation.dateWithTimeIntervalSince1970
+import platform.Foundation.localTimeZone
+import platform.Foundation.localeIdentifier
+import platform.Foundation.preferredLanguages
+import platform.Foundation.timeZoneForSecondsFromGMT
 
 /**
  * iOS, con `NSDateFormatter` y sin `kotlinx-datetime` más allá de `LocalDate.parse`.
