@@ -92,6 +92,54 @@ class ProductPhotoDraftPolicyTest {
         assertEquals(emptySet<String>(), cleared.draft.provisional)
     }
 
+    @Test
+    fun a_failed_save_returns_null_and_deletes_nothing() {
+        val draft = ProductPhotoDraftPolicy.start(ORIGINAL)
+        val deleted = mutableListOf<String>()
+
+        val next = ProductPhotoDraftPolicy.applySaved(draft, saved = null, deleteFile = { deleted += it })
+
+        assertEquals(null, next)
+        assertEquals(emptyList<String>(), deleted)
+    }
+
+    @Test
+    fun applying_a_saved_photo_deletes_the_provisional_it_replaces() {
+        // Two picks in one dialog: the first file is provisional, so it goes now and nothing else.
+        val first = ProductPhotoDraftPolicy.picked(ProductPhotoDraftPolicy.start(ORIGINAL), NEW)
+        val deleted = mutableListOf<String>()
+
+        val next = ProductPhotoDraftPolicy.applySaved(first.draft, saved = NEWER, deleteFile = { deleted += it })
+
+        assertEquals(listOf(NEW), deleted)
+        assertEquals(NEWER, next?.current)
+        assertEquals(ORIGINAL, next?.original)
+    }
+
+    @Test
+    fun applying_a_saved_photo_never_deletes_the_persisted_original() {
+        // The dialog's first pick: `current` is still the row's original, which the row points at.
+        val draft = ProductPhotoDraftPolicy.start(ORIGINAL)
+        val deleted = mutableListOf<String>()
+
+        val next = ProductPhotoDraftPolicy.applySaved(draft, saved = NEW, deleteFile = { deleted += it })
+
+        assertEquals(emptyList<String>(), deleted)
+        assertEquals(NEW, next?.current)
+    }
+
+    @Test
+    fun the_returned_draft_points_at_the_new_photo() {
+        val next = ProductPhotoDraftPolicy.applySaved(
+            ProductPhotoDraftPolicy.start(ORIGINAL),
+            saved = NEW,
+            deleteFile = { },
+        )
+
+        assertEquals(NEW, next?.current)
+        assertEquals(setOf(NEW), next?.provisional)
+    }
+
     private companion object {
         const val ORIGINAL = "p1-1753900000000.jpg"
         const val NEW = "p1-1753900111111.jpg"

@@ -45,6 +45,14 @@ object ProductPhotoDraftPolicy {
         )
     }
 
+    /** Al volver del selector. Null si no se pudo guardar: quien llama avisa y el borrador no cambia. */
+    fun applySaved(draft: PhotoDraft, saved: String?, deleteFile: (String) -> Unit): PhotoDraft? {
+        if (saved == null) return null
+        val update = picked(draft, saved)
+        update.deleteNow.forEach(deleteFile)
+        return update.draft
+    }
+
     /** "Quitar foto". The persisted original survives until the write succeeds. */
     fun cleared(draft: PhotoDraft): PhotoDraftUpdate {
         val replaced = draft.current?.takeIf { it in draft.provisional }

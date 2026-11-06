@@ -435,7 +435,7 @@ private fun ProductFormDialog(
             modifier = Modifier.fillMaxWidth(),
         )
         MoneyField(stringResource(R.string.products_form_price_label), priceText) { priceText = it }
-        ProductPhotoPicker(photo, store, photoTargetId) { photo = it }
+        ProductPhotoPicker(photo, store, AndroidImagePickerFactory, photoTargetId) { photo = it }
         note?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
     }
 }

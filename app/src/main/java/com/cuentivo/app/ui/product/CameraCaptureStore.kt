@@ -94,3 +94,12 @@ class CameraCaptureStore private constructor(
             }
     }
 }
+
+/** Entrega una foto tomada y borra el temporal pase lo que pase, incluso si falla o se cancela. */
+internal suspend fun <T> deliverCapture(capture: T, delete: (T) -> Unit, deliver: suspend (T) -> Unit) {
+    try {
+        deliver(capture)
+    } finally {
+        delete(capture)
+    }
+}

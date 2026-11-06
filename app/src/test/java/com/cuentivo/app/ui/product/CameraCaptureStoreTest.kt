@@ -1,8 +1,12 @@
 package com.cuentivo.app.ui.product
 
 import java.nio.file.Files
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,5 +37,42 @@ class CameraCaptureStoreTest {
         assertFalse(file.exists())
         assertFalse(store.delete("../outside.jpg"))
         assertTrue(outside.exists())
+    }
+
+    @Test
+    fun deliver_capture_delivers_and_deletes() = runBlocking {
+        val deleted = mutableListOf<String>()
+        val delivered = mutableListOf<String>()
+
+        deliverCapture("capture.jpg", { deleted += it }) { delivered += it }
+
+        assertEquals(listOf("capture.jpg"), delivered)
+        assertEquals(listOf("capture.jpg"), deleted)
+    }
+
+    @Test
+    fun a_failing_delivery_still_deletes_and_propagates_the_same_error() {
+        val deleted = mutableListOf<String>()
+
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                deliverCapture("capture.jpg", { deleted += it }) { error("no se pudo entregar") }
+            }
+        }
+
+        assertEquals(listOf("capture.jpg"), deleted)
+    }
+
+    @Test
+    fun a_cancelled_delivery_still_deletes_and_propagates_the_cancellation() {
+        val deleted = mutableListOf<String>()
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking {
+                deliverCapture("capture.jpg", { deleted += it }) { throw CancellationException("se fue") }
+            }
+        }
+
+        assertEquals(listOf("capture.jpg"), deleted)
     }
 }

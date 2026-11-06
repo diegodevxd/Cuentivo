@@ -8,6 +8,7 @@ import android.net.Uri
  * No es un `actual typealias` como `PlatformAuthHost` por una limitación real del compilador:
  * un `actual typealias` no puede expandir a una clase **abstracta** (`Uri` lo es, con el
  * constructor privado), y Kotlin lo rechaza con "has no corresponding expected declaration". El
- * envoltorio conserva el `Uri` y no cuesta nada: hoy nadie construye un `PickedImage` en Android.
+ * envoltorio conserva el `Uri` y no cuesta nada: lo construye `AndroidImagePickerFactory` al
+ * entregar la foto elegida o capturada.
  */
 actual class PickedImage(val uri: Uri)

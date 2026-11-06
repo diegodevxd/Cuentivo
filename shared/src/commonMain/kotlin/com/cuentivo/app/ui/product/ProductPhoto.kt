@@ -1,10 +1,5 @@
 package com.cuentivo.app.ui.product
 
-import android.graphics.Bitmap
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,52 +15,37 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.data.local.ProductImageStore
-import com.cuentivo.app.R
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.app.platform.ImagePickerFactory
+import com.cuentivo.app.platform.ProductPhotoStore
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.dashboard.initialOf
-import kotlinx.coroutines.CancellationException
+import com.cuentivo.shared.resources.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-
-/**
- * Survives Activity recreation while the camera app is in front.
- *
- * The camera runs in another process, so this one can be destroyed while it is on screen. A plain
- * `remember` would forget where the photo was being written and the returning result would be
- * dropped even though the file landed on disk.
- */
-private val CaptureUriSaver = Saver<Uri?, String>(
-    save = { it?.toString() },
-    restore = { Uri.parse(it) },
-)
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * A product's photo, or a neutral placeholder when it has none.
@@ -74,16 +54,16 @@ private val CaptureUriSaver = Saver<Uri?, String>(
  * `Dispatchers.IO`, because a list of products would otherwise stutter on a cheap phone.
  */
 @Composable
-internal fun ProductPhoto(
+fun ProductPhoto(
     fileName: String?,
-    store: ProductImageStore,
+    store: ProductPhotoStore,
     size: Dp,
     /** Null for the form's empty picker, which deliberately reads as an add-photo affordance. */
     placeholderName: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    val bitmap by produceState<Bitmap?>(initialValue = null, fileName) {
-        value = fileName?.let { name -> withContext(Dispatchers.IO) { store.load(name) } }
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, fileName) {
+        value = fileName?.let { name -> withContext(Dispatchers.IO) { store.loadBitmap(name) } }
     }
     Box(
         modifier = modifier
@@ -96,15 +76,15 @@ internal fun ProductPhoto(
     ) {
         bitmap?.let { image ->
             Image(
-                bitmap = image.asImageBitmap(),
-                contentDescription = stringResource(R.string.product_photo_description),
+                bitmap = image,
+                contentDescription = stringResource(Res.string.product_photo_description),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
         } ?: if (placeholderName == null) {
             Icon(
                 imageVector = Icons.Filled.Add,
-                contentDescription = stringResource(R.string.product_photo_none),
+                contentDescription = stringResource(Res.string.product_photo_none),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(size / 2),
             )
@@ -127,71 +107,27 @@ internal fun ProductPhoto(
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-internal fun ProductPhotoPicker(
+fun ProductPhotoPicker(
     draft: PhotoDraft,
-    store: ProductImageStore,
+    store: ProductPhotoStore,
+    pickers: ImagePickerFactory,
     targetId: String,
     onDraftChange: (PhotoDraft) -> Unit,
 ) {
     val fileName = draft.current
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var working by remember { mutableStateOf(false) }
     var showSourceSelector by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<Int?>(null) }
-    var pendingCaptureUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
-    val cameraStore = remember(context) { CameraCaptureStore(context) }
+    var errorMessage by remember { mutableStateOf<StringResource?>(null) }
 
-    // Captures orphaned by an earlier dialog are swept when this one opens, not in onDispose:
-    // leaving composition can mean the Activity was destroyed while the camera app was still
-    // writing to that very file, and deleting it there threw away the photo the user just took.
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { cameraStore.deleteStale(except = pendingCaptureUri) }
-    }
-
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val uri = pendingCaptureUri ?: return@rememberLauncherForActivityResult
-        pendingCaptureUri = null
-        if (!success) {
-            cameraStore.delete(uri)
-            return@rememberLauncherForActivityResult
-        }
+    val picker = pickers.remember { source ->
         working = true
-        scope.launch {
-            try {
-                val saved = withContext(Dispatchers.IO) { store.save(uri, targetId) }
-                if (saved != null) {
-                    val update = ProductPhotoDraftPolicy.picked(draft, saved)
-                    update.deleteNow.forEach(store::delete)
-                    onDraftChange(update.draft)
-                } else {
-                    errorMessage = R.string.product_photo_save_failed
-                }
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } finally {
-                cameraStore.delete(uri)
-                working = false
-            }
-        }
-    }
-
-    // PickVisualMedia opens the system photo picker, which needs no storage permission at all.
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        working = true
-        scope.launch {
-            // A camera photo is several megapixels; decoding it on the main thread freezes the
-            // dialog long enough to look broken.
-            val saved = withContext(Dispatchers.IO) { store.save(uri, targetId) }
+        try {
+            // Una foto de cámara pesa varios megapíxeles: decodificarla en el hilo principal congela el diálogo.
+            val saved = withContext(Dispatchers.IO) { store.save(source, targetId) }
+            val next = ProductPhotoDraftPolicy.applySaved(draft, saved, store::delete)
+            if (next != null) onDraftChange(next) else errorMessage = Res.string.product_photo_save_failed
+        } finally {
             working = false
-            if (saved != null) {
-                val update = ProductPhotoDraftPolicy.picked(draft, saved)
-                update.deleteNow.forEach(store::delete)
-                onDraftChange(update.draft)
-            } else {
-                errorMessage = R.string.product_photo_save_failed
-            }
         }
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -214,9 +150,9 @@ internal fun ProductPhotoPicker(
                 Text(
                     stringResource(
                         when {
-                            working -> R.string.product_photo_saving
-                            fileName == null -> R.string.product_photo_add
-                            else -> R.string.product_photo_change
+                            working -> Res.string.product_photo_saving
+                            fileName == null -> Res.string.product_photo_add
+                            else -> Res.string.product_photo_change
                         }
                     )
                 )
@@ -227,7 +163,10 @@ internal fun ProductPhotoPicker(
                     update.deleteNow.forEach(store::delete)
                     onDraftChange(update.draft)
                 }) {
-                    Text(stringResource(R.string.product_photo_remove), color = MaterialTheme.colorScheme.error)
+                    Text(
+                        stringResource(Res.string.product_photo_remove),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
             errorMessage?.let { message ->
@@ -250,7 +189,7 @@ internal fun ProductPhotoPicker(
                     .testTag("product-photo-source-sheet"),
             ) {
                 Text(
-                    text = stringResource(R.string.product_photo_source_title),
+                    text = stringResource(Res.string.product_photo_source_title),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
@@ -258,45 +197,33 @@ internal fun ProductPhotoPicker(
                     onClick = {
                         showSourceSelector = false
                         errorMessage = null
-                        // createCaptureUri throws if the FileProvider paths ever stop matching, and
-                        // launch throws ActivityNotFoundException on a device with no camera app.
-                        // Neither is worth closing the app on top of a half-filled product form.
-                        val attempt = runCatching {
-                            val uri = cameraStore.createCaptureUri()
-                            pendingCaptureUri = uri
-                            cameraLauncher.launch(uri)
-                        }
-                        if (attempt.isFailure) {
-                            pendingCaptureUri?.let(cameraStore::delete)
-                            pendingCaptureUri = null
-                            errorMessage = R.string.product_photo_camera_unavailable
-                        }
+                        if (!picker.takePhoto()) errorMessage = Res.string.product_photo_camera_unavailable
                     },
                     enabled = !working,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)
                         .testTag("product-photo-source-camera"),
-                ) { Text(stringResource(R.string.product_photo_source_camera)) }
+                ) { Text(stringResource(Res.string.product_photo_source_camera)) }
                 TextButton(
                     onClick = {
                         showSourceSelector = false
                         errorMessage = null
-                        launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        picker.pickFromGallery()
                     },
                     enabled = !working,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)
                         .testTag("product-photo-source-gallery"),
-                ) { Text(stringResource(R.string.product_photo_source_gallery)) }
+                ) { Text(stringResource(Res.string.product_photo_source_gallery)) }
                 TextButton(
                     onClick = { showSourceSelector = false },
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)
                         .testTag("product-photo-source-cancel"),
-                ) { Text(stringResource(R.string.form_cancel)) }
+                ) { Text(stringResource(Res.string.form_cancel)) }
             }
         }
     }

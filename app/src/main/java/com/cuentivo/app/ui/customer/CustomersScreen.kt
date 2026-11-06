@@ -79,6 +79,7 @@ import com.cuentivo.app.domain.QuickSaleCart
 import com.cuentivo.app.domain.QuickSaleEntry
 import com.cuentivo.app.domain.QuickSalePolicy
 import com.cuentivo.app.data.local.ProductImageStore
+import com.cuentivo.app.ui.product.AndroidImagePickerFactory
 import com.cuentivo.app.ui.product.ProductPhotoDraftPolicy
 import com.cuentivo.app.ui.product.ProductPhotoPicker
 import androidx.compose.ui.platform.LocalContext
@@ -703,7 +704,7 @@ private fun CustomerFormDialog(
             )
             // A photo only makes sense for a product being created here; a catalog product has one.
             if (!fromCatalog || products.isEmpty()) {
-                ProductPhotoPicker(photo, imageStore, pendingLineId) { photo = it }
+                ProductPhotoPicker(photo, imageStore, AndroidImagePickerFactory, pendingLineId) { photo = it }
             }
             TextButton(
                 onClick = {
