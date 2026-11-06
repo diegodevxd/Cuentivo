@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.cuentivo.app.platform.ReminderScheduler
 import com.cuentivo.app.settings.CollectionReminderPreferences
 import java.time.Duration
 import java.time.LocalDateTime
@@ -57,8 +58,8 @@ class CollectionReminderScheduler(
     private val preferences: CollectionReminderPreferences,
     private val workEnqueuer: ReminderWorkEnqueuer,
     private val now: () -> LocalDateTime = { LocalDateTime.now() },
-) {
-    fun sync() {
+) : ReminderScheduler {
+    override fun sync() {
         if (preferences.enabled) {
             workEnqueuer.enqueueDaily(nextDelayMillis(preferences.hourOfDay, now()))
         } else {
@@ -66,7 +67,7 @@ class CollectionReminderScheduler(
         }
     }
 
-    fun cancel() = workEnqueuer.cancel()
+    override fun cancel() = workEnqueuer.cancel()
 
     companion object {
         fun sync(context: Context) {
