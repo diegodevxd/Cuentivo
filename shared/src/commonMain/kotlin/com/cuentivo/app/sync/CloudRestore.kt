@@ -1,6 +1,5 @@
 package com.cuentivo.app.sync
 
-import android.util.Log
 import com.cuentivo.app.data.local.CuentivoDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -39,7 +38,7 @@ class CloudRestore(
     private val database: CuentivoDatabase,
     private val lookup: SyncRemoteBusinessLookup,
     private val gateway: SyncRemotePullGateway,
-    private val membershipBootstrap: OwnerMembershipBootstrap,
+    private val membershipBootstrap: MembershipBootstrap,
 ) {
 
     /**
@@ -86,7 +85,7 @@ class CloudRestore(
      * while still naming the cause.
      */
     private fun failed(failure: SyncFailure, stage: CloudRestoreStage): CloudRestoreResult.Failed {
-        Log.w(TAG, "Cloud restore failed at $stage: ${failure.message}")
+        PlatformLog.warn(TAG, "Cloud restore failed at $stage: ${failure.message}")
         return CloudRestoreResult.Failed(failure, stage)
     }
 

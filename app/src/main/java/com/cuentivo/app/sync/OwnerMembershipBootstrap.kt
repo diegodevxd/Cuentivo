@@ -17,8 +17,8 @@ class OwnerMembershipBootstrap(
     private val businessDao: BusinessDao,
     private val syncOperationDao: SyncOperationDao,
     private val syncQueue: SyncQueue,
-) {
-    suspend fun ensure(business: BusinessEntity) {
+) : MembershipBootstrap {
+    override suspend fun ensure(business: BusinessEntity) {
         val member = BusinessMemberEntity(
             id = memberId(business.id, business.ownerUserId),
             businessId = business.id,
