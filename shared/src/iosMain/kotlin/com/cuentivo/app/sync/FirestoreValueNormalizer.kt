@@ -63,4 +63,5 @@ private fun normalizeNumber(number: NSNumber): Any = when (number.objCType?.toKS
  * con `toLongOrNull()` y **rechaza** el que no cabe, que es la misma regla que impide que entren
  * decimales.
  */
-fun parseJsonToFirestoreMap(json: String): Map<Any?, Any?> = StrictJson.parseObject(json)
+fun parseJsonToFirestoreMap(json: String): Map<Any?, Any?> =
+    buildMap { putAll(StrictJson.parseObject(json)) }
