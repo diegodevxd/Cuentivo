@@ -139,16 +139,14 @@ class IosFirestoreDeletionGateway(
      */
     private fun blocking(block: ((Boolean) -> Unit) -> Unit): Boolean {
         check(!NSThread.isMainThread) { "Firestore deletion cannot run on the main thread" }
-        // Campos, no variables locales: `@Volatile` sólo aplica a campos, y el callback que los
-        // escribe corre en otra cola. Se reinician en cada espera para no arrastrar el resultado de
-        // la anterior.
-        finished = false
-        success = false
+        // Un objeto por espera: un callback tardío de una espera que ya expiró no puede pisar el
+        // resultado de la siguiente.
+        val gate = WaitGate()
         val semaphore = dispatch_semaphore_create(0)
         dispatch_async(dispatch_get_global_queue(0L, 0uL)) {
             block { ok ->
-                success = ok
-                finished = true
+                gate.success = ok
+                gate.finished = true
                 dispatch_semaphore_signal(semaphore)
             }
         }
@@ -156,16 +154,15 @@ class IosFirestoreDeletionGateway(
             semaphore,
             dispatch_time(0uL, TIMEOUT_MILLIS * 1_000_000L),
         )
-        check(waited == 0L && finished) { "Firestore deletion timed out" }
-        return success
+        check(waited == 0L && gate.finished) { "Firestore deletion timed out" }
+        return gate.success
     }
 
-    /**
-     * Bandera de la espera en curso. El callback la escribe desde otra cola y `@Volatile` es lo que
-     * garantiza que el hilo que espera vea el valor; por eso vive en un campo y no en una local.
-     */
-    @Volatile private var finished = false
-    @Volatile private var success = false
+    /** El resultado de una sola espera. `@Volatile` porque el callback lo escribe desde otra cola. */
+    private class WaitGate {
+        @Volatile var finished = false
+        @Volatile var success = false
+    }
 
     private companion object {
         const val TIMEOUT_MILLIS = 30_000L
