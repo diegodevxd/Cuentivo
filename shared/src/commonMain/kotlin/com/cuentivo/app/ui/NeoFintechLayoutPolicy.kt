@@ -1,12 +1,12 @@
 package com.cuentivo.app.ui
 
-internal enum class NeoPhoneWidth {
+enum class NeoPhoneWidth {
     COMPACT,
     STANDARD,
     LARGE,
 }
 
-internal data class NeoFintechLayout(
+data class NeoFintechLayout(
     val widthClass: NeoPhoneWidth,
     val horizontalPaddingDp: Int,
     val contentMaxWidthDp: Int,
@@ -20,7 +20,7 @@ internal data class NeoFintechLayout(
  * Keeping breakpoints outside Compose makes the narrowest supported phones deterministic and
  * testable instead of relying on whichever device happened to be used during development.
  */
-internal object NeoFintechLayoutPolicy {
+object NeoFintechLayoutPolicy {
     private const val STANDARD_MIN_DP = 360
     private const val LARGE_MIN_DP = 412
 

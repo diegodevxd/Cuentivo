@@ -10,7 +10,7 @@ package com.cuentivo.app.ui.theme
  * against every surface it sits on and every text role keeps at least 4.5:1 against its container —
  * see `ColorContrastTest`.
  */
-internal data class CuentivoScheme(
+data class CuentivoScheme(
     val primary: Long,
     val onPrimary: Long,
     val primaryContainer: Long,
@@ -42,7 +42,7 @@ internal data class CuentivoScheme(
     val warning: Long,
 )
 
-internal object CuentivoPalette {
+object CuentivoPalette {
 
     val Dark = CuentivoScheme(
         primary = 0xFF18D8E6,

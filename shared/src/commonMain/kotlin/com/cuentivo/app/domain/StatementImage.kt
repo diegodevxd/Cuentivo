@@ -3,7 +3,7 @@ package com.cuentivo.app.domain
 /**
  * Lo que dice la imagen del estado de cuenta, ya resuelto: **qué se dibuja**, sin saber cómo.
  *
- * Kotlin puro, sin `Context` ni `R.string`, por la misma razón que el resto de `domain/`: así se
+ * Kotlin puro, sin `Context` ni recursos de texto de Android, por la misma razón que el resto de `domain/`: así se
  * prueba en `testDebugUnitTest` que el recorte, el conteo de lo que falta y el saldo son correctos
  * antes de que exista un solo píxel. El dibujo vive en la capa de UI.
  */

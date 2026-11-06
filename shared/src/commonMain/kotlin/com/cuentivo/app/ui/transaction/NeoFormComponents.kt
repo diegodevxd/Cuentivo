@@ -49,7 +49,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -65,7 +64,10 @@ import androidx.compose.ui.unit.dp
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoMoney
-import com.cuentivo.app.R
+// Los accesos de Res.string/Res.drawable son propiedades de extensión declaradas una por una en
+// el paquete generado; el comodín es lo que las trae sin repetir una línea por clave.
+import com.cuentivo.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
 
@@ -82,7 +84,7 @@ private val SELECTOR_HEIGHT = 58.dp
 /** Chips paint shorter than they are tappable; see [NeoChoiceChip]. */
 private val CHIP_HEIGHT = 40.dp
 
-internal const val SELECTOR_SHEET_TAG = "neo-selector-sheet"
+const val SELECTOR_SHEET_TAG = "neo-selector-sheet"
 
 /**
  * Resolves a preselected customer against the list actually on screen. Matching by id rather than
@@ -90,7 +92,7 @@ internal const val SELECTOR_SHEET_TAG = "neo-selector-sheet"
  * archived or deleted customer simply falls back to the empty selector instead of vanishing
  * mid-form.
  */
-internal fun preselectedCustomer(
+fun preselectedCustomer(
     candidate: CustomerBalanceRow?,
     customers: List<CustomerBalanceRow>,
 ): CustomerBalanceRow? =
@@ -103,7 +105,7 @@ internal fun preselectedCustomer(
  * Nueva venta passes one, and it exits by the same path the system Back button takes.
  */
 @Composable
-internal fun NeoTaskHeader(
+fun NeoTaskHeader(
     eyebrow: String? = null,
     title: String,
     modifier: Modifier = Modifier,
@@ -152,7 +154,7 @@ internal fun NeoTaskHeader(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun <T> NeoSelectorField(
+fun <T> NeoSelectorField(
     label: String,
     selected: T?,
     placeholder: String,
@@ -222,7 +224,7 @@ internal fun <T> NeoSelectorField(
             }
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = stringResource(R.string.form_choose_description, label),
+                contentDescription = stringResource(Res.string.form_choose_description, label),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
@@ -243,7 +245,7 @@ internal fun <T> NeoSelectorField(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text(stringResource(R.string.form_search)) },
+                    placeholder = { Text(stringResource(Res.string.form_search)) },
                     leadingIcon = {
                         Icon(
                             Icons.Filled.Search,
@@ -328,7 +330,7 @@ internal fun <T> NeoSelectorField(
  * colour alone.
  */
 @Composable
-internal fun NeoChoiceChip(
+fun NeoChoiceChip(
     label: String,
     isSelected: Boolean,
     onClick: () -> Unit,
@@ -374,7 +376,7 @@ internal fun NeoChoiceChip(
 
 /** One labelled figure inside a panel: caption on the left, cents on the right. */
 @Composable
-internal fun NeoAmountRow(
+fun NeoAmountRow(
     label: String,
     amountCents: Long,
     modifier: Modifier = Modifier,
@@ -408,7 +410,7 @@ private fun selectorTag(label: String) = "selector-${label.lowercase()}"
  * the edge costs one row and tells you where you are without splitting the flow into wizard pages.
  */
 @Composable
-internal fun NeoSectionHeader(
+fun NeoSectionHeader(
     title: String,
     modifier: Modifier = Modifier,
     /**
@@ -443,7 +445,7 @@ internal fun NeoSectionHeader(
  * "Del catálogo / Escribir a mano", where the wrong reading costs a mis-typed product.
  */
 @Composable
-internal fun <T> NeoSegmentedControl(
+fun <T> NeoSegmentedControl(
     options: List<T>,
     selected: T,
     label: (T) -> String,
@@ -498,14 +500,14 @@ internal fun <T> NeoSegmentedControl(
  * large number, so nothing is lost.
  */
 @Composable
-internal fun NeoQuantityStepper(
+fun NeoQuantityStepper(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     decreaseDescription: String,
     increaseDescription: String,
 ) {
-    val quantityDescription = stringResource(R.string.new_sale_quantity_label)
+    val quantityDescription = stringResource(Res.string.new_sale_quantity_label)
     val quantity = value.toIntOrNull() ?: 0
 
     Row(

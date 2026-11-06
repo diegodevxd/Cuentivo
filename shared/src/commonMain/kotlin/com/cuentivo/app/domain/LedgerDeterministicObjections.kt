@@ -12,7 +12,7 @@ import kotlin.math.abs
  * - Deterministic: purely evaluated in Android domain, zero model dependency, zero network.
  * - Monotonic doubt: can only add doubt, never remove it.
  * - Blocks "ready" status in summary counts.
- * - Pure Kotlin, zero Android Context or R.string.
+ * - Pure Kotlin, zero Android Context or Android string resources.
  * - Money arithmetic adheres to CLAUDE.md Rule 1: Zero Double/Float, exact integer Long arithmetic.
  */
 enum class LedgerDeterministicObjectionType {

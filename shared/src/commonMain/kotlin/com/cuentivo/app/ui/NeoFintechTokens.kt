@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.dp
  * This is the whole spacing scale. A screen that needs a gap not on this list is a screen that is
  * about to invent its own, and enough of those is how an app stops looking like one product.
  */
-internal object NeoSpacing {
+object NeoSpacing {
     val xs = 4.dp
     val sm = 8.dp
     val md = 12.dp
@@ -31,7 +31,7 @@ internal object NeoSpacing {
  * which the person has to be able to read; it is not saying "gone". Material's defaults (12 % fill,
  * 38 % label) were tuned for a light surface and vanish on this app's graphite.
  */
-internal object NeoDisabled {
+object NeoDisabled {
     /** Fill of a primary action. Enough cyan left to still read as the same button. */
     const val SURFACE = 0.22f
 
@@ -42,7 +42,7 @@ internal object NeoDisabled {
     const val BORDER = 0.45f
 }
 
-internal object NeoShapes {
+object NeoShapes {
     val row = RoundedCornerShape(10.dp)
     val card = RoundedCornerShape(14.dp)
     val hero = RoundedCornerShape(18.dp)
@@ -61,7 +61,7 @@ internal object NeoShapes {
  * an effect that silently vanishes on the older phone a grandparent is likely to be holding is not
  * an effect, it is a bug waiting for a bug report nobody can reproduce.
  */
-internal object NeoClay {
+object NeoClay {
     /** Thick and round. Clay does not do tight corners. */
     val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 
@@ -82,7 +82,7 @@ internal object NeoClay {
     const val HIGHLIGHT_ALPHA = 0.10f
 }
 
-internal object NeoMotion {
+object NeoMotion {
     const val QUICK_MS = 160
     const val STANDARD_MS = 200
     const val PRESSED_SCALE = 0.97f
@@ -96,4 +96,4 @@ internal object NeoMotion {
  * and read by every animated primitive — press scaling, navigation entrances — so that disabling
  * animations system-wide disables them everywhere, in one place.
  */
-internal val LocalMotionEnabled = staticCompositionLocalOf { true }
+val LocalMotionEnabled = staticCompositionLocalOf { true }

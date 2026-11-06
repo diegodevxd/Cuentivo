@@ -5,7 +5,7 @@ package com.cuentivo.app.domain
  *
  * This is the pure half of the failure contract that keeps local data, session, entitlement and the
  * Auth account alive unless the cloud copy is gone first. It returns an enum; the UI maps the enum
- * to the actual string, keeping `domain/` free of `Context` and `R.string` (see CLAUDE.md).
+ * to the actual string, keeping `domain/` free of `Context` and Android string resources (see CLAUDE.md).
  */
 object AccountDeletionFailure {
 

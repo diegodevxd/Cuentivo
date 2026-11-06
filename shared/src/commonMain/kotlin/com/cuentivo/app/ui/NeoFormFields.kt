@@ -16,10 +16,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
+// Los accesos de Res.string/Res.drawable son propiedades de extensión declaradas una por una en
+// el paquete generado; el comodín es lo que las trae sin repetir una línea por clave.
+import com.cuentivo.shared.resources.*
 import com.cuentivo.app.domain.Money
 
 /**
@@ -34,10 +36,10 @@ import com.cuentivo.app.domain.Money
  * Amount entry in pesos ("150.50"), converted to integer cents only at submit time.
  * Delegates to Money so the screens, the share texts and the CSV all agree. No Double anywhere.
  */
-internal fun pesosToCents(text: String): Long? = Money.positiveCentsFromPesos(text)
+fun pesosToCents(text: String): Long? = Money.positiveCentsFromPesos(text)
 
 @Composable
-internal fun MoneyField(label: String, text: String, onTextChange: (String) -> Unit) {
+fun MoneyField(label: String, text: String, onTextChange: (String) -> Unit) {
     OutlinedTextField(
         value = text,
         onValueChange = { raw -> onTextChange(raw.filter { it.isDigit() || it == '.' }) },
@@ -46,9 +48,9 @@ internal fun MoneyField(label: String, text: String, onTextChange: (String) -> U
         supportingText = {
             val cents = pesosToCents(text)
             when {
-                text.isBlank() -> Text(stringResource(R.string.form_amount_hint))
-                cents == null -> Text(stringResource(R.string.form_amount_invalid), color = MaterialTheme.colorScheme.error)
-                else -> Text(stringResource(R.string.form_amount_preview, Money.format(cents)))
+                text.isBlank() -> Text(stringResource(Res.string.form_amount_hint))
+                cents == null -> Text(stringResource(Res.string.form_amount_invalid), color = MaterialTheme.colorScheme.error)
+                else -> Text(stringResource(Res.string.form_amount_preview, Money.format(cents)))
             }
         },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -59,7 +61,7 @@ internal fun MoneyField(label: String, text: String, onTextChange: (String) -> U
 }
 
 @Composable
-internal fun FormDialog(
+fun FormDialog(
     title: String,
     confirmEnabled: Boolean,
     onConfirm: () -> Unit,
@@ -93,9 +95,9 @@ internal fun FormDialog(
                     disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = NeoDisabled.LABEL),
                 ),
             ) {
-                Text(stringResource(R.string.form_save), style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(Res.string.form_save), style = MaterialTheme.typography.labelLarge)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.form_cancel)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.form_cancel)) } },
     )
 }

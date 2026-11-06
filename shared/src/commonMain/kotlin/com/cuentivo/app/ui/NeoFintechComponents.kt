@@ -1,6 +1,5 @@
 package com.cuentivo.app.ui
 
-import android.provider.Settings
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -33,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -46,7 +44,7 @@ import com.cuentivo.app.domain.Money
  * stretching a phone-sized panel beyond the 480 dp reference width.
  */
 @Composable
-internal fun NeoScreen(
+fun NeoScreen(
     modifier: Modifier = Modifier,
     verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(NeoSpacing.md),
     content: @Composable ColumnScope.(NeoFintechLayout) -> Unit,
@@ -68,7 +66,7 @@ internal fun NeoScreen(
 
 /** Compact graphite surface with the hairline separation used by the references. */
 @Composable
-internal fun NeoPanel(
+fun NeoPanel(
     modifier: Modifier = Modifier,
     accent: Color? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -102,7 +100,7 @@ internal fun NeoPanel(
  * "Guardar producto", "Agregar al carrito" and "Guardar abono" all looked missing at once.
  */
 @Composable
-internal fun NeoAction(
+fun NeoAction(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -163,7 +161,7 @@ internal fun NeoAction(
 }
 
 @Composable
-internal fun NeoMoney(
+fun NeoMoney(
     amountCents: Long,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurface,
@@ -179,7 +177,7 @@ internal fun NeoMoney(
 }
 
 @Composable
-internal fun NeoSectionHeader(
+fun NeoSectionHeader(
     title: String,
     modifier: Modifier = Modifier,
     eyebrow: String? = null,
@@ -217,7 +215,7 @@ internal fun NeoSectionHeader(
 }
 
 @Composable
-internal fun NeoEmptyState(
+fun NeoEmptyState(
     title: String,
     detail: String,
     modifier: Modifier = Modifier,
@@ -235,14 +233,14 @@ internal fun NeoEmptyState(
     }
 }
 
+/**
+ * Whether the system allows animations, resolved once by the theme and shared by every animated
+ * primitive.
+ *
+ * It is the only platform-specific piece of this file: Android reads `ANIMATOR_DURATION_SCALE` from
+ * `Settings.Global` (the developer-options knob the suite and the accessibility guidance both use)
+ * and iOS reads `UIAccessibilityIsReduceMotionEnabled()`. Both answer the same question — "did the
+ * person ask the system to stop moving things?" — so the meaning is identical on both sides.
+ */
 @Composable
-internal fun rememberMotionEnabled(): Boolean {
-    val context = LocalContext.current
-    return remember(context) {
-        Settings.Global.getFloat(
-            context.contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f,
-        ) != 0f
-    }
-}
+expect fun rememberMotionEnabled(): Boolean

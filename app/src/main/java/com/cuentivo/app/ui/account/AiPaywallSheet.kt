@@ -23,9 +23,10 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
+import org.jetbrains.compose.resources.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.cuentivo.shared.resources.*
 import com.cuentivo.app.R
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.NeoAction
@@ -73,7 +74,7 @@ fun AiPaywallSheet(
                 horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_cuentivo_ai_robot),
+                    painter = painterResource(Res.drawable.ic_cuentivo_ai_robot),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(32.dp),

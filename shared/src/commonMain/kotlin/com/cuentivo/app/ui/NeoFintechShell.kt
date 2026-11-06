@@ -55,10 +55,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
+// Los accesos de Res.string/Res.drawable son propiedades de extensión declaradas una por una en
+// el paquete generado; el comodín es lo que las trae sin repetir una línea por clave.
+import com.cuentivo.shared.resources.*
 
 /** The language globe, filled with the current theme's text colour rather than a hard-coded black. */
 @Composable
@@ -165,7 +168,7 @@ fun NeoFintechShell(
     Scaffold(
         topBar = {
             if (!showBrandHeader) return@Scaffold
-            val accountDescription = stringResource(R.string.nav_account_description)
+            val accountDescription = stringResource(Res.string.nav_account_description)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -205,7 +208,7 @@ fun NeoFintechShell(
                         modifier = Modifier.size(30.dp),
                     )
                     Text(
-                        text = stringResource(R.string.nav_account),
+                        text = stringResource(Res.string.nav_account),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(start = NeoSpacing.xs),
@@ -220,8 +223,8 @@ fun NeoFintechShell(
                             .testTag("global-ai-action"),
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.ic_cuentivo_ai_robot),
-                            contentDescription = stringResource(R.string.ai_debug_lab_entry),
+                            painter = painterResource(Res.drawable.ic_cuentivo_ai_robot),
+                            contentDescription = stringResource(Res.string.ai_debug_lab_entry),
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
@@ -234,14 +237,14 @@ fun NeoFintechShell(
                 ) {
                     Icon(
                         imageVector = globeIcon(),
-                        contentDescription = stringResource(R.string.account_language),
+                        contentDescription = stringResource(Res.string.account_language),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 IconButton(onClick = onOpenAlerts, modifier = Modifier.size(48.dp)) {
                     Icon(
                         imageVector = Icons.Filled.Notifications,
-                        contentDescription = stringResource(R.string.nav_alerts_description),
+                        contentDescription = stringResource(Res.string.nav_alerts_description),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
@@ -395,13 +398,13 @@ private fun CompactNavigationColumn(
 
 private enum class ShellDestination(
     val destination: MainDestination,
-    val labelRes: Int,
+    val labelRes: StringResource,
     val icon: ImageVector,
 ) {
-    HOME(MainDestination.HOME, R.string.nav_home, Icons.Filled.Home),
-    CUSTOMERS(MainDestination.CUSTOMERS, R.string.nav_customers, Icons.Filled.Person),
-    PRODUCTS(MainDestination.PRODUCTS, R.string.nav_products, Icons.Filled.Star),
-    PAYMENTS(MainDestination.PAYMENTS, R.string.nav_payments, Icons.Filled.CheckCircle),
+    HOME(MainDestination.HOME, Res.string.nav_home, Icons.Filled.Home),
+    CUSTOMERS(MainDestination.CUSTOMERS, Res.string.nav_customers, Icons.Filled.Person),
+    PRODUCTS(MainDestination.PRODUCTS, Res.string.nav_products, Icons.Filled.Star),
+    PAYMENTS(MainDestination.PAYMENTS, Res.string.nav_payments, Icons.Filled.CheckCircle),
     ;
 
     @Composable
@@ -472,7 +475,7 @@ private fun NewSaleNavigationAction(
     modifier: Modifier,
     isActive: Boolean = false,
 ) {
-    val label = stringResource(R.string.nav_new_sale)
+    val label = stringResource(Res.string.nav_new_sale)
     // The sale owns the screen while it is open, so the action gets the same sunken treatment the
     // destinations use when selected: the bar says where you are, and here that is not a tab.
     val pressedAlpha by animateFloatAsState(

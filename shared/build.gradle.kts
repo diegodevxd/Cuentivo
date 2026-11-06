@@ -57,7 +57,11 @@ kotlin {
             // La fuente única de textos de la app: `composeResources/values/` y `values-en/`.
             // Android los recibe generados por una tarea de Gradle en `:app`; iOS los empaqueta el
             // plugin de Compose.
-            implementation(compose.components.resources)
+            //
+            // `api` desde F5-B: `StringResource`, `Res` y `painterResource` cruzan a `:app` (la barra,
+            // los formularios y la hoja de paywall leen textos e íconos por ahí), así que el paquete
+            // de recursos tiene que estar en su classpath de compilación.
+            api(compose.components.resources)
 
 
             // Room multiplataforma: `CuentivoDatabase` y las entidades son la superficie que
