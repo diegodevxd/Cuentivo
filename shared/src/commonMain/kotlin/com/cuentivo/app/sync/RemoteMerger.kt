@@ -1,6 +1,5 @@
 package com.cuentivo.app.sync
 
-import androidx.room.withTransaction
 import com.cuentivo.app.data.local.AccountMovementEntity
 import com.cuentivo.app.data.local.BusinessEntity
 import com.cuentivo.app.data.local.BusinessMemberEntity
@@ -12,6 +11,7 @@ import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
 import com.cuentivo.app.data.local.SyncStateEntity
+import com.cuentivo.app.data.local.inTransaction
 
 /**
  * Outcome of one pull. Counts only — never document contents, names or amounts, because this is
@@ -38,7 +38,7 @@ class RemoteMerger(private val database: CuentivoDatabase) {
 
     suspend fun apply(businessId: String, documents: List<RemoteDocument>): RemoteMergeReport {
         if (documents.isEmpty()) return RemoteMergeReport()
-        return database.withTransaction {
+        return database.inTransaction {
             var report = RemoteMergeReport()
             documents.forEach { document ->
                 report = try {
