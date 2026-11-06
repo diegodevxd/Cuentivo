@@ -7,6 +7,8 @@ import dev.gitlive.firebase.auth.EmailAuthProvider
 import dev.gitlive.firebase.auth.GoogleAuthProvider
 import dev.gitlive.firebase.auth.OAuthProvider
 import dev.gitlive.firebase.auth.auth
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -269,7 +271,11 @@ class IosAuthenticationGateway(
                         user.reauthenticate(appleCredential(outcome))
                         val code = outcome.authorizationCode
                         if (code != null) {
-                            provider.revoke(code) { /* best effort: se sigue con el borrado */ }
+                            // Se espera: revocar exige sesión viva. Si falla, se borra igual: lo que no puede
+                            // quedarse a medias es la cuenta de Firebase.
+                            suspendCoroutine<Unit> { continuation ->
+                                provider.revoke(code) { continuation.resume(Unit) }
+                            }
                         }
                         user.delete()
                         onComplete(Result.success(Unit))
