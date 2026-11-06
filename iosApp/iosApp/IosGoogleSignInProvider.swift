@@ -13,7 +13,7 @@ final class IosGoogleSignInProviderImpl: NSObject, IosGoogleSignInProvider {
 
     func signIn(host: UIViewController, onResult: @escaping (IosSignInOutcome) -> Void) {
         guard let clientID = FirebaseApp.app()?.options.clientID else {
-            onResult(IosSignInOutcome.Failed(reason: "Firebase is not configured"))
+            onResult(IosSignInOutcomeFailed(reason: "Firebase is not configured"))
             return
         }
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
@@ -22,18 +22,18 @@ final class IosGoogleSignInProviderImpl: NSObject, IosGoogleSignInProvider {
                 let nsError = error as NSError
                 // kGIDSignInErrorCodeCanceled = -5: la persona cerró el selector.
                 if nsError.domain == kGIDSignInErrorDomain, nsError.code == -5 {
-                    onResult(IosSignInOutcome.Cancelled.shared)
+                    onResult(IosSignInOutcomeCancelled.shared)
                 } else {
-                    onResult(IosSignInOutcome.Failed(reason: "Google sign-in failed"))
+                    onResult(IosSignInOutcomeFailed(reason: "Google sign-in failed"))
                 }
                 return
             }
             guard let user = result?.user, let idToken = user.idToken?.tokenString else {
-                onResult(IosSignInOutcome.Failed(reason: "Google returned no token"))
+                onResult(IosSignInOutcomeFailed(reason: "Google returned no token"))
                 return
             }
             onResult(
-                IosSignInOutcome.Success(
+                IosSignInOutcomeSuccess(
                     idToken: idToken,
                     accessToken: user.accessToken.tokenString,
                     rawNonce: nil,

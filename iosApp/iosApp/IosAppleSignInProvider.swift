@@ -18,8 +18,8 @@ final class IosAppleSignInProviderImpl: NSObject, IosAppleSignInProvider,
     private var pendingHost: UIViewController?
 
     func signIn(host: UIViewController, onResult: @escaping (IosSignInOutcome) -> Void) {
-        let rawNonce = AppleNonce.shared.raw(length: AppleNonce.shared.DEFAULT_BYTE_LENGTH)
-        let hashed = AppleNonce.shared.hashed(rawNonce: rawNonce)
+        let rawNonce = IosAppleNonce.shared.raw()
+        let hashed = IosAppleNonce.shared.hashed(rawNonce: rawNonce)
 
         pendingResult = onResult
         pendingRawNonce = rawNonce
@@ -53,12 +53,12 @@ final class IosAppleSignInProviderImpl: NSObject, IosAppleSignInProvider,
         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
               let tokenData = credential.identityToken,
               let idToken = String(data: tokenData, encoding: .utf8) else {
-            pendingResult?(IosSignInOutcome.Failed(reason: "Apple returned no token"))
+            pendingResult?(IosSignInOutcomeFailed(reason: "Apple returned no token"))
             return
         }
         let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
         pendingResult?(
-            IosSignInOutcome.Success(
+            IosSignInOutcomeSuccess(
                 idToken: idToken,
                 accessToken: nil,
                 rawNonce: pendingRawNonce,
@@ -72,9 +72,9 @@ final class IosAppleSignInProviderImpl: NSObject, IosAppleSignInProvider,
         let nsError = error as NSError
         // ASAuthorizationError.canceled = 1001
         if nsError.domain == ASAuthorizationError.errorDomain, nsError.code == 1001 {
-            pendingResult?(IosSignInOutcome.Cancelled.shared)
+            pendingResult?(IosSignInOutcomeCancelled.shared)
         } else {
-            pendingResult?(IosSignInOutcome.Failed(reason: "Apple sign-in failed"))
+            pendingResult?(IosSignInOutcomeFailed(reason: "Apple sign-in failed"))
         }
     }
 

@@ -26,6 +26,16 @@ sealed interface IosSignInOutcome {
     data class Failed(val reason: String) : IosSignInOutcome
 }
 
+/**
+ * El nonce de Apple, visible desde Swift. El framework no exporta `:shared` completo, y [AppleNonce]
+ * vive ahí; esta fachada delega sin agregar lógica.
+ */
+object IosAppleNonce {
+    fun raw(): String = AppleNonce.raw()
+
+    fun hashed(rawNonce: String): String = AppleNonce.hashed(rawNonce)
+}
+
 /** El selector de Google en iOS: `GoogleSignIn-iOS`, presentado desde UIKit. */
 interface IosGoogleSignInProvider {
     fun signIn(host: PlatformAuthHost, onResult: (IosSignInOutcome) -> Unit)
