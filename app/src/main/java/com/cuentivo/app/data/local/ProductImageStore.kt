@@ -32,6 +32,9 @@ class ProductImageStore(
     private val directory = File(context.applicationContext.filesDir, DIRECTORY)
     private val resolver = context.applicationContext.contentResolver
 
+    /** El contrato habla de PickedImage; en Android es el Uri envuelto. */
+    override fun save(source: PickedImage, productId: String): String? = save(source.uri, productId)
+
     /**
      * Copies and downscales [source]; returns the stored file name, or null if it could not be read.
      *
@@ -39,9 +42,6 @@ class ProductImageStore(
      * replaced photo kept the old file name, and every screen keyed on that name — so the list went
      * on showing the previous picture, and the sync row looked unchanged.
      */
-    /** El contrato habla de PickedImage; en Android es el Uri envuelto. */
-    override fun save(source: PickedImage, productId: String): String? = save(source.uri, productId)
-
     fun save(source: Uri, productId: String): String? = runCatching {
         directory.mkdirs()
         val bitmap = decodeDownscaled(source) ?: return null

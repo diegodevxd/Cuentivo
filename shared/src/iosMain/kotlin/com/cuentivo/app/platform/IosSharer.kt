@@ -60,11 +60,14 @@ class IosSharer(
         val name = "statement-${Clock.System.now().toEpochMilliseconds()}.png"
         if (!files.writeBytes(FileArea.CACHE, DIRECTORY, name, bytes)) return false
         val path = files.absolutePath(FileArea.CACHE, DIRECTORY, name) ?: return false
-        return present(
+        val presented = present(
             items = listOf(NSURL.fileURLWithPath(path), text),
             subject = subject,
             onComplete = { files.delete(FileArea.CACHE, DIRECTORY, name) },
         )
+        // Sin ventana no hay hoja que avise al terminar: el estado de cuenta no se queda en caché.
+        if (!presented) files.delete(FileArea.CACHE, DIRECTORY, name)
+        return presented
     }
 
     /**
