@@ -1,3 +1,4 @@
+import FirebaseCore
 import Foundation
 import UIKit
 import GoogleSignIn
@@ -10,7 +11,7 @@ import Shared
 /// no de una constante copiada a mano, para que no haya dos fuentes de verdad.
 final class IosGoogleSignInProviderImpl: NSObject, IosGoogleSignInProvider {
 
-    func signIn(host: PlatformAuthHost, onResult: @escaping (IosSignInOutcome) -> Void) {
+    func signIn(host: UIViewController, onResult: @escaping (IosSignInOutcome) -> Void) {
         guard let clientID = FirebaseApp.app()?.options.clientID else {
             onResult(IosSignInOutcome.Failed(reason: "Firebase is not configured"))
             return

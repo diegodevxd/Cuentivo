@@ -17,7 +17,7 @@ final class IosAppleSignInProviderImpl: NSObject, IosAppleSignInProvider,
     private var pendingRawNonce: String?
     private var pendingHost: UIViewController?
 
-    func signIn(host: PlatformAuthHost, onResult: @escaping (IosSignInOutcome) -> Void) {
+    func signIn(host: UIViewController, onResult: @escaping (IosSignInOutcome) -> Void) {
         let rawNonce = AppleNonce.shared.raw(length: AppleNonce.shared.DEFAULT_BYTE_LENGTH)
         let hashed = AppleNonce.shared.hashed(rawNonce: rawNonce)
 
