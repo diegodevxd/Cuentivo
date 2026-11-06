@@ -26,10 +26,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import com.cuentivo.app.domain.Alert
 
 /** Two lines plus a severity word, matching the density of the other compact rows. */
@@ -73,7 +74,7 @@ fun AlertsSheet(
  * production uses and the behaviour suites drive.
  */
 @Composable
-internal fun AlertsContent(
+fun AlertsContent(
     alerts: List<Alert>,
     onOpenAlert: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -87,14 +88,14 @@ internal fun AlertsContent(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
     ) {
-        Text(stringResource(R.string.alerts_title), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(Res.string.alerts_title), style = MaterialTheme.typography.titleLarge)
 
         if (alerts.isEmpty()) {
             // Worth saying out loud: "nothing is late" is genuinely good news in this app, and
             // there is no action to offer for it.
             NeoEmptyState(
-                title = stringResource(R.string.alerts_empty_title),
-                detail = stringResource(R.string.alerts_empty_detail),
+                title = stringResource(Res.string.alerts_empty_title),
+                detail = stringResource(Res.string.alerts_empty_detail),
             )
             return@Column
         }
@@ -152,7 +153,7 @@ private fun AlertRow(alert: Alert, onOpenAlert: (String) -> Unit, onRemindAlert:
             // Collecting is the actual daily job, and doing it meant leaving this list, finding the
             // customer and opening their statement. One tap instead.
             alert.customerId?.let { customerId ->
-                val remindLabel = stringResource(R.string.alerts_remind)
+                val remindLabel = stringResource(Res.string.alerts_remind)
                 TextButton(
                     onClick = { onRemindAlert(customerId) },
                     modifier = Modifier
@@ -178,7 +179,7 @@ private data class AlertTone(val label: String, val accent: Color)
  */
 @Composable
 private fun Alert.Severity.tone(): AlertTone = when (this) {
-    Alert.Severity.OVERDUE -> AlertTone(stringResource(R.string.alerts_severity_overdue), MaterialTheme.colorScheme.error)
-    Alert.Severity.DUE_SOON -> AlertTone(stringResource(R.string.alerts_severity_due_soon), MaterialTheme.colorScheme.primary)
-    Alert.Severity.INFO -> AlertTone(stringResource(R.string.alerts_severity_info), MaterialTheme.colorScheme.onSurfaceVariant)
+    Alert.Severity.OVERDUE -> AlertTone(stringResource(Res.string.alerts_severity_overdue), MaterialTheme.colorScheme.error)
+    Alert.Severity.DUE_SOON -> AlertTone(stringResource(Res.string.alerts_severity_due_soon), MaterialTheme.colorScheme.primary)
+    Alert.Severity.INFO -> AlertTone(stringResource(Res.string.alerts_severity_info), MaterialTheme.colorScheme.onSurfaceVariant)
 }
