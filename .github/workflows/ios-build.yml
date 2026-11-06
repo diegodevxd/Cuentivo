@@ -112,6 +112,36 @@ jobs:
             ARCHS=arm64 \
             build
 
+      # Compilar no prueba que los textos lleguen al .app. Quien los copia es
+      # `syncComposeResourcesForIos`, que cuelga de `:iosKit:embedAndSignAppleFrameworkForXcode`
+      # (el plugin de Compose lo engancha en el proyecto que produce el framework). Si el paso no
+      # corre, el build sale verde y la app truena al abrir con MissingResourceException.
+      #
+      # La búsqueda es recursiva a propósito: en un proyecto multimódulo los recursos de `:shared`
+      # se aíslan bajo su paquete (`compose-resources/com.cuentivo.shared.resources/...`), así que
+      # la ruta exacta no es estable; lo que sí es estable es que haya un `values-en` de `strings`.
+      - name: El .app lleva los recursos de Compose
+        if: ${{ !cancelled() }}
+        run: |
+          APP=build/iosDerivedData/Build/Products/Debug-iphonesimulator/Cuentivo.app
+          if [ ! -d "$APP" ]; then
+            echo "::error::No hay $APP: xcodebuild no produjo la app, así que no se pueden verificar los recursos"
+            exit 1
+          fi
+          ROOT=$(find "$APP" -type d -name 'compose-resources' | head -n 1)
+          if [ -z "$ROOT" ]; then
+            echo "::error::El .app no contiene ningún directorio compose-resources: syncComposeResourcesForIos no corrió"
+            find "$APP" -maxdepth 2 -type d | sort | head -n 40
+            exit 1
+          fi
+          EN=$(find "$ROOT" -type f -path '*/values-en/*' -name 'strings*' | head -n 1)
+          if [ -z "$EN" ]; then
+            echo "::error::compose-resources existe en $ROOT pero no lleva un strings de values-en"
+            find "$ROOT" -maxdepth 3 | sort | head -n 40
+            exit 1
+          fi
+          echo "Recursos de Compose en el .app: $EN"
+
       - name: Subir el .app del simulador
         uses: actions/upload-artifact@v4
         with:
