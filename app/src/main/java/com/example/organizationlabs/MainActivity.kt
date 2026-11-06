@@ -124,6 +124,7 @@ import com.cuentivo.app.ui.CuentivoApp
 import com.cuentivo.app.ui.CuentivoClaimBlockedScreen
 import com.cuentivo.app.ui.CuentivoLoadingScreen
 import com.cuentivo.app.ui.PaymentRefundFactory
+import com.cuentivo.app.ui.share.AndroidSharer
 import com.cuentivo.app.ui.share.StatementImageShareStore
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.dashboard.DashboardViewModel
@@ -309,6 +310,9 @@ class MainActivity : ComponentActivity() {
 
     /** The one temporary customer statement currently exposed to the selected share target. */
     private val statementImageShareStore by lazy { StatementImageShareStore(applicationContext) }
+
+    /** La hoja de compartir y el marcador, detrás del contrato común Sharer. */
+    private val sharer by lazy { AndroidSharer(this, statementImageShareStore, REQUEST_SHARE_STATEMENT_IMAGE) }
 
     /**
      * La marca durable de un borrado de cuenta a medias (v44). Vive en SharedPreferences para que
@@ -2690,7 +2694,7 @@ class MainActivity : ComponentActivity() {
                     if (row == null) {
                         uiMessage = getString(com.cuentivo.app.R.string.detail_payment_not_found)
                     } else {
-                        share(
+                        sharer.shareText(
                             row.customer.name,
                             DebtorShareText.forCustomer(shareTier, businessName, row.customer.name, row.balanceCents),
                         )
@@ -2728,7 +2732,7 @@ class MainActivity : ComponentActivity() {
                             uiMessage = getString(com.cuentivo.app.R.string.detail_payment_guard_failed)
                         }
                     }
-                }, onCallCustomer = { phone -> dial(phone) }, onShowStatement = { row ->
+                }, onCallCustomer = { phone -> sharer.dial(phone) }, onShowStatement = { row ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
                     lifecycleScope.launch { loadStatement(businessId, row) }
                 }, onDismissStatement = { statementCustomer = null; cancelables = emptyList(); suggestedCreditLimitCents = null }, onAcceptCreditLimitSuggestion = { newLimitCents ->
@@ -2749,7 +2753,7 @@ class MainActivity : ComponentActivity() {
                     suggestedCreditLimitCents = null
                 }, onShareStatementCsv = {
                     statementCustomer?.let { row ->
-                        share(
+                        sharer.shareText(
                             getString(R.string.share_statement_subject, row.customer.name),
                             CustomerStatementCsv.build(statementEntries),
                         )
@@ -2786,11 +2790,11 @@ class MainActivity : ComponentActivity() {
                             tier = shareTier,
                             statementDateIso = LocalDate.now().toString(),
                         )
-                        shareStatementImage(subject = subject, shortText = shortText, fullText = fullText, content = content)
+                        sharer.shareStatementImage(subject = subject, shortText = shortText, fullText = fullText, content = content)
                     }
                 }, onShareDebtorList = {
                     val debtors = customers.map { Debtor(it.customer.name, it.balanceCents) }
-                    share(getString(R.string.share_debtor_list_subject), DebtorShareText.forBusiness(shareTier, businessName, debtors))
+                    sharer.shareText(getString(R.string.share_debtor_list_subject), DebtorShareText.forBusiness(shareTier, businessName, debtors))
                 }, alerts = alerts, onOpenAlertCustomer = { customerId ->
                     // The alert only knows who; the statement sheet needs the row with the balance,
                     // which the screen already has loaded.
@@ -2962,13 +2966,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Opens the dialer with the number filled in. Deliberately ACTION_DIAL, not ACTION_CALL: the
-     * latter needs the CALL_PHONE permission and would place the call without the owner seeing it.
-     */
-    private fun dial(phone: String) {
-        startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")))
-    }
 
     /**
      * "Rosa ahora debe $125" / "ya no debe nada" / "tiene $50 a favor", desde el saldo real.
@@ -3019,45 +3016,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-    /**
-     * Shares one temporary PNG and removes it after the Sharesheet returns to this Activity.
-     *
-     * v44: si el PNG no se puede escribir (`createShareIntent` lanza: sin espacio, error de disco),
-     * se comparte el **texto completo** por la ruta de texto en vez de dejar caer la app. La persona
-     * pierde la imagen, no el estado de cuenta. Qué texto va en cada caso lo decide el objeto puro
-     * `StatementShareTextChoice`.
-     */
-    private fun shareStatementImage(
-        subject: String,
-        shortText: String,
-        fullText: String,
-        content: com.cuentivo.app.domain.StatementImageContent,
-    ) {
-        // Las DOS ramas pasan por `choose`, para que la prueba pura cubra lo que de verdad corre:
-        // con imagen → texto corto; sin imagen (el PNG no se pudo escribir) → texto completo.
-        val textWithImage = com.cuentivo.app.domain.StatementShareTextChoice.choose(true, shortText, fullText)
-        val intent = runCatching { statementImageShareStore.createShareIntent(subject, textWithImage, content) }.getOrNull()
-        if (intent == null) {
-            share(subject, com.cuentivo.app.domain.StatementShareTextChoice.choose(false, shortText, fullText))
-            return
-        }
-        @Suppress("DEPRECATION")
-        startActivityForResult(Intent.createChooser(intent, subject), REQUEST_SHARE_STATEMENT_IMAGE)
-    }
-
     @Deprecated("The result is only used to remove the temporary statement PNG.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_SHARE_STATEMENT_IMAGE) statementImageShareStore.clear()
     }
 
-    /** Hands text to the Android Sharesheet, where WhatsApp shows up on its own. */
-    private fun share(subject: String, body: String) {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, subject)
-            putExtra(Intent.EXTRA_TEXT, body)
-        }
-        startActivity(Intent.createChooser(intent, subject))
-    }
+
 }

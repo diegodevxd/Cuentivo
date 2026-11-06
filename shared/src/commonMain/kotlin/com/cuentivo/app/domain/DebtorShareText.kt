@@ -1,5 +1,7 @@
 package com.cuentivo.app.domain
 
+import com.cuentivo.app.platform.StoreListing
+
 /** One customer as it appears in a shared list: just what is needed to say who owes how much. */
 data class Debtor(
     val name: String,
@@ -21,17 +23,21 @@ data class Debtor(
  */
 object DebtorShareText {
 
-    /** La URL del pie, una sola vez. */
-    private const val PLAY_URL = "https://play.google.com/store/apps/details?id=com.cuentivo.app"
-
     /**
      * El pie para quien **no** paga.
      *
      * Se decide con [SubscriptionTier.includesProBenefits] y no con `== FREE` a propósito: un plan de
      * pago que se añada mañana no debe llevar publicidad por un olvido.
+     *
+     * La firma y la URL las decide cada plataforma ([StoreListing]): en Android siguen siendo
+     * "Enviado con Cuentivo · Gratis en Google Play" y el enlace de Play, byte a byte; en iOS no hay
+     * Google Play y la URL es nula, así que el pie termina en la firma.
      */
-    private fun footer(tier: SubscriptionTier): String =
-        if (tier.includesProBenefits) "" else "\n\nEnviado con Cuentivo · Gratis en Google Play\n$PLAY_URL"
+    private fun footer(tier: SubscriptionTier): String {
+        if (tier.includesProBenefits) return ""
+        val url = StoreListing.url
+        return if (url == null) "\n\n${StoreListing.footerLine}" else "\n\n${StoreListing.footerLine}\n$url"
+    }
 
     /** The owner's collection list: everyone who owes, largest debt first. */
     fun forBusiness(tier: SubscriptionTier, businessName: String, debtors: List<Debtor>): String {
