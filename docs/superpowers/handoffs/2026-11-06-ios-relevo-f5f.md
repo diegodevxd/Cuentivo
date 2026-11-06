@@ -48,4 +48,4 @@ Luego sigue el orden de "Después" del relevo F5-E, añadiendo el respaldo a la 
 
 Terminal activa `term_6951abe3-0d6d-482a-9c04-a5d81dd06cfa`, al ~60% de contexto. **Si pasa de ~80%, crea otra** con `orca terminal create` y concede "Allow always" a `C:\tmp\ios-relevo\*` al primer aviso. La otra terminal `OC | ...` (`term_d8e7884b-...`) es vieja: no la uses. Los símbolos nuevos los contrastas tú en `C:/tmp/ios-relevo/simbolos-<tanda>.txt`.
 
-**Esta sesión cerró con ~$60:** repite el relevo cerca de $50-$80 o antes de un tramo grande.
+**Esta sesión cerró con ~$60:** repite el relevo cerca de $50-$80 o antes de un tramo grande. **Abre cada sesión nueva con Remote Control** (`claude --model opus --remote-control "Cuentivo iOS <tanda>"`), comprueba que conectó y dile a Diego el nombre: la sigue desde su celular. Repite esta regla en tu relevo.

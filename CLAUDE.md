@@ -288,8 +288,12 @@ grep -rnE '(Text\(|text = |label = |title = |detail = |placeholder = |contentDes
 grep -rnE '(uiMessage = |share\(|subject = |onMessage\(|-> )"[^"]*"|^\s*"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ][^"]*"$' \
   app/src/main/java/com/example/organizationlabs/MainActivity.kt \
   app/src/main/java/com/cuentivo/app/billing \
-  shared/src/commonMain/kotlin/com/cuentivo/app/ui --include=*.kt
+  shared/src/commonMain/kotlin/com/cuentivo/app/ui --include=*.kt | grep -vE 'Long\.MIN_VALUE|parts\.isEmpty\(\) -> "\?"'
 ```
+
+La exclusión de la segunda puerta es igual de consciente que la de la primera: un mensaje de `require`
+de `BalancePresentation` y el `"?"` de iniciales de `CustomerDirectoryPresentation`, que no son texto
+traducible. Entraron al moverse a `shared/.../ui`.
 
 **Fuera de la puerta, a propósito:** `Log.*`, `error(...)` y comentarios — no son avisos que vea
 nadie, y el contenido mandado **al cliente** (`DebtorShareText`, `StatementImage`,
