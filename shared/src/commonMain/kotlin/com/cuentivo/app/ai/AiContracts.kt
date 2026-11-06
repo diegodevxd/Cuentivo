@@ -39,7 +39,7 @@ sealed interface AiIntent {
         ) : Draft {
 
             /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
-            val lines: List<AiSaleLineDraft> = rawLines.toList()
+            val lines: List<AiSaleLineDraft> = unmodifiableList(rawLines.toList())
 
             companion object {
                 operator fun invoke(
@@ -163,7 +163,7 @@ class CreateSaleProposal private constructor(
     override val schemaVersion: Int = 1
 
     /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
-    val lines: List<AiProposalSaleLine> = rawLines.toList()
+    val lines: List<AiProposalSaleLine> = unmodifiableList(rawLines.toList())
 
     companion object {
         operator fun invoke(
@@ -288,7 +288,7 @@ class RequiresClarificationProposal private constructor(
 
     /** Truly unmodifiable canonical set: mutation attempts throw [UnsupportedOperationException]. */
     val unresolvedSlots: Set<UnresolvedSlot> =
-        rawSlots.toSet()
+        unmodifiableSet(rawSlots.toSet())
 
     companion object {
         operator fun invoke(

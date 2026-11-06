@@ -116,6 +116,64 @@ que espera `xcodebuild`; el `Fastfile` los conecta con
 
 ---
 
+### 2.7 Lo que creó F4-D: Sign in with Apple, App Attest y Google
+
+Esto es lo manual que dejó el encargo de login. Nada de esto se configura solo.
+
+**a) Apple Developer → el App ID**
+
+1. <https://developer.apple.com/account> → **Certificates, Identifiers & Profiles** → **Identifiers** →
+   el App ID `com.cuentivo.app`.
+2. En **Capabilities**, marcar **Sign in with Apple** (queda como `Default`).
+3. Marcar también **App Attest**; en el proyecto se declara
+   `com.apple.developer.devicecheck.appattest-environment = production` en
+   `iosApp/iosApp/iosApp.entitlements`, y sin la capacidad el perfil no valida.
+4. **Save**. Después hay que volver a bajar el perfil de aprovisionamiento: Xcode lo regenera con
+   `-allowProvisioningUpdates`, que es lo que ya usa el `Fastfile`.
+
+**b) Firebase Auth → proveedor Apple**
+
+1. Consola de Firebase → **Authentication** → **Sign-in method** → **Apple** → **Enable**.
+2. *Services ID*: uno nuevo en Apple (<https://developer.apple.com/account> → **Identifiers** → **+** →
+   **Services IDs**), por ejemplo `com.cuentivo.app.web`.
+3. En ese Services ID, configurar **Sign in with Apple** con el dominio y la URL de retorno que pide
+   Firebase. Copiar la **Key** (`.p8`), el **Key ID** y el **Team ID** en la pantalla de Firebase.
+4. Esta llave `.p8` **no es** la de App Store Connect: son dos llaves distintas y ninguna va al repo.
+
+**c) Firebase App Check → App Attest**
+
+1. Consola de Firebase → **App Check** → pestaña **Apps** → la app de iOS → **App Attest**.
+2. Registrar el proveedor. Dejar la *enforcement* apagada hasta comprobar en un dispositivo real que
+   las peticiones llegan con token (el código usa el proveedor de depuración en `DEBUG` y en el
+   simulador, y App Attest en un teléfono).
+3. Si más adelante se enciende la enforcement, las builds viejas sin App Check dejan de poder escribir:
+   hacerlo después de que la versión con App Attest esté publicada.
+
+**d) Volver a descargar el plist**
+
+Google para iOS necesita su `CLIENT_ID` y su `REVERSED_CLIENT_ID`, y los dos viven en el
+`GoogleService-Info.plist`:
+
+1. Consola de Firebase → **Configuración del proyecto** → **Tus apps** → la app iOS
+   (`com.cuentivo.app`).
+2. Si Google no está activado para iOS, activarlo primero: **Authentication** → **Sign-in method** →
+   **Google** → **Enable**, y agregar el *bundle id* `com.cuentivo.app` como cliente iOS.
+3. Descargar de nuevo `GoogleService-Info.plist` y volver a guardarlo en el secreto
+   `GOOGLE_SERVICE_INFO_PLIST` (paso 1.3).
+4. En la corrida, `ios-build` e `ios-release` copian `REVERSED_CLIENT_ID` a `CFBundleURLTypes` del
+   `Info.plist`. Si el plist no lo trae, el workflow falla con
+   `::error::GoogleService-Info.plist sin REVERSED_CLIENT_ID: activar Google para iOS en Firebase y volver a descargarlo`.
+
+**e) El proyecto ya lo trae**
+
+- `iosApp/iosApp/iosApp.entitlements` con `applesignin` y `appattest-environment`, enlazado por
+  `CODE_SIGN_ENTITLEMENTS` en Debug y Release.
+- `Info.plist` con `BGTaskSchedulerPermittedIdentifiers` y `UIBackgroundModes` (sync de fondo, F4-C).
+- El paquete Swift `GoogleSignIn-iOS` y el código Swift que implementa
+  `IosGoogleSignInProvider`/`IosAppleSignInProvider` son el siguiente paso pendiente: sin ellos, el
+  gateway de iOS devuelve fallo en los flujos de Google y Apple, pero compila y arranca.
+---
+
 ## 3. Subir a TestFlight
 
 1. GitHub → **Actions** → **ios-release** → **Run workflow**.
