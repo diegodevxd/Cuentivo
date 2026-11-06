@@ -29,6 +29,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         #endif
 
         FirebaseApp.configure()
+        registerAuthProviders()
         registerSyncTask()
         return true
     }

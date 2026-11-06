@@ -21,7 +21,7 @@ final class IosGoogleSignInProviderImpl: NSObject, IosGoogleSignInProvider {
                 let nsError = error as NSError
                 // kGIDSignInErrorCodeCanceled = -5: la persona cerró el selector.
                 if nsError.domain == kGIDSignInErrorDomain, nsError.code == -5 {
-                    onResult(IosSignInOutcome.Cancelled())
+                    onResult(IosSignInOutcome.Cancelled.shared)
                 } else {
                     onResult(IosSignInOutcome.Failed(reason: "Google sign-in failed"))
                 }

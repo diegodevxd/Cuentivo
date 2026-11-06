@@ -72,7 +72,7 @@ final class IosAppleSignInProviderImpl: NSObject, IosAppleSignInProvider,
         let nsError = error as NSError
         // ASAuthorizationError.canceled = 1001
         if nsError.domain == ASAuthorizationError.errorDomain, nsError.code == 1001 {
-            pendingResult?(IosSignInOutcome.Cancelled())
+            pendingResult?(IosSignInOutcome.Cancelled.shared)
         } else {
             pendingResult?(IosSignInOutcome.Failed(reason: "Apple sign-in failed"))
         }
