@@ -52,7 +52,7 @@ $env:JAVA_TOOL_OPTIONS='-Djavax.net.ssl.trustStore=C:\tmp\cuentivo-jbr-cacerts -
 - Paridad de idiomas (es/en) — deben ser iguales. El número envejece, así que cuenta, no lo copies:
 
 ```powershell
-rg -c "<string name=" app/src/main/res/values/strings.xml app/src/main/res/values-en/strings.xml
+rg -c "<string name=" shared/src/commonMain/composeResources/values/strings.xml shared/src/commonMain/composeResources/values-en/strings.xml
 ```
 
 - Puerta del idioma de `CLAUDE.md` (no literales visibles en `ui/`).

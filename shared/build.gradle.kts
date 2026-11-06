@@ -50,7 +50,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // Fechas de negocio (`...EpochDay`) sin `java.time`, disponible en Android e iOS. Va en
-            // `api` porque `kotlinx.datetime.LocalDate` aparece en la firma pǧblica de
+            // `api` porque `kotlinx.datetime.LocalDate` aparece en la firma pública de
             // OverdueReminderPolicy, que la app llama.
             api(libs.kotlinx.datetime)
 
