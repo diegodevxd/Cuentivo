@@ -86,6 +86,10 @@ kotlin {
             // documenta la propia release. Android la resuelve contra androidx (versión del BOM de
             // `:app`) y iOS contra el klib de esta misma versión.
             implementation(libs.compose.material.icons.core)
+
+            // Coroutines en común, en la versión que el grafo ya resolvía (1.8.1). `api` porque
+            // `CoroutineScope` aparece en la firma pública de `PlannedReminderScheduler`.
+            api(libs.kotlinx.coroutines.core)
         }
         iosMain.dependencies {
             // SQLite empaquetado: iOS no trae un driver utilizable desde Room.
@@ -93,6 +97,8 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            // `runTest` para las pruebas de `PlannedReminderScheduler` y del contrato de archivos.
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }

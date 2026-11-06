@@ -19,6 +19,9 @@ composeMultiplatform = "1.9.3"
 # dependency on material-icons-core removed). No se sube: por encima de 1.7.3 no existe.
 composeMaterialIcons = "1.7.3"
 gitlive = "2.8.0"
+# Version que YA resuelve el grafo (:shared:dependencyInsight --dependency kotlinx-coroutines-core):
+# 1.8.1. No se sube: solo se declara para no depender de una transitiva de Compose.
+coroutines = "1.8.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -48,6 +51,8 @@ kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime",
 # `Icons.Filled.*` en commonMain. Android redirige a androidx.compose.material:material-icons-core
 # (lo fija el BOM de :app); iOS usa el klib `uikitSimArm64`/`uikitArm64` de esta misma versión.
 compose-material-icons-core = { group = "org.jetbrains.compose.material", name = "material-icons-core", version.ref = "composeMaterialIcons" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
