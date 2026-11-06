@@ -29,6 +29,11 @@ kotlin {
         compileSdk = 36
         minSdk = 24
 
+        // Necesario para que el target Android consuma `composeResources`: el plugin de AGP 8.8+
+        // sólo genera el `Res` y enlaza los recursos si los recursos Android están activos en el
+        // target de librería multiplataforma. Sin esto, Android no vería `com.cuentivo.shared.resources.Res`.
+        androidResources.enable = true
+
         // Pruebas del código común que corren en la JVM del host (`:shared:testAndroidHostTest`),
         // sin emulador. Es donde se ejecutan las pruebas de `commonTest` en esta máquina.
         withHostTestBuilder {}.configure {
@@ -45,9 +50,15 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // Fechas de negocio (`...EpochDay`) sin `java.time`, disponible en Android e iOS. Va en
-            // `api` porque `kotlinx.datetime.LocalDate` aparece en la firma pública de
+            // `api` porque `kotlinx.datetime.LocalDate` aparece en la firma pǧblica de
             // OverdueReminderPolicy, que la app llama.
             api(libs.kotlinx.datetime)
+
+            // La fuente única de textos de la app: `composeResources/values/` y `values-en/`.
+            // Android los recibe generados por una tarea de Gradle en `:app`; iOS los empaqueta el
+            // plugin de Compose.
+            implementation(compose.components.resources)
+
 
             // Room multiplataforma: `CuentivoDatabase` y las entidades son la superficie que
             // consume la app de Android.
@@ -76,4 +87,15 @@ dependencies {
     add("kspAndroid", libs.androidx.room.compiler)
     add("kspIosArm64", libs.androidx.room.compiler)
     add("kspIosSimulatorArm64", libs.androidx.room.compiler)
+}
+
+// La clase `Res` (y sus accesos `Res.string.*`) la genera el plugin de recursos de Compose. Es
+// pública y con un paquete propio porque la consumen tanto `:app` como `:iosKit`: el paquete por
+// defecto depende del `group` del proyecto, y aquí hace falta un nombre estable.
+compose.resources {
+    publicResClass = true
+    packageOfResClass = "com.cuentivo.shared.resources"
+    // `always`: el módulo consumidor (`:iosKit`) no depende de la librería de recursos de forma
+    // directa, y sin esto la clase no se generaría en builds que sólo la ven transitivamente.
+    generateResClass = always
 }
