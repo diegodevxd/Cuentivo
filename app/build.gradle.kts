@@ -1,6 +1,11 @@
 // Imported explicitly: inside the android { } block, `java` resolves to Gradle's java extension.
 import org.gradle.api.Action
+import org.gradle.api.DefaultTask
 import org.gradle.api.execution.TaskExecutionGraph
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
 import java.util.Properties
 
 plugins {
@@ -122,6 +127,26 @@ android {
     }
 }
 
+// Los textos ya no viven en `app/src/main/res`: la fuente única está en `:shared`
+// (`src/commonMain/composeResources`) y esta tarea escribe aquí los `strings.xml` que AAPT2 compila.
+// Ver GenerateAndroidStringsTask, al final del archivo.
+androidComponents {
+    onVariants { variant ->
+        val generateAndroidStrings = project.tasks.register<GenerateAndroidStringsTask>(
+            "generateAndroidStrings${variant.name.replaceFirstChar { it.uppercase() }}",
+        ) {
+            composeResources.set(
+                project.layout.projectDirectory.dir("../shared/src/commonMain/composeResources"),
+            )
+            outputDir.set(project.layout.buildDirectory.dir("generated/androidStrings/${variant.name}"))
+        }
+        variant.sources.res?.addGeneratedSourceDirectory(
+            generateAndroidStrings,
+            GenerateAndroidStringsTask::outputDir,
+        )
+    }
+}
+
 dependencies {
     // Dominio puro compartido con la app de iOS (Kotlin Multiplatform). El paquete se conserva
     // (`com.cuentivo.app.domain`), así que ningún import de `app` cambia.
@@ -232,3 +257,57 @@ gradle.taskGraph.whenReady(Action<TaskExecutionGraph> {
         )
     }
 })
+
+/**
+ * Traduce la fuente única de textos a los `strings.xml` que compila AAPT2.
+ *
+ * La fuente es `shared/src/commonMain/composeResources`, porque el mismo texto tiene que servir a
+ * Android y a iOS. Las dos plataformas no coinciden en el escape: Compose Multiplatform sólo
+ * entiende `\n`, `\t`, `\uXXXX` y `\\`, así que un `\"` se vería con la diagonal en pantalla,
+ * mientras que AAPT2 exige exactamente ese escape. Por eso el texto se guarda sin diagonales y esta
+ * tarea las pone al vuelo, **sólo dentro del texto**: los `"` de `name="..."` y `quantity="..."`
+ * pertenecen a los atributos y se copian tal cual.
+ *
+ * Todo entra por `@InputDirectory` y sale por `@OutputDirectory`: no lee nada del proyecto en la
+ * fase de ejecución, así que es compatible con la caché de configuración y con
+ * `--no-configuration-cache`. No agrega dependencias.
+ */
+abstract class GenerateAndroidStringsTask : DefaultTask() {
+
+    /** Raíz de `composeResources`; de ahí se leen `values/strings.xml` y `values-en/strings.xml`. */
+    @get:InputDirectory
+    abstract val composeResources: DirectoryProperty
+
+    /** Directorio de recursos generado: `values/` y `values-en/` con el texto ya escapado. */
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val root = composeResources.get().asFile
+        val out = outputDir.get().asFile
+        for (qualifier in QUALIFIERS) {
+            val source = root.resolve("$qualifier/strings.xml")
+            require(source.isFile) { "Falta ${source.path}: la fuente única de textos es $root" }
+            val destination = out.resolve("$qualifier/strings.xml")
+            destination.parentFile.mkdirs()
+            destination.writeText(escapeTextNodes(source.readText(Charsets.UTF_8)), Charsets.UTF_8)
+        }
+    }
+
+    /**
+     * Escapa sólo el contenido entre el `>` de una etiqueta y el `<` de la siguiente.
+     *
+     * Los atributos viven dentro de la etiqueta (`<string name="x">`), así que nunca caen en el
+     * grupo capturado. Aplica a `<string>` y a los `<item>` de `<plurals>` por igual.
+     */
+    private fun escapeTextNodes(xml: String): String = TEXT_NODE.replace(xml) { match ->
+        val text = match.groupValues[1]
+        ">" + text.replace("\"", "\\\"").replace("'", "\\'") + "<"
+    }
+
+    private companion object {
+        val QUALIFIERS = listOf("values", "values-en")
+        val TEXT_NODE = Regex(">([^<]*)<")
+    }
+}
