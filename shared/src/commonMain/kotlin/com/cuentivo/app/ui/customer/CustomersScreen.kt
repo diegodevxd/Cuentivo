@@ -58,13 +58,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.res.stringResource
 import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.domain.DueSale
 import com.cuentivo.app.domain.Money
@@ -78,14 +78,14 @@ import com.cuentivo.app.domain.OpeningBalanceRow
 import com.cuentivo.app.domain.QuickSaleCart
 import com.cuentivo.app.domain.QuickSaleEntry
 import com.cuentivo.app.domain.QuickSalePolicy
-import com.cuentivo.app.data.local.ProductImageStore
-import com.cuentivo.app.ui.product.AndroidImagePickerFactory
+import com.cuentivo.app.platform.ImagePickerFactory
+import com.cuentivo.app.platform.ProductPhotoStore
+import com.cuentivo.app.platform.newUuid
+import com.cuentivo.app.platform.todayEpochDay
 import com.cuentivo.app.ui.product.ProductPhotoDraftPolicy
 import com.cuentivo.app.ui.product.ProductPhotoPicker
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import java.util.UUID
 import com.cuentivo.app.ui.FormDialog
 import com.cuentivo.app.ui.NeoFintechLayoutPolicy
 import com.cuentivo.app.ui.NeoEmptyState
@@ -99,7 +99,6 @@ import com.cuentivo.app.ui.transaction.DueOption
 import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import com.cuentivo.app.ui.transaction.NeoSelectorField
 import androidx.compose.material.icons.filled.Close
-import java.time.LocalDate
 
 /** Matches the reference's three-line row: name, status, balance. */
 private val DIRECTORY_ROW_HEIGHT = 72.dp
@@ -116,6 +115,8 @@ private val DIRECTORY_ROW_HEIGHT = 72.dp
 fun CustomersScreen(
     customers: List<CustomerBalanceRow>,
     dueSales: List<DueSale>,
+    photoStore: ProductPhotoStore,
+    imagePickers: ImagePickerFactory,
     /**
      * Payment reliability by customer id. Defaults to empty so a caller that has not loaded the
      * scores yet simply shows no dots, rather than every customer briefly reading as unrated.
@@ -172,7 +173,7 @@ fun CustomersScreen(
      */
     createFormNotice: String? = null,
 ) {
-    val customersNewCustomerDescription = stringResource(R.string.customers_new_customer_description)
+    val customersNewCustomerDescription = stringResource(Res.string.customers_new_customer_description)
     var query by remember { mutableStateOf("") }
     // Keyed on the incoming filter so the reminder tap lands with the overdue chip already
     // chosen at first composition — no async round-trip. The host only clears the request when the
@@ -196,7 +197,7 @@ fun CustomersScreen(
             importingBalances = false
         }
     }
-    val today = LocalDate.now().toEpochDay()
+    val today = todayEpochDay()
     val visible = CustomerDirectoryPresentation.filter(customers, query, chip, dueSales, today)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -216,14 +217,14 @@ fun CustomersScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {
-            item { Text(stringResource(R.string.customers_title), style = MaterialTheme.typography.titleLarge) }
+            item { Text(stringResource(Res.string.customers_title), style = MaterialTheme.typography.titleLarge) }
             item {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = {
-                        Text(stringResource(R.string.customers_search_placeholder), style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(Res.string.customers_search_placeholder), style = MaterialTheme.typography.bodyLarge)
                     },
                     leadingIcon = {
                         Icon(
@@ -254,7 +255,7 @@ fun CustomersScreen(
                         onClick = { importingBalances = true },
                         modifier = Modifier.weight(1f).testTag("open-debt-import"),
                     ) {
-                        Text(stringResource(R.string.opening_import_action))
+                        Text(stringResource(Res.string.opening_import_action))
                     }
                     // The photo is the action that actually matches "mi libreta"; typing rows by
                     // hand is the fallback, not the headline.
@@ -262,7 +263,7 @@ fun CustomersScreen(
                         onClick = onOpenLedgerPhoto,
                         modifier = Modifier.weight(1f).testTag("open-ledger-photo"),
                     ) {
-                        Text(stringResource(R.string.opening_import_photo_action))
+                        Text(stringResource(Res.string.opening_import_photo_action))
                     }
                 }
             }
@@ -273,16 +274,16 @@ fun CustomersScreen(
                     val pristine = query.isBlank() && chip == CustomerFilter.ALL
                     NeoEmptyState(
                         title = if (pristine) {
-                            stringResource(R.string.customers_empty_title)
+                            stringResource(Res.string.customers_empty_title)
                         } else {
-                            stringResource(R.string.customers_no_match_title)
+                            stringResource(Res.string.customers_no_match_title)
                         },
                         detail = if (pristine) {
-                            stringResource(R.string.customers_empty_detail)
+                            stringResource(Res.string.customers_empty_detail)
                         } else {
-                            stringResource(R.string.customers_no_match_detail)
+                            stringResource(Res.string.customers_no_match_detail)
                         },
-                        actionLabel = if (pristine) stringResource(R.string.customers_add_action) else null,
+                        actionLabel = if (pristine) stringResource(Res.string.customers_add_action) else null,
                         onAction = if (pristine) ({ onShowFormChange(true) }) else null,
                     )
                 }
@@ -330,9 +331,9 @@ fun CustomersScreen(
     if (showForm) {
         // The photo is written before the product row exists, so it needs a name up front. Same
         // trick the product form uses: ProductEntity.imageUri stores the file name, not the id.
-        val newCustomerDraftId = remember(showForm) { UUID.randomUUID().toString() }
+        val newCustomerDraftId = remember(showForm) { newUuid() }
         CustomerFormDialog(
-            title = stringResource(R.string.customers_form_new_title),
+            title = stringResource(Res.string.customers_form_new_title),
             initialName = "",
             initialPhone = "",
             initialCreditLimitCents = null,
@@ -342,6 +343,8 @@ fun CustomersScreen(
             // `onCreateCustomer` actually succeeds.
             quickSaleTargetId = newCustomerDraftId,
             products = products,
+            photoStore = photoStore,
+            imagePickers = imagePickers,
             onConfirm = onCreateCustomer,
             onDismiss = { onShowFormChange(false) },
             isSaving = isSaving,
@@ -358,12 +361,14 @@ fun CustomersScreen(
     }
     editing?.let { row ->
         CustomerFormDialog(
-            title = stringResource(R.string.customers_form_edit_title),
+            title = stringResource(Res.string.customers_form_edit_title),
             initialName = row.customer.name,
             initialPhone = row.customer.phone.orEmpty(),
             initialCreditLimitCents = row.customer.creditLimitCents,
             formKey = row.customer.id,
-            note = stringResource(R.string.customers_form_edit_note),
+            note = stringResource(Res.string.customers_form_edit_note),
+            photoStore = photoStore,
+            imagePickers = imagePickers,
             onConfirm = { draft ->
                 // Editing only ever touches the descriptive fields; the rest of the draft is off in
                 // this mode, because `quickSaleTargetId` is null.
@@ -382,21 +387,21 @@ fun CustomersScreen(
             title = {
                 Text(
                     if (settled) {
-                        stringResource(R.string.customers_delete_confirm_title, row.customer.name)
+                        stringResource(Res.string.customers_delete_confirm_title, row.customer.name)
                     } else {
-                        stringResource(R.string.customers_delete_has_balance_title, row.customer.name)
+                        stringResource(Res.string.customers_delete_has_balance_title, row.customer.name)
                     }
                 )
             },
             text = {
                 Text(
                     if (settled) {
-                        stringResource(R.string.customers_delete_confirm_detail)
+                        stringResource(Res.string.customers_delete_confirm_detail)
                     } else {
                         if (row.balanceCents < 0L) {
-                            stringResource(R.string.customers_delete_has_credit_detail, Money.format(-row.balanceCents))
+                            stringResource(Res.string.customers_delete_has_credit_detail, Money.format(-row.balanceCents))
                         } else {
-                            stringResource(R.string.customers_delete_has_balance_detail, Money.format(row.balanceCents))
+                            stringResource(Res.string.customers_delete_has_balance_detail, Money.format(row.balanceCents))
                         }
                     }
                 )
@@ -404,15 +409,15 @@ fun CustomersScreen(
             confirmButton = {
                 if (settled) {
                     TextButton(onClick = { archiving = null; onArchiveCustomer(row) }) {
-                        Text(stringResource(R.string.customers_delete_confirm_action), color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(Res.string.customers_delete_confirm_action), color = MaterialTheme.colorScheme.error)
                     }
                 } else {
                     TextButton(onClick = { archiving = null; onOpen(row) }) {
-                        Text(stringResource(R.string.customers_view_statement_action))
+                        Text(stringResource(Res.string.customers_view_statement_action))
                     }
                 }
             },
-            dismissButton = { TextButton(onClick = { archiving = null }) { Text(stringResource(R.string.customers_cancel_action)) } },
+            dismissButton = { TextButton(onClick = { archiving = null }) { Text(stringResource(Res.string.customers_cancel_action)) } },
         )
     }
 }
@@ -437,6 +442,8 @@ private fun CustomerFormDialog(
     quickSaleTargetId: String? = null,
     /** Empty while editing, and empty for a shop that keeps no catalog. */
     products: List<ProductEntity> = emptyList(),
+    photoStore: ProductPhotoStore,
+    imagePickers: ImagePickerFactory,
 ) {
     // Keyed on the customer so reopening for another row starts from that row's data.
     var name by remember(formKey) { mutableStateOf(initialName) }
@@ -462,9 +469,7 @@ private fun CustomerFormDialog(
     var quantityText by remember(formKey) { mutableStateOf(QuickSalePolicy.DEFAULT_QUANTITY) }
     var photo by remember(formKey) { mutableStateOf(ProductPhotoDraftPolicy.start(null)) }
     // Each added row needs its own id, and so does the photo file the picker writes for it.
-    var pendingLineId by remember(formKey) { mutableStateOf(UUID.randomUUID().toString()) }
-    val context = LocalContext.current
-    val imageStore = remember(context) { ProductImageStore(context) }
+    var pendingLineId by remember(formKey) { mutableStateOf(newUuid()) }
     // Starts on the default plazo, like Nueva venta. Selling fiado means agreeing on a date, and
     // this route used to save none at all — every customer created this way stayed invisible to the
     // payment score forever.
@@ -491,12 +496,11 @@ private fun CustomerFormDialog(
     val openingBalanceCents = openingBalanceText.trim().ifBlank { null }
         ?.let { Money.positiveCentsFromPesos(it) }
     val openingBalanceValid = openingBalanceText.isBlank() || openingBalanceCents != null
-    val nameLabel = stringResource(R.string.customers_form_name_label)
-    val phoneLabel = stringResource(R.string.customers_form_phone_label)
-    val creditLabel = stringResource(R.string.customers_form_credit_limit_label)
-    val noCreditLabel = stringResource(R.string.customers_form_credit_limit_none)
-    val invalidCreditLabel = stringResource(R.string.customers_form_credit_limit_invalid)
-    val creditHint = stringResource(R.string.customers_form_credit_limit_hint)
+    val nameLabel = stringResource(Res.string.customers_form_name_label)
+    val phoneLabel = stringResource(Res.string.customers_form_phone_label)
+    val creditLabel = stringResource(Res.string.customers_form_credit_limit_label)
+    val noCreditLabel = stringResource(Res.string.customers_form_credit_limit_none)
+    val invalidCreditLabel = stringResource(Res.string.customers_form_credit_limit_invalid)
     // One definition of "this form can be saved", so the Guardar button and the secondary action
     // can never disagree about it.
     val canSave = name.isNotBlank() && creditLimitValid && openingBalanceValid && !isSaving &&
@@ -522,7 +526,7 @@ private fun CustomerFormDialog(
         onConfirm = { if (canSave) onConfirm(draftOf(false)) },
         onDismiss = {
             // Nothing points at a photo taken for a customer who was never saved.
-            ProductPhotoDraftPolicy.onCancel(photo).forEach(imageStore::delete)
+            ProductPhotoDraftPolicy.onCancel(photo).forEach(photoStore::delete)
             onDismiss()
         },
     ) {
@@ -564,7 +568,12 @@ private fun CustomerFormDialog(
                     creditLimitCents == null -> {
                         Text(invalidCreditLabel, color = MaterialTheme.colorScheme.error)
                     }
-                    else -> Text(creditHint.format(Money.format(creditLimitCents)))
+                    else -> Text(
+                            stringResource(
+                                Res.string.customers_form_credit_limit_hint,
+                                Money.format(creditLimitCents),
+                            )
+                        )
                 }
             },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
@@ -573,24 +582,24 @@ private fun CustomerFormDialog(
             modifier = Modifier.fillMaxWidth(),
         )
         if (quickSaleTargetId != null) {
-            NeoSectionHeader(title = stringResource(R.string.customers_form_opening_balance_title))
+            NeoSectionHeader(title = stringResource(Res.string.customers_form_opening_balance_title))
             OutlinedTextField(
                 value = openingBalanceText,
                 onValueChange = { raw -> openingBalanceText = raw.filter { it.isDigit() || it == '.' } },
-                label = { Text(stringResource(R.string.customers_form_opening_balance_label)) },
+                label = { Text(stringResource(Res.string.customers_form_opening_balance_label)) },
                 prefix = { Text("$ ") },
                 supportingText = {
                     when {
                         openingBalanceText.isBlank() -> {
-                            Text(stringResource(R.string.customers_form_opening_balance_hint))
+                            Text(stringResource(Res.string.customers_form_opening_balance_hint))
                         }
                         openingBalanceCents == null -> Text(
-                            stringResource(R.string.customers_form_opening_balance_invalid),
+                            stringResource(Res.string.customers_form_opening_balance_invalid),
                             color = MaterialTheme.colorScheme.error,
                         )
                         else -> Text(
                             stringResource(
-                                R.string.customers_form_opening_balance_detail,
+                                Res.string.customers_form_opening_balance_detail,
                                 Money.format(openingBalanceCents),
                             )
                         )
@@ -605,9 +614,9 @@ private fun CustomerFormDialog(
             // deuda anterior y a la venta rápida por igual, y al fondo del formulario quedaba lejos
             // de la pregunta que lo justifica. Se dibuja una sola vez, aquí.
             DueDateQuestion(dueOption = dueOption, onSelect = { dueOption = it })
-            NeoSectionHeader(title = stringResource(R.string.customers_form_quick_sale_title))
+            NeoSectionHeader(title = stringResource(Res.string.customers_form_quick_sale_title))
             Text(
-                stringResource(R.string.customers_form_quick_sale_hint),
+                stringResource(Res.string.customers_form_quick_sale_hint),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -620,7 +629,7 @@ private fun CustomerFormDialog(
                 ) {
                     Text(
                         text = stringResource(
-                            R.string.customers_form_quick_sale_line,
+                            Res.string.customers_form_quick_sale_line,
                             line.quantity,
                             line.productName,
                             Money.format(line.totalCents),
@@ -635,7 +644,7 @@ private fun CustomerFormDialog(
                         Icon(
                             Icons.Filled.Close,
                             contentDescription = stringResource(
-                                R.string.customers_form_quick_sale_remove,
+                                Res.string.customers_form_quick_sale_remove,
                                 line.productName,
                             ),
                             modifier = Modifier.size(18.dp),
@@ -649,13 +658,13 @@ private fun CustomerFormDialog(
             if (products.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(NeoSpacing.sm)) {
                     NeoChoiceChip(
-                        label = stringResource(R.string.new_sale_source_catalog),
+                        label = stringResource(Res.string.new_sale_source_catalog),
                         isSelected = fromCatalog,
                         onClick = { fromCatalog = true },
                         modifier = Modifier.weight(1f),
                     )
                     NeoChoiceChip(
-                        label = stringResource(R.string.new_sale_source_manual),
+                        label = stringResource(Res.string.new_sale_source_manual),
                         isSelected = !fromCatalog,
                         onClick = { fromCatalog = false },
                         modifier = Modifier.weight(1f),
@@ -664,20 +673,20 @@ private fun CustomerFormDialog(
             }
             if (fromCatalog && products.isNotEmpty()) {
                 NeoSelectorField(
-                    label = stringResource(R.string.new_sale_product_label),
+                    label = stringResource(Res.string.new_sale_product_label),
                     selected = pickedProduct,
-                    placeholder = stringResource(R.string.new_sale_product_placeholder),
+                    placeholder = stringResource(Res.string.new_sale_product_placeholder),
                     options = products,
                     optionTitle = { it.name },
                     optionDetail = { Money.format(it.salePriceCents) },
-                    emptyText = stringResource(R.string.new_sale_product_empty),
+                    emptyText = stringResource(Res.string.new_sale_product_empty),
                     onSelect = { pickedProduct = it },
                 )
             } else {
                 OutlinedTextField(
                     value = productName,
                     onValueChange = { productName = it },
-                    label = { Text(stringResource(R.string.customers_form_quick_sale_product)) },
+                    label = { Text(stringResource(Res.string.customers_form_quick_sale_product)) },
                     singleLine = true,
                     shape = NeoShapes.row,
                     modifier = Modifier.fillMaxWidth().testTag("quick-sale-product"),
@@ -685,7 +694,7 @@ private fun CustomerFormDialog(
                 OutlinedTextField(
                     value = productPriceText,
                     onValueChange = { raw -> productPriceText = raw.filter { it.isDigit() || it == '.' } },
-                    label = { Text(stringResource(R.string.customers_form_quick_sale_price)) },
+                    label = { Text(stringResource(Res.string.customers_form_quick_sale_price)) },
                     prefix = { Text("$ ") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
@@ -696,7 +705,7 @@ private fun CustomerFormDialog(
             OutlinedTextField(
                 value = quantityText,
                 onValueChange = { raw -> quantityText = raw.filter { it.isDigit() }.take(4) },
-                label = { Text(stringResource(R.string.customers_form_quick_sale_quantity)) },
+                label = { Text(stringResource(Res.string.customers_form_quick_sale_quantity)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 shape = NeoShapes.row,
@@ -704,7 +713,7 @@ private fun CustomerFormDialog(
             )
             // A photo only makes sense for a product being created here; a catalog product has one.
             if (!fromCatalog || products.isEmpty()) {
-                ProductPhotoPicker(photo, imageStore, AndroidImagePickerFactory, pendingLineId) { photo = it }
+                ProductPhotoPicker(photo, photoStore, imagePickers, pendingLineId) { photo = it }
             }
             TextButton(
                 onClick = {
@@ -714,7 +723,7 @@ private fun CustomerFormDialog(
                         // on purpose: it is what cancelling the dialog uses to delete every file it
                         // created, and a row that was never saved must not leave one behind.
                         photo = photo.copy(current = null)
-                        pendingLineId = UUID.randomUUID().toString()
+                        pendingLineId = newUuid()
                         pickedProduct = null
                         productName = ""
                         productPriceText = ""
@@ -724,17 +733,17 @@ private fun CustomerFormDialog(
                 enabled = pendingLine != null,
                 modifier = Modifier.fillMaxWidth().testTag("quick-sale-add-line"),
             ) {
-                Text(stringResource(R.string.customers_form_quick_sale_add_line))
+                Text(stringResource(Res.string.customers_form_quick_sale_add_line))
             }
             quickSale?.let {
                 Text(
-                    stringResource(R.string.customers_form_quick_sale_total, Money.format(it.totalCents)),
+                    stringResource(Res.string.customers_form_quick_sale_total, Money.format(it.totalCents)),
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
             if (quickSaleEntry == QuickSaleEntry.Incomplete) {
                 Text(
-                    stringResource(R.string.customers_form_quick_sale_incomplete),
+                    stringResource(Res.string.customers_form_quick_sale_incomplete),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -748,7 +757,7 @@ private fun CustomerFormDialog(
                 enabled = canSave,
                 modifier = Modifier.fillMaxWidth().testTag("customer-save-and-sell"),
             ) {
-                Text(stringResource(R.string.customers_form_save_and_sell))
+                Text(stringResource(Res.string.customers_form_save_and_sell))
             }
         }
         note?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
@@ -765,7 +774,7 @@ private fun CustomerFormDialog(
 @Composable
 private fun DueDateQuestion(dueOption: DueOption, onSelect: (DueOption) -> Unit) {
     Text(
-        stringResource(R.string.new_sale_due_question),
+        stringResource(Res.string.new_sale_due_question),
         style = MaterialTheme.typography.labelMedium,
     )
     Column(verticalArrangement = Arrangement.spacedBy(NeoSpacing.xs)) {
@@ -863,8 +872,8 @@ private fun CustomerRow(
     onArchive: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val editLabel = stringResource(R.string.customers_edit)
-    val deleteLabel = stringResource(R.string.customers_delete)
+    val editLabel = stringResource(Res.string.customers_edit)
+    val deleteLabel = stringResource(Res.string.customers_delete)
     val accent = when (status.tone) {
         CustomerTone.OVERDUE -> MaterialTheme.colorScheme.error
         CustomerTone.SETTLED -> MaterialTheme.colorScheme.secondary
@@ -971,7 +980,7 @@ private fun CustomerRow(
                 IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = stringResource(R.string.customers_options_description, row.customer.name),
+                        contentDescription = stringResource(Res.string.customers_options_description, row.customer.name),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
@@ -993,15 +1002,15 @@ private fun CustomerRow(
 
 @Composable
 private fun statusLabel(status: CustomerStatus): String = when (status.tone) {
-    CustomerTone.SETTLED -> stringResource(com.cuentivo.app.R.string.customer_status_settled)
-    CustomerTone.CREDIT -> stringResource(com.cuentivo.app.R.string.customer_status_credit)
+    CustomerTone.SETTLED -> stringResource(Res.string.customer_status_settled)
+    CustomerTone.CREDIT -> stringResource(Res.string.customer_status_credit)
     CustomerTone.PENDING -> status.daysUntilDue?.let { days ->
-        if (days == 0L) stringResource(com.cuentivo.app.R.string.customer_status_due_today)
-        else stringResource(com.cuentivo.app.R.string.customer_status_due_in_days, days)
-    } ?: stringResource(com.cuentivo.app.R.string.customer_status_pending)
+        if (days == 0L) stringResource(Res.string.customer_status_due_today)
+        else stringResource(Res.string.customer_status_due_in_days, days)
+    } ?: stringResource(Res.string.customer_status_pending)
     CustomerTone.OVERDUE -> stringResource(
-        if (status.overdueDays == 1L) com.cuentivo.app.R.string.customer_status_overdue_one
-        else com.cuentivo.app.R.string.customer_status_overdue_days,
+        if (status.overdueDays == 1L) Res.string.customer_status_overdue_one
+        else Res.string.customer_status_overdue_days,
         status.overdueDays ?: 0L,
     )
 }

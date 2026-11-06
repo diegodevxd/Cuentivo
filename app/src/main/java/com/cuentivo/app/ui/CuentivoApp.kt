@@ -647,6 +647,8 @@ fun CuentivoApp(
             )
             MainDestination.CUSTOMERS -> CustomersScreen(
                 customers = customers,
+                photoStore = photoStore,
+                imagePickers = AndroidImagePickerFactory,
                 // The same dated sales Inicio uses, so a row can say why it is late without a
                 // second query.
                 dueSales = (state as? DashboardUiState.Content)?.dueSales.orEmpty(),
