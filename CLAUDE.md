@@ -293,21 +293,27 @@ nadie, y el contenido mandado **al cliente** (`DebtorShareText`, `StatementImage
 `StatementLineFormat`, el CSV) se queda en español por decisión de Diego: sus clientes están en
 México.
 
-Y la paridad de claves debe seguir cuadrando (2026-10-14: 689 y 689; el 2026-09-22 eran 668). El
+Y la paridad de claves debe seguir cuadrando (2026-11-05: 702 y 702). El
 número envejece, así que cuenta, no confíes en esta línea:
 
 ```bash
-grep -c "<string name=" app/src/main/res/values/strings.xml app/src/main/res/values-en/strings.xml
+grep -c "<string name=" shared/src/commonMain/composeResources/values/strings.xml shared/src/commonMain/composeResources/values-en/strings.xml
 ```
+
+Los textos viven en **un solo lugar**, `shared/src/commonMain/composeResources` (`values/` en
+español y `values-en/` en inglés): es la fuente de `Res.string` en iOS y de `R.string` en Android,
+donde una tarea de Gradle en `:app` (`GenerateAndroidStringsTask`) escribe sus `strings.xml` en el
+build. No los edites en `app/src/main/res`: ahí ya no existen.
+
+**Los textos van sin diagonales de escape**: Compose Multiplatform sólo entiende `\n`, `\t`,
+`\uXXXX` y `\\`, así que un `\"` o un `\'` se vería con la diagonal en pantalla. Las comillas y los
+apóstrofos se escriben tal cual (`No se pudo`, `"x"`) y el generador de Android es quien les pone la
+diagonal al compilar. Nada de `don\'t` ni de `\"` en la fuente.
 
 **Los `object` de `domain/` son Kotlin puro sin `Context`** — por eso corren en `testDebugUnitTest`.
 No les metas `Context` ni `R.string`: rompe las pruebas y la separación que hace valiosa esa capa.
 El patrón correcto es que el `object` devuelva una **clave o un enum** y la UI resuelva el texto.
 `AuditAction.summary` se persiste en `audit_logs`: **no se traduce al escribir**.
-
-**Cuidado con los apóstrofos en `values-en/`**: Android exige `\'`, y escribirlos desde un script
-con varias capas de shell mangla el escapado y produce `Invalid unicode escape sequence in string`
-al mergear recursos. Lo más seguro es redactar el inglés sin apóstrofos ("do not" en vez de "don't").
 
 ## Notas del repositorio
 

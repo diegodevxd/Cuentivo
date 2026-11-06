@@ -11,15 +11,15 @@
 
 set -uo pipefail
 
-ES="app/src/main/res/values/strings.xml"
-EN="app/src/main/res/values-en/strings.xml"
+ES="shared/src/commonMain/composeResources/values/strings.xml"
+EN="shared/src/commonMain/composeResources/values-en/strings.xml"
 
 payload=$(cat 2>/dev/null || true)
 
 # Sólo actúa cuando el archivo editado es uno de los dos strings.xml. El matcher de hooks
 # filtra por herramienta, no por ruta, así que el filtro de ruta vive aquí.
 case "$payload" in
-  *res/values/strings.xml*|*res/values-en/strings.xml*|*'res\values\strings.xml'*|*'res\values-en\strings.xml'*) ;;
+  *composeResources/values/strings.xml*|*composeResources/values-en/strings.xml*|*'composeResources\values\strings.xml'*|*'composeResources\values-en\strings.xml'*) ;;
   *) exit 0 ;;
 esac
 
@@ -40,6 +40,6 @@ echo "PARIDAD DE TEXTOS: hay claves sin contraparte (ES=$n_es, EN=$n_en)."
 [ -n "$solo_es" ] && { echo "Sólo en español, falta traducir:"; echo "$solo_es" | sed 's/^/  - /'; }
 [ -n "$solo_en" ] && { echo "Sólo en inglés, falta el original:"; echo "$solo_en" | sed 's/^/  - /'; }
 echo "Si estás a media edición, termina el otro idioma antes de cerrar la tarea."
-echo "Recuerda: en values-en/ redacta sin apóstrofos (\"do not\", no \"don't\")."
+echo "Recuerda: escribe sin diagonales de escape: \"No se pudo\", \"y no pudo\". Android las recibe puestas por el generador."
 
 exit 0

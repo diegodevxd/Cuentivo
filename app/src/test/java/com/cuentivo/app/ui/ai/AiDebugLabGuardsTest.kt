@@ -738,8 +738,8 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `payment preview string resources maintain key parity across spanish and english`() {
-        val esXml = File("src/main/res/values/strings.xml").readText()
-        val enXml = File("src/main/res/values-en/strings.xml").readText()
+        val esXml = File("../shared/src/commonMain/composeResources/values/strings.xml").readText()
+        val enXml = File("../shared/src/commonMain/composeResources/values-en/strings.xml").readText()
         val requiredKeys = listOf(
             "ai_payment_preview_customer_not_found",
             "ai_payment_preview_selection_required",
@@ -775,8 +775,8 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `sale preview string resources maintain key parity across spanish and english`() {
-        val esXml = File("src/main/res/values/strings.xml").readText()
-        val enXml = File("src/main/res/values-en/strings.xml").readText()
+        val esXml = File("../shared/src/commonMain/composeResources/values/strings.xml").readText()
+        val enXml = File("../shared/src/commonMain/composeResources/values-en/strings.xml").readText()
         val requiredKeys = listOf(
             "ai_sale_preview_customer_selection_prompt",
             "ai_sale_preview_product_selection_prompt",
@@ -822,8 +822,8 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `clarification string resources maintain key parity across spanish and english and avoid raw enum names`() {
-        val esXml = File("src/main/res/values/strings.xml").readText()
-        val enXml = File("src/main/res/values-en/strings.xml").readText()
+        val esXml = File("../shared/src/commonMain/composeResources/values/strings.xml").readText()
+        val enXml = File("../shared/src/commonMain/composeResources/values-en/strings.xml").readText()
         val requiredKeys = listOf(
             "ai_clarification_reason_ambiguous_customer",
             "ai_clarification_reason_ambiguous_product",

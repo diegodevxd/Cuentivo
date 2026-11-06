@@ -80,14 +80,14 @@ Si el emulador no está levantado, `npm run test:firestore-emulator` se niega a 
 Paridad de claves — el número envejece, así que cuenta, no confíes en el último valor escrito:
 
 ```bash
-grep -c "<string name=" app/src/main/res/values/strings.xml app/src/main/res/values-en/strings.xml
+grep -c "<string name=" shared/src/commonMain/composeResources/values/strings.xml shared/src/commonMain/composeResources/values-en/strings.xml
 ```
 
 **Contar no basta.** Dos archivos pueden empatar en total y tener claves distintas. Compara nombres:
 
 ```bash
-diff <(grep -oP '(?<=<string name=")[^"]+' app/src/main/res/values/strings.xml | sort) \
-     <(grep -oP '(?<=<string name=")[^"]+' app/src/main/res/values-en/strings.xml | sort)
+diff <(grep -oP '(?<=<string name=")[^"]+' shared/src/commonMain/composeResources/values/strings.xml | sort) \
+     <(grep -oP '(?<=<string name=")[^"]+' shared/src/commonMain/composeResources/values-en/strings.xml | sort)
 ```
 
 Puerta del idioma — debe salir vacía salvo etiquetas de animación de Compose:
