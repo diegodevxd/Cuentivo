@@ -94,7 +94,8 @@ Puerta del idioma — debe salir vacía salvo etiquetas de animación de Compose
 
 ```bash
 grep -rnE '(Text\(|text = |label = |title = |detail = |placeholder = |contentDescription = |emptyText = |actionLabel = |eyebrow = |note = |backDescription = )"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ¿¡][^"]*"' \
-  app/src/main/java/com/cuentivo/app/ui --include=*.kt \
+  app/src/main/java/com/cuentivo/app/ui \
+  shared/src/commonMain/kotlin/com/cuentivo/app/ui --include=*.kt \
   | grep -vE '"\$ "|" · "|testTag|neo-action-press|"Cuentivo"'
 ```
 

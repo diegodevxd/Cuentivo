@@ -250,7 +250,9 @@ Cancelaciones y ajustes son el único punto donde el cliente es más estricto qu
 
 ### Desajuste directorio/paquete
 
-`MainActivity.kt` y `ui/theme/*` están físicamente en `app/src/main/java/com/example/organizationlabs/` pero declaran `package com.cuentivo.app`. Funciona por `android.disallowKotlinSourceSets=false` en `gradle.properties`. El único código realmente en `com.example.organizationlabs` es `ExampleUnitTest.kt`.
+`MainActivity.kt` está físicamente en `app/src/main/java/com/example/organizationlabs/` pero declara `package com.cuentivo.app`. Funciona por `android.disallowKotlinSourceSets=false` en `gradle.properties`. Lo que queda realmente en `com.example.organizationlabs` es esa Activity, `ui/PaymentRefundFactory.kt` y `ExampleUnitTest.kt`.
+
+El tema (`ui/theme/*`) vivía en ese mismo directorio por la misma razón; desde F5-B está en `shared/src/commonMain/kotlin/com/cuentivo/app/ui/theme/`, junto con las piezas base de UI y la barra de navegación.
 
 ## Huecos conocidos de la sincronización
 
@@ -279,13 +281,14 @@ que dice escanear es una puerta que hace menos de lo que parece**: la de `billin
 # 1) Composables de ui/. La exclusión de la cola son etiquetas de animación (el "salvo" de arriba):
 #    están listadas a mano para que la salida sea VACÍA de verdad; una animación nueva aparecerá
 #    en la puerta y habrá que añadirla aquí conscientemente, no filtrarla a ciegas.
-grep -rnE '(Text\(|text = |label = |title = |detail = |placeholder = |contentDescription = |emptyText = |actionLabel = |eyebrow = |note = |backDescription = )"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ¿¡][^"]*"' app/src/main/java/com/cuentivo/app/ui --include=*.kt | grep -vE '"\$ "|" · "|testTag|neo-action-press|"Cuentivo"|"destination entrance"|"navigation press depth"|"navigation content color"|"waveform-bar"'
+grep -rnE '(Text\(|text = |label = |title = |detail = |placeholder = |contentDescription = |emptyText = |actionLabel = |eyebrow = |note = |backDescription = )"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ¿¡][^"]*"' app/src/main/java/com/cuentivo/app/ui shared/src/commonMain/kotlin/com/cuentivo/app/ui --include=*.kt | grep -vE '"\$ "|" · "|testTag|neo-action-press|"Cuentivo"|"destination entrance"|"navigation press depth"|"navigation content color"|"waveform-bar"'
 
 # 2) Avisos fijos al usuario fuera de ui/: asignaciones, asuntos de compartir y ramas de `when`,
 #    incluida la línea que sólo contiene el literal (ramas que se parten en dos líneas).
 grep -rnE '(uiMessage = |share\(|subject = |onMessage\(|-> )"[^"]*"|^\s*"[^"]*[a-zA-ZáéíóúñÁÉÍÓÚÑ][^"]*"$' \
   app/src/main/java/com/example/organizationlabs/MainActivity.kt \
-  app/src/main/java/com/cuentivo/app/billing --include=*.kt
+  app/src/main/java/com/cuentivo/app/billing \
+  shared/src/commonMain/kotlin/com/cuentivo/app/ui --include=*.kt
 ```
 
 **Fuera de la puerta, a propósito:** `Log.*`, `error(...)` y comentarios — no son avisos que vea
