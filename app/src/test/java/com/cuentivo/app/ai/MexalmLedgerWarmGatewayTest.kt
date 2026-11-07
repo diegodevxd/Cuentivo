@@ -36,11 +36,13 @@ class MexalmLedgerWarmGatewayTest {
 
     @Test
     fun `la app pide el despertar al volver a primer plano`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoApp.kt").readText()
 
         // El despertar va con el evento de volver a primer plano, que es cuando el Ledger se
         // duerme.
-        assertTrue(source.contains("Lifecycle.Event.ON_RESUME"))
+        assertTrue(source.contains("PlatformResumeEffect"))
+        val foregroundSource = File("../shared/src/androidMain/kotlin/com/cuentivo/app/platform/PlatformForeground.android.kt").readText()
+        assertTrue(foregroundSource.contains("Lifecycle.Event.ON_RESUME"))
         assertTrue(source.contains("warmMexalmLedger()"))
         // Y sólo si la cuenta tiene CuentivoAI: la regla vive en el objeto puro, no aquí.
         assertTrue(source.contains("MexalmLedgerWarmPolicy.shouldWarm(tier)"))

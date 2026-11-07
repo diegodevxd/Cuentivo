@@ -190,7 +190,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `app passes AI header callback only while debug transport and repository exist`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoApp.kt").readText()
         assertTrue(
             "onOpenAi must check both debug transport and repository",
             source.contains("debugAiLabTransport != null && aiDailyChatRepository != null"),
@@ -200,7 +200,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `ai debug lab screen is keyed on daily chat repository to prevent state leaking between owners`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoApp.kt").readText()
         assertTrue(
             "screen must be wrapped in key(aiDailyChatRepository)",
             source.contains("key(aiDailyChatRepository)") && source.contains("AiDebugLabScreen("),
@@ -597,7 +597,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `cuentivo app derives active business id exclusively from DashboardUiState Content and passes dependencies`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/CuentivoApp.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoApp.kt").readText()
         assertTrue(
             "businessId must be derived from DashboardUiState.Content",
             source.contains("(state as? DashboardUiState.Content)?.businessId"),

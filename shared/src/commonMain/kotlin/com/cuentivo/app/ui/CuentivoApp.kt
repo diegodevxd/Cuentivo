@@ -36,6 +36,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -49,13 +50,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.ui.account.AiEntryPolicy
 import com.cuentivo.app.ui.account.AiEntryRoute
 import com.cuentivo.app.ai.AiPaymentConfirmationRequest
@@ -90,6 +89,7 @@ import com.cuentivo.app.domain.SaleDraftLine
 import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
+import com.cuentivo.shared.resources.*
 import com.cuentivo.app.platform.PickedDocument
 import com.cuentivo.app.platform.PlatformBackHandler
 import com.cuentivo.app.platform.PlatformResumeEffect
@@ -135,18 +135,18 @@ fun CuentivoClaimBlockedScreen(onRetry: () -> Unit, onUseAnotherAccount: () -> U
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
         ) {
             Text(
-                stringResource(R.string.claim_blocked_title),
+                stringResource(Res.string.claim_blocked_title),
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
             )
             Text(
-                stringResource(R.string.claim_blocked_detail),
+                stringResource(Res.string.claim_blocked_detail),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
             NeoAction(
-                label = stringResource(R.string.claim_blocked_retry),
+                label = stringResource(Res.string.claim_blocked_retry),
                 onClick = onRetry,
                 modifier = Modifier.testTag("claim-retry"),
             )
@@ -155,7 +155,7 @@ fun CuentivoClaimBlockedScreen(onRetry: () -> Unit, onUseAnotherAccount: () -> U
             // back today, had nothing here but uninstalling. This screen gates creating a business,
             // not the person — and a dead end is how a first impression becomes a bad review.
             TextButton(onClick = onUseAnotherAccount, modifier = Modifier.testTag("claim-sign-out")) {
-                Text(stringResource(R.string.verify_use_another_account))
+                Text(stringResource(Res.string.verify_use_another_account))
             }
         }
     }
@@ -330,8 +330,8 @@ fun CuentivoApp(
     var paymentCustomer by remember { mutableStateOf<CustomerBalanceRow?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
-    val aiUnavailableInVersionMessage = stringResource(R.string.ai_feature_unavailable_in_version)
-    val aiDisabledMessage = stringResource(R.string.ai_debug_lab_disabled)
+    val aiUnavailableInVersionMessage = stringResource(Res.string.ai_feature_unavailable_in_version)
+    val aiDisabledMessage = stringResource(Res.string.ai_debug_lab_disabled)
     // Transport for AI lab: release builds resolve to null until T6, where AiEntryPolicy routes
     // paying subscribers to an unavailable notice and non-subscribers to the paywall.
     val debugAiLabTransport = platform.aiLabTransport
@@ -526,7 +526,7 @@ fun CuentivoApp(
             showNewSale = true
         },
         onOpenAccount = { showAccount = true },
-        onOpenLanguage = { showLanguage = true },
+        onOpenLanguage = { openLanguageEntry(platform.language) { showLanguage = true } },
         onOpenAlerts = { showAlerts = true },
         onOpenAi = {
             when (AiEntryPolicy.route(tier, hasAiTransport, isAiServiceAvailable)) {
@@ -738,9 +738,9 @@ fun CuentivoApp(
             title = { Text(limit.title) },
             text = { Text(limit.detail) },
             confirmButton = {
-                TextButton(onClick = { onDismissBlocked(); showAccount = true }) { Text(stringResource(R.string.app_see_pro)) }
+                TextButton(onClick = { onDismissBlocked(); showAccount = true }) { Text(stringResource(Res.string.app_see_pro)) }
             },
-            dismissButton = { TextButton(onClick = onDismissBlocked) { Text(stringResource(R.string.app_not_now)) } },
+            dismissButton = { TextButton(onClick = onDismissBlocked) { Text(stringResource(Res.string.app_not_now)) } },
         )
     }
     if (showAlerts) {
@@ -754,24 +754,24 @@ fun CuentivoApp(
     importReport?.let { report ->
         AlertDialog(
             onDismissRequest = onDismissImportReport,
-            title = { Text(stringResource(R.string.app_import_done_title)) },
+            title = { Text(stringResource(Res.string.app_import_done_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text(stringResource(R.string.app_import_added, report.accepted.size))
+                    Text(stringResource(Res.string.app_import_added, report.accepted.size))
                     if (report.rejected.isNotEmpty()) {
-                        Text(stringResource(R.string.app_import_rejected_header), style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(Res.string.app_import_rejected_header), style = MaterialTheme.typography.labelLarge)
                         // The line number is the point: it is what lets someone find the row in
                         // their own file and correct it.
                         report.rejected.take(MAX_LISTED_REJECTIONS).forEach { rejected ->
-                            Text(stringResource(R.string.app_import_rejected_line, rejected.lineNumber, rejected.reason), style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(Res.string.app_import_rejected_line, rejected.lineNumber, rejected.reason), style = MaterialTheme.typography.labelLarge)
                         }
                         if (report.rejected.size > MAX_LISTED_REJECTIONS) {
-                            Text(stringResource(R.string.app_import_rejected_more, report.rejected.size - MAX_LISTED_REJECTIONS), style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(Res.string.app_import_rejected_more, report.rejected.size - MAX_LISTED_REJECTIONS), style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = onDismissImportReport) { Text(stringResource(R.string.app_understood)) } },
+            confirmButton = { TextButton(onClick = onDismissImportReport) { Text(stringResource(Res.string.app_understood)) } },
         )
     }
     if (showAccount) {
