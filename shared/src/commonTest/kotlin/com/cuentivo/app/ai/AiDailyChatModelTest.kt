@@ -1,28 +1,10 @@
 package com.cuentivo.app.ai
 
-import java.time.DateTimeException
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class AiDailyChatModelTest {
-
-    @Test
-    fun `dayIsoOf uses the given zone not UTC`() {
-        // 2026-08-23T02:00Z is still 2026-08-22 in Mexico City (UTC-6).
-        val epoch = Instant.parse("2026-08-23T02:00:00Z").toEpochMilli()
-        assertEquals(
-            "2026-08-22",
-            AiDailyChatModel.dayIsoOf(epoch, ZoneId.of("America/Mexico_City")),
-        )
-        assertEquals(
-            "2026-08-23",
-            AiDailyChatModel.dayIsoOf(epoch, ZoneOffset.UTC),
-        )
-    }
 
     @Test
     fun `cutoff retains exactly thirty days including today`() {
@@ -37,20 +19,20 @@ class AiDailyChatModelTest {
 
     @Test
     fun `cutoff rejects non positive retention`() {
-        assertThrows(IllegalArgumentException::class.java) {
+        assertFailsWith<IllegalArgumentException> {
             AiDailyChatModel.cutoffDayIso("2026-08-23", retainDays = 0)
         }
-        assertThrows(IllegalArgumentException::class.java) {
+        assertFailsWith<IllegalArgumentException> {
             AiDailyChatModel.cutoffDayIso("2026-08-23", retainDays = -3)
         }
     }
 
     @Test
     fun `cutoff rejects malformed iso dates`() {
-        assertThrows(DateTimeException::class.java) {
+        assertFailsWith<IllegalArgumentException> {
             AiDailyChatModel.cutoffDayIso("23/08/2026", retainDays = 30)
         }
-        assertThrows(DateTimeException::class.java) {
+        assertFailsWith<IllegalArgumentException> {
             AiDailyChatModel.cutoffDayIso("2026-13-01", retainDays = 30)
         }
     }

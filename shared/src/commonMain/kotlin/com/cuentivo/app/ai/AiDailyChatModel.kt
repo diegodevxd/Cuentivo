@@ -1,8 +1,8 @@
 package com.cuentivo.app.ai
 
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
 
 /**
  * Daily-chat message kinds for local conversation history.
@@ -36,16 +36,12 @@ enum class AiDailyMessageKind {
  */
 object AiDailyChatModel {
 
-    /** The device-local calendar day of [epochMillis] in [zoneId], as an ISO string. */
-    fun dayIsoOf(epochMillis: Long, zoneId: ZoneId): String =
-        LocalDate.ofInstant(Instant.ofEpochMilli(epochMillis), zoneId).toString()
-
     /**
      * Oldest day still retained, as an ISO string. Anything strictly before it is expired.
      * [retainDays] must be positive; with 30 it keeps today plus the previous 29 days.
      */
     fun cutoffDayIso(todayIso: String, retainDays: Long = 30): String {
         require(retainDays > 0) { "retainDays must be positive, got $retainDays" }
-        return LocalDate.parse(todayIso).minusDays(retainDays - 1).toString()
+        return LocalDate.parse(todayIso).minus(retainDays - 1, DateTimeUnit.DAY).toString()
     }
 }

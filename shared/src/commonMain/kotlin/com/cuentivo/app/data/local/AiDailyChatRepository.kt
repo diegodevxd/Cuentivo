@@ -2,8 +2,8 @@ package com.cuentivo.app.data.local
 
 import com.cuentivo.app.ai.AiDailyChatModel
 import com.cuentivo.app.ai.AiDailyMessageKind
-import java.time.Clock
-import java.time.ZoneId
+import com.cuentivo.app.platform.localDayIso
+import com.cuentivo.app.platform.nowEpochMillis
 
 data class AiDailyStoredMessage(
     val kind: AiDailyMessageKind,
@@ -18,15 +18,15 @@ data class AiDailyConversation(
 class AiDailyChatRepository(
     private val dao: AiDailyMessageDao,
     private val ownerUserId: String,
-    private val clock: Clock = Clock.systemDefaultZone(),
-    private val zoneId: ZoneId = ZoneId.systemDefault(),
+    private val now: () -> Long = { nowEpochMillis() },
+    private val dayIsoOf: (Long) -> String = { localDayIso(it) },
 ) {
     init {
         require(ownerUserId.isNotBlank()) { "ownerUserId must not be blank" }
     }
 
     private fun currentDayIso(): String =
-        AiDailyChatModel.dayIsoOf(clock.millis(), zoneId)
+        dayIsoOf(now())
 
     suspend fun openToday(): AiDailyConversation {
         val todayIso = currentDayIso()
@@ -73,7 +73,7 @@ class AiDailyChatRepository(
                     dayIso = todayIso,
                     kind = AiDailyMessageKind.ASSISTANT_GREETING.name,
                     textContent = null,
-                    createdAtEpochMillis = clock.millis(),
+                    createdAtEpochMillis = now(),
                 ),
             )
             return AiDailyConversation(
@@ -102,7 +102,7 @@ class AiDailyChatRepository(
                 dayIso = currentDayIso(),
                 kind = AiDailyMessageKind.USER_TEXT.name,
                 textContent = trimmed,
-                createdAtEpochMillis = clock.millis(),
+                createdAtEpochMillis = now(),
             ),
         )
     }
@@ -115,7 +115,7 @@ class AiDailyChatRepository(
                 dayIso = currentDayIso(),
                 kind = kind.name,
                 textContent = null,
-                createdAtEpochMillis = clock.millis(),
+                createdAtEpochMillis = now(),
             ),
         )
     }
@@ -129,7 +129,7 @@ class AiDailyChatRepository(
                 dayIso = todayIso,
                 kind = AiDailyMessageKind.ASSISTANT_GREETING.name,
                 textContent = null,
-                createdAtEpochMillis = clock.millis(),
+                createdAtEpochMillis = now(),
             ),
         )
         return AiDailyConversation(
