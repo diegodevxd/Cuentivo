@@ -417,7 +417,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `sales for period with exactly 366 days (leap year) is accepted`() = runTest {
+    fun `sales for period with exactly 366 days in a leap year is accepted`() = runTest {
         val start = LocalDate(2024, 1, 1)
         val end = LocalDate(2024, 12, 31) // 366 days in leap year 2024
 
