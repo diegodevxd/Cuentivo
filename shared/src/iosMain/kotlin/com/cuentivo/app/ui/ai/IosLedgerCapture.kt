@@ -5,7 +5,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember as composeRemember
 import androidx.compose.ui.graphics.ImageBitmap
 import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
-import com.cuentivo.app.ai.ledger.LedgerCropGeometry
 import com.cuentivo.app.ai.ledger.LedgerRegion
 import com.cuentivo.app.platform.AppFiles
 import com.cuentivo.app.platform.FileArea
