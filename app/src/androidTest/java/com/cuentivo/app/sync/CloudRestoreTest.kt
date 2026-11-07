@@ -130,7 +130,10 @@ class CloudRestoreTest {
         membershipBootstrap = OwnerMembershipBootstrap(
             database.businessDao(),
             database.syncOperationDao(),
-            SyncQueue(database.syncOperationDao(), ApplicationProvider.getApplicationContext()),
+            SyncQueue(
+                dao = database.syncOperationDao(),
+                context = ApplicationProvider.getApplicationContext(),
+            ),
         ),
     )
 
