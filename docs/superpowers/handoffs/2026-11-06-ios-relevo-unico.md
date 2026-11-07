@@ -11,25 +11,19 @@
 ## Estado
 
 - **F5-I cerrada:** `5b52021`, `ios-build` run 42323599053, **928 pruebas iOS en 125 suites, 0 fallos**, leídas del artefacto, `xcodebuild` correcto y `.app` subido. `android-check` run 42323598967 verde. Android local **680 + 904 = 1584**, 0 fallos, leído por mí de los XML, en `792c211`. `assembleRelease` y `lintDebug` pasaron según el reporte.
-- **F5-J en vuelo:** OpenCode ejecuta `docs/superpowers/encargos/2026-11-06-ios-f5j-ia-dinero.md` en la terminal `term_314686ce-5027-4314-af9a-8f70dbeaed8e`. Reporte: `build/ios-relevo/oc-ios-f5j-reporte.md`. Ese encargo y este archivo están **sin commit**: súbelos con F5-J. **No hagas commit mientras OpenCode trabaja.**
+- **F5-J cerrada:** `3f8d5e5`, `ios-build` run 42329215778, **1168 pruebas iOS en 137 suites, 0 fallos**, leídas del artefacto, con las clases nuevas presentes, `xcodebuild` correcto y `.app` subido. `android-check` run 42329215761 verde. Android local **1144 + 446 = 1590**, 0 fallos, leído por mí de los XML, medido en `cea812c`; `3f8d5e5` solo renombra una prueba y no se recorrió localmente.
+- **F5-K auditada y subida, sin veredicto de iOS al escribir esto:** encargo `docs/superpowers/encargos/2026-11-06-ios-f5k-pantallas-ia.md`, código hasta `202b3c4`. Android local **1163 + 446 = 1609**, 0 fallos, leído por mí de los XML. De sus controles negativos solo existe `control6.log`: los otros cinco constan únicamente en el reporte. `androidTest` solo compiló. **Es la primera vez que CI compila `IosLedgerCapture` y `PlatformForeground.ios.kt`: espera errores de Native, que Windows no ve.** Lectura en curso sin cierre visible: igual que Android (`onDismissRequest = { }`), decidido no agregar nada.
 - **Nada se ha probado contra Firestore, Auth o Apple reales, ni en iPhone. La UI de iOS sigue siendo la pantalla mínima, y la `.app` nunca se ha abierto en un simulador en CI.** Dilo con esas palabras al entregar.
 
 ## Tu primer paso
 
-1. Arma el Monitor de F5-J (ver OpenCode) y espera el reporte, sin sondear. Si ya existe `build/ios-relevo/oc-ios-f5j-reporte.md`, ve al punto 2.
-2. **Audita F5-J leyendo, porque toca dinero:** `git diff --stat`, sensibles, `app/schemas` intacto, `Double` con dinero, XML reales (el total sube desde 1584), y la **comparación normalizada contra el original** (quita `package`/`import`, y `diff` los archivos de `git show`). Revisa los seis controles negativos: el 4 (`frozenBalances` congelado) y el 6 (monto) son los que más importan. Pasa también `grep` por nombres entre backticks con `, . ; : / \ < > [ ]` y `org.junit|java\.|runBlocking` en lo movido a `commonTest`.
-3. Revisa secretos, sube, espera con `bash C:/tmp/ios-relevo/espera_ios.sh <sha completo>` en segundo plano, y lee el veredicto.
+1. Lee el veredicto de `ios-build` sobre F5-K del artefacto, con `MathExactTest`, `LedgerScreenFormatTest` y `LedgerCropGeometryTest` presentes. Si Native falla, corrígelo antes de seguir.
+2. Sigue con la raíz común: plan propio antes del encargo.
 
 ## Lo que sigue, en orden
 
-1. **F5-K:** `AiDebugLabScreen` (2271 líneas) y `LedgerReviewScreen` (2083) a común. Decidido:
-   - **`AiDebugLabScreen` es la pantalla real de CuentivoAI, no de depuración,** aunque se llame así: `CuentivoApp.kt:724` la abre en release con transporte real, y `debugAiOcrEngine` nulo solo apaga el OCR. Sí va a iOS. No la renombres. Confirma cómo se usa `ocrEngine` antes de escribir el encargo.
-   - **Captura y recorte tras servicios inyectados, sin valor por defecto.** `AiCaptureStore`, `AiCameraCaptureStore`, `LedgerImagePreparer` y `LedgerCropHelper` se quedan en `:app`, tras una factoría Android que conserve `rememberSaveable`, `deleteStale` y sus carpetas. Forma propuesta: `PreparedLedgerPage(path, mimeType)`, `LedgerPagePickerFactory.remember(onPrepared, onFailed)`, y un `LedgerPageFiles` con `readBytes`, `delete`, `cleanupAll` y `decodeCrop(path, region): ImageBitmap?`.
-   - **iOS:** envuelve `IosImagePickerFactory`; `UIImage` redibujado a máx. 2400 px (respeta orientación), JPEG 0.85, tope `AiLedgerImagePolicy`; recorte con `CGImageCreateWithImageInRect`. Geometría de recorte pura en común, usada también por `LedgerCropHelper`, con prueba.
-   - **`rememberSaveable`:** `expect fun ledgerReviewStateSaver()`. Android usa `LedgerReviewBundle`; iOS guarda `""` y restaura null. **Limitación que hay que decirle a Diego:** en iOS, si el sistema mata la app durante la revisión de una página, se pierde y hay que volver a leerla, y cada lectura cuesta.
-   - También hay que abstraer: permiso de micrófono (`IosVoiceRecognizer` lo pide solo), `AndroidVoiceRecognizer`, `LocalLifecycleOwner`, `android.util.Base64` (`kotlin.io.encoding`), `BackHandler` con cierre visible, `R.drawable.ic_mic`, `java.io.File`. **Las guardias de `AiDebugLabGuardsTest` leen estas pantallas por ruta (27 referencias): apúntalas a `shared`, sin debilitarlas.**
-   - `LedgerReviewScreen` llega a `FinancialDao` por la lambda `confirmLedgerBatch`: audita leyendo. Gemini solo propone; ver `CLAUDE.md`.
 2. **`CuentivoApp.kt` y `MainActivity.onCreate` (~2577 líneas) hacia una raíz común, con plan propio antes del encargo. Sin esto iOS no tiene app.** Debe conectar:
+   - `IosLedgerCapture(files, IosImagePickerFactory)` para `ledgerPagePickerFactory` y `ledgerPageFiles`, `IosVoicePermissionGateFactory`, y `voiceRecognizerFactory` con `IosVoiceRecognizer`, en `AiDebugLabScreen`. `IosLedgerCapture` debe crearse una sola vez y **`ledgerCapture` y las factorías, recordarse dentro de la rama que abre la pantalla**, como `CuentivoApp.kt:726`.
    - `photoStore` con `IosProductPhotoStore`, `imagePickers` con `IosImagePickerFactory`, `FirstDebtPreferenceStore(NsUserDefaultsFirstDebtFlagStore())`.
    - Transportes ya escritos en `:iosKit`: `IosAiTransport`, `IosAiAvailabilityGateway`, `IosMexalmLedgerWarmGateway`, `IosLedgerExtractionGateway`.
    - `CuentivoApp.kt:547` `onOpenLanguage`: `if (language.opensSystemSettings) language.openSystemSettings() else showLanguage = true`. `onOpenPrivacyPolicy` con `Sharer.openUrl(PRIVACY_POLICY_URL)`.
@@ -46,7 +40,7 @@
 
 ## OpenCode
 
-- Terminal `term_314686ce-...`, al ~46% de contexto. Si pasa de ~80%, crea otra: `orca terminal create --worktree "path:<wt>" --title "OpenCode iOS" --command "opencode -m opencode-go/deepseek-v4.1-flash" --json`; espera a que cargue el TUI antes de enviar. Otras terminales `OC | ...` son viejas.
+- Terminal `term_daeb805b-4614-4094-beff-579f8e7990ad`, al ~60% de contexto. **Tras rechazar un permiso OpenCode se queda detenido aunque parezca seguir: mándale un mensaje que lo redirija.** Si pasa de ~80%, crea otra: `orca terminal create --worktree "path:<wt>" --title "OpenCode iOS" --command "opencode -m opencode-go/deepseek-v4.1-flash" --json`; espera a que cargue el TUI antes de enviar. Otras terminales `OC | ...` son viejas.
 - **Reporte y temporales van en `build/ios-relevo/`, dentro del repo e ignorados por git.** El clasificador me negó concederle "Allow always" a `C:\tmp\ios-relevo`: **no lo intentes otra vez ni le des la vuelta.** Si pide cualquier permiso externo, recházalo (flecha derecha dos veces y Enter) y redirígelo al repo. Solo Diego puede aprobarlo.
 - **Cada envío lleva Monitor** (regla de Diego), hasta 30 min y se rearma:
   `H=<handle>; W=<wt>; (python -u C:/tmp/ios-relevo/vigila_opencode.py $H $W/build/ios-relevo/<reporte> $W 2>&1 | grep --line-buffered -vE ' COMMIT ') & while true; do if orca terminal read --terminal $H --screen 2>/dev/null | grep -q 'Permission required'; then echo "PERMISO"; sleep 300; fi; sleep 30; done`
@@ -59,7 +53,7 @@
 - **Símbolos de iOS sin Mac:** `C:/tmp/kn-prebuilt/kotlin-native-prebuilt-macos-aarch64-2.2.10/klib/platform/ios_simulator_arm64/org.jetbrains.kotlin.native.platform.<Framework>/`, con `grep -rlaF --include=*.knm`. El contraste lo haces tú, en `C:/tmp/ios-relevo/simbolos-<tanda>.txt`. **Las categorías de Objective-C, incluidas las de compañero (`NSDate.dateWith...`), requieren `import platform.Foundation.<nombre>`.** `UNMutableNotificationContent.title` se asigna con `setTitle`; `NSDateComponents` con `setYear`. El `companion` de una subclase de `NSObject` no admite campos. Dentro de una clase que implementa `ImagePickerFactory`, importa `remember as composeRemember`.
 - **Lee `iosMain` buscando lo que Windows no ve antes de subir:** `CPointer<ByteVar>` no entra donde se pide `UByteVar`; `private var` asignado desde afuera.
 - **`commonMain` no nombra relojes ni `Instant`:** Android va con `kotlinx-datetime` 0.6.2 e iOS con 0.7.1. Usa `nowEpochMillis()`, `localDayIso()`, `todayEpochDay()` y `newUuid()`. `:shared:compileCommonMainKotlinMetadata` corre en Windows y caza esto.
-- **Native rechaza en `commonTest`:** comas y `. ; : / \ < > [ ]` en nombres entre backticks, `@Test(expected=)`, `org.junit`, `String.format`, `measureTimeMillis`, `java.*`, `Charsets`. `assertEquals(Int, Long)` no iguala. `:iosKit` no tiene pruebas: la lógica pura va a `:shared`. `NSNumber(longLong = x)`. `ARCHS=arm64`.
+- **Native rechaza en `commonTest`:** comas y `. ; : / \ < > [ ] ( )` en nombres entre backticks (los paréntesis tumbaron `ios-build` de F5-J y mi `grep` no los miraba), `@Test(expected=)`, `org.junit`, `String.format`, `measureTimeMillis`, `java.*`, `Charsets`. `assertEquals(Int, Long)` no iguala. `:iosKit` no tiene pruebas: la lógica pura va a `:shared`. `NSNumber(longLong = x)`. `ARCHS=arm64`.
 - **Solo Android:** `ProductImageStore`, `CameraCaptureStore`, `AndroidImagePickerFactory`, `AndroidLanguageControl`, `LanguagePreference`. Los servicios de plataforma entran a las pantallas por parámetro, sin valor por defecto, ni `CompositionLocal` ni `expect`. Al mover pantallas, pide `:app:compileDebugAndroidTestKotlin`.
 - **Hacen menos de lo que parecen:** una guardia por directorio deja de mirar lo que se mueve, y `assertFails` puede fallar por el motivo equivocado. Compara el reporte contra `git log`; sus encabezados y bases ya han salido mal.
 
@@ -82,7 +76,8 @@ Dinero en `Long`; nada financiero se borra ni se edita. **Sin `firebase deploy` 
 - **Recordatorios en iOS:** si alguien paga desde otro teléfono y esta app no se abre, llega un aviso viejo; si no se abre en 7 días, dejan de llegar.
 - **Voz en iOS:** los temporizadores (1.5 s, 6 s, 5 s) son valores elegidos sin probar con voz real.
 - **Divergencia de `kotlinx-datetime`** entre Android e iOS.
-- **Limitación de la revisión de libreta** en iOS, de arriba.
+- **Revisión de libreta en iOS:** si el sistema mata la app durante la revisión de una página, se pierde y hay que volver a leerla, y cada lectura cuesta.
+- **Recorte en iOS:** sin reducir a 1600 px, porque la imagen ya viene limitada a 2400. Selector de páginas de libreta, cámara y recorte sin probar en iPhone.
 - GitHub reporta vulnerabilidades de Dependabot en la rama por defecto; no las he revisado y no son de este trabajo.
 
 ## Lista manual de Diego, al final y paso a paso
