@@ -47,6 +47,27 @@ class AiDailyChatRepositoryTest {
     )
 
     @Test
+    fun `current day iso is derived from the injected now`() = runTest {
+        // The shared stub ignores its argument, so this test watches the argument instead:
+        // currentDayIso has to pass now() into dayIsoOf, never a constant.
+        val dao = FakeAiDailyMessageDao()
+        var seenEpochMillis: Long? = null
+        val repo = AiDailyChatRepository(
+            dao = dao,
+            ownerUserId = "owner_123",
+            now = { 1787594400000L },
+            dayIsoOf = { epochMillis ->
+                seenEpochMillis = epochMillis
+                "2026-08-24"
+            },
+        )
+
+        repo.openToday()
+
+        assertEquals(1787594400000L, seenEpochMillis)
+    }
+
+    @Test
     fun `open today prunes only owner rows older than the exact 30 day cutoff and inserts one greeting when empty`() =
         runTest {
             val dao = FakeAiDailyMessageDao()
