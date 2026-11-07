@@ -2,7 +2,6 @@ package com.cuentivo.app.ai
 
 import com.cuentivo.app.domain.SubscriptionTier
 
-/** La callable regional que despierta el Ledger de MexaLM. */
 const val MEXALM_WARM_CALLABLE_NAME = "warmMexalmLedger"
 
 /**
