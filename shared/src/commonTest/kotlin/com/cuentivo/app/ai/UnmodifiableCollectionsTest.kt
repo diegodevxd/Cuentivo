@@ -18,7 +18,7 @@ class UnmodifiableCollectionsTest {
 
     @Test
     fun map_refuses_put_by_cast() {
-        val map = unmodifiableMap(mapOf("a" to 1L))
+        val map = unmodifiableMap(mapOf("a" to 1L, "b" to 2L))
 
         assertFailsWith<UnsupportedOperationException> {
             (map as MutableMap<String, Long>).put("b", 2L)
@@ -27,7 +27,7 @@ class UnmodifiableCollectionsTest {
 
     @Test
     fun map_refuses_remove_by_cast() {
-        val map = unmodifiableMap(mapOf("a" to 1L))
+        val map = unmodifiableMap(mapOf("a" to 1L, "b" to 2L))
 
         assertFailsWith<UnsupportedOperationException> {
             (map as MutableMap<String, Long>).remove("a")
