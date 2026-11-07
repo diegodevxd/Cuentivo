@@ -44,6 +44,17 @@ class PlatformDatesTest {
         assertTrue(todayEpochDay() > 20089L, "todayEpochDay() devolvió ${todayEpochDay()}")
     }
 
+    @Test
+    fun months_before_clamps_to_the_last_day_of_a_shorter_month() {
+        // 2026-08-31 menos 6 meses: febrero de 2026 no tiene 31, así que cae al 28.
+        assertEquals(isoDateToEpochDay("2026-02-28"), epochDayMonthsBefore(isoDateToEpochDay("2026-08-31"), 6))
+    }
+
+    @Test
+    fun months_before_keeps_the_same_day_when_it_exists() {
+        assertEquals(isoDateToEpochDay("2025-09-15"), epochDayMonthsBefore(isoDateToEpochDay("2026-03-15"), 6))
+    }
+
     private companion object {
         val UUID_V4 = Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
     }

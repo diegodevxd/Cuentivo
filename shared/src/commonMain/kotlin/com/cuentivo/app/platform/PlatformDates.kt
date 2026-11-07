@@ -1,6 +1,9 @@
 package com.cuentivo.app.platform
 
 import androidx.compose.runtime.Composable
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
 
 /**
  * Las fechas y el reloj que las pantallas compartidas necesitan, sin nombrar ninguno de los dos.
@@ -33,6 +36,10 @@ expect fun formatDayMonthYear(epochDay: Long): String
 /** "14:05" en la zona del dispositivo, con el idioma de la composición. */
 @Composable
 expect fun formatHourMinute(epochMillis: Long): String
+
+/** El mismo día `months` meses antes; un día que no existe se ajusta al último del mes. */
+fun epochDayMonthsBefore(epochDay: Long, months: Int): Long =
+    LocalDate.fromEpochDays(epochDay.toInt()).minus(months, DateTimeUnit.MONTH).toEpochDays().toLong()
 
 /** Hora corta en es-MX, fija: es lo que hace hoy el tablero. */
 expect fun formatShortTimeEsMx(epochMillis: Long): String

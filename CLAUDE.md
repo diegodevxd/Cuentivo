@@ -250,7 +250,7 @@ Cancelaciones y ajustes son el único punto donde el cliente es más estricto qu
 
 ### Desajuste directorio/paquete
 
-`MainActivity.kt` está físicamente en `app/src/main/java/com/example/organizationlabs/` pero declara `package com.cuentivo.app`. Funciona por `android.disallowKotlinSourceSets=false` en `gradle.properties`. Lo que queda realmente en `com.example.organizationlabs` es esa Activity, `ui/PaymentRefundFactory.kt` y `ExampleUnitTest.kt`.
+`MainActivity.kt` está físicamente en `app/src/main/java/com/example/organizationlabs/` pero declara `package com.cuentivo.app`. Funciona por `android.disallowKotlinSourceSets=false` en `gradle.properties`. Lo que queda realmente en `com.example.organizationlabs` es esa Activity y `ExampleUnitTest.kt`.
 
 El tema (`ui/theme/*`) vivía en ese mismo directorio por la misma razón; desde F5-B está en `shared/src/commonMain/kotlin/com/cuentivo/app/ui/theme/`, junto con las piezas base de UI y la barra de navegación.
 
