@@ -7,6 +7,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.cuentivo.app.billing.EntitlementStore
+import com.cuentivo.app.billing.allowsCloudSync
 
 object SyncScheduler {
     private const val UNIQUE_WORK_NAME = "cuentivo-sync"

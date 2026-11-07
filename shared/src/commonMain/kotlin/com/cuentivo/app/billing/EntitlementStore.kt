@@ -1,9 +1,9 @@
 package com.cuentivo.app.billing
 
-import android.content.Context
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.domain.SyncEntitlement
-import com.google.firebase.auth.FirebaseAuth
+import com.cuentivo.app.platform.KeyValueStore
+import com.cuentivo.app.platform.nowEpochMillis
 
 /**
  * Remembers which account paid, somewhere a background Worker can reach.
@@ -17,9 +17,7 @@ import com.google.firebase.auth.FirebaseAuth
  * sign in must not inherit Pro, and comparing the two ids is what stops that; the decision itself
  * lives in [SyncEntitlement], which is pure and tested.
  */
-class EntitlementStore(context: Context) {
-    private val preferences =
-        context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+class EntitlementStore(private val preferences: KeyValueStore) {
 
     /**
      * Records what Play said about [userId], and **when** it said it.
@@ -31,20 +29,20 @@ class EntitlementStore(context: Context) {
     fun remember(
         userId: String?,
         tier: SubscriptionTier,
-        verifiedAtEpochMillis: Long = System.currentTimeMillis(),
+        verifiedAtEpochMillis: Long = nowEpochMillis(),
     ) {
         if (userId.isNullOrBlank()) return
-        preferences.edit()
-            .putString(USER_ID, userId)
-            .putString(TIER, tier.name)
-            .putLong(VERIFIED_AT, verifiedAtEpochMillis)
-            .apply()
+        preferences.edit {
+            putString(USER_ID, userId)
+            putString(TIER, tier.name)
+            putLong(VERIFIED_AT, verifiedAtEpochMillis)
+        }
     }
 
     /** The plan in force for [userId] right now. FREE for anyone else, and for nobody. */
     fun currentTier(userId: String?): SubscriptionTier = SyncEntitlement.tierFor(
-        storedUserId = preferences.getString(USER_ID, null),
-        storedTier = preferences.getString(TIER, null),
+        storedUserId = preferences.getString(USER_ID),
+        storedTier = preferences.getString(TIER),
         currentUserId = userId,
     )
 
@@ -56,12 +54,12 @@ class EntitlementStore(context: Context) {
      * answers correctly from a Worker with no Activity alive.
      */
     fun allowsCloudSync(
-        userId: String? = FirebaseAuth.getInstance().currentUser?.uid,
-        nowEpochMillis: Long = System.currentTimeMillis(),
-        isEmailVerified: Boolean = FirebaseAuth.getInstance().currentUser?.isEmailVerified == true,
+        userId: String?,
+        nowEpochMillis: Long = nowEpochMillis(),
+        isEmailVerified: Boolean,
     ): Boolean = SyncEntitlement.allowsCloudSync(
-        storedUserId = preferences.getString(USER_ID, null),
-        storedTier = preferences.getString(TIER, null),
+        storedUserId = preferences.getString(USER_ID),
+        storedTier = preferences.getString(TIER),
         // Never confirmed reads as epoch 0, which is stale by decades — exactly the answer wanted.
         verifiedAtEpochMillis = preferences.getLong(VERIFIED_AT, 0L),
         currentUserId = userId,
@@ -71,17 +69,21 @@ class EntitlementStore(context: Context) {
 
     /** Drops the record. Used when the account itself is deleted. */
     fun forget() {
-        preferences.edit().remove(USER_ID).remove(TIER).remove(VERIFIED_AT).apply()
+        preferences.edit {
+            remove(USER_ID)
+            remove(TIER)
+            remove(VERIFIED_AT)
+        }
     }
 
-    private companion object {
+    companion object {
         const val PREFERENCES = "cuentivo.entitlement"
 
         /** A Firebase uid — opaque, never the email or anything else identifying. */
-        const val USER_ID = "entitlementUserId"
-        const val TIER = "entitlementTier"
+        private const val USER_ID = "entitlementUserId"
+        private const val TIER = "entitlementTier"
 
         /** Epoch millis of the last successful confirmation from Play. */
-        const val VERIFIED_AT = "entitlementVerifiedAt"
+        private const val VERIFIED_AT = "entitlementVerifiedAt"
     }
 }

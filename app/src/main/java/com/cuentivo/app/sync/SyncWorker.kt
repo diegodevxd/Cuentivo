@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.cuentivo.app.billing.EntitlementStore
+import com.cuentivo.app.billing.allowsCloudSync
 import com.cuentivo.app.data.local.CUENTIVO_MIGRATIONS
 import com.cuentivo.app.data.local.CuentivoDatabase
 import com.google.firebase.auth.FirebaseAuth

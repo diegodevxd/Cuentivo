@@ -1,9 +1,7 @@
 package com.cuentivo.app.auth
 
-import android.content.Context
-import com.cuentivo.app.data.local.CuentivoDatabase
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.cuentivo.app.data.local.BusinessEntity
+import com.cuentivo.app.platform.KeyValueStore
 
 /**
  * Makes sure the local database belongs to whoever is signed in right now.
@@ -25,10 +23,10 @@ import kotlinx.coroutines.withContext
  * owner signs in (`previousUserId != userId`).
  */
 class LocalSessionGuard(
-    context: Context,
-    private val database: CuentivoDatabase,
+    private val preferences: KeyValueStore,
+    private val firstBusiness: suspend () -> BusinessEntity?,
+    private val clearAllTables: suspend () -> Unit,
 ) {
-    private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
     /**
      * Claims the device for [userId], wiping it first if it held someone else's data.
@@ -37,19 +35,19 @@ class LocalSessionGuard(
      * to be deleted. Returns true when a wipe happened, so the caller can say so out loud.
      */
     suspend fun adopt(userId: String): Boolean {
-        val previousUserId = preferences.getString(LAST_USER_ID, null)
+        val previousUserId = preferences.getString(LAST_USER_ID)
         val belongsToSomeoneElse = when {
             previousUserId != null -> previousUserId != userId
             // Installed before this guard existed: the marker is missing, so the business row itself
             // says who owns the data. This is what repairs a phone where a second account already
             // inherited the first one's business.
-            else -> database.businessDao().first()?.let { it.ownerUserId != userId } ?: false
+            else -> firstBusiness()?.let { it.ownerUserId != userId } ?: false
         }
 
         if (belongsToSomeoneElse) {
-            withContext(Dispatchers.IO) { database.clearAllTables() }
+            clearAllTables()
         }
-        preferences.edit().putString(LAST_USER_ID, userId).apply()
+        preferences.edit { putString(LAST_USER_ID, userId) }
         return belongsToSomeoneElse
     }
 
@@ -60,13 +58,13 @@ class LocalSessionGuard(
      * was wiped, when there was nothing left to wipe.
      */
     fun forget() {
-        preferences.edit().remove(LAST_USER_ID).apply()
+        preferences.edit { remove(LAST_USER_ID) }
     }
 
-    private companion object {
+    companion object {
         const val PREFERENCES = "cuentivo.session"
 
         /** A Firebase uid — an opaque id, never the email or anything else identifying. */
-        const val LAST_USER_ID = "lastUserId"
+        private const val LAST_USER_ID = "lastUserId"
     }
 }

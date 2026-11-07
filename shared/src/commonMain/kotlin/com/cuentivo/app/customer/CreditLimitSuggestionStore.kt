@@ -1,6 +1,6 @@
 package com.cuentivo.app.customer
 
-import android.content.Context
+import com.cuentivo.app.platform.KeyValueStore
 
 /**
  * Remembers which credit-limit suggestion the owner already said "Ahora no" to, per customer.
@@ -11,12 +11,10 @@ import android.content.Context
  * dismissed. Local-only by design, same as `EntitlementStore`: this is a UI nicety, not a ledger
  * fact, so it never gets encoded onto `customers` or synced.
  */
-class CreditLimitSuggestionStore(context: Context) {
-    private val preferences =
-        context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+class CreditLimitSuggestionStore(private val preferences: KeyValueStore) {
 
     fun dismiss(customerId: String, suggestedCents: Long) {
-        preferences.edit().putLong(keyFor(customerId), suggestedCents).apply()
+        preferences.edit { putLong(keyFor(customerId), suggestedCents) }
     }
 
     fun isDismissed(customerId: String, suggestedCents: Long): Boolean =
@@ -24,7 +22,7 @@ class CreditLimitSuggestionStore(context: Context) {
 
     private fun keyFor(customerId: String) = "dismissed_$customerId"
 
-    private companion object {
+    companion object {
         const val PREFERENCES = "cuentivo.credit_limit_suggestions"
     }
 }

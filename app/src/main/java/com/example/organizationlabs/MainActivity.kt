@@ -142,6 +142,7 @@ import com.cuentivo.app.backup.BackupSection
 import com.cuentivo.app.backup.DatabaseBackup
 import com.cuentivo.app.billing.BillingGateway
 import com.cuentivo.app.billing.EntitlementStore
+import com.cuentivo.app.billing.allowsCloudSync
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.AlertDialog
 import com.cuentivo.app.auth.AccountSwitchDecision
