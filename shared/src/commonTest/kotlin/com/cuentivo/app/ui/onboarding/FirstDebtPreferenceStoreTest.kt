@@ -34,19 +34,29 @@ class FirstDebtPreferenceStoreTest {
     }
 
     @Test
-    fun a_blank_user_is_never_dismissed_even_if_the_blank_key_exists() {
-        // The blank key is planted on purpose: the guard has to win over whatever is stored, or a
-        // session without an id would inherit an answer that was never given.
-        val flags = InMemoryFlags(mutableSetOf(""))
+    fun a_blank_user_writes_nothing() {
+        val flags = InMemoryFlags()
         val store = FirstDebtPreferenceStore(flags)
 
         assertFalse(store.isDismissed(""))
-        assertFalse(store.isDismissed("   "))
 
         store.markDismissed("")
         store.markDismissed("   ")
 
-        assertEquals(setOf(""), flags.keys.toSet())
+        assertEquals(emptySet<String>(), flags.keys.toSet())
+        assertFalse(store.isDismissed(""))
+    }
+
+    @Test
+    fun a_blank_user_is_never_dismissed_even_if_its_key_already_exists() {
+        // `first_debt_dismissed_` is the key a blank id would produce. Planted on purpose: the guard
+        // has to win over whatever is stored, or a session without an id would inherit an answer
+        // that was never given.
+        val flags = InMemoryFlags(mutableSetOf("first_debt_dismissed_", ""))
+        val store = FirstDebtPreferenceStore(flags)
+
+        assertFalse(store.isDismissed(""))
+        assertFalse(store.isDismissed("   "))
     }
 
     @Test
