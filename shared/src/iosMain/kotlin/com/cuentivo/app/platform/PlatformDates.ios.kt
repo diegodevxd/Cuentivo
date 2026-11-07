@@ -1,7 +1,11 @@
 package com.cuentivo.app.platform
 
 import androidx.compose.runtime.Composable
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSDateFormatterNoStyle
@@ -25,6 +29,14 @@ import platform.Foundation.timeZoneForSecondsFromGMT
  */
 
 actual fun todayEpochDay(): Long = iosNowLocalDateTime().date.toEpochDays().toLong()
+
+actual fun nowEpochMillis(): Long = iosNowEpochMillis()
+
+actual fun localDayIso(epochMillis: Long): String = localDayIsoIn(epochMillis, TimeZone.currentSystemDefault())
+
+@OptIn(ExperimentalTime::class)
+internal fun localDayIsoIn(epochMillis: Long, zone: TimeZone): String =
+    Instant.fromEpochMilliseconds(epochMillis).toLocalDateTime(zone).date.toString()
 
 actual fun newUuid(): String = NSUUID().UUIDString.lowercase()
 

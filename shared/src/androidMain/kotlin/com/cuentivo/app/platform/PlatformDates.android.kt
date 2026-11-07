@@ -22,6 +22,10 @@ import java.util.UUID
 
 actual fun todayEpochDay(): Long = LocalDate.now().toEpochDay()
 
+actual fun nowEpochMillis(): Long = System.currentTimeMillis()
+
+actual fun localDayIso(epochMillis: Long): String = localDayIsoIn(epochMillis, ZoneId.systemDefault())
+
 actual fun newUuid(): String = UUID.randomUUID().toString()
 
 actual fun isoDateToEpochDay(iso: String): Long = LocalDate.parse(iso).toEpochDay()
@@ -52,6 +56,9 @@ actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
 }
 
 // Las partes puras, sin composición, para poder afirmarlas desde `androidHostTest`.
+
+internal fun localDayIsoIn(epochMillis: Long, zone: ZoneId): String =
+    LocalDate.ofInstant(Instant.ofEpochMilli(epochMillis), zone).toString()
 
 internal fun dayMonthYearFormatter(locale: Locale): DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMM uuuu", locale)

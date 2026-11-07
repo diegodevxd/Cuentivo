@@ -1,11 +1,13 @@
 package com.cuentivo.app.ai
 
+import com.cuentivo.app.platform.nowEpochMillis
+
 /**
  * Coordinates in-memory AI availability state, managing TTL caching and deduplication.
  */
 class AiAvailabilityCoordinator(
     private val gateway: AiAvailabilityGateway,
-    private val timeProvider: () -> Long = { System.currentTimeMillis() },
+    private val timeProvider: () -> Long = { nowEpochMillis() },
     private val ttlMillis: Long = AI_AVAILABILITY_CACHE_TTL_MILLIS,
 ) {
     var isAvailable: Boolean = true

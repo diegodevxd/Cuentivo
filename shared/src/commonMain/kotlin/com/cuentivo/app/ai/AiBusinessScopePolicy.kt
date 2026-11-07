@@ -1,7 +1,5 @@
 package com.cuentivo.app.ai
 
-import java.util.Locale
-
 /** Outcome of the conservative business-scope policy. */
 sealed interface AiBusinessScopeDecision {
     data object ContinueToInterpretation : AiBusinessScopeDecision
@@ -13,7 +11,7 @@ sealed interface AiBusinessScopeDecision {
  * social whole-input prompts is classified as [AiBusinessScopeDecision.OutOfScope]; everything
  * else — including any ambiguity or business language — continues to typed interpretation.
  *
- * Normalization is exactly `trim().lowercase(Locale.ROOT)`: no accent stripping, no fuzzy
+ * Normalization is exactly `trim().lowercase()`: no accent stripping, no fuzzy
  * matching, no LLM, no network, no I/O. The typed server `OUT_OF_SCOPE` remains the future
  * authority; this policy never calculates balances, inspects customers or creates operations.
  */
@@ -38,7 +36,7 @@ object AiBusinessScopePolicy {
     )
 
     fun decide(text: String): AiBusinessScopeDecision =
-        if (text.trim().lowercase(Locale.ROOT) in OUT_OF_SCOPE_EXACT) {
+        if (text.trim().lowercase() in OUT_OF_SCOPE_EXACT) {
             AiBusinessScopeDecision.OutOfScope
         } else {
             AiBusinessScopeDecision.ContinueToInterpretation

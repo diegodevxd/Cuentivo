@@ -6,17 +6,6 @@ import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private const val AVAILABILITY_CALLABLE_NAME = "getAiAvailability"
-
-/**
- * Parses the raw callable response. Returns true if available, false if disabled,
- * or null if data is null/malformed.
- */
-internal fun parseAvailabilityResponse(data: Any?): Boolean? {
-    val map = data as? Map<*, *> ?: return null
-    return map["available"] as? Boolean
-}
-
 /**
  * Transport that queries remote AI availability from the regional callable.
  *
@@ -32,7 +21,7 @@ class FirebaseAiAvailabilityGateway(
     override suspend fun checkAvailability(): Boolean? {
         return try {
             withContext(Dispatchers.IO) {
-                val task = functions.getHttpsCallable(AVAILABILITY_CALLABLE_NAME).call()
+                val task = functions.getHttpsCallable(AI_AVAILABILITY_CALLABLE_NAME).call()
                 parseAvailabilityResponse(Tasks.await(task).data)
             }
         } catch (_: Exception) {

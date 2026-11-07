@@ -14,6 +14,12 @@ import androidx.compose.runtime.Composable
 /** Hoy, en días desde 1970, en la zona del dispositivo. */
 expect fun todayEpochDay(): Long
 
+/** Milisegundos de época del teléfono. */
+expect fun nowEpochMillis(): Long
+
+/** El día calendario local del teléfono en [epochMillis], en ISO. Nunca UTC. */
+expect fun localDayIso(epochMillis: Long): String
+
 /** Un UUID v4 en minúsculas, con guiones. */
 expect fun newUuid(): String
 

@@ -15,6 +15,7 @@ import org.junit.Test
 class AiDebugLabGuardsTest {
 
     private val mainDir = File("src/main/java/com/cuentivo/app/ui/ai")
+    private val commonDir = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/ai")
     private val debugDir = File("src/debug/java/com/cuentivo/app/ui/ai")
     private val releaseDir = File("src/release/java/com/cuentivo/app/ui/ai")
 
@@ -22,8 +23,18 @@ class AiDebugLabGuardsTest {
         dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.map { it.readText() }.toList()
 
     @Test
+    fun `common ai lab sources are actually scanned`() {
+        // The policies moved to commonMain. If the scan path is wrong the guards below would walk
+        // an empty list and pass without checking anything.
+        assertTrue(
+            "expected Kotlin sources under ${commonDir.path}",
+            sourcesOf(commonDir).isNotEmpty(),
+        )
+    }
+
+    @Test
     fun `main ai lab sources never reference Firebase or the debug gateway`() {
-        for (source in sourcesOf(mainDir)) {
+        for (source in sourcesOf(mainDir) + sourcesOf(commonDir)) {
             val imports = source.lines().filter { it.startsWith("import ") }.joinToString("\n")
             assertFalse("main must not import Firebase: $source", imports.contains("firebase"))
             assertFalse(
@@ -35,7 +46,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `main ai lab sources never reference MlKitOcrEngine`() {
-        for (source in sourcesOf(mainDir)) {
+        for (source in sourcesOf(mainDir) + sourcesOf(commonDir)) {
             assertFalse(
                 "main must not reference MlKitOcrEngine directly",
                 source.contains("MlKitOcrEngine"),
@@ -45,7 +56,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `main ai lab sources never expose direct DAO Room or sync imports`() {
-        for (source in sourcesOf(mainDir)) {
+        for (source in sourcesOf(mainDir) + sourcesOf(commonDir)) {
             val imports = source.lines().filter { it.startsWith("import ") }.joinToString("\n")
             assertFalse("no financial DAO imports in main", imports.contains("Dao") || imports.contains("Entity") || imports.contains("CuentivoDatabase"))
             assertFalse("no financial repository in main", imports.contains("DashboardRepository") || imports.contains("SaleRepository"))
