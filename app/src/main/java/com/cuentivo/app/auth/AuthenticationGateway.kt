@@ -13,6 +13,8 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -324,4 +326,15 @@ class FirebaseAuthenticationGateway(
             }
         }
     }
+
+    override fun classifyFailure(error: Throwable): AuthFailure = classifyFirebaseAuthFailure(error)
 }
+
+internal fun classifyFirebaseAuthFailure(error: Throwable): AuthFailure = AuthFailure(
+    kind = when (error) {
+        is FirebaseAuthUserCollisionException -> AuthFailureKind.USER_COLLISION
+        is FirebaseAuthRecentLoginRequiredException -> AuthFailureKind.RECENT_LOGIN_REQUIRED
+        else -> AuthFailureKind.OTHER
+    },
+    code = (error as? FirebaseAuthException)?.errorCode,
+)

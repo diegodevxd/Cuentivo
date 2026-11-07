@@ -3,6 +3,8 @@ package com.cuentivo.app.auth
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.FirebaseAuth
 import dev.gitlive.firebase.auth.FirebaseAuthException
+import dev.gitlive.firebase.auth.FirebaseAuthRecentLoginRequiredException
+import dev.gitlive.firebase.auth.FirebaseAuthUserCollisionException
 import dev.gitlive.firebase.auth.EmailAuthProvider
 import dev.gitlive.firebase.auth.GoogleAuthProvider
 import dev.gitlive.firebase.auth.OAuthProvider
@@ -388,7 +390,18 @@ class IosAuthenticationGateway(
         const val SECONDS_1970_TO_2001 = 978_307_200.0
         const val MILLIS_PER_SECOND = 1_000.0
     }
+
+    override fun classifyFailure(error: Throwable): AuthFailure = classifyIosAuthFailure(error)
 }
+
+internal fun classifyIosAuthFailure(error: Throwable): AuthFailure = AuthFailure(
+    kind = when (error) {
+        is FirebaseAuthUserCollisionException -> AuthFailureKind.USER_COLLISION
+        is FirebaseAuthRecentLoginRequiredException -> AuthFailureKind.RECENT_LOGIN_REQUIRED
+        else -> AuthFailureKind.OTHER
+    },
+    code = (error as? FirebaseAuthException)?.iosErrorCode(),
+)
 
 /**
  * El código de error de Firebase Auth, en el vocabulario que habla [GoogleAuthenticationResult].

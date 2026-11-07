@@ -99,4 +99,6 @@ interface AuthenticationGateway {
      * next account picker is not pre-selected for a session that no longer exists.
      */
     fun clearGoogleCredentialState(onComplete: () -> Unit)
+
+    fun classifyFailure(error: Throwable): AuthFailure
 }

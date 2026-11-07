@@ -127,6 +127,7 @@ import com.cuentivo.app.ui.share.AndroidSharer
 import com.cuentivo.app.ui.share.StatementImageShareStore
 import com.cuentivo.app.ui.dashboard.DashboardUiState
 import com.cuentivo.app.ui.dashboard.DashboardViewModel
+import com.cuentivo.app.auth.AuthFailureKind
 import com.cuentivo.app.auth.FirebaseAuthenticationGateway
 import com.cuentivo.app.auth.GoogleAccountSwitchAction
 import com.cuentivo.app.auth.GoogleAuthenticationResult
@@ -134,7 +135,6 @@ import com.cuentivo.app.notifications.CollectionReminderScheduler
 import com.cuentivo.app.observability.CrashEvent
 import com.cuentivo.app.observability.CrashReporterFactory
 import com.cuentivo.app.settings.CollectionReminderPreferences
-import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.cuentivo.app.auth.LocalSessionGuard
 import com.cuentivo.app.backup.BackupException
 import com.cuentivo.app.backup.BackupFailure
@@ -173,7 +173,6 @@ import com.cuentivo.app.domain.AccountDeletionFailure
 import com.cuentivo.app.sync.OwnerMembershipBootstrap
 import com.cuentivo.app.sync.SyncPayloads
 import com.cuentivo.app.sync.SyncQueue
-import com.google.firebase.auth.FirebaseAuthException
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -560,7 +559,7 @@ class MainActivity : ComponentActivity() {
                             authenticatedUserId = userId
                             anonymousStartupCause = null
                         }.onFailure { error ->
-                            val errorCode = (error as? FirebaseAuthException)?.errorCode ?: error.message
+                            val errorCode = authenticationGateway.classifyFailure(error).code ?: error.message
                             val cause = AuthenticationFlowPolicy.classifyAnonymousErrorCode(errorCode)
                             anonymousStartupCause = cause
                             when (cause) {
@@ -764,7 +763,7 @@ class MainActivity : ComponentActivity() {
                                             verificationKey++
                                         }.onFailure { error ->
                                             authenticationMessage =
-                                                if (error is FirebaseAuthUserCollisionException) emailInUseMessage
+                                                if (authenticationGateway.classifyFailure(error).kind == AuthFailureKind.USER_COLLISION) emailInUseMessage
                                                 else {
                                                     crashReporter.report(CrashEvent.AUTH_FAILURE)
                                                     signUpFailedMessage
@@ -781,7 +780,7 @@ class MainActivity : ComponentActivity() {
                                             verificationKey++
                                         }.onFailure { error ->
                                             authenticationMessage =
-                                                if (error is FirebaseAuthUserCollisionException) emailInUseMessage
+                                                if (authenticationGateway.classifyFailure(error).kind == AuthFailureKind.USER_COLLISION) emailInUseMessage
                                                 else {
                                                     crashReporter.report(CrashEvent.AUTH_FAILURE)
                                                     signUpFailedMessage
@@ -1595,7 +1594,7 @@ class MainActivity : ComponentActivity() {
                                         showAccountLinking = false
                                         verificationKey++
                                     }.onFailure { error ->
-                                        if (error is FirebaseAuthUserCollisionException) {
+                                        if (authenticationGateway.classifyFailure(error).kind == AuthFailureKind.USER_COLLISION) {
                                             val decision = GuestAccountSwitchPolicy.decideAccountSwitch(
                                                 isAnonymous = authenticationGateway.isAnonymous,
                                                 customerCount = customers.size,
@@ -1627,7 +1626,7 @@ class MainActivity : ComponentActivity() {
                                         showAccountLinking = false
                                         verificationKey++
                                     }.onFailure { error ->
-                                        if (error is FirebaseAuthUserCollisionException) {
+                                        if (authenticationGateway.classifyFailure(error).kind == AuthFailureKind.USER_COLLISION) {
                                             authenticationMessage = emailInUseMessage
                                         } else {
                                             crashReporter.report(CrashEvent.AUTH_FAILURE)
@@ -2902,7 +2901,7 @@ class MainActivity : ComponentActivity() {
                                     }.onFailure { error ->
                                         val action = com.cuentivo.app.domain.AccountDeletionPlan.onFailure(
                                             step = com.cuentivo.app.domain.AccountDeletionPlan.Step.DELETE_AUTH,
-                                            authErrorCode = (error as? FirebaseAuthException)?.errorCode,
+                                            authErrorCode = authenticationGateway.classifyFailure(error).code,
                                         )
                                         // Los datos YA se borraron. Nunca se puede quedar la app con
                                         // sesión abierta y sin datos: se cierra la sesión igualmente y
@@ -2914,7 +2913,7 @@ class MainActivity : ComponentActivity() {
                                         authenticatedUserId = null
                                         showManualAuthentication = true
                                         uiMessage = when {
-                                            error is com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException ->
+                                            authenticationGateway.classifyFailure(error).kind == AuthFailureKind.RECENT_LOGIN_REQUIRED ->
                                                 getString(R.string.message_account_delete_recent_login)
                                             action == com.cuentivo.app.domain.AccountDeletionPlan.FailureAction.ASK_RECENT_LOGIN ->
                                                 getString(R.string.message_account_delete_recent_login)

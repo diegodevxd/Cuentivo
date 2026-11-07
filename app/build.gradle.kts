@@ -80,6 +80,10 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     buildTypes {
         debug {
             // The only build type that can talk to a local Functions emulator. Empty when the
