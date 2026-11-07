@@ -1,7 +1,5 @@
 package com.cuentivo.app.ui.account
 
-import android.app.Activity
-import android.os.Build
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.ui.Alignment
@@ -22,32 +20,32 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
-import com.cuentivo.app.settings.LanguagePreference
+import com.cuentivo.app.platform.LanguageControl
 import com.cuentivo.app.ui.NeoShapes
 import com.cuentivo.app.ui.NeoSpacing
 
-private enum class LanguageOption(val tag: String?, val labelRes: Int) {
-    SYSTEM(null, R.string.account_language_system),
-    SPANISH("es", R.string.account_language_spanish),
-    ENGLISH("en", R.string.account_language_english),
+private enum class LanguageOption(val tag: String?, val labelRes: StringResource) {
+    SYSTEM(null, Res.string.account_language_system),
+    SPANISH("es", Res.string.account_language_spanish),
+    ENGLISH("en", Res.string.account_language_english),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LanguageSheet(onDismiss: () -> Unit) {
-    val context = LocalContext.current
+fun LanguageSheet(language: LanguageControl, onDismiss: () -> Unit) {
     var selected by remember {
         mutableStateOf(
-            when (LanguagePreference.effectiveTag(context)) {
+            when (language.effectiveTag()) {
                 "es" -> LanguageOption.SPANISH
                 "en" -> LanguageOption.ENGLISH
                 else -> LanguageOption.SYSTEM
@@ -65,7 +63,7 @@ fun LanguageSheet(onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
         ) {
             Text(
-                text = stringResource(R.string.account_language),
+                text = stringResource(Res.string.account_language),
                 style = MaterialTheme.typography.titleMedium,
             )
             LanguageOption.entries.forEach { option ->
@@ -74,10 +72,7 @@ fun LanguageSheet(onDismiss: () -> Unit) {
                     selected = selected == option,
                     onClick = {
                         selected = option
-                        LanguagePreference.set(context, option.tag)
-                        if (Build.VERSION.SDK_INT < 33) {
-                            (context as? Activity)?.recreate()
-                        }
+                        language.select(option.tag)
                     },
                 )
             }

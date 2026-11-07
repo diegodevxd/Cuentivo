@@ -108,6 +108,7 @@ import com.cuentivo.app.ui.account.AccountSheet
 import com.cuentivo.app.ui.account.PRIVACY_POLICY_URL
 import com.cuentivo.app.ui.account.AiPaywallSheet
 import com.cuentivo.app.ui.account.LanguageSheet
+import com.cuentivo.app.settings.AndroidLanguageControl
 import com.cuentivo.app.ui.customer.CustomerDetailSheet
 import com.cuentivo.app.ui.customer.CustomerFilter
 import com.cuentivo.app.ui.customer.CustomersScreen
@@ -833,6 +834,9 @@ fun CuentivoApp(
         )
     }
     if (showLanguage) {
-        LanguageSheet(onDismiss = { showLanguage = false })
+        LanguageSheet(
+            language = remember(context) { AndroidLanguageControl(context) },
+            onDismiss = { showLanguage = false },
+        )
     }
 }
