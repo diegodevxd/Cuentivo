@@ -1804,6 +1804,30 @@ class AiDebugLabMachineTest {
     }
 
     @Test
+    fun `onLedgerExtractionResult freezes the customer balances it receives`() {
+        val balances = mutableMapOf("Rosa" to 50000L)
+        val extractingModel = AiDebugLabMachine.onStartLedgerExtraction(
+            model = AiDebugLabModel(generation = 1L),
+            sessionId = "session-frozen-balances",
+            businessId = "biz-1",
+        )
+
+        val model = AiDebugLabMachine.onLedgerExtractionResult(
+            model = extractingModel,
+            sessionId = "session-frozen-balances",
+            businessId = "biz-1",
+            operations = emptyList(),
+            existingCustomerBalances = balances,
+            generation = extractingModel.generation,
+        )
+
+        balances["Rosa"] = 1L
+
+        val state = model.state as AiDebugLabState.LedgerReviewing
+        assertEquals(50000L, state.existingCustomerBalances["Rosa"])
+    }
+
+    @Test
     fun `onLedgerBatchResult failure recovers full LedgerReviewing state including original operations and candidates`() {
         val originalOp = com.cuentivo.app.ai.ledger.LedgerOperation(
             lineIndex = 0,
