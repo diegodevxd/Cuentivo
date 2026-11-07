@@ -1,16 +1,13 @@
 package com.cuentivo.app.sync
 
-import android.content.Context
-import android.util.Log
 import com.cuentivo.app.data.local.SyncOperationDao
 import com.cuentivo.app.data.local.SyncOperationEntity
-import org.json.JSONObject
 
 private const val TAG = "SyncQueue"
 
 class SyncQueue(
     private val dao: SyncOperationDao,
-    private val context: Context,
+    private val scheduleSync: () -> Unit,
     /**
      * Whether this account's plan includes the cloud at all, asked fresh on every call.
      *
@@ -49,14 +46,14 @@ class SyncQueue(
             entityType = entityType,
             entityId = entityId,
             operation = "UPSERT",
-            payload = JSONObject(fields).toString(),
+            payload = SyncPayloadJson.encode(fields),
             createdAtEpochMillis = revision,
             attemptCount = 0,
             lastError = null,
         ))
-        SyncScheduling.attempt { SyncScheduler.enqueue(context) }?.let { failure ->
+        SyncScheduling.attempt { scheduleSync() }?.let { failure ->
             // Entity type only. Never the payload: it holds names, phones and amounts.
-            Log.w(TAG, "No se pudo programar la sincronización de $entityType; queda en la bandeja de salida.", failure)
+            PlatformLog.warn(TAG, "No se pudo programar la sincronización de $entityType; queda en la bandeja de salida.")
         }
     }
 }

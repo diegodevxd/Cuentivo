@@ -9,4 +9,5 @@
  */
 internal expect object PlatformLog {
     fun warn(tag: String, message: String)
+    fun info(tag: String, message: String)
 }

@@ -1,10 +1,9 @@
 package com.cuentivo.app.sync
 
-import android.util.Log
 import com.cuentivo.app.data.local.CuentivoDatabase
+import com.cuentivo.app.data.local.databaseDispatcher
 import com.cuentivo.app.domain.OutboxBackfillPlanner
 import com.cuentivo.app.domain.SyncEntityType
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val TAG = "OutboxBackfill"
@@ -37,9 +36,9 @@ class OutboxBackfill(
      * @return how many rows were handed to the queue, for logging. Rows already queued are counted
      *   too; the queue's own conflict handling is what makes repeating harmless.
      */
-    suspend fun seed(businessId: String): Int = withContext(Dispatchers.IO) {
+    suspend fun seed(businessId: String): Int = withContext(databaseDispatcher) {
         val business = database.businessDao().byId(businessId) ?: run {
-            Log.w(TAG, "Backfill skipped: the business is not on this device.")
+            PlatformLog.warn(TAG, "Backfill skipped: the business is not on this device.")
             return@withContext 0
         }
         // Rows parked by an earlier attempt come back into play first.
@@ -130,7 +129,7 @@ class OutboxBackfill(
             }
         }
         // Counts only, never a name or an amount: this reaches logcat.
-        Log.i(TAG, "Backfill queued $queued rows across ${OutboxBackfillPlanner.plan(counts).size} types.")
+        PlatformLog.info(TAG, "Backfill queued $queued rows across ${OutboxBackfillPlanner.plan(counts).size} types.")
         queued
     }
 
