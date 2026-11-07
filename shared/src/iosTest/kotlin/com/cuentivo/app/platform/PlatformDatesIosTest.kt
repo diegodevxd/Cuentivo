@@ -3,6 +3,7 @@ package com.cuentivo.app.platform
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.datetime.TimeZone
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSLocale
@@ -57,6 +58,18 @@ class PlatformDatesIosTest {
     @Test
     fun the_short_time_is_never_empty() {
         assertTrue(formatShortTimeEsMx(STAMP_14_05_UTC).isNotEmpty())
+    }
+
+    @Test
+    fun local_day_iso_uses_the_zone_it_is_given() {
+        // 2026-08-23T02:00Z is still 2026-08-22 in Mexico City (UTC-6) and 2026-08-23 in UTC.
+        assertEquals("2026-08-22", localDayIsoIn(1787450400000L, TimeZone.of("America/Mexico_City")))
+        assertEquals("2026-08-23", localDayIsoIn(1787450400000L, TimeZone.UTC))
+    }
+
+    @Test
+    fun now_is_past_a_known_instant() {
+        assertTrue(nowEpochMillis() > 1787450400000L)
     }
 
     private companion object {

@@ -3,9 +3,9 @@ package com.cuentivo.app.ui.ai
 import com.cuentivo.app.ai.AiInterpretRequest
 import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.RecordPaymentProposal
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class AiDebugLabTurnPolicyTest {
 
@@ -23,7 +23,7 @@ class AiDebugLabTurnPolicyTest {
     }
 
     @Test
-    fun `social exact prompt returns out of scope without calling transport`() = runBlocking {
+    fun `social exact prompt returns out of scope without calling transport`() = runTest {
         val transport = RecordingTransport()
         val request = AiInterpretRequest(text = "¿como estas?", requestId = "req-1")
 
@@ -34,7 +34,7 @@ class AiDebugLabTurnPolicyTest {
     }
 
     @Test
-    fun `business and ambiguous text call transport exactly once`() = runBlocking {
+    fun `business and ambiguous text call transport exactly once`() = runTest {
         val proposal = RecordPaymentProposal("María", 15000L)
         val transport = RecordingTransport(response = CallableAiProposalResult.Proposal(proposal))
         val request = AiInterpretRequest(text = "María abonó 150", requestId = "req-2")
@@ -47,7 +47,7 @@ class AiDebugLabTurnPolicyTest {
     }
 
     @Test
-    fun `transport exception falls back to remote unavailable without throwing`() = runBlocking {
+    fun `transport exception falls back to remote unavailable without throwing`() = runTest {
         val throwingTransport = object : AiDebugTransport {
             override suspend fun submit(request: AiInterpretRequest): CallableAiProposalResult {
                 throw RuntimeException("Network down")

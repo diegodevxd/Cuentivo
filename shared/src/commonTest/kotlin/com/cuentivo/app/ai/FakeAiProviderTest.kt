@@ -1,15 +1,15 @@
 package com.cuentivo.app.ai
 
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class FakeAiProviderTest {
 
     private val provider = FakeAiProvider()
 
     @Test
-    fun `recognizes the fixed payment fixture`() = runBlocking {
+    fun `recognizes the fixed payment fixture`() = runTest {
         val result = provider.interpret(AiInterpretRequest(text = "Diego me pagó 500", requestId = "r-pay"))
 
         assertEquals(
@@ -21,7 +21,7 @@ class FakeAiProviderTest {
     }
 
     @Test
-    fun `recognizes the fixed sale fixture`() = runBlocking {
+    fun `recognizes the fixed sale fixture`() = runTest {
         val result = provider.interpret(
             AiInterpretRequest(text = "Diego se llevó dos perfumes de 300 y pagó 200", requestId = "r-sale"),
         )
@@ -39,7 +39,7 @@ class FakeAiProviderTest {
     }
 
     @Test
-    fun `any other text yields clarification`() = runBlocking {
+    fun `any other text yields clarification`() = runTest {
         val unsupported = listOf(
             "¿Cuánto me debe Diego?",
             "Diego me pagó 499",
@@ -58,7 +58,7 @@ class FakeAiProviderTest {
     }
 
     @Test
-    fun `is deterministic for repeated identical requests`() = runBlocking {
+    fun `is deterministic for repeated identical requests`() = runTest {
         val request = AiInterpretRequest(text = "Diego me pagó 500", requestId = "r-repeat")
 
         val first = provider.interpret(request)

@@ -2,6 +2,7 @@ package com.cuentivo.app.platform
 
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -41,6 +42,13 @@ class PlatformDatesAndroidHostTest {
     @Test
     fun today_matches_java() {
         assertEquals(LocalDate.now().toEpochDay(), todayEpochDay())
+    }
+
+    @Test
+    fun local_day_iso_uses_the_zone_it_is_given() {
+        // 2026-08-23T02:00Z is still 2026-08-22 in Mexico City (UTC-6) and 2026-08-23 in UTC.
+        assertEquals("2026-08-22", localDayIsoIn(1787450400000L, ZoneId.of("America/Mexico_City")))
+        assertEquals("2026-08-23", localDayIsoIn(1787450400000L, ZoneOffset.UTC))
     }
 
     @Test

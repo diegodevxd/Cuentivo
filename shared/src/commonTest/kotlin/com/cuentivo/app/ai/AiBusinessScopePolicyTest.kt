@@ -1,9 +1,9 @@
 package com.cuentivo.app.ai
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class AiBusinessScopePolicyTest {
 
@@ -44,7 +44,7 @@ class AiBusinessScopePolicyTest {
             "quien eres",
             "que haces",
         )) {
-            assertEquals("expected OutOfScope for: $prompt", AiBusinessScopeDecision.OutOfScope, decide(prompt))
+            assertEquals(AiBusinessScopeDecision.OutOfScope, decide(prompt), "expected OutOfScope for: $prompt")
         }
     }
 
@@ -65,8 +65,8 @@ class AiBusinessScopePolicyTest {
     fun `reply promises neither registration nor balance`() {
         val reply = AiBusinessScopePolicy.OUT_OF_SCOPE_REPLY
         assertTrue(reply.isNotBlank())
-        assertFalse("must not promise registration", reply.contains("registré"))
-        assertFalse("must not promise balance", reply.contains("saldo"))
-        assertTrue("must mention business help", reply.contains("ventas"))
+        assertFalse(reply.contains("registré"), "must not promise registration")
+        assertFalse(reply.contains("saldo"), "must not promise balance")
+        assertTrue(reply.contains("ventas"), "must mention business help")
     }
 }

@@ -3,17 +3,17 @@ package com.cuentivo.app.ui.ai
 import com.cuentivo.app.ai.AiInterpretRequest
 import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.RecordPaymentProposal
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class AiDebugLabSubmitPolicyTest {
 
     private val request = AiInterpretRequest(text = "venta", requestId = "req-1")
 
     @Test
-    fun `a transport that throws resolves to unavailable without crashing`() = runBlocking {
+    fun `a transport that throws resolves to unavailable without crashing`() = runTest {
         val throwing = object : AiDebugTransport {
             override suspend fun submit(request: AiInterpretRequest): CallableAiProposalResult {
                 throw IllegalStateException("gateway down")
@@ -26,7 +26,7 @@ class AiDebugLabSubmitPolicyTest {
     }
 
     @Test
-    fun `a transport result is passed through untouched`() = runBlocking {
+    fun `a transport result is passed through untouched`() = runTest {
         val ok = object : AiDebugTransport {
             override suspend fun submit(request: AiInterpretRequest): CallableAiProposalResult =
                 CallableAiProposalResult.Proposal(RecordPaymentProposal("Maria", 100L))

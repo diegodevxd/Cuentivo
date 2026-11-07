@@ -1,9 +1,9 @@
 package com.cuentivo.app.ai
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class AiProposalSafetyTest {
 
@@ -33,7 +33,7 @@ class AiProposalSafetyTest {
 
     private fun rejectedReason(proposal: AiProposal): AiProposalRejectReason {
         val result = SafeAiProposalValidator.validate(proposal)
-        assertTrue("expected rejection, got $result", result is AiProposalValidationResult.Rejected)
+        assertTrue(result is AiProposalValidationResult.Rejected, "expected rejection, got $result")
         return (result as AiProposalValidationResult.Rejected).reason
     }
 

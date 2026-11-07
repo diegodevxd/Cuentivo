@@ -1,13 +1,13 @@
 package com.cuentivo.app.ai
 
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
-class FirebaseAiAvailabilityGatewayTest {
+class AiAvailabilityTest {
 
     private class CountingAiAvailabilityGateway(
         var response: Boolean? = true,
@@ -48,7 +48,7 @@ class FirebaseAiAvailabilityGatewayTest {
     }
 
     @Test
-    fun `fake availability gateway returns null on exception`() {
+    fun `fake availability gateway returns null on exception`() = runTest {
         val failingGateway = object : AiAvailabilityGateway {
             override suspend fun checkAvailability(): Boolean? {
                 return try {
@@ -58,9 +58,7 @@ class FirebaseAiAvailabilityGatewayTest {
                 }
             }
         }
-        runBlocking {
-            assertNull(failingGateway.checkAvailability())
-        }
+        assertNull(failingGateway.checkAvailability())
     }
 
     // ---- Policy & TTL tests ----
@@ -95,12 +93,12 @@ class FirebaseAiAvailabilityGatewayTest {
         val currentOpen = true
         val failedFetch: Boolean? = null
         val resolved = AiAvailabilityPolicy.resolve(current = currentOpen, fetched = failedFetch)
-        assertTrue("A failed refresh must preserve the open state and not convert true to false", resolved)
+        assertTrue(resolved, "A failed refresh must preserve the open state and not convert true to false")
 
         // Preserves last known false if service was previously shut down
         val currentDisabled = false
         val resolvedDisabled = AiAvailabilityPolicy.resolve(current = currentDisabled, fetched = failedFetch)
-        assertFalse("A failed refresh preserves the last known disabled state", resolvedDisabled)
+        assertFalse(resolvedDisabled, "A failed refresh preserves the last known disabled state")
     }
 
     @Test
@@ -117,7 +115,7 @@ class FirebaseAiAvailabilityGatewayTest {
     // ---- Coordinator orchestrator tests ----
 
     @Test
-    fun `coordinator deduplicates successive triggers at startup and queries gateway exactly once`() = runBlocking {
+    fun `coordinator deduplicates successive triggers at startup and queries gateway exactly once`() = runTest {
         val fakeGateway = CountingAiAvailabilityGateway(response = true)
         val currentTime = 1_000_000L
         val coordinator = AiAvailabilityCoordinator(
@@ -131,13 +129,13 @@ class FirebaseAiAvailabilityGatewayTest {
         // Second trigger (Lifecycle ON_RESUME event replay at startup)
         val secondResult = coordinator.refresh(isAiTier = true)
 
-        assertEquals("First call must succeed", true, firstResult)
-        assertEquals("Second call must succeed without re-fetching", true, secondResult)
-        assertEquals("Gateway must be called exactly once across successive triggers", 1, fakeGateway.callCount)
+        assertEquals(true, firstResult, "First call must succeed")
+        assertEquals(true, secondResult, "Second call must succeed without re-fetching")
+        assertEquals(1, fakeGateway.callCount, "Gateway must be called exactly once across successive triggers")
     }
 
     @Test
-    fun `coordinator respects TTL and only refreshes when expired`() = runBlocking {
+    fun `coordinator respects TTL and only refreshes when expired`() = runTest {
         val fakeGateway = CountingAiAvailabilityGateway(response = true)
         var currentTime = 1_000_000L
         val coordinator = AiAvailabilityCoordinator(
@@ -151,16 +149,16 @@ class FirebaseAiAvailabilityGatewayTest {
         // 1 minute later (TTL not expired)
         currentTime += 60_000L
         coordinator.refresh(isAiTier = true)
-        assertEquals("Must not query gateway when TTL is active", 1, fakeGateway.callCount)
+        assertEquals(1, fakeGateway.callCount, "Must not query gateway when TTL is active")
 
         // 5 minutes later (TTL expired)
         currentTime += AI_AVAILABILITY_CACHE_TTL_MILLIS
         coordinator.refresh(isAiTier = true)
-        assertEquals("Must query gateway when TTL expires", 2, fakeGateway.callCount)
+        assertEquals(2, fakeGateway.callCount, "Must query gateway when TTL expires")
     }
 
     @Test
-    fun `coordinator ignores non-AI tiers`() = runBlocking {
+    fun `coordinator ignores non-AI tiers`() = runTest {
         val fakeGateway = CountingAiAvailabilityGateway(response = true)
         val coordinator = AiAvailabilityCoordinator(gateway = fakeGateway)
 
@@ -171,19 +169,19 @@ class FirebaseAiAvailabilityGatewayTest {
     }
 
     @Test
-    fun `coordinator preserves true on network failure and does not close entrance`() = runBlocking {
+    fun `coordinator preserves true on network failure and does not close entrance`() = runTest {
         val failingGateway = CountingAiAvailabilityGateway(response = null)
         val coordinator = AiAvailabilityCoordinator(gateway = failingGateway)
 
         val result = coordinator.refresh(isAiTier = true)
 
-        assertEquals("Gateway must have been invoked", 1, failingGateway.callCount)
-        assertTrue("Failed refresh must preserve open state (true)", result)
-        assertTrue("Coordinator property must remain true", coordinator.isAvailable)
+        assertEquals(1, failingGateway.callCount, "Gateway must have been invoked")
+        assertTrue(result, "Failed refresh must preserve open state (true)")
+        assertTrue(coordinator.isAvailable, "Coordinator property must remain true")
     }
 
     @Test
-    fun `coordinator reset restores initial state`() = runBlocking {
+    fun `coordinator reset restores initial state`() = runTest {
         val fakeGateway = CountingAiAvailabilityGateway(response = false)
         val coordinator = AiAvailabilityCoordinator(gateway = fakeGateway)
 

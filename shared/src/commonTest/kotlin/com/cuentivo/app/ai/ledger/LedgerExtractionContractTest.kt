@@ -1,14 +1,15 @@
 package com.cuentivo.app.ai.ledger
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * The wire parser is the door a photographed page walks through on its way into the ledger, so it
  * is exercised here directly, with the shapes a server could actually send.
  */
-class LedgerExtractionGatewayTest {
+class LedgerExtractionContractTest {
 
     private fun response(
         operations: List<Map<String, Any?>>? = emptyList(),
@@ -50,60 +51,64 @@ class LedgerExtractionGatewayTest {
 
     @Test fun `con v5 bueno hay una sola llamada`() {
         val versions = mutableListOf<Int>()
+        var result: LedgerExtractionCallResult? = null
 
-        val result = kotlinx.coroutines.runBlocking {
-            extractPageWithFallback { version ->
+        runTest {
+            result = extractPageWithFallback { version ->
                 versions += version
                 anExtractedPage()
             }
         }
 
-        org.junit.Assert.assertEquals(listOf(5), versions)
-        org.junit.Assert.assertTrue(result is LedgerExtractionCallResult.Extracted)
+        assertEquals(listOf(5), versions)
+        assertTrue(result is LedgerExtractionCallResult.Extracted)
     }
 
     @Test fun `si v5 no contesta se reintenta una vez con la 4`() {
         val versions = mutableListOf<Int>()
+        var result: LedgerExtractionCallResult? = null
 
-        val result = kotlinx.coroutines.runBlocking {
-            extractPageWithFallback { version ->
+        runTest {
+            result = extractPageWithFallback { version ->
                 versions += version
                 if (version == 5) LedgerExtractionCallResult.Unavailable else anExtractedPage()
             }
         }
 
-        org.junit.Assert.assertEquals("v5 y luego v4, una vez cada una", listOf(5, 4), versions)
-        org.junit.Assert.assertTrue(result is LedgerExtractionCallResult.Extracted)
+        assertEquals(listOf(5, 4), versions, "v5 y luego v4, una vez cada una")
+        assertTrue(result is LedgerExtractionCallResult.Extracted)
     }
 
     @Test fun `si v5 lanza tambien se reintenta una vez con la 4`() {
         // Un servidor sin v5 desplegado puede contestar error en vez de una respuesta rara.
         val versions = mutableListOf<Int>()
+        var result: LedgerExtractionCallResult? = null
 
-        val result = kotlinx.coroutines.runBlocking {
-            extractPageWithFallback { version ->
+        runTest {
+            result = extractPageWithFallback { version ->
                 versions += version
                 if (version == 5) throw IllegalStateException("boom") else anExtractedPage()
             }
         }
 
-        org.junit.Assert.assertEquals(listOf(5, 4), versions)
-        org.junit.Assert.assertTrue(result is LedgerExtractionCallResult.Extracted)
+        assertEquals(listOf(5, 4), versions)
+        assertTrue(result is LedgerExtractionCallResult.Extracted)
     }
 
     @Test fun `si fallan las dos no hay una tercera llamada`() {
         // Un solo reintento, nunca un bucle: cada llamada al modelo se paga.
         val versions = mutableListOf<Int>()
+        var result: LedgerExtractionCallResult? = null
 
-        val result = kotlinx.coroutines.runBlocking {
-            extractPageWithFallback { version ->
+        runTest {
+            result = extractPageWithFallback { version ->
                 versions += version
                 LedgerExtractionCallResult.Unavailable
             }
         }
 
-        org.junit.Assert.assertEquals("exactamente dos llamadas", listOf(5, 4), versions)
-        org.junit.Assert.assertEquals(LedgerExtractionCallResult.Unavailable, result)
+        assertEquals(listOf(5, 4), versions, "exactamente dos llamadas")
+        assertEquals(LedgerExtractionCallResult.Unavailable, result)
     }
 
     @Test fun `a well formed page is parsed`() {
@@ -116,7 +121,7 @@ class LedgerExtractionGatewayTest {
         assertEquals(ProposedLedgerKind.SALE, payload.operations[0].proposedKind)
     }
 
-    @Test fun `money as a JSON number is refused, not truncated`() {
+    @Test fun `money as a JSON number is refused not truncated`() {
         assertEquals(
             LedgerExtractionCallResult.Unavailable,
             parseLedgerExtractionResponse(response(listOf(sale(25000))), REQUEST_ID),
@@ -300,7 +305,7 @@ class LedgerExtractionGatewayTest {
         assertEquals(null, payload.detectedPageDate)
     }
 
-    @Test fun `a detected page date with a malformed shape is dropped, not fatal`() {
+    @Test fun `a detected page date with a malformed shape is dropped not fatal`() {
         // The page date is advisory: a malformed one must not cost the twenty readable rows that
         // came with it. The page parses; the offer simply does not exist.
         val wrongShape = response(listOf(sale("25000")), contractVersion = 4) + mapOf(
@@ -361,7 +366,7 @@ class LedgerExtractionGatewayTest {
     }
 
     @Test
-    fun `an unbounded rawText is refused, because it ends up in a Bundle`() {
+    fun `an unbounded rawText is refused because it ends up in a Bundle`() {
         // The server caps this at 200. The client is what decides how much lands in the saved state,
         // and a Bundle past the transaction limit does not degrade -- it kills the app. Refused and
         // not trimmed: a shortened rawText is evidence that no longer matches the paper.
@@ -479,7 +484,7 @@ class LedgerExtractionGatewayTest {
         assertEquals(setOf(0, 3, 7), crosscheck?.confirmedLineIndices)
     }
 
-    @Test fun `un bloque sin la lista se lee igual, un servidor viejo no la manda`() {
+    @Test fun `un bloque sin la lista se lee igual un servidor viejo no la manda`() {
         val result = parseLedgerExtractionResponse(v4WithCrosscheck(crosscheckBlock()), REQUEST_ID)
 
         val crosscheck = (result as LedgerExtractionCallResult.Extracted).extraction.mexalmCrosscheck
@@ -487,7 +492,7 @@ class LedgerExtractionGatewayTest {
         assertEquals(emptySet<Int>(), crosscheck?.confirmedLineIndices)
     }
 
-    @Test fun `una lista de confirmados malformada tumba el bloque, no la pagina`() {
+    @Test fun `una lista de confirmados malformada tumba el bloque no la pagina`() {
         for (mala in listOf(
             listOf("0"),
             listOf(0.5),
@@ -503,7 +508,7 @@ class LedgerExtractionGatewayTest {
             )
 
             val payload = (result as LedgerExtractionCallResult.Extracted).extraction
-            assertEquals("la lista mala debe tumbar el bloque: $mala", null, payload.mexalmCrosscheck)
+            assertEquals(null, payload.mexalmCrosscheck, "la lista mala debe tumbar el bloque: $mala")
             // Y la pagina se lee igual: el bloque es un comentario al lado de la pagina.
             assertEquals(1, payload.operations.size)
         }
@@ -614,10 +619,10 @@ class LedgerExtractionGatewayTest {
 
         for (bloque in bloquesMalos) {
             val result = parseLedgerExtractionResponse(v4WithCrosscheck(bloque), REQUEST_ID)
-            assertTrue("la pagina no puede caerse por un bloque malo: $bloque", result is LedgerExtractionCallResult.Extracted)
+            assertTrue(result is LedgerExtractionCallResult.Extracted, "la pagina no puede caerse por un bloque malo: $bloque")
             val payload = (result as LedgerExtractionCallResult.Extracted).extraction
-            assertEquals("el bloque tiene que colapsar a null: $bloque", null, payload.mexalmCrosscheck)
-            assertEquals("la pagina sigue intacta: $bloque", 1, payload.operations.size)
+            assertEquals(null, payload.mexalmCrosscheck, "el bloque tiene que colapsar a null: $bloque")
+            assertEquals(1, payload.operations.size, "la pagina sigue intacta: $bloque")
             assertEquals("25000", payload.operations[0].amountCents)
         }
     }
