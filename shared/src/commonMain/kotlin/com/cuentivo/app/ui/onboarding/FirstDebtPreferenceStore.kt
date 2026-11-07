@@ -1,7 +1,10 @@
 package com.cuentivo.app.ui.onboarding
 
-import android.content.Context
-import android.content.SharedPreferences
+/** Donde vive la respuesta, tras una interfaz para que las pruebas comunes la manejen. */
+interface FirstDebtFlagStore {
+    fun isSet(key: String): Boolean
+    fun set(key: String)
+}
 
 /**
  * Records whether the first-debt onboarding question has been answered or dismissed by the user.
@@ -9,23 +12,16 @@ import android.content.SharedPreferences
  * Scoped by userId so switching accounts (or completing it on one) does not suppress it for a new
  * guest session.
  */
-class FirstDebtPreferenceStore(context: Context) {
-    private val preferences: SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-
+class FirstDebtPreferenceStore(private val flags: FirstDebtFlagStore) {
     fun isDismissed(userId: String): Boolean {
         if (userId.isBlank()) return false
-        return preferences.getBoolean(keyFor(userId), false)
+        return flags.isSet(keyFor(userId))
     }
 
     fun markDismissed(userId: String) {
         if (userId.isBlank()) return
-        preferences.edit().putBoolean(keyFor(userId), true).apply()
+        flags.set(keyFor(userId))
     }
 
     private fun keyFor(userId: String): String = "first_debt_dismissed_$userId"
-
-    companion object {
-        private const val PREFERENCES = "cuentivo_onboarding_preferences"
-    }
 }

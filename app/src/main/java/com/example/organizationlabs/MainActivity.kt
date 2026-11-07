@@ -150,6 +150,7 @@ import com.cuentivo.app.auth.GuestAccountSwitchPolicy
 import com.cuentivo.app.domain.OpeningBalanceRow
 import com.cuentivo.app.ui.onboarding.FirstDebtPolicy
 import com.cuentivo.app.ui.onboarding.FirstDebtPreferenceStore
+import com.cuentivo.app.ui.onboarding.SharedPreferencesFirstDebtFlagStore
 import com.cuentivo.app.ui.onboarding.FirstDebtScreen
 import com.cuentivo.app.sync.SyncScheduler
 import com.cuentivo.app.ui.auth.AuthenticationScreen
@@ -1377,7 +1378,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val firstDebtPreferenceStore = remember { FirstDebtPreferenceStore(this@MainActivity) }
+                val firstDebtPreferenceStore = remember {
+        FirstDebtPreferenceStore(SharedPreferencesFirstDebtFlagStore(this@MainActivity))
+    }
                 var hasSkippedFirstDebt by remember(currentUserId) {
                     mutableStateOf(firstDebtPreferenceStore.isDismissed(currentUserId))
                 }
