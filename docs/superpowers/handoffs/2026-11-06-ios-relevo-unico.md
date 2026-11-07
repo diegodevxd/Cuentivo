@@ -12,13 +12,12 @@
 
 - **F5-I cerrada:** `5b52021`, `ios-build` run 42323599053, **928 pruebas iOS en 125 suites, 0 fallos**, leídas del artefacto, `xcodebuild` correcto y `.app` subido. `android-check` run 42323598967 verde. Android local **680 + 904 = 1584**, 0 fallos, leído por mí de los XML, en `792c211`. `assembleRelease` y `lintDebug` pasaron según el reporte.
 - **F5-J cerrada:** `3f8d5e5`, `ios-build` run 42329215778, **1168 pruebas iOS en 137 suites, 0 fallos**, leídas del artefacto, con las clases nuevas presentes, `xcodebuild` correcto y `.app` subido. `android-check` run 42329215761 verde. Android local **1144 + 446 = 1590**, 0 fallos, leído por mí de los XML, medido en `cea812c`; `3f8d5e5` solo renombra una prueba y no se recorrió localmente.
-- **F5-K auditada y subida, sin veredicto de iOS al escribir esto:** encargo `docs/superpowers/encargos/2026-11-06-ios-f5k-pantallas-ia.md`, código hasta `202b3c4`. Android local **1163 + 446 = 1609**, 0 fallos, leído por mí de los XML. De sus controles negativos solo existe `control6.log`: los otros cinco constan únicamente en el reporte. `androidTest` solo compiló. **Es la primera vez que CI compila `IosLedgerCapture` y `PlatformForeground.ios.kt`: espera errores de Native, que Windows no ve.** Lectura en curso sin cierre visible: igual que Android (`onDismissRequest = { }`), decidido no agregar nada.
+- **F5-K cerrada:** `9ef8766`, `ios-build` run 42333016165, **1187 pruebas iOS en 140 suites, 0 fallos**, leídas del artefacto, con `MathExactTest`, `LedgerScreenFormatTest` y `LedgerCropGeometryTest` presentes, `xcodebuild` correcto y `.app` subido. `android-check` run 42333016198 verde. Android local **1163 + 446 = 1609**, 0 fallos, leído por mí de los XML en `202b3c4`; `9ef8766` solo quita un `import` de `iosMain`. `androidTest` solo compiló. De los controles negativos de F5-K solo se comprobó el 6 en su log (`control6.log`, UTF-16); los otros cinco constan únicamente en el reporte. Lectura en curso sin cierre visible: igual que Android (`onDismissRequest = { }`), decidido no agregar nada.
 - **Nada se ha probado contra Firestore, Auth o Apple reales, ni en iPhone. La UI de iOS sigue siendo la pantalla mínima, y la `.app` nunca se ha abierto en un simulador en CI.** Dilo con esas palabras al entregar.
 
 ## Tu primer paso
 
-1. Lee el veredicto de `ios-build` sobre F5-K del artefacto, con `MathExactTest`, `LedgerScreenFormatTest` y `LedgerCropGeometryTest` presentes. Si Native falla, corrígelo antes de seguir.
-2. Sigue con la raíz común: plan propio antes del encargo.
+Escribe el plan de la raíz común en `docs/superpowers/plans/` y, de ahí, el encargo para OpenCode. No hay nada en vuelo ni OpenCode trabajando. **Este archivo tiene cambios sin commit: súbelos con el próximo encargo,** porque un push solo de docs gasta un run.
 
 ## Lo que sigue, en orden
 
@@ -40,7 +39,7 @@
 
 ## OpenCode
 
-- Terminal `term_daeb805b-4614-4094-beff-579f8e7990ad`, al ~60% de contexto. **Tras rechazar un permiso OpenCode se queda detenido aunque parezca seguir: mándale un mensaje que lo redirija.** Si pasa de ~80%, crea otra: `orca terminal create --worktree "path:<wt>" --title "OpenCode iOS" --command "opencode -m opencode-go/deepseek-v4.1-flash" --json`; espera a que cargue el TUI antes de enviar. Otras terminales `OC | ...` son viejas.
+- Terminal `term_daeb805b-4614-4094-beff-579f8e7990ad`, al ~60% de contexto y libre. **Tras rechazar un permiso OpenCode se queda detenido aunque parezca seguir: mándale un mensaje que lo redirija.** Si pasa de ~80%, crea otra: `orca terminal create --worktree "path:<wt>" --title "OpenCode iOS" --command "opencode -m opencode-go/deepseek-v4.1-flash" --json`; espera a que cargue el TUI antes de enviar. Otras terminales `OC | ...` son viejas.
 - **Reporte y temporales van en `build/ios-relevo/`, dentro del repo e ignorados por git.** El clasificador me negó concederle "Allow always" a `C:\tmp\ios-relevo`: **no lo intentes otra vez ni le des la vuelta.** Si pide cualquier permiso externo, recházalo (flecha derecha dos veces y Enter) y redirígelo al repo. Solo Diego puede aprobarlo.
 - **Cada envío lleva Monitor** (regla de Diego), hasta 30 min y se rearma:
   `H=<handle>; W=<wt>; (python -u C:/tmp/ios-relevo/vigila_opencode.py $H $W/build/ios-relevo/<reporte> $W 2>&1 | grep --line-buffered -vE ' COMMIT ') & while true; do if orca terminal read --terminal $H --screen 2>/dev/null | grep -q 'Permission required'; then echo "PERMISO"; sleep 300; fi; sleep 30; done`
@@ -51,7 +50,7 @@
 ## Trampas
 
 - **Símbolos de iOS sin Mac:** `C:/tmp/kn-prebuilt/kotlin-native-prebuilt-macos-aarch64-2.2.10/klib/platform/ios_simulator_arm64/org.jetbrains.kotlin.native.platform.<Framework>/`, con `grep -rlaF --include=*.knm`. El contraste lo haces tú, en `C:/tmp/ios-relevo/simbolos-<tanda>.txt`. **Las categorías de Objective-C, incluidas las de compañero (`NSDate.dateWith...`), requieren `import platform.Foundation.<nombre>`.** `UNMutableNotificationContent.title` se asigna con `setTitle`; `NSDateComponents` con `setYear`. El `companion` de una subclase de `NSObject` no admite campos. Dentro de una clase que implementa `ImagePickerFactory`, importa `remember as composeRemember`.
-- **Lee `iosMain` buscando lo que Windows no ve antes de subir:** `CPointer<ByteVar>` no entra donde se pide `UByteVar`; `private var` asignado desde afuera.
+- **Lee `iosMain` buscando lo que Windows no ve antes de subir,** incluidos los `import` de cada clase contra su `package` real (uno equivocado tumbó F5-K): `CPointer<ByteVar>` no entra donde se pide `UByteVar`; `private var` asignado desde afuera.
 - **`commonMain` no nombra relojes ni `Instant`:** Android va con `kotlinx-datetime` 0.6.2 e iOS con 0.7.1. Usa `nowEpochMillis()`, `localDayIso()`, `todayEpochDay()` y `newUuid()`. `:shared:compileCommonMainKotlinMetadata` corre en Windows y caza esto.
 - **Native rechaza en `commonTest`:** comas y `. ; : / \ < > [ ] ( )` en nombres entre backticks (los paréntesis tumbaron `ios-build` de F5-J y mi `grep` no los miraba), `@Test(expected=)`, `org.junit`, `String.format`, `measureTimeMillis`, `java.*`, `Charsets`. `assertEquals(Int, Long)` no iguala. `:iosKit` no tiene pruebas: la lógica pura va a `:shared`. `NSNumber(longLong = x)`. `ARCHS=arm64`.
 - **Solo Android:** `ProductImageStore`, `CameraCaptureStore`, `AndroidImagePickerFactory`, `AndroidLanguageControl`, `LanguagePreference`. Los servicios de plataforma entran a las pantallas por parámetro, sin valor por defecto, ni `CompositionLocal` ni `expect`. Al mover pantallas, pide `:app:compileDebugAndroidTestKotlin`.
