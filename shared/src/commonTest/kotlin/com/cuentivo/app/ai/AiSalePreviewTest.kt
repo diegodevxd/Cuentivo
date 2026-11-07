@@ -2,11 +2,11 @@ package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class AiSalePreviewTest {
 
@@ -56,7 +56,7 @@ class AiSalePreviewTest {
     )
 
     @Test
-    fun `exact resolution with single product and zero initial payment`() = runBlocking {
+    fun `exact resolution with single product and zero initial payment`() = runTest {
         val customer = testCustomer()
         val product = testProduct()
         val resolver = AiSalePreviewResolver(
@@ -72,7 +72,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
         assertEquals("key-123", preview.confirmationKey)
         assertEquals(customer.id, preview.customerId)
@@ -88,7 +88,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `exact resolution with multiple products and partial initial payment`() = runBlocking {
+    fun `exact resolution with multiple products and partial initial payment`() = runTest {
         val customer = testCustomer()
         val prod1 = testProduct(id = "prod-1", name = "Jabón", salePriceCents = 5000L)
         val prod2 = testProduct(id = "prod-2", name = "Shampoo", salePriceCents = 8000L)
@@ -111,7 +111,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
         assertEquals(18000L, preview.totalCents)
         assertEquals(4000L, preview.initialPaymentCents)
@@ -121,7 +121,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `missing customer proposes NEW customer entity`() = runBlocking {
+    fun `missing customer proposes NEW customer entity`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> listOf(testProduct()) },
@@ -136,7 +136,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
         assertEquals("customer-desconocido", preview.customer.customerId)
         assertEquals("Desconocido", preview.customer.displayName)
@@ -145,7 +145,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `ambiguous customer returns CustomerSelectionRequired with candidates`() = runBlocking {
+    fun `ambiguous customer returns CustomerSelectionRequired with candidates`() = runTest {
         val c1 = testCustomer(id = "c1", name = "María Gómez", normalizedName = "maria gomez")
         val c2 = testCustomer(id = "c2", name = "María Torres", normalizedName = "maria torres")
         val resolver = AiSalePreviewResolver(
@@ -160,7 +160,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("must be CustomerSelectionRequired", result is AiSalePreviewResult.CustomerSelectionRequired)
+        assertTrue(result is AiSalePreviewResult.CustomerSelectionRequired, "must be CustomerSelectionRequired")
         val selection = result as AiSalePreviewResult.CustomerSelectionRequired
         assertEquals(2, selection.candidates.size)
         assertEquals("c1", selection.candidates[0].customerId)
@@ -168,7 +168,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `missing product proposes NEW product entity`() = runBlocking {
+    fun `missing product proposes NEW product entity`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> listOf(testCustomer()) },
             searchProducts = { _, _ -> emptyList() },
@@ -183,7 +183,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
         val line = preview.lines[0]
         assertEquals("product-producto inexistente", line.productId)
@@ -193,7 +193,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `ambiguous product returns ProductSelectionRequired with candidate list`() = runBlocking {
+    fun `ambiguous product returns ProductSelectionRequired with candidate list`() = runTest {
         val p1 = testProduct(id = "p1", name = "Jabón Líquido")
         val p2 = testProduct(id = "p2", name = "Jabón en Barra")
         val resolver = AiSalePreviewResolver(
@@ -208,14 +208,14 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("must be ProductSelectionRequired", result is AiSalePreviewResult.ProductSelectionRequired)
+        assertTrue(result is AiSalePreviewResult.ProductSelectionRequired, "must be ProductSelectionRequired")
         val selection = result as AiSalePreviewResult.ProductSelectionRequired
         assertEquals("Jabón", selection.productName)
         assertEquals(2, selection.candidates.size)
     }
 
     @Test
-    fun `repeated product lines resolve correctly and accumulate in total`() = runBlocking {
+    fun `repeated product lines resolve correctly and accumulate in total`() = runTest {
         val customer = testCustomer()
         val product = testProduct(id = "prod-1", name = "Jabón", salePriceCents = 5000L)
         val resolver = AiSalePreviewResolver(
@@ -234,14 +234,14 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
         assertEquals(20000L, preview.totalCents)
         assertEquals(2, preview.lines.size)
     }
 
     @Test
-    fun `overpayment blocks with INITIAL_PAYMENT_EXCEEDS_TOTAL`() = runBlocking {
+    fun `overpayment blocks with INITIAL_PAYMENT_EXCEEDS_TOTAL`() = runTest {
         val customer = testCustomer()
         val product = testProduct(name = "Jabón", salePriceCents = 5000L)
         val resolver = AiSalePreviewResolver(
@@ -256,13 +256,13 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("must be Blocked", result is AiSalePreviewResult.Blocked)
+        assertTrue(result is AiSalePreviewResult.Blocked, "must be Blocked")
         val blocked = result as AiSalePreviewResult.Blocked
         assertEquals(AiSaleBlockReason.INITIAL_PAYMENT_EXCEEDS_TOTAL, blocked.reason)
     }
 
     @Test
-    fun `declared unit price zero remains zero and does not substitute catalog price`() = runBlocking {
+    fun `declared unit price zero remains zero and does not substitute catalog price`() = runTest {
         val customer = testCustomer()
         val product = testProduct(name = "Muestra Gratis", salePriceCents = 8000L)
         val resolver = AiSalePreviewResolver(
@@ -278,7 +278,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
         assertEquals(0L, preview.totalCents)
         assertEquals(0L, preview.remainderCents)
@@ -288,7 +288,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `quantity less than or equal to zero returns Blocked INVALID_LINE_QUANTITY`() = runBlocking {
+    fun `quantity less than or equal to zero returns Blocked INVALID_LINE_QUANTITY`() = runTest {
         val customer = testCustomer()
         val product = testProduct(name = "Jabón")
         val resolver = AiSalePreviewResolver(
@@ -310,7 +310,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `negative unitPriceCents returns Blocked INVALID_LINE_PRICE`() = runBlocking {
+    fun `negative unitPriceCents returns Blocked INVALID_LINE_PRICE`() = runTest {
         val customer = testCustomer()
         val product = testProduct(name = "Jabón")
         val resolver = AiSalePreviewResolver(
@@ -332,7 +332,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `arithmetic overflow fails closed with exact Blocked ARITHMETIC_OVERFLOW`() = runBlocking {
+    fun `arithmetic overflow fails closed with exact Blocked ARITHMETIC_OVERFLOW`() = runTest {
         val customer = testCustomer()
         val product = testProduct(name = "Jabón", salePriceCents = Long.MAX_VALUE)
         val resolver = AiSalePreviewResolver(
@@ -357,7 +357,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `empty or blank confirmation key fails closed to Unavailable`() = runBlocking {
+    fun `empty or blank confirmation key fails closed to Unavailable`() = runTest {
         val customer = testCustomer()
         val product = testProduct(name = "Jabón")
         val resolver = AiSalePreviewResolver(
@@ -377,7 +377,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `wrong-business customer candidates are filtered out`() = runBlocking {
+    fun `wrong-business customer candidates are filtered out`() = runTest {
         val wrongCustomer = testCustomer(id = "c-wrong", businessId = "other-biz")
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> listOf(wrongCustomer) },
@@ -391,15 +391,15 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("result must be Ready with new customer", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready with new customer")
         val preview = (result as AiSalePreviewResult.Ready).preview
         assertEquals(AiEntityResolutionMode.NEW, preview.customer.mode)
-        assertFalse("must not use wrong customer ID", preview.customer.customerId == "c-wrong")
+        assertFalse(preview.customer.customerId == "c-wrong", "must not use wrong customer ID")
         assertEquals(null, preview.customer.sourceFingerprint)
     }
 
     @Test
-    fun `wrong-business product candidates are filtered out`() = runBlocking {
+    fun `wrong-business product candidates are filtered out`() = runTest {
         val customer = testCustomer()
         val wrongProduct = testProduct(id = "p-wrong", businessId = "other-biz", name = "Jabón")
         val resolver = AiSalePreviewResolver(
@@ -414,16 +414,16 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("result must be Ready with new product", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready with new product")
         val preview = (result as AiSalePreviewResult.Ready).preview
         val line = preview.lines[0]
         assertEquals(AiEntityResolutionMode.NEW, line.resolutionMode)
-        assertFalse("must not use wrong product ID", line.productId == "p-wrong")
+        assertFalse(line.productId == "p-wrong", "must not use wrong product ID")
         assertEquals(null, line.sourceFingerprint)
     }
 
     @Test
-    fun `resolved preview lines collection is truly unmodifiable`() = runBlocking {
+    fun `resolved preview lines collection is truly unmodifiable`() = runTest {
         val customer = testCustomer()
         val product = testProduct(name = "Jabón")
         val resolver = AiSalePreviewResolver(
@@ -449,11 +449,11 @@ class AiSalePreviewTest {
         } catch (_: ClassCastException) {
             threw = true
         }
-        assertTrue("lines collection must be unmodifiable", threw)
+        assertTrue(threw, "lines collection must be unmodifiable")
     }
 
     @Test
-    fun `no candidates proposes new customer and new product with generated ID and null fingerprint`() = runBlocking {
+    fun `no candidates proposes new customer and new product with generated ID and null fingerprint`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> emptyList() },
@@ -468,7 +468,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
 
         assertEquals("confirm-1", preview.confirmationKey)
@@ -496,7 +496,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `mixed existing and new products resolve with appropriate modes`() = runBlocking {
+    fun `mixed existing and new products resolve with appropriate modes`() = runTest {
         val existingCustomer = testCustomer(id = "cust-1", name = "María López", normalizedName = "maria lopez", updatedAt = 5000L)
         val existingProduct = testProduct(id = "prod-1", name = "Jabón", salePriceCents = 5000L, updatedAt = 6000L)
 
@@ -519,7 +519,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
 
         assertEquals(AiEntityResolutionMode.EXISTING, preview.customer.mode)
@@ -541,7 +541,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `similar candidates never auto-create without explicit choice`() = runBlocking {
+    fun `similar candidates never auto-create without explicit choice`() = runTest {
         val candidate1 = testCustomer(id = "cust-1", name = "María López Gómez", normalizedName = "maria lopez gomez")
         val candidate2 = testCustomer(id = "cust-2", name = "María López Pérez", normalizedName = "maria lopez perez")
 
@@ -558,13 +558,13 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("must require customer selection", result is AiSalePreviewResult.CustomerSelectionRequired)
+        assertTrue(result is AiSalePreviewResult.CustomerSelectionRequired, "must require customer selection")
         val required = result as AiSalePreviewResult.CustomerSelectionRequired
         assertEquals(2, required.candidates.size)
     }
 
     @Test
-    fun `explicit USE_EXISTING choice uses real candidate and fingerprint`() = runBlocking {
+    fun `explicit USE_EXISTING choice uses real candidate and fingerprint`() = runTest {
         val candidate1 = testCustomer(id = "cust-1", name = "María López Gómez", normalizedName = "maria lopez gomez", updatedAt = 7000L)
         val candidate2 = testCustomer(id = "cust-2", name = "María López Pérez", normalizedName = "maria lopez perez", updatedAt = 8000L)
         val prodCandidate1 = testProduct(id = "prod-1", name = "Jabón Neutro", salePriceCents = 5000L, updatedAt = 9000L)
@@ -588,7 +588,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal, choices)
-        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
 
         assertEquals("cust-2", preview.customer.customerId)
@@ -604,7 +604,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `explicit CREATE_NEW choice forces new entity even when candidates exist`() = runBlocking {
+    fun `explicit CREATE_NEW choice forces new entity even when candidates exist`() = runTest {
         val existingCustomer = testCustomer(id = "cust-1", name = "María López", normalizedName = "maria lopez", updatedAt = 7000L)
         val existingProduct = testProduct(id = "prod-1", name = "Jabón", salePriceCents = 5000L, updatedAt = 9000L)
 
@@ -627,7 +627,7 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal, choices)
-        assertTrue("result must be Ready", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "result must be Ready")
         val preview = (result as AiSalePreviewResult.Ready).preview
 
         assertEquals("customer-created-maria lopez", preview.customer.customerId)
@@ -641,7 +641,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `explicit USE_EXISTING with non-existent or wrong-business ID returns Unavailable`() = runBlocking {
+    fun `explicit USE_EXISTING with non-existent or wrong-business ID returns Unavailable`() = runTest {
         val customer = testCustomer(id = "cust-1", businessId = "biz-1", name = "María López")
         val product = testProduct(id = "prod-1", businessId = "biz-1", name = "Jabón")
 
@@ -666,7 +666,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `blank generated entity ID fails closed with Unavailable`() = runBlocking {
+    fun `blank generated entity ID fails closed with Unavailable`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> emptyList() },
@@ -699,7 +699,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `customerName normalizing to empty string fails closed with Unavailable`() = runBlocking {
+    fun `customerName normalizing to empty string fails closed with Unavailable`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> emptyList() },
@@ -717,7 +717,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `productName normalizing to empty string fails closed with Unavailable`() = runBlocking {
+    fun `productName normalizing to empty string fails closed with Unavailable`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> emptyList() },
@@ -735,7 +735,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `inconsistent declared prices for same new product returns Blocked INCONSISTENT_NEW_PRODUCT_PRICE`() = runBlocking {
+    fun `inconsistent declared prices for same new product returns Blocked INCONSISTENT_NEW_PRODUCT_PRICE`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> emptyList() },
@@ -760,7 +760,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `consistent declared prices for same new product reuses product ID and succeeds`() = runBlocking {
+    fun `consistent declared prices for same new product reuses product ID and succeeds`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> emptyList() },
@@ -787,7 +787,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `colliding generated entity IDs within preview fails closed with Unavailable`() = runBlocking {
+    fun `colliding generated entity IDs within preview fails closed with Unavailable`() = runTest {
         var productGenerationCount = 0
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
@@ -815,14 +815,14 @@ class AiSalePreviewTest {
         val result = resolver.resolve("biz-1", proposal)
         assertEquals(AiSalePreviewResult.Unavailable, result)
         assertEquals(
-            "must have generated product ID twice and failed on the second product collision",
             2,
             productGenerationCount,
+            "must have generated product ID twice and failed on the second product collision",
         )
     }
 
     @Test
-    fun `same generated ID for customer and product is permitted across distinct namespaces`() = runBlocking {
+    fun `same generated ID for customer and product is permitted across distinct namespaces`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
             searchProducts = { _, _ -> emptyList() },
@@ -839,14 +839,14 @@ class AiSalePreviewTest {
         )
 
         val result = resolver.resolve("biz-1", proposal)
-        assertTrue("must be Ready even when customer and product share the same ID", result is AiSalePreviewResult.Ready)
+        assertTrue(result is AiSalePreviewResult.Ready, "must be Ready even when customer and product share the same ID")
         val preview = (result as AiSalePreviewResult.Ready).preview
         assertEquals("shared-id-123", preview.customer.customerId)
         assertEquals("shared-id-123", preview.lines[0].productId)
     }
 
     @Test
-    fun `CancellationException in searchCustomers propagates without catching`() {
+    fun `CancellationException in searchCustomers propagates without catching`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> throw kotlinx.coroutines.CancellationException("test cancel customers") },
             searchProducts = { _, _ -> emptyList() },
@@ -860,18 +860,16 @@ class AiSalePreviewTest {
 
         var caughtCancellation = false
         try {
-            runBlocking {
-                resolver.resolve("biz-1", proposal)
-            }
+            resolver.resolve("biz-1", proposal)
         } catch (e: kotlinx.coroutines.CancellationException) {
             assertEquals("test cancel customers", e.message)
             caughtCancellation = true
         }
-        assertTrue("CancellationException from searchCustomers must propagate", caughtCancellation)
+        assertTrue(caughtCancellation, "CancellationException from searchCustomers must propagate")
     }
 
     @Test
-    fun `CancellationException in searchProducts propagates without catching`() {
+    fun `CancellationException in searchProducts propagates without catching`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> listOf(testCustomer()) },
             searchProducts = { _, _ -> throw kotlinx.coroutines.CancellationException("test cancel products") },
@@ -885,18 +883,16 @@ class AiSalePreviewTest {
 
         var caughtCancellation = false
         try {
-            runBlocking {
-                resolver.resolve("biz-1", proposal)
-            }
+            resolver.resolve("biz-1", proposal)
         } catch (e: kotlinx.coroutines.CancellationException) {
             assertEquals("test cancel products", e.message)
             caughtCancellation = true
         }
-        assertTrue("CancellationException from searchProducts must propagate", caughtCancellation)
+        assertTrue(caughtCancellation, "CancellationException from searchProducts must propagate")
     }
 
     @Test
-    fun `new product via NotFound with unitPriceCents zero returns Blocked INVALID_LINE_PRICE`() = runBlocking {
+    fun `new product via NotFound with unitPriceCents zero returns Blocked INVALID_LINE_PRICE`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> listOf(testCustomer()) },
             searchProducts = { _, _ -> emptyList() },
@@ -916,7 +912,7 @@ class AiSalePreviewTest {
     }
 
     @Test
-    fun `new product via CreateNew with unitPriceCents zero returns Blocked INVALID_LINE_PRICE`() = runBlocking {
+    fun `new product via CreateNew with unitPriceCents zero returns Blocked INVALID_LINE_PRICE`() = runTest {
         val resolver = AiSalePreviewResolver(
             searchCustomers = { _, _ -> listOf(testCustomer()) },
             searchProducts = { _, _ -> listOf(testProduct(name = "Jabón")) },

@@ -10,13 +10,13 @@ import com.cuentivo.app.data.local.SaleEntity
 import com.cuentivo.app.data.local.SaleItemEntity
 import com.cuentivo.app.domain.SaleOperationIds
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.fail
+import kotlin.test.Test
 
 class AiSaleExecutionTest {
 
@@ -41,7 +41,7 @@ class AiSaleExecutionTest {
     )
 
     @Test
-    fun `successful sale execution with zero initial payment records sale and charge only`() = runBlocking {
+    fun `successful sale execution with zero initial payment records sale and charge only`() = runTest {
         var recordedSale: SaleEntity? = null
         var recordedItems: List<SaleItemEntity>? = null
         var recordedCharge: AccountMovementEntity? = null
@@ -61,7 +61,7 @@ class AiSaleExecutionTest {
         )
 
         val result = service.confirm(validRequest)
-        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertTrue(result is AiSaleExecutionResult.Recorded, "result must be Recorded")
         val recorded = result as AiSaleExecutionResult.Recorded
         assertNotNull(recorded.saleId)
         assertNull(recorded.paymentId)
@@ -77,7 +77,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `successful sale execution with initial payment records sale and payment`() = runBlocking {
+    fun `successful sale execution with initial payment records sale and payment`() = runTest {
         var recordedPayment: PaymentEntity? = null
         var recordedPaymentMovement: AccountMovementEntity? = null
         var recordedAllocations: List<PaymentAllocationEntity>? = null
@@ -97,7 +97,7 @@ class AiSaleExecutionTest {
         )
 
         val result = service.confirm(request)
-        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertTrue(result is AiSaleExecutionResult.Recorded, "result must be Recorded")
         val recorded = result as AiSaleExecutionResult.Recorded
         assertNotNull(recorded.saleId)
         assertNotNull(recorded.paymentId)
@@ -111,7 +111,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `stale customer or product data returns StalePreview`() = runBlocking {
+    fun `stale customer or product data returns StalePreview`() = runTest {
         val service = AiSaleExecutionService(
             registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 ExpectedSaleResult.StaleData
@@ -126,7 +126,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `invalid request parameters are rejected fail-closed`() = runBlocking {
+    fun `invalid request parameters are rejected fail-closed`() = runTest {
         val service = AiSaleExecutionService(
             registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 ExpectedSaleResult.Recorded("s", null)
@@ -165,7 +165,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `missing user id returns Unavailable`() = runBlocking {
+    fun `missing user id returns Unavailable`() = runTest {
         val service = AiSaleExecutionService(
             registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded("s", null) },
             currentUserId = { "" },
@@ -178,7 +178,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `cancellation exception is rethrown`() = runBlocking {
+    fun `cancellation exception is rethrown`() = runTest {
         val service = AiSaleExecutionService(
             registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> throw CancellationException("test cancel") },
             currentUserId = { "user-1" },
@@ -195,7 +195,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `deterministic operation IDs generated for same confirmation key`() = runBlocking {
+    fun `deterministic operation IDs generated for same confirmation key`() = runTest {
         val key = "key-idem-1"
         val idempotencyKey = "ai-sale-$key"
         val saleId1 = SaleOperationIds.sale(idempotencyKey)
@@ -212,7 +212,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `confirm on Recorded loads stored bundle and enqueues to sync queue`() = runBlocking {
+    fun `confirm on Recorded loads stored bundle and enqueues to sync queue`() = runTest {
         var enqueuedBundle: com.cuentivo.app.data.local.StoredSaleBundle? = null
         val sampleSale = SaleEntity(
             id = "sale-1",
@@ -278,7 +278,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `confirm on StaleData does not enqueue stored bundle`() = runBlocking {
+    fun `confirm on StaleData does not enqueue stored bundle`() = runTest {
         var enqueued = false
         val service = AiSaleExecutionService(
             registerSale = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.StaleData },
@@ -295,7 +295,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `successful composite sale passes new entity specs to registerSale and loads persisted entities`() = runBlocking {
+    fun `successful composite sale passes new entity specs to registerSale and loads persisted entities`() = runTest {
         val newCustSpec = AiNewCustomerSpec(
             customerId = "new-cust-1",
             displayName = "Carlos Santana",
@@ -347,7 +347,7 @@ class AiSaleExecutionTest {
         )
 
         val result = service.confirm(compositeRequest)
-        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertTrue(result is AiSaleExecutionResult.Recorded, "result must be Recorded")
         assertNotNull(passedNewCustomer)
         assertEquals("new-cust-1", passedNewCustomer?.id)
         assertEquals("Carlos Santana", passedNewCustomer?.name)
@@ -362,7 +362,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `empty customer fingerprint without newCustomer spec is Rejected`() = runBlocking {
+    fun `empty customer fingerprint without newCustomer spec is Rejected`() = runTest {
         val request = validRequest.copy(sourceCustomerFingerprint = "", newCustomer = null)
         val service = AiSaleExecutionService(
             registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
@@ -375,7 +375,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `non-empty customer fingerprint with newCustomer spec is Rejected`() = runBlocking {
+    fun `non-empty customer fingerprint with newCustomer spec is Rejected`() = runTest {
         val request = validRequest.copy(
             sourceCustomerFingerprint = "cust-1:1000",
             newCustomer = AiNewCustomerSpec("cust-1", "María", "maria", false),
@@ -391,7 +391,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `newCustomer customerId mismatching request customerId is Rejected`() = runBlocking {
+    fun `newCustomer customerId mismatching request customerId is Rejected`() = runTest {
         val request = validRequest.copy(
             customerId = "cust-1",
             sourceCustomerFingerprint = "",
@@ -408,7 +408,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `blank newCustomer displayName or normalizedName is Rejected`() = runBlocking {
+    fun `blank newCustomer displayName or normalizedName is Rejected`() = runTest {
         val request1 = validRequest.copy(
             customerId = "cust-1",
             sourceCustomerFingerprint = "",
@@ -430,7 +430,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `empty product fingerprint without corresponding newProduct spec is Rejected`() = runBlocking {
+    fun `empty product fingerprint without corresponding newProduct spec is Rejected`() = runTest {
         val lineWithoutFp = validLine.copy(sourceProductFingerprint = "")
         val request = validRequest.copy(lines = listOf(lineWithoutFp), newProducts = emptyList())
         val service = AiSaleExecutionService(
@@ -443,7 +443,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `non-empty product fingerprint with corresponding newProduct spec is Rejected`() = runBlocking {
+    fun `non-empty product fingerprint with corresponding newProduct spec is Rejected`() = runTest {
         val request = validRequest.copy(
             lines = listOf(validLine), // has non-empty fingerprint
             newProducts = listOf(AiNewProductSpec("prod-1", "Jabón", 5000L, false)),
@@ -458,7 +458,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `orphan newProduct spec without matching sale line is Rejected`() = runBlocking {
+    fun `orphan newProduct spec without matching sale line is Rejected`() = runTest {
         val lineWithoutFp = validLine.copy(productId = "prod-1", sourceProductFingerprint = "")
         val request = validRequest.copy(
             lines = listOf(lineWithoutFp),
@@ -477,7 +477,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `newProduct spec with non-positive salePriceCents is Rejected`() = runBlocking {
+    fun `newProduct spec with non-positive salePriceCents is Rejected`() = runTest {
         val lineWithoutFp = validLine.copy(productId = "prod-1", sourceProductFingerprint = "", unitPriceCents = 5000L)
         val requestZero = validRequest.copy(
             lines = listOf(lineWithoutFp),
@@ -498,7 +498,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `newProduct spec with blank name or productId is Rejected`() = runBlocking {
+    fun `newProduct spec with blank name or productId is Rejected`() = runTest {
         val lineWithoutFp = validLine.copy(productId = "prod-1", sourceProductFingerprint = "")
         val requestBlankName = validRequest.copy(
             lines = listOf(lineWithoutFp),
@@ -514,7 +514,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `duplicate newProduct specs with same productId is Rejected`() = runBlocking {
+    fun `duplicate newProduct specs with same productId is Rejected`() = runTest {
         val lineWithoutFp = validLine.copy(productId = "prod-1", sourceProductFingerprint = "")
         val request = validRequest.copy(
             lines = listOf(lineWithoutFp),
@@ -533,7 +533,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `explicit past notebook saleDateEpochDay is recorded on sale entity`() = runBlocking {
+    fun `explicit past notebook saleDateEpochDay is recorded on sale entity`() = runTest {
         var recordedSale: SaleEntity? = null
         val request = validRequest.copy(saleDateEpochDay = 20450L)
 
@@ -548,12 +548,12 @@ class AiSaleExecutionTest {
         )
 
         val result = service.confirm(request)
-        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertTrue(result is AiSaleExecutionResult.Recorded, "result must be Recorded")
         assertEquals(20450L, recordedSale?.saleDateEpochDay)
     }
 
     @Test
-    fun `future saleDateEpochDay is Rejected`() = runBlocking {
+    fun `future saleDateEpochDay is Rejected`() = runTest {
         val request = validRequest.copy(saleDateEpochDay = 20501L)
 
         val service = AiSaleExecutionService(
@@ -568,7 +568,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `zero or negative saleDateEpochDay is Rejected`() = runBlocking {
+    fun `zero or negative saleDateEpochDay is Rejected`() = runTest {
         val requestZero = validRequest.copy(saleDateEpochDay = 0L)
         val requestNegative = validRequest.copy(saleDateEpochDay = -1L)
 
@@ -584,7 +584,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `uncataloged charge line without product records null productId and uncataloged item id`() = runBlocking {
+    fun `uncataloged charge line without product records null productId and uncataloged item id`() = runTest {
         var recordedSale: SaleEntity? = null
         var recordedItems: List<SaleItemEntity>? = null
         var recordedProductFps: Map<String, String>? = null
@@ -613,7 +613,7 @@ class AiSaleExecutionTest {
         )
 
         val result = service.confirm(request)
-        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertTrue(result is AiSaleExecutionResult.Recorded, "result must be Recorded")
         assertEquals(20400L, recordedSale?.saleDateEpochDay)
         assertEquals(1, recordedItems?.size)
         val item = recordedItems!![0]
@@ -627,7 +627,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `uncataloged charge line with blank or overly long name is rejected`() = runBlocking {
+    fun `uncataloged charge line with blank or overly long name is rejected`() = runTest {
         val blankLine = AiSaleConfirmationLine.UncatalogedCharge(
             productNameSnapshot = "   ",
             unitPriceCents = 15000L,
@@ -651,7 +651,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `uncataloged charge line rejecting mismatch line total or zero price`() = runBlocking {
+    fun `uncataloged charge line rejecting mismatch line total or zero price`() = runTest {
         val lineMismatchTotal = AiSaleConfirmationLine.UncatalogedCharge(
             productNameSnapshot = "Deuda",
             unitPriceCents = 1000L,
@@ -686,7 +686,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `confirmLedger with mandatory saleDateEpochDay records exact historical sale date`() = runBlocking {
+    fun `confirmLedger with mandatory saleDateEpochDay records exact historical sale date`() = runTest {
         var recordedSale: SaleEntity? = null
         val uncatalogedLine = AiSaleConfirmationLine.UncatalogedCharge(
             productNameSnapshot = "Saldo libreta",
@@ -721,7 +721,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `sale with promised payment date earlier than sale date is rejected`() = runBlocking {
+    fun `sale with promised payment date earlier than sale date is rejected`() = runTest {
         val service = AiSaleExecutionService(
             registerSale = { _, sale, _, _, _, _, _, _, _, _, _, _, _, _ -> ExpectedSaleResult.Recorded(sale.id, null) },
             currentUserId = { "user-1" },
@@ -737,7 +737,7 @@ class AiSaleExecutionTest {
     }
 
     @Test
-    fun `initial payment on past sale date records payment with historical sale date`() = runBlocking {
+    fun `initial payment on past sale date records payment with historical sale date`() = runTest {
         var recordedPayment: PaymentEntity? = null
 
         val uncatalogedLine = AiSaleConfirmationLine.UncatalogedCharge(
@@ -764,9 +764,9 @@ class AiSaleExecutionTest {
         )
 
         val result = service.confirm(request)
-        assertTrue("result must be Recorded", result is AiSaleExecutionResult.Recorded)
+        assertTrue(result is AiSaleExecutionResult.Recorded, "result must be Recorded")
         assertNotNull(recordedPayment)
-        assertEquals("Initial payment must be dated to effectiveSaleDate", 20400L, recordedPayment?.paymentDateEpochDay)
+        assertEquals(20400L, recordedPayment?.paymentDateEpochDay, "Initial payment must be dated to effectiveSaleDate")
     }
 }
 

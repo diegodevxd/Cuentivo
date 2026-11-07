@@ -2,14 +2,14 @@ package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.fail
+import kotlin.test.Test
 
 class AiBusinessQueryTest {
 
@@ -53,7 +53,7 @@ class AiBusinessQueryTest {
     )
 
     @Test
-    fun `customer balance query with exact match returns CustomerBalance with seam balance`() = runBlocking {
+    fun `customer balance query with exact match returns CustomerBalance with seam balance`() = runTest {
         val customer = sampleCustomer("c1", "Ana Gómez", "ana gomez")
         val resolver = createResolver(
             searchCustomers = { biz, query ->
@@ -74,7 +74,7 @@ class AiBusinessQueryTest {
         )
 
         val result = resolver.resolve(businessId, proposal)
-        assertTrue("result must be Answer.CustomerBalance", result is AiBusinessQueryResult.Answer.CustomerBalance)
+        assertTrue(result is AiBusinessQueryResult.Answer.CustomerBalance, "result must be Answer.CustomerBalance")
         val answer = result as AiBusinessQueryResult.Answer.CustomerBalance
         assertEquals("c1", answer.customerId)
         assertEquals("Ana Gómez", answer.customerName)
@@ -82,7 +82,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customer balance query ignores customers from another business, inactive, or deleted`() = runBlocking {
+    fun `customer balance query ignores customers from another business inactive or deleted`() = runTest {
         val foreign = sampleCustomer("c-other", "Ana Gómez", "ana gomez", bizId = "biz-other")
         val inactive = sampleCustomer("c-inact", "Ana Gómez", "ana gomez", isActive = false)
         val deleted = sampleCustomer("c-del", "Ana Gómez", "ana gomez", deletedAtEpochMillis = 5000L)
@@ -96,12 +96,12 @@ class AiBusinessQueryTest {
         )
 
         val result = resolver.resolve(businessId, proposal)
-        assertTrue("Mismatched or inactive customers must be filtered, leading to CustomerNotFound", result is AiBusinessQueryResult.CustomerNotFound)
+        assertTrue(result is AiBusinessQueryResult.CustomerNotFound, "Mismatched or inactive customers must be filtered, leading to CustomerNotFound")
         assertEquals("Ana Gómez", (result as AiBusinessQueryResult.CustomerNotFound).queriedName)
     }
 
     @Test
-    fun `customer balance query with ambiguous match returns CustomerSelectionRequired with unmodifiable candidates`() = runBlocking {
+    fun `customer balance query with ambiguous match returns CustomerSelectionRequired with unmodifiable candidates`() = runTest {
         val c1 = sampleCustomer("c1", "Ana Gómez", "ana gomez")
         val c2 = sampleCustomer("c2", "Ana Sofía Gómez", "ana sofia gomez")
         val foreign = sampleCustomer("c-other", "Ana Gómez", "ana gomez", bizId = "biz-other")
@@ -132,7 +132,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customer balance query with explicit UseExisting choice returns selected customer balance`() = runBlocking {
+    fun `customer balance query with explicit UseExisting choice returns selected customer balance`() = runTest {
         val c1 = sampleCustomer("c1", "Ana Gómez", "ana gomez")
         val c2 = sampleCustomer("c2", "Ana Sofía Gómez", "ana sofia gomez")
         val resolver = createResolver(
@@ -156,7 +156,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customer balance query with UseExisting choice for foreign or non-candidate returns Unavailable`() = runBlocking {
+    fun `customer balance query with UseExisting choice for foreign or non-candidate returns Unavailable`() = runTest {
         val c1 = sampleCustomer("c1", "Ana Gómez", "ana gomez")
         val foreign = sampleCustomer("c-other", "Ana Gómez", "ana gomez", bizId = "biz-other")
         val resolver = createResolver(
@@ -178,7 +178,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customer balance query with CreateNew choice returns Unavailable because queries cannot create`() = runBlocking {
+    fun `customer balance query with CreateNew choice returns Unavailable because queries cannot create`() = runTest {
         val c1 = sampleCustomer("c1", "Ana Gómez", "ana gomez")
         val resolver = createResolver(
             searchCustomers = { _, _ -> listOf(c1) },
@@ -194,7 +194,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customer balance query with unknown customer returns CustomerNotFound with queried name`() = runBlocking {
+    fun `customer balance query with unknown customer returns CustomerNotFound with queried name`() = runTest {
         val resolver = createResolver(
             searchCustomers = { _, _ -> emptyList() },
         )
@@ -210,7 +210,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customer balance query with blank customerName returns Unavailable`() = runBlocking {
+    fun `customer balance query with blank customerName returns Unavailable`() = runTest {
         val resolver = createResolver()
         val proposal = BusinessQueryProposal(
             queryType = BusinessQueryType.CUSTOMER_BALANCE,
@@ -222,7 +222,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customer balance query with blank businessId returns Unavailable`() = runBlocking {
+    fun `customer balance query with blank businessId returns Unavailable`() = runTest {
         val resolver = createResolver()
         val proposal = BusinessQueryProposal(
             queryType = BusinessQueryType.CUSTOMER_BALANCE,
@@ -234,7 +234,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customers with debt filters out other business, inactive, deleted, and non-positive balances, and caps at 20 rows`() = runBlocking {
+    fun `customers with debt filters out other business inactive deleted and non-positive balances and caps at 20 rows`() = runTest {
         val validRows = (1..25).map { i ->
             CustomerBalanceRow(
                 customer = sampleCustomer("c$i", "Cliente $i"),
@@ -292,7 +292,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `customers with debt with zero debtors returns empty list and 0 cents as valid answer`() = runBlocking {
+    fun `customers with debt with zero debtors returns empty list and 0 cents as valid answer`() = runTest {
         val rows = listOf(
             CustomerBalanceRow(customer = sampleCustomer("c1", "Cliente 1"), balanceCents = 0L),
             CustomerBalanceRow(customer = sampleCustomer("c2", "Cliente 2"), balanceCents = -10000L),
@@ -315,21 +315,21 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `sales for period returns sold and collected totals from seams`() = runBlocking {
-        val start = LocalDate.of(2026, 8, 1)
-        val end = LocalDate.of(2026, 8, 7)
+    fun `sales for period returns sold and collected totals from seams`() = runTest {
+        val start = LocalDate(2026, 8, 1)
+        val end = LocalDate(2026, 8, 7)
 
         val resolver = createResolver(
             salesTotal = { biz, s, e ->
                 assertEquals(businessId, biz)
-                assertEquals(start.toEpochDay(), s)
-                assertEquals(end.toEpochDay(), e)
+                assertEquals(start.toEpochDays().toLong(), s)
+                assertEquals(end.toEpochDays().toLong(), e)
                 150_000L
             },
             collectedTotal = { biz, s, e ->
                 assertEquals(businessId, biz)
-                assertEquals(start.toEpochDay(), s)
-                assertEquals(end.toEpochDay(), e)
+                assertEquals(start.toEpochDays().toLong(), s)
+                assertEquals(end.toEpochDays().toLong(), e)
                 80_000L
             },
         )
@@ -342,16 +342,16 @@ class AiBusinessQueryTest {
         val result = resolver.resolve(businessId, proposal)
         assertTrue(result is AiBusinessQueryResult.Answer.SalesForPeriod)
         val answer = result as AiBusinessQueryResult.Answer.SalesForPeriod
-        assertEquals(start.toEpochDay(), answer.startEpochDay)
-        assertEquals(end.toEpochDay(), answer.endEpochDay)
+        assertEquals(start.toEpochDays().toLong(), answer.startEpochDay)
+        assertEquals(end.toEpochDays().toLong(), answer.endEpochDay)
         assertEquals(150_000L, answer.soldCents)
         assertEquals(80_000L, answer.collectedCents)
     }
 
     @Test
-    fun `sales for period with zero sales and zero collected returns valid Answer with 0 cents`() = runBlocking {
-        val start = LocalDate.of(2026, 8, 1)
-        val end = LocalDate.of(2026, 8, 1)
+    fun `sales for period with zero sales and zero collected returns valid Answer with 0 cents`() = runTest {
+        val start = LocalDate(2026, 8, 1)
+        val end = LocalDate(2026, 8, 1)
 
         val resolver = createResolver(
             salesTotal = { _, _, _ -> 0L },
@@ -371,7 +371,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `sales for period with invalid calendar date returns Blocked INVALID_DATE`() = runBlocking {
+    fun `sales for period with invalid calendar date returns Blocked INVALID_DATE`() = runTest {
         val resolver = createResolver()
 
         // Feb 30th does not exist
@@ -392,7 +392,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `sales for period with start date after end date returns Blocked START_AFTER_END`() = runBlocking {
+    fun `sales for period with start date after end date returns Blocked START_AFTER_END`() = runTest {
         val resolver = createResolver()
 
         val proposal = BusinessQueryProposal(
@@ -404,7 +404,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `sales for period with range exceeding 366 days returns Blocked PERIOD_TOO_LONG`() = runBlocking {
+    fun `sales for period with range exceeding 366 days returns Blocked PERIOD_TOO_LONG`() = runTest {
         val resolver = createResolver()
 
         // 367 days (e.g. Jan 1 2025 to Jan 3 2026 = 368 days)
@@ -417,9 +417,9 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `sales for period with exactly 366 days (leap year) is accepted`() = runBlocking {
-        val start = LocalDate.of(2024, 1, 1)
-        val end = LocalDate.of(2024, 12, 31) // 366 days in leap year 2024
+    fun `sales for period with exactly 366 days (leap year) is accepted`() = runTest {
+        val start = LocalDate(2024, 1, 1)
+        val end = LocalDate(2024, 12, 31) // 366 days in leap year 2024
 
         val resolver = createResolver(
             salesTotal = { _, _, _ -> 50000L },
@@ -435,7 +435,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `sales for period with missing period returns Unavailable`() = runBlocking {
+    fun `sales for period with missing period returns Unavailable`() = runTest {
         val resolver = createResolver()
         val proposal = BusinessQueryProposal(
             queryType = BusinessQueryType.SALES_FOR_PERIOD,
@@ -445,7 +445,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `resolver rethrows CancellationException from any seam`() = runBlocking {
+    fun `resolver rethrows CancellationException from any seam`() = runTest {
         val resolverCustomer = createResolver(
             searchCustomers = { _, _ -> throw CancellationException("test cancel search") },
         )
@@ -481,7 +481,7 @@ class AiBusinessQueryTest {
     }
 
     @Test
-    fun `resolver maps seam Exception to Unavailable`() = runBlocking {
+    fun `resolver maps seam Exception to Unavailable`() = runTest {
         val resolverCustomer = createResolver(
             searchCustomers = { _, _ -> throw RuntimeException("DB error") },
         )

@@ -6,10 +6,10 @@ import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.domain.LedgerBatchConfirmation
 import com.cuentivo.app.ui.transaction.DueOption
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.Test
 
 /**
  * El plazo elegido en la revision de la libreta, a traves de la maquina de estados.
@@ -22,7 +22,7 @@ class LedgerDueDatePlazoStateTest {
 
     private val sessionId = "sesion-plazo"
     private val businessId = "biz-plazo"
-    private val todayEpochDay = LocalDate.of(2026, 9, 22).toEpochDay()
+    private val todayEpochDay = LocalDate(2026, 9, 22).toEpochDays().toLong()
 
     private fun cleanRow() = LedgerOperation(
         lineIndex = 0,
@@ -64,9 +64,9 @@ class LedgerDueDatePlazoStateTest {
 
         val state = model.state as AiDebugLabState.LedgerReviewing
         assertEquals(
-            "15 por defecto, igual que la venta manual: sin fecha no puede vencerse",
             DueOption.FIFTEEN.days,
             state.dueDateDays,
+            "15 por defecto, igual que la venta manual: sin fecha no puede vencerse",
         )
     }
 
@@ -79,8 +79,8 @@ class LedgerDueDatePlazoStateTest {
 
         val choosingNone = AiDebugLabMachine.onUpdateLedgerDueDateDays(choosing30, sessionId, null)
         assertNull(
-            "sin fecha es una eleccion explicita, no la ausencia de valor",
             (choosingNone.state as AiDebugLabState.LedgerReviewing).dueDateDays,
+            "sin fecha es una eleccion explicita, no la ausencia de valor",
         )
     }
 
@@ -91,9 +91,9 @@ class LedgerDueDatePlazoStateTest {
         check(outcome is AiLedgerConfirmOutcome.Started) { "tenia que arrancar: $outcome" }
         val confirming = outcome.model.state as AiDebugLabState.LedgerConfirming
         assertEquals(
-            "lo que se registra es lo que la persona vio al pulsar",
             30L,
             confirming.dueDateDays,
+            "lo que se registra es lo que la persona vio al pulsar",
         )
     }
 
@@ -112,9 +112,9 @@ class LedgerDueDatePlazoStateTest {
         val reviewingAgain = afterFailure.state as AiDebugLabState.LedgerReviewing
 
         assertEquals(
-            "tras un fallo la persona sigue viendo el plazo que habia elegido, no el 15 por defecto",
             7L,
             reviewingAgain.dueDateDays,
+            "tras un fallo la persona sigue viendo el plazo que habia elegido, no el 15 por defecto",
         )
     }
 
@@ -151,9 +151,9 @@ class LedgerDueDatePlazoStateTest {
         )
 
         assertEquals(
-            "al volver del borrador el selector tiene que estar en 15, no en null",
             DueOption.FIFTEEN.days,
             (restored.state as AiDebugLabState.LedgerReviewing).dueDateDays,
+            "al volver del borrador el selector tiene que estar en 15, no en null",
         )
     }
 }

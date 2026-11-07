@@ -16,12 +16,14 @@ import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.RequiresClarificationProposal
 import com.cuentivo.app.ai.UnresolvedSlot
 import com.cuentivo.app.data.local.AiDailyStoredMessage
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertSame
-import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertSame
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class AiDebugLabMachineTest {
 
@@ -94,8 +96,8 @@ class AiDebugLabMachineTest {
                 result,
                 submitted.generation,
             )
-            assertEquals("expected Unavailable state for $result", AiDebugLabState.Unavailable, after.state)
-            assertEquals("expected message $expectedMessage for $result", listOf(AiChatMessage.UserText("venta"), expectedMessage), after.messages)
+            assertEquals(AiDebugLabState.Unavailable, after.state, "expected Unavailable state for $result")
+            assertEquals(listOf(AiChatMessage.UserText("venta"), expectedMessage), after.messages, "expected message $expectedMessage for $result")
         }
     }
 
@@ -678,7 +680,7 @@ class AiDebugLabMachineTest {
         mutableSource.add(AiPaymentCustomerCandidate("c3", "María Hernández"))
         assertEquals(2, selection.candidates.size)
 
-        assertThrows(UnsupportedOperationException::class.java) {
+        assertFailsWith<UnsupportedOperationException> {
             @Suppress("UNCHECKED_CAST")
             (selection.candidates as MutableList<AiPaymentCustomerCandidate>).add(
                 AiPaymentCustomerCandidate("c4", "Attack"),
@@ -809,7 +811,7 @@ class AiDebugLabMachineTest {
         val model = confirmationModel(generation = 4)
         val outcome = AiDebugLabMachine.onConfirmPayment(model, "business-1")
 
-        assertTrue("Expected Started but got $outcome", outcome is AiPaymentConfirmOutcome.Started)
+        assertTrue(outcome is AiPaymentConfirmOutcome.Started, "Expected Started but got $outcome")
         val started = outcome as AiPaymentConfirmOutcome.Started
         assertEquals(5L, started.generation)
         assertEquals("k1", started.request.confirmationKey)
@@ -1104,7 +1106,7 @@ class AiDebugLabMachineTest {
         val model = saleConfirmationModel(generation = 4L)
 
         val outcome = AiDebugLabMachine.onConfirmSale(model, "biz-123")
-        assertTrue("outcome must be Started", outcome is AiSaleConfirmOutcome.Started)
+        assertTrue(outcome is AiSaleConfirmOutcome.Started, "outcome must be Started")
         val started = outcome as AiSaleConfirmOutcome.Started
 
         assertEquals(5L, started.generation)
@@ -1123,11 +1125,11 @@ class AiDebugLabMachineTest {
         assertEquals("prod-1:10000:5000", firstLine.sourceProductFingerprint)
         assertEquals(10000L, started.request.totalCents)
         assertEquals(3000L, started.request.initialPaymentCents)
-        assertEquals(java.time.LocalDate.of(2026, 8, 30).toEpochDay(), started.request.promisedPaymentEpochDay)
+        assertEquals(LocalDate(2026, 8, 30).toEpochDays().toLong(), started.request.promisedPaymentEpochDay)
     }
 
     @Test
-    fun `onConfirmSale ignores blank businessId, wrong state, or mismatched preview`() {
+    fun `onConfirmSale ignores blank businessId wrong state or mismatched preview`() {
         val model = saleConfirmationModel(generation = 4L)
 
         // Blank businessId
@@ -1190,7 +1192,7 @@ class AiDebugLabMachineTest {
     }
 
     @Test
-    fun `onSaleExecutionResult with StalePreview, Rejected, and Unavailable`() {
+    fun `onSaleExecutionResult with StalePreview Rejected and Unavailable`() {
         val model = saleConfirmationModel(generation = 4L)
         val started = AiDebugLabMachine.onConfirmSale(model, "biz-123") as AiSaleConfirmOutcome.Started
 
@@ -1271,7 +1273,7 @@ class AiDebugLabMachineTest {
         )
 
         val outcome = AiDebugLabMachine.onChooseCustomer(model, com.cuentivo.app.ai.AiEntityChoice.UseExisting("c1"))
-        assertTrue("outcome must be Selected", outcome is AiSaleChoiceOutcome.Selected)
+        assertTrue(outcome is AiSaleChoiceOutcome.Selected, "outcome must be Selected")
         val selected = outcome as AiSaleChoiceOutcome.Selected
 
         assertEquals(4L, selected.generation)
@@ -1296,7 +1298,7 @@ class AiDebugLabMachineTest {
         )
 
         val outcome = AiDebugLabMachine.onChooseCustomer(model, com.cuentivo.app.ai.AiEntityChoice.CreateNew)
-        assertTrue("outcome must be Selected", outcome is AiSaleChoiceOutcome.Selected)
+        assertTrue(outcome is AiSaleChoiceOutcome.Selected, "outcome must be Selected")
         val selected = outcome as AiSaleChoiceOutcome.Selected
 
         assertEquals(4L, selected.generation)
@@ -1370,7 +1372,7 @@ class AiDebugLabMachineTest {
     }
 
     @Test
-    fun `onChooseProduct ignores invalid candidate, wrong product name, or wrong state`() {
+    fun `onChooseProduct ignores invalid candidate wrong product name or wrong state`() {
         val candidate = com.cuentivo.app.ai.AiSaleProductCandidate("p1", "Jabón Dove", 5000L)
         val model = AiDebugLabModel(
             state = AiDebugLabState.SaleResolution(
@@ -1979,8 +1981,8 @@ class AiDebugLabMachineTest {
         )
 
         val initialState = initialModel.state as AiDebugLabState.LedgerReviewing
-        assertEquals("Initial state detects 1 duplicate", 1, initialState.initialDuplicateCount)
-        assertEquals("Live UI initially shows 1 duplicate", 1, initialState.duplicateMatches.size)
+        assertEquals(1, initialState.initialDuplicateCount, "Initial state detects 1 duplicate")
+        assertEquals(1, initialState.duplicateMatches.size, "Live UI initially shows 1 duplicate")
 
         // 1. User changes page date to a different date where duplicate no longer matches (outside date window)
         val newPageDate = initialPageDate + 60L
@@ -1993,19 +1995,19 @@ class AiDebugLabMachineTest {
         val stateAfterDateChange = modelAfterDateChange.state as AiDebugLabState.LedgerReviewing
 
         // Live duplicateMatches updates with the new date (no longer matches registeredOp)
-        assertTrue("Live duplicate matches must clear after date change", stateAfterDateChange.duplicateMatches.isEmpty())
+        assertTrue(stateAfterDateChange.duplicateMatches.isEmpty(), "Live duplicate matches must clear after date change")
 
         // Frozen initialDuplicateCount and toImportEndParams MUST NOT CHANGE
         assertEquals(
-            "initialDuplicateCount must remain frozen after page date edit",
             1,
             stateAfterDateChange.initialDuplicateCount,
+            "initialDuplicateCount must remain frozen after page date edit",
         )
         val paramsAfterDateChange = stateAfterDateChange.toImportEndParams(registered = true)
         assertEquals(
-            "duplicateSuggestedCount in params must remain 1 after page date edit",
             1,
             paramsAfterDateChange.duplicateSuggestedCount,
+            "duplicateSuggestedCount in params must remain 1 after page date edit",
         )
 
         // 2. User edits operation customer name to "Maria Lopez"
@@ -2106,15 +2108,15 @@ class AiDebugLabMachineTest {
         assertTrue(restoredState.duplicateMatches.isEmpty())
         // initialDuplicateCount MUST be 1 (restored from saved, not recalculated against edited page date)
         assertEquals(
-            "initialDuplicateCount must survive process recreation unchanged",
             1,
             restoredState.initialDuplicateCount,
+            "initialDuplicateCount must survive process recreation unchanged",
         )
         val params = restoredState.toImportEndParams(registered = true)
         assertEquals(
-            "duplicateSuggestedCount must be 1 even after restore",
             1,
             params.duplicateSuggestedCount,
+            "duplicateSuggestedCount must be 1 even after restore",
         )
     }
 
@@ -2136,7 +2138,7 @@ class AiDebugLabMachineTest {
         )
         assertEquals(15L, (model.state as AiDebugLabState.SaleConfirmation).dueDateDays)
 
-        val today = java.time.LocalDate.of(2026, 9, 23).toEpochDay()
+        val today = LocalDate(2026, 9, 23).toEpochDays().toLong()
         val started = AiDebugLabMachine.onConfirmSale(model, "biz-123", todayEpochDay = today) as AiSaleConfirmOutcome.Started
         assertEquals(today + 15L, started.request.promisedPaymentEpochDay)
     }
@@ -2155,17 +2157,17 @@ class AiDebugLabMachineTest {
         val updated = AiDebugLabMachine.onUpdateSaleDueDateDays(model, null)
         assertEquals(null, (updated.state as AiDebugLabState.SaleConfirmation).dueDateDays)
 
-        val today = java.time.LocalDate.of(2026, 9, 23).toEpochDay()
+        val today = LocalDate(2026, 9, 23).toEpochDays().toLong()
         val started = AiDebugLabMachine.onConfirmSale(updated, "biz-123", todayEpochDay = today) as AiSaleConfirmOutcome.Started
-        org.junit.Assert.assertNull(started.request.promisedPaymentEpochDay)
+        assertNull(started.request.promisedPaymentEpochDay)
     }
 
     @Test
     fun `la fecha dicha en el texto manda sobre el plazo del borrador`() {
-        val today = java.time.LocalDate.of(2026, 9, 23).toEpochDay()
+        val today = LocalDate(2026, 9, 23).toEpochDays().toLong()
         val started = AiDebugLabMachine.onConfirmSale(saleConfirmationModel(), "biz-123", todayEpochDay = today) as AiSaleConfirmOutcome.Started
         assertEquals(
-            java.time.LocalDate.of(2026, 8, 30).toEpochDay(),
+            LocalDate(2026, 8, 30).toEpochDays().toLong(),
             started.request.promisedPaymentEpochDay,
         )
     }

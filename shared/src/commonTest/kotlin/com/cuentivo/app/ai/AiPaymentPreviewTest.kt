@@ -2,10 +2,10 @@ package com.cuentivo.app.ai
 
 import com.cuentivo.app.data.local.CustomerEntity
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class AiPaymentPreviewTest {
 
@@ -100,7 +100,7 @@ class AiPaymentPreviewTest {
     fun `matcher selection result is an unmodifiable copy`() {
         val source = mutableListOf(customer("1", "María"), customer("2", "Maria"))
         val result = AiPaymentCandidateMatcher.match("María", source)
-        assertTrue("expected SelectionRequired", result is AiPaymentCustomerMatch.SelectionRequired)
+        assertTrue(result is AiPaymentCustomerMatch.SelectionRequired, "expected SelectionRequired")
         val selection = result as AiPaymentCustomerMatch.SelectionRequired
 
         mutateExpectingUnsupported(selection.candidates as MutableList<CustomerEntity>)
@@ -150,7 +150,7 @@ class AiPaymentPreviewTest {
         } catch (expected: UnsupportedOperationException) {
             thrown = true
         }
-        assertTrue("candidates must be unmodifiable", thrown)
+        assertTrue(thrown, "candidates must be unmodifiable")
     }
 }
 
@@ -205,7 +205,7 @@ class AiPaymentPreviewResolverTest {
         RecordPaymentProposal(customerName = "María", declaredAmountCents = amountCents)
 
     @Test
-    fun `ready preview receives one opaque local confirmation key`() = runBlocking {
+    fun `ready preview receives one opaque local confirmation key`() = runTest {
         var keyCalls = 0
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = { _, _ -> listOf(customer("c1", "María", "b1")) },
@@ -215,14 +215,14 @@ class AiPaymentPreviewResolverTest {
 
         val result = resolver.resolve("b1", RecordPaymentProposal("María", 15_000L))
 
-        assertTrue("expected Ready result", result is AiPaymentPreviewResult.Ready)
+        assertTrue(result is AiPaymentPreviewResult.Ready, "expected Ready result")
         val ready = result as AiPaymentPreviewResult.Ready
         assertEquals("ai-confirm-1", ready.preview.confirmationKey)
         assertEquals(1, keyCalls)
     }
 
     @Test
-    fun `blocked and unresolved previews never allocate a confirmation key`() = runBlocking {
+    fun `blocked and unresolved previews never allocate a confirmation key`() = runTest {
         var keyCalls = 0
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = { _, _ -> emptyList() },
@@ -237,7 +237,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `blocked amount exceeds debt never allocates a confirmation key`() = runBlocking {
+    fun `blocked amount exceeds debt never allocates a confirmation key`() = runTest {
         var keyCalls = 0
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = { _, _ -> listOf(customer("c1", "María", "b1")) },
@@ -253,7 +253,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `blank confirmation key fails closed to Unavailable`() = runBlocking {
+    fun `blank confirmation key fails closed to Unavailable`() = runTest {
         for (blankKey in listOf("", "   ", "\t\n")) {
             val resolver = AiPaymentPreviewResolver(
                 searchCustomers = { _, _ -> listOf(customer("c1", "María", "b1")) },
@@ -267,7 +267,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `confirmation key is trimmed`() = runBlocking {
+    fun `confirmation key is trimmed`() = runTest {
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = { _, _ -> listOf(customer("c1", "María", "b1")) },
             loadBalanceCents = { _, _ -> 50_000L },
@@ -281,7 +281,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `blank business returns unavailable without invoking seams`() = runBlocking {
+    fun `blank business returns unavailable without invoking seams`() = runTest {
         val seams = RecordingSeams()
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = seams::searchCustomers,
@@ -296,7 +296,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `non positive declared amount returns unavailable without invoking seams`() = runBlocking {
+    fun `non positive declared amount returns unavailable without invoking seams`() = runTest {
         for (amount in listOf(0L, -1L)) {
             val seams = RecordingSeams()
             val resolver = AiPaymentPreviewResolver(
@@ -310,7 +310,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `not found returns customer not found without loading balance`() = runBlocking {
+    fun `not found returns customer not found without loading balance`() = runTest {
         val seams = RecordingSeams(searchResult = emptyList())
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = seams::searchCustomers,
@@ -325,7 +325,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `selection required maps candidates to id and display name without loading balance`() = runBlocking {
+    fun `selection required maps candidates to id and display name without loading balance`() = runTest {
         val candidates = listOf(
             CustomerEntity(
                 id = "c1",
@@ -358,7 +358,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `ready preview uses scoped search and real balance`() = runBlocking {
+    fun `ready preview uses scoped search and real balance`() = runTest {
         var searchArgs: Pair<String, String>? = null
         var balanceArgs: Pair<String, String>? = null
         val resolver = AiPaymentPreviewResolver(
@@ -400,7 +400,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `exact payment yields projected zero`() = runBlocking {
+    fun `exact payment yields projected zero`() = runTest {
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = { _, _ ->
                 listOf(
@@ -434,7 +434,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `zero or negative balance blocks without preview`() = runBlocking {
+    fun `zero or negative balance blocks without preview`() = runTest {
         for (balance in listOf(0L, -5_000L)) {
             val resolver = AiPaymentPreviewResolver(
                 searchCustomers = { _, _ ->
@@ -467,7 +467,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `amount greater than balance blocks with preview for display`() = runBlocking {
+    fun `amount greater than balance blocks with preview for display`() = runTest {
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = { _, _ ->
                 listOf(
@@ -503,7 +503,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `seam exception returns unavailable`() = runBlocking {
+    fun `seam exception returns unavailable`() = runTest {
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = { _, _ -> throw IllegalStateException("search down") },
             loadBalanceCents = { _, _ -> 40_000L },
@@ -536,7 +536,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `extreme long values are handled without crash`() = runBlocking {
+    fun `extreme long values are handled without crash`() = runTest {
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = { _, _ ->
                 listOf(
@@ -571,7 +571,7 @@ class AiPaymentPreviewResolverTest {
     }
 
     @Test
-    fun `cancellation exception is rethrown not swallowed`() = runBlocking {
+    fun `cancellation exception is rethrown not swallowed`() = runTest {
         val resolver = AiPaymentPreviewResolver(
             searchCustomers = { _, _ -> throw CancellationException("cancelled") },
             loadBalanceCents = { _, _ -> 40_000L },

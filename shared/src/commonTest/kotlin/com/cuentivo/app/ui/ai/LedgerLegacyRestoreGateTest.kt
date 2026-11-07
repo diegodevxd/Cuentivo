@@ -6,11 +6,11 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.domain.LedgerReviewSchema
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * Una revisión restaurada de un guardado hecho por una versión anterior **no se puede registrar**.
@@ -23,8 +23,8 @@ class LedgerLegacyRestoreGateTest {
 
     private val sessionId = "sesion-1"
     private val businessId = "biz-1"
-    private val pageDateEpochDay = LocalDate.of(2026, 9, 10).toEpochDay()
-    private val todayEpochDay = LocalDate.of(2026, 9, 16).toEpochDay()
+    private val pageDateEpochDay = LocalDate(2026, 9, 10).toEpochDays().toLong()
+    private val todayEpochDay = LocalDate(2026, 9, 16).toEpochDays().toLong()
 
     private fun cleanRow() = LedgerOperation(
         lineIndex = 0,
@@ -67,8 +67,8 @@ class LedgerLegacyRestoreGateTest {
         val state = model.state as AiDebugLabState.LedgerReviewing
 
         assertTrue(
-            "una revisión sin marca tiene que quedar marcada como no registrable",
             state.isLegacySaveWithoutSessionKey,
+            "una revisión sin marca tiene que quedar marcada como no registrable",
         )
         // Y la máquina lo hace cumplir, no sólo la pantalla: esconder un botón no es un control.
         assertEquals(
@@ -84,8 +84,8 @@ class LedgerLegacyRestoreGateTest {
 
         assertFalse(state.isLegacySaveWithoutSessionKey)
         assertTrue(
-            "la revisión está completa, así que confirmar tiene que arrancar",
             AiDebugLabMachine.onConfirmLedger(model, sessionId, businessId) is AiLedgerConfirmOutcome.Started,
+            "la revisión está completa, así que confirmar tiene que arrancar",
         )
     }
 

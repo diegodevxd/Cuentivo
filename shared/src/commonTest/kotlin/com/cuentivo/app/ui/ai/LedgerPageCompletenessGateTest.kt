@@ -5,11 +5,11 @@ import com.cuentivo.app.ai.ledger.LedgerFieldSources
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
-import java.time.LocalDate
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.datetime.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /**
  * Capa de la máquina para la duda de hoja incompleta.
@@ -21,8 +21,8 @@ class LedgerPageCompletenessGateTest {
 
     private val sessionId = "sesion-1"
     private val businessId = "biz-1"
-    private val pageDateEpochDay = LocalDate.of(2026, 9, 10).toEpochDay()
-    private val todayEpochDay = LocalDate.of(2026, 9, 16).toEpochDay()
+    private val pageDateEpochDay = LocalDate(2026, 9, 10).toEpochDays().toLong()
+    private val todayEpochDay = LocalDate(2026, 9, 16).toEpochDays().toLong()
 
     private fun cleanRow() = LedgerOperation(
         lineIndex = 0,
@@ -63,7 +63,7 @@ class LedgerPageCompletenessGateTest {
     fun `tras_confirmar_la_hoja_la_maquina_arranca_el_registro`() {
         val confirmed = AiDebugLabMachine.onConfirmLedgerPageCompleteness(model(pageIncomplete = true), sessionId, businessId)
         val state = confirmed.state as AiDebugLabState.LedgerReviewing
-        assertTrue("la afirmación de la persona tiene que quedar puesta", state.isPageCompletenessConfirmed)
+        assertTrue(state.isPageCompletenessConfirmed, "la afirmación de la persona tiene que quedar puesta")
 
         assertTrue(
             AiDebugLabMachine.onConfirmLedger(confirmed, sessionId, businessId) is AiLedgerConfirmOutcome.Started,

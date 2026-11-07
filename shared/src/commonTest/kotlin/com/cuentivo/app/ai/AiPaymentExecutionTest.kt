@@ -6,10 +6,10 @@ import com.cuentivo.app.data.local.PaymentAllocationEntity
 import com.cuentivo.app.data.local.PaymentEntity
 import com.cuentivo.app.data.local.StoredPaymentBundle
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class AiPaymentExecutionTest {
 
@@ -60,7 +60,7 @@ class AiPaymentExecutionTest {
     )
 
     @Test
-    fun `valid request delegates exact values and enqueues stored bundle on success`() = runBlocking {
+    fun `valid request delegates exact values and enqueues stored bundle on success`() = runTest {
         var passedIdempotencyKey: String? = null
         var passedPayment: PaymentEntity? = null
         var passedMovement: AccountMovementEntity? = null
@@ -108,7 +108,7 @@ class AiPaymentExecutionTest {
     }
 
     @Test
-    fun `stale balance returns StalePreview without enqueuing sync`() = runBlocking {
+    fun `stale balance returns StalePreview without enqueuing sync`() = runTest {
         var enqueued = false
         val service = AiPaymentExecutionService(
             registerPayment = { _, _, _, _ -> ExpectedBalancePaymentResult.StaleBalance },
@@ -126,7 +126,7 @@ class AiPaymentExecutionTest {
     }
 
     @Test
-    fun `invalid request parameters are rejected without calling writer`() = runBlocking {
+    fun `invalid request parameters are rejected without calling writer`() = runTest {
         var writerCalled = false
         val service = AiPaymentExecutionService(
             registerPayment = { _, _, _, _ -> writerCalled = true; ExpectedBalancePaymentResult.Recorded("p1") },
@@ -152,13 +152,13 @@ class AiPaymentExecutionTest {
         for (invalid in invalidRequests) {
             writerCalled = false
             val result = service.confirm(invalid)
-            assertEquals("Expected Rejected for $invalid", AiPaymentExecutionResult.Rejected, result)
-            assertEquals("Writer must not be called for $invalid", false, writerCalled)
+            assertEquals(AiPaymentExecutionResult.Rejected, result, "Expected Rejected for $invalid")
+            assertEquals(false, writerCalled, "Writer must not be called for $invalid")
         }
     }
 
     @Test
-    fun `blank currentUserId returns Unavailable without calling writer`() = runBlocking {
+    fun `blank currentUserId returns Unavailable without calling writer`() = runTest {
         var writerCalled = false
         val service = AiPaymentExecutionService(
             registerPayment = { _, _, _, _ -> writerCalled = true; ExpectedBalancePaymentResult.Recorded("p1") },
@@ -175,7 +175,7 @@ class AiPaymentExecutionTest {
     }
 
     @Test
-    fun `cancellation exception is rethrown and not swallowed`() = runBlocking {
+    fun `cancellation exception is rethrown and not swallowed`() = runTest {
         val service = AiPaymentExecutionService(
             registerPayment = { _, _, _, _ -> throw CancellationException("cancelled") },
             loadStoredBundle = { _, _ -> null },
@@ -194,7 +194,7 @@ class AiPaymentExecutionTest {
     }
 
     @Test
-    fun `unexpected exceptions map to Unavailable`() = runBlocking {
+    fun `unexpected exceptions map to Unavailable`() = runTest {
         val service = AiPaymentExecutionService(
             registerPayment = { _, _, _, _ -> throw IllegalStateException("db disk error") },
             loadStoredBundle = { _, _ -> null },
