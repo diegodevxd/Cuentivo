@@ -55,6 +55,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
@@ -103,6 +105,7 @@ import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.platform.PickedDocument
 import com.cuentivo.app.ui.account.AccountSheet
+import com.cuentivo.app.ui.account.PRIVACY_POLICY_URL
 import com.cuentivo.app.ui.account.AiPaywallSheet
 import com.cuentivo.app.ui.account.LanguageSheet
 import com.cuentivo.app.ui.customer.CustomerDetailSheet
@@ -801,6 +804,9 @@ fun CuentivoApp(
             aiTrialMonths = aiTrialMonths,
             onSignOut = onSignOut,
             onDeleteAccount = onDeleteAccount,
+            onOpenPrivacyPolicy = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+            },
             onDismiss = { showAccount = false },
             backupSection = backupSection,
             isAnonymous = isAnonymous,

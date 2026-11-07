@@ -1,7 +1,5 @@
 package com.cuentivo.app.ui.account
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,13 +26,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
+// Los accesos de Res.string son propiedades de extensión generadas una por clave.
+import com.cuentivo.shared.resources.*
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.ui.NeoAction
 import com.cuentivo.app.ui.NeoShapes
@@ -56,6 +54,7 @@ fun AccountSheet(
     aiTrialMonths: Int = 0,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
+    onOpenPrivacyPolicy: () -> Unit,
     onDismiss: () -> Unit,
     /** Backup and restore, supplied by the host because it needs the database and the file picker. */
     backupSection: @androidx.compose.runtime.Composable () -> Unit = {},
@@ -88,9 +87,9 @@ fun AccountSheet(
                 .testTag("account-sheet-scroll"),
             verticalArrangement = Arrangement.spacedBy(NeoSpacing.md),
         ) {
-            Text(stringResource(R.string.account_title), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(Res.string.account_title), style = MaterialTheme.typography.titleLarge)
             Text(
-                accountLabel?.let { stringResource(R.string.account_signed_in_as, it) } ?: stringResource(R.string.account_signed_in),
+                accountLabel?.let { stringResource(Res.string.account_signed_in_as, it) } ?: stringResource(Res.string.account_signed_in),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -107,20 +106,20 @@ fun AccountSheet(
                         verticalArrangement = Arrangement.spacedBy(NeoSpacing.sm),
                     ) {
                         Text(
-                            text = stringResource(R.string.account_guest_card_title),
+                            text = stringResource(Res.string.account_guest_card_title),
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
                             text = if (customerCount > 0) {
-                                stringResource(R.string.account_guest_card_detail_with_count, customerCount)
+                                stringResource(Res.string.account_guest_card_detail_with_count, customerCount)
                             } else {
-                                stringResource(R.string.account_guest_card_detail_generic)
+                                stringResource(Res.string.account_guest_card_detail_generic)
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         NeoAction(
-                            label = stringResource(R.string.account_guest_card_action),
+                            label = stringResource(Res.string.account_guest_card_action),
                             onClick = {
                                 onDismiss()
                                 onSignUp()
@@ -135,7 +134,7 @@ fun AccountSheet(
             // billing question, and this is the only thing that undoes it.
             backupSection()
             Text(
-                stringResource(R.string.account_manage_hint),
+                stringResource(Res.string.account_manage_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -155,11 +154,11 @@ fun AccountSheet(
             // about the phone, and the sign-out and delete buttons are the doors this sheet exists
             // to guard. The whole section is purely local — no network, no customer contact.
             Text(
-                stringResource(R.string.reminder_setting_title),
+                stringResource(Res.string.reminder_setting_title),
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                stringResource(R.string.reminder_setting_explanation),
+                stringResource(Res.string.reminder_setting_explanation),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -169,14 +168,14 @@ fun AccountSheet(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        stringResource(R.string.reminder_setting_time),
+                        stringResource(Res.string.reminder_setting_time),
                         style = MaterialTheme.typography.labelLarge,
                     )
                     Text(
                         // El recurso es ahora común (composeResources) y sólo admite `%1$s`:
                         // `%1$02d` no lo entiende el formateador de Compose y saldría literal. El
                         // relleno a dos dígitos se hace aquí, así que el texto es el mismo: "07:00".
-                        stringResource(R.string.reminder_hour_option, reminderHour.toString().padStart(2, '0')),
+                        stringResource(Res.string.reminder_hour_option, reminderHour.toString().padStart(2, '0')),
                         style = MaterialTheme.typography.titleMedium,
                         color = if (reminderEnabled) MaterialTheme.colorScheme.onSurface
                         else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -184,8 +183,8 @@ fun AccountSheet(
                 }
                 // One hour forward or back, wrapping at midnight. Disabled while reminders are off,
                 // because choosing an hour for a reminder that will not run is setting nothing.
-                val hourEarlierDescription = stringResource(R.string.reminder_hour_earlier)
-                val hourLaterDescription = stringResource(R.string.reminder_hour_later)
+                val hourEarlierDescription = stringResource(Res.string.reminder_hour_earlier)
+                val hourLaterDescription = stringResource(Res.string.reminder_hour_later)
                 TextButton(
                     onClick = { onReminderHourChange((reminderHour - 1 + 24) % 24) },
                     enabled = reminderEnabled,
@@ -209,9 +208,9 @@ fun AccountSheet(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val reminderSwitchDescription = stringResource(R.string.reminder_setting_title)
+                val reminderSwitchDescription = stringResource(Res.string.reminder_setting_title)
                 Text(
-                    stringResource(R.string.reminder_setting_enable),
+                    stringResource(Res.string.reminder_setting_enable),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -229,7 +228,7 @@ fun AccountSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        stringResource(R.string.debug_force_free_share),
+                        stringResource(Res.string.debug_force_free_share),
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.weight(1f),
                     )
@@ -241,24 +240,20 @@ fun AccountSheet(
                 }
             }
 
-            val context = LocalContext.current
             TextButton(
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))
-                    context.startActivity(intent)
-                },
+                onClick = onOpenPrivacyPolicy,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("privacy-policy-button"),
             ) {
-                Text(stringResource(R.string.account_privacy_policy))
+                Text(stringResource(Res.string.account_privacy_policy))
             }
 
             OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.account_sign_out))
+                Text(stringResource(Res.string.account_sign_out))
             }
             TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.account_delete), color = MaterialTheme.colorScheme.error)
+                Text(stringResource(Res.string.account_delete), color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -266,29 +261,29 @@ fun AccountSheet(
     if (confirmSignOut) {
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
-            title = { Text(stringResource(R.string.account_sign_out_title)) },
+            title = { Text(stringResource(Res.string.account_sign_out_title)) },
             text = {
-                Text(stringResource(R.string.account_sign_out_detail))
+                Text(stringResource(Res.string.account_sign_out_detail))
             },
             confirmButton = {
-                TextButton(onClick = { confirmSignOut = false; onSignOut() }) { Text(stringResource(R.string.account_sign_out)) }
+                TextButton(onClick = { confirmSignOut = false; onSignOut() }) { Text(stringResource(Res.string.account_sign_out)) }
             },
-            dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text(stringResource(R.string.form_cancel)) } },
+            dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text(stringResource(Res.string.form_cancel)) } },
         )
     }
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text(stringResource(R.string.account_delete_title)) },
+            title = { Text(stringResource(Res.string.account_delete_title)) },
             text = {
-                Text(stringResource(R.string.account_delete_detail))
+                Text(stringResource(Res.string.account_delete_detail))
             },
             confirmButton = {
                 TextButton(onClick = { confirmDelete = false; onDeleteAccount() }) {
-                    Text(stringResource(R.string.account_delete_confirm), color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(Res.string.account_delete_confirm), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.form_cancel)) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(Res.string.form_cancel)) } },
         )
     }
 }
