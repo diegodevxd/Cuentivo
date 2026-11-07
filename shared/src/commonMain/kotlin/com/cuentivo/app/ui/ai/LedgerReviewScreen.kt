@@ -51,14 +51,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.cuentivo.app.R
 import com.cuentivo.app.ai.ledger.CustomerReviewGroup
 import com.cuentivo.app.ai.ledger.FinancialRejectionReason
 import com.cuentivo.app.ai.ledger.LedgerAmountInput
@@ -74,6 +72,7 @@ import com.cuentivo.app.ai.ledger.OperationFinancialDiagnostic
 import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
+import com.cuentivo.shared.resources.*
 import com.cuentivo.app.domain.FieldHealthColor
 import com.cuentivo.app.domain.LedgerDeterministicObjectionType
 import com.cuentivo.app.domain.LedgerDueDatePolicy
@@ -89,6 +88,7 @@ import kotlinx.datetime.LocalDate
 import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import com.cuentivo.app.ui.theme.NeoSlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 
 /**
@@ -218,7 +218,7 @@ fun LedgerReviewContent(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = stringResource(R.string.ai_ledger_import_title),
+                text = stringResource(Res.string.ai_ledger_import_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
@@ -227,7 +227,7 @@ fun LedgerReviewContent(
                 onClick = onCancel,
                 modifier = Modifier.testTag("ledger-review-cancel-button"),
             ) {
-                Text(stringResource(R.string.ai_ledger_action_discard))
+                Text(stringResource(Res.string.ai_ledger_action_discard))
             }
         }
 
@@ -345,7 +345,7 @@ fun LedgerReviewContent(
             if ((review.pageIncomplete || review.unreadTextRemaining) && !incompleteCardShown) {
                 item(key = "ledger-review-incomplete-warning") {
                     Text(
-                        text = stringResource(R.string.ai_ledger_page_incomplete_warning),
+                        text = stringResource(Res.string.ai_ledger_page_incomplete_warning),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier
@@ -361,8 +361,8 @@ fun LedgerReviewContent(
                 item(key = "ledger-review-legacy-save-blocked") {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text(stringResource(R.string.ai_ledger_legacy_save_blocked))
-                            TextButton(onClick = onCancel) { Text(stringResource(R.string.ai_ledger_legacy_save_discard)) }
+                            Text(stringResource(Res.string.ai_ledger_legacy_save_blocked))
+                            TextButton(onClick = onCancel) { Text(stringResource(Res.string.ai_ledger_legacy_save_discard)) }
                         }
                     }
                 }
@@ -382,7 +382,7 @@ fun LedgerReviewContent(
                             // no decirla dos veces.
                             if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.MODEL_DOUBT)) {
                                 Text(
-                                    text = stringResource(R.string.ai_ledger_page_incomplete_warning),
+                                    text = stringResource(Res.string.ai_ledger_page_incomplete_warning),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.testTag("ledger-page-incomplete-warning"),
@@ -391,7 +391,7 @@ fun LedgerReviewContent(
                             if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.UNREADABLE_ROWS)) {
                                 Text(
                                     text = pluralStringResource(
-                                        R.plurals.ai_ledger_page_unreadable_rows,
+                                        Res.plurals.ai_ledger_page_unreadable_rows,
                                         summaryResult.unreadableRowsCount,
                                         summaryResult.unreadableRowsCount,
                                     ),
@@ -401,7 +401,7 @@ fun LedgerReviewContent(
                             }
                             if (summaryResult.confirmationReasons.contains(com.cuentivo.app.domain.LedgerPageConfirmationReason.NOT_AN_ACCOUNTS_PAGE)) {
                                 Text(
-                                    text = stringResource(R.string.ai_ledger_page_not_accounts),
+                                    text = stringResource(Res.string.ai_ledger_page_not_accounts),
                                     style = MaterialTheme.typography.bodyMedium,
                                     modifier = Modifier.testTag("ledger-page-not-accounts-notice"),
                                 )
@@ -412,7 +412,7 @@ fun LedgerReviewContent(
                                     .fillMaxWidth()
                                     .testTag("ledger-confirm-page-complete-button"),
                             ) {
-                                Text(stringResource(R.string.ai_ledger_action_confirm_page_complete))
+                                Text(stringResource(Res.string.ai_ledger_action_confirm_page_complete))
                             }
                         }
                     }
@@ -420,7 +420,7 @@ fun LedgerReviewContent(
             } else if (summaryResult.pageIncompleteNoticeRequired) {
                 item(key = "ledger-review-page-completeness-confirmed") {
                     Text(
-                        stringResource(R.string.ai_ledger_page_completeness_confirmed),
+                        stringResource(Res.string.ai_ledger_page_completeness_confirmed),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.testTag("ledger-page-completeness-confirmed"),
@@ -503,16 +503,16 @@ fun LedgerReviewContent(
         ) {
             val buttonText = if (summaryResult.isConfirmButtonEnabled) {
                 pluralStringResource(
-                    R.plurals.ai_ledger_action_register_count,
+                    Res.plurals.ai_ledger_action_register_count,
                     summaryResult.readyCount,
                     summaryResult.readyCount,
                 )
             } else {
                 if (summaryResult.unresolvedCount > 0) {
-                    pluralStringResource(R.plurals.ai_ledger_action_register_blocked_pending, summaryResult.unresolvedCount, summaryResult.unresolvedCount)
+                    pluralStringResource(Res.plurals.ai_ledger_action_register_blocked_pending, summaryResult.unresolvedCount, summaryResult.unresolvedCount)
                 } else if (summaryResult.pageIncompleteNoticeRequired && !isPageCompletenessConfirmed) {
-                    stringResource(R.string.ai_ledger_action_register_blocked_incomplete)
-                } else stringResource(R.string.ai_ledger_action_register_disabled)
+                    stringResource(Res.string.ai_ledger_action_register_blocked_incomplete)
+                } else stringResource(Res.string.ai_ledger_action_register_disabled)
             }
             Text(
                 text = buttonText,
@@ -610,12 +610,12 @@ private fun LedgerSummaryCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = stringResource(R.string.ai_ledger_review_summary_title),
+                text = stringResource(Res.string.ai_ledger_review_summary_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             val detectedText = pluralStringResource(
-                R.plurals.ai_ledger_summary_detected_count,
+                Res.plurals.ai_ledger_summary_detected_count,
                 summaryResult.detectedCount,
                 summaryResult.detectedCount,
             )
@@ -625,23 +625,23 @@ private fun LedgerSummaryCard(
                 fontWeight = FontWeight.Medium,
             )
             val readyText = pluralStringResource(
-                R.plurals.ai_ledger_summary_ready_count,
+                Res.plurals.ai_ledger_summary_ready_count,
                 summaryResult.readyCount,
                 summaryResult.readyCount,
             )
             val pendingText = pluralStringResource(
-                R.plurals.ai_ledger_summary_pending_count,
+                Res.plurals.ai_ledger_summary_pending_count,
                 summaryResult.pendingReviewCount,
                 summaryResult.pendingReviewCount,
             )
             Text(
-                text = stringResource(R.string.ai_ledger_summary_status_format, readyText, pendingText),
+                text = stringResource(Res.string.ai_ledger_summary_status_format, readyText, pendingText),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (summaryResult.pageIncompleteNoticeRequired) {
                 Text(
-                    text = stringResource(R.string.ai_ledger_page_incomplete_notice),
+                    text = stringResource(Res.string.ai_ledger_page_incomplete_notice),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.testTag("ledger-summary-page-incomplete-notice"),
@@ -696,7 +696,7 @@ private fun PageDateCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = stringResource(R.string.ai_ledger_field_page_date_plain),
+                text = stringResource(Res.string.ai_ledger_field_page_date_plain),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -712,11 +712,11 @@ private fun PageDateCard(
                         onUpdatePageDate(null)
                     }
                 },
-                label = { Text(stringResource(R.string.ai_ledger_field_page_date_plain)) },
-                placeholder = { Text(stringResource(R.string.ai_ledger_field_date_placeholder)) },
+                label = { Text(stringResource(Res.string.ai_ledger_field_page_date_plain)) },
+                placeholder = { Text(stringResource(Res.string.ai_ledger_field_date_placeholder)) },
                 isError = dateIsWrong,
                 supportingText = if (dateIsWrong) {
-                    { Text(stringResource(R.string.ai_ledger_field_page_date_invalid)) }
+                    { Text(stringResource(Res.string.ai_ledger_field_page_date_invalid)) }
                 } else null,
                 modifier = Modifier.fillMaxWidth().testTag("ledger-page-date-field"),
                 singleLine = true,
@@ -731,9 +731,9 @@ private fun PageDateCard(
                 // Low certainty is said in the offer itself, so whoever taps it knows they are
                 // confirming something the model was unsure about rather than something settled.
                 val offerText = if (offerableDetectedDate.confidence < LOW_PAGE_DATE_CONFIDENCE) {
-                    stringResource(R.string.ai_ledger_page_date_detected_low_confidence, detectedText)
+                    stringResource(Res.string.ai_ledger_page_date_detected_low_confidence, detectedText)
                 } else {
-                    stringResource(R.string.ai_ledger_page_date_detected, detectedText)
+                    stringResource(Res.string.ai_ledger_page_date_detected, detectedText)
                 }
                 TextButton(
                     onClick = {
@@ -787,14 +787,14 @@ private fun YearBulkCard(
                     // tarjeta describe lo único verdadero para todos —que su año no es el de la
                     // hoja— y el conteo sigue siendo exactamente el de filas que se modificarán.
                     pluralStringResource(
-                        R.plurals.ai_ledger_year_bulk_question_mixed,
+                        Res.plurals.ai_ledger_year_bulk_question_mixed,
                         plan.lineIndices.size,
                         plan.lineIndices.size,
                         plan.targetYear,
                     )
                 } else {
                     pluralStringResource(
-                        R.plurals.ai_ledger_year_bulk_question,
+                        Res.plurals.ai_ledger_year_bulk_question,
                         plan.lineIndices.size,
                         plan.lineIndices.size,
                         plan.readYear,
@@ -814,7 +814,7 @@ private fun YearBulkCard(
                     contentColor = MaterialTheme.colorScheme.onTertiary,
                 ),
             ) {
-                Text(stringResource(R.string.ai_ledger_action_change_all))
+                Text(stringResource(Res.string.ai_ledger_action_change_all))
             }
         }
     }
@@ -850,7 +850,7 @@ private fun OldDatesBulkCard(
         ) {
             Text(
                 text = pluralStringResource(
-                    R.plurals.ai_ledger_old_dates_bulk_question,
+                    Res.plurals.ai_ledger_old_dates_bulk_question,
                     count,
                     count,
                 ),
@@ -867,7 +867,7 @@ private fun OldDatesBulkCard(
                     contentColor = MaterialTheme.colorScheme.onTertiary,
                 ),
             ) {
-                Text(stringResource(R.string.ai_ledger_action_confirm_all_old_dates))
+                Text(stringResource(Res.string.ai_ledger_action_confirm_all_old_dates))
             }
         }
     }
@@ -911,7 +911,7 @@ private fun DueDateCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = stringResource(R.string.new_sale_due_question),
+                text = stringResource(Res.string.new_sale_due_question),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -935,7 +935,7 @@ private fun DueDateCard(
             if (bornOverdueCount > 0) {
                 Text(
                     text = pluralStringResource(
-                        R.plurals.ai_ledger_due_born_overdue,
+                        Res.plurals.ai_ledger_due_born_overdue,
                         bornOverdueCount,
                         bornOverdueCount,
                     ),
@@ -959,26 +959,26 @@ private fun DueDateCard(
 private fun ledgerObjectionMessage(objection: com.cuentivo.app.domain.LedgerDeterministicObjection): String =
     when (objection.type) {
         com.cuentivo.app.domain.LedgerDeterministicObjectionType.SUSPECT_DECIMAL_SHIFT ->
-            stringResource(R.string.ai_ledger_objection_decimal_shift)
+            stringResource(Res.string.ai_ledger_objection_decimal_shift)
         com.cuentivo.app.domain.LedgerDeterministicObjectionType.PRICE_MISMATCH_SUSPECT ->
-            stringResource(R.string.ai_ledger_objection_price_mismatch)
+            stringResource(Res.string.ai_ledger_objection_price_mismatch)
         com.cuentivo.app.domain.LedgerDeterministicObjectionType.UNUSUAL_CENTS ->
-            stringResource(R.string.ai_ledger_objection_unusual_cents)
+            stringResource(Res.string.ai_ledger_objection_unusual_cents)
         com.cuentivo.app.domain.LedgerDeterministicObjectionType.CUSTOMER_CONFIRMATION_REQUIRED ->
-            stringResource(R.string.ai_ledger_objection_customer_confirmation)
+            stringResource(Res.string.ai_ledger_objection_customer_confirmation)
         com.cuentivo.app.domain.LedgerDeterministicObjectionType.PAGE_TOTAL_MISMATCH ->
-            stringResource(R.string.ai_ledger_objection_page_total_mismatch, objection.declaredCents ?: 0L, objection.expectedCents ?: 0L)
+            stringResource(Res.string.ai_ledger_objection_page_total_mismatch, objection.declaredCents ?: 0L, objection.expectedCents ?: 0L)
         com.cuentivo.app.domain.LedgerDeterministicObjectionType.IMPLAUSIBLE_DATE ->
             // El motivo decide la frase (v46): mandar a "revisa el año" a quien tiene una deuda real
             // de hace meses era el defecto — el año ya estaba bien y el aviso pedía lo mismo doce veces.
             when (objection.dateReason) {
                 com.cuentivo.app.domain.LedgerImplausibleDateReason.TOO_OLD ->
-                    stringResource(R.string.ai_ledger_objection_date_old)
+                    stringResource(Res.string.ai_ledger_objection_date_old)
                 com.cuentivo.app.domain.LedgerImplausibleDateReason.FUTURE ->
-                    stringResource(R.string.ai_ledger_objection_date_future)
+                    stringResource(Res.string.ai_ledger_objection_date_future)
                 // YEAR_MISMATCH, y `null` por si una objeción vieja no trae motivo: el texto del año
                 // es el más prudente, porque el año es lo que la tarjeta grande sabe corregir.
-                else -> stringResource(R.string.ai_ledger_objection_implausible_date)
+                else -> stringResource(Res.string.ai_ledger_objection_implausible_date)
             }
     }
 
@@ -1008,9 +1008,9 @@ private fun FinancialErrorBanner(
             if (hasZeroOps && diagnostics.isEmpty()) {
                 Text(
                     text = if (rowsNeedingReviewCount > 0) {
-                        stringResource(R.string.ai_ledger_error_rows_need_review, rowsNeedingReviewCount)
+                        stringResource(Res.string.ai_ledger_error_rows_need_review, rowsNeedingReviewCount)
                     } else {
-                        stringResource(R.string.ai_ledger_error_zero_operations)
+                        stringResource(Res.string.ai_ledger_error_zero_operations)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
@@ -1024,7 +1024,7 @@ private fun FinancialErrorBanner(
                 ) {
                     Text(
                         text = pluralStringResource(
-                            R.plurals.ai_ledger_action_review_uncertain,
+                            Res.plurals.ai_ledger_action_review_uncertain,
                             rowsNeedingReviewCount,
                             rowsNeedingReviewCount,
                         ),
@@ -1043,7 +1043,7 @@ private fun FinancialErrorBanner(
                 ) {
                     Text(
                         text = stringResource(
-                            if (detailsExpanded) R.string.ai_ledger_action_hide_details else R.string.ai_ledger_action_show_details,
+                            if (detailsExpanded) Res.string.ai_ledger_action_hide_details else Res.string.ai_ledger_action_show_details,
                         ),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onErrorContainer,
@@ -1062,7 +1062,7 @@ private fun FinancialErrorBanner(
             }
             if (hasMissingDates && diagnostics.isEmpty() && !hasZeroOps) {
                 Text(
-                    text = stringResource(R.string.ai_ledger_error_missing_page_date),
+                    text = stringResource(Res.string.ai_ledger_error_missing_page_date),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     fontWeight = FontWeight.Medium,
@@ -1070,10 +1070,10 @@ private fun FinancialErrorBanner(
             }
             diagnostics.forEach { diag ->
                 val message = when (diag.reason) {
-                    FinancialRejectionReason.ZERO_AMOUNT -> stringResource(R.string.ai_ledger_error_zero_amount)
-                    FinancialRejectionReason.OVERFLOW -> stringResource(R.string.ai_ledger_error_overflow)
-                    FinancialRejectionReason.PAYMENT_WITHOUT_DEBT -> stringResource(R.string.ai_ledger_error_payment_without_debt)
-                    FinancialRejectionReason.PAYMENT_EXCEEDS_DEBT -> stringResource(R.string.ai_ledger_error_payment_exceeds_debt)
+                    FinancialRejectionReason.ZERO_AMOUNT -> stringResource(Res.string.ai_ledger_error_zero_amount)
+                    FinancialRejectionReason.OVERFLOW -> stringResource(Res.string.ai_ledger_error_overflow)
+                    FinancialRejectionReason.PAYMENT_WITHOUT_DEBT -> stringResource(Res.string.ai_ledger_error_payment_without_debt)
+                    FinancialRejectionReason.PAYMENT_EXCEEDS_DEBT -> stringResource(Res.string.ai_ledger_error_payment_exceeds_debt)
                 }
                 Text(
                     text = message,
@@ -1119,7 +1119,7 @@ private fun CustomerGroupCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = group.customerName.ifBlank { stringResource(R.string.ai_slot_customer) },
+                    text = group.customerName.ifBlank { stringResource(Res.string.ai_slot_customer) },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
@@ -1131,9 +1131,9 @@ private fun CustomerGroupCard(
                 ) {
                     Text(
                         text = if (group.isNew) {
-                            stringResource(R.string.ai_ledger_customer_badge_new)
+                            stringResource(Res.string.ai_ledger_customer_badge_new)
                         } else {
-                            stringResource(R.string.ai_ledger_customer_badge_existing)
+                            stringResource(Res.string.ai_ledger_customer_badge_existing)
                         },
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -1146,7 +1146,7 @@ private fun CustomerGroupCard(
             val prevFormatted = formatCents(group.previousBalanceCents)
             val resFormatted = formatCents(group.resultingBalanceCents)
             Text(
-                text = stringResource(R.string.ai_ledger_customer_balance_transition, prevFormatted, resFormatted),
+                text = stringResource(Res.string.ai_ledger_customer_balance_transition, prevFormatted, resFormatted),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1156,7 +1156,7 @@ private fun CustomerGroupCard(
             val pendingInDoubtCents = com.cuentivo.app.domain.LedgerPendingInDoubt.chargeCents(group)
             if (pendingInDoubtCents > 0L) {
                 Text(
-                    text = stringResource(R.string.ai_ledger_pending_in_doubt, formatCents(pendingInDoubtCents)),
+                    text = stringResource(Res.string.ai_ledger_pending_in_doubt, formatCents(pendingInDoubtCents)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.testTag("ledger-group-pending-in-doubt"),
@@ -1236,10 +1236,10 @@ private fun LedgerOperationRow(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val kindText = when (operation.proposedKind) {
-                        ProposedLedgerKind.SALE -> stringResource(R.string.ai_ledger_kind_sale)
-                        ProposedLedgerKind.PAYMENT -> stringResource(R.string.ai_ledger_kind_payment)
-                        ProposedLedgerKind.PRIOR_DEBT -> stringResource(R.string.ai_ledger_kind_prior_debt)
-                        null -> stringResource(R.string.ai_ledger_kind_unspecified)
+                        ProposedLedgerKind.SALE -> stringResource(Res.string.ai_ledger_kind_sale)
+                        ProposedLedgerKind.PAYMENT -> stringResource(Res.string.ai_ledger_kind_payment)
+                        ProposedLedgerKind.PRIOR_DEBT -> stringResource(Res.string.ai_ledger_kind_prior_debt)
+                        null -> stringResource(Res.string.ai_ledger_kind_unspecified)
                     }
                     Text(
                         text = kindText,
@@ -1254,9 +1254,9 @@ private fun LedgerOperationRow(
                         ) {
                             Text(
                                 text = if (operation.unreadableFields.isNotEmpty()) {
-                                    stringResource(R.string.ai_ledger_badge_unreadable)
+                                    stringResource(Res.string.ai_ledger_badge_unreadable)
                                 } else {
-                                    stringResource(R.string.ai_ledger_badge_uncertain)
+                                    stringResource(Res.string.ai_ledger_badge_uncertain)
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onError,
@@ -1272,7 +1272,7 @@ private fun LedgerOperationRow(
                             modifier = Modifier.testTag("ledger-op-duplicate-badge-" + operation.lineIndex),
                         ) {
                             Text(
-                                text = stringResource(R.string.ai_ledger_duplicate_badge),
+                                text = stringResource(Res.string.ai_ledger_duplicate_badge),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
@@ -1291,10 +1291,10 @@ private fun LedgerOperationRow(
                 // says "everything is fine" is also the one nobody reads, so it earns no space.
                 if (health != null && health.needsAttention) {
                     val attention = listOfNotNull(
-                        chipFor(stringResource(R.string.ai_ledger_field_short_customer), health.customerHealth, health.customerOrigin),
-                        chipFor(stringResource(R.string.ai_ledger_field_short_amount), health.amountHealth, com.cuentivo.app.domain.FieldOrigin.READ_HERE),
-                        chipFor(stringResource(R.string.ai_ledger_field_short_kind), health.kindHealth, com.cuentivo.app.domain.FieldOrigin.READ_HERE),
-                        chipFor(stringResource(R.string.ai_ledger_field_short_date), health.dateHealth, health.dateOrigin),
+                        chipFor(stringResource(Res.string.ai_ledger_field_short_customer), health.customerHealth, health.customerOrigin),
+                        chipFor(stringResource(Res.string.ai_ledger_field_short_amount), health.amountHealth, com.cuentivo.app.domain.FieldOrigin.READ_HERE),
+                        chipFor(stringResource(Res.string.ai_ledger_field_short_kind), health.kindHealth, com.cuentivo.app.domain.FieldOrigin.READ_HERE),
+                        chipFor(stringResource(Res.string.ai_ledger_field_short_date), health.dateHealth, health.dateOrigin),
                     )
                     if (attention.isNotEmpty()) {
                         Row(
@@ -1343,7 +1343,7 @@ private fun LedgerOperationRow(
                             shape = RoundedCornerShape(4.dp),
                         ) {
                             Text(
-                                text = stringResource(R.string.ai_ledger_crosscheck_row_confirmed),
+                                text = stringResource(Res.string.ai_ledger_crosscheck_row_confirmed),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -1356,7 +1356,7 @@ private fun LedgerOperationRow(
                 val amountText = if (amountCentsVal != null) {
                     formatCents(amountCentsVal)
                 } else {
-                    operation.amountCents ?: stringResource(R.string.ai_slot_amount)
+                    operation.amountCents ?: stringResource(Res.string.ai_slot_amount)
                 }
                 // Amount and customer on one line: they are what a person scans for, and the two of
                 // them stacked was half the height of a card that only ever holds one movement.
@@ -1386,11 +1386,11 @@ private fun LedgerOperationRow(
                 Text(
                     text = if (rowDate != null) {
                         stringResource(
-                            R.string.ai_ledger_row_date,
+                            Res.string.ai_ledger_row_date,
                             ledgerIsoDate(rowDate.year, rowDate.month, rowDate.day),
                         )
                     } else {
-                        stringResource(R.string.ai_ledger_row_date_missing)
+                        stringResource(Res.string.ai_ledger_row_date_missing)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1411,8 +1411,8 @@ private fun LedgerOperationRow(
                 modifier = Modifier.size(36.dp),
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_receipt_long),
-                    contentDescription = stringResource(R.string.ai_ledger_field_kind),
+                    painter = painterResource(Res.drawable.ic_receipt_long),
+                    contentDescription = stringResource(Res.string.ai_ledger_field_kind),
                     modifier = Modifier.size(20.dp),
                 )
             }
@@ -1422,8 +1422,8 @@ private fun LedgerOperationRow(
                 modifier = Modifier.size(36.dp),
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_delete),
-                    contentDescription = stringResource(R.string.ai_ledger_action_delete_row),
+                    painter = painterResource(Res.drawable.ic_delete),
+                    contentDescription = stringResource(Res.string.ai_ledger_action_delete_row),
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.error,
                 )
@@ -1466,7 +1466,7 @@ private fun RowCropThumbnail(
     //
     // Lo que se conserva es la descripción para lectores de pantalla, que es donde el texto sí cabe.
     // El costo visual es un cuadro gris vacío, que ya se lee como "aquí no hay miniatura".
-    val noCropDescription = stringResource(R.string.ai_ledger_crop_not_available)
+    val noCropDescription = stringResource(Res.string.ai_ledger_crop_not_available)
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
@@ -1484,7 +1484,7 @@ private fun RowCropThumbnail(
         if (currentBitmap != null) {
             Image(
                 bitmap = currentBitmap,
-                contentDescription = stringResource(R.string.ai_ledger_crop_content_description),
+                contentDescription = stringResource(Res.string.ai_ledger_crop_content_description),
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             )
@@ -1532,7 +1532,7 @@ private fun EditLedgerOperationDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(stringResource(R.string.ai_ledger_dialog_edit_title, operation.lineIndex + 1))
+            Text(stringResource(Res.string.ai_ledger_dialog_edit_title, operation.lineIndex + 1))
         },
         text = {
             Column(
@@ -1607,7 +1607,7 @@ private fun EditLedgerOperationDialog(
                             ),
                         ) {
                             Text(
-                                text = stringResource(R.string.ai_ledger_action_change_year, correctedYearDate.year),
+                                text = stringResource(Res.string.ai_ledger_action_change_year, correctedYearDate.year),
                                 style = MaterialTheme.typography.labelMedium,
                             )
                         }
@@ -1619,7 +1619,7 @@ private fun EditLedgerOperationDialog(
                                 .fillMaxWidth()
                                 .testTag("ledger-edit-confirm-objection-button"),
                         ) {
-                            Text(stringResource(R.string.ai_ledger_action_confirm_objection))
+                            Text(stringResource(Res.string.ai_ledger_action_confirm_objection))
                         }
                     } else {
                         Button(
@@ -1633,7 +1633,7 @@ private fun EditLedgerOperationDialog(
                             ),
                         ) {
                             Text(
-                                text = stringResource(R.string.ai_ledger_action_confirm_objection),
+                                text = stringResource(Res.string.ai_ledger_action_confirm_objection),
                                 style = MaterialTheme.typography.labelMedium,
                             )
                         }
@@ -1646,12 +1646,12 @@ private fun EditLedgerOperationDialog(
                     }.getOrDefault("")
                     val descSuffix = if (!duplicateMatch.description.isNullOrBlank()) ": ${duplicateMatch.description}" else ""
                     val kindStr = when (duplicateMatch.kind) {
-                        ProposedLedgerKind.SALE -> stringResource(R.string.ai_ledger_kind_sale)
-                        ProposedLedgerKind.PAYMENT -> stringResource(R.string.ai_ledger_kind_payment)
-                        ProposedLedgerKind.PRIOR_DEBT -> stringResource(R.string.ai_ledger_kind_prior_debt)
+                        ProposedLedgerKind.SALE -> stringResource(Res.string.ai_ledger_kind_sale)
+                        ProposedLedgerKind.PAYMENT -> stringResource(Res.string.ai_ledger_kind_payment)
+                        ProposedLedgerKind.PRIOR_DEBT -> stringResource(Res.string.ai_ledger_kind_prior_debt)
                     }
                     val detailText = stringResource(
-                        R.string.ai_ledger_duplicate_detail_format,
+                        Res.string.ai_ledger_duplicate_detail_format,
                         kindStr.lowercase(),
                         duplicateMatch.customerName,
                         formatCents(duplicateMatch.amountCents),
@@ -1666,7 +1666,7 @@ private fun EditLedgerOperationDialog(
                             .testTag("ledger-edit-duplicate-warning"),
                     ) {
                         Text(
-                            text = stringResource(R.string.ai_ledger_duplicate_warning, detailText),
+                            text = stringResource(Res.string.ai_ledger_duplicate_warning, detailText),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.padding(8.dp),
@@ -1688,7 +1688,7 @@ private fun EditLedgerOperationDialog(
                             ),
                         ) {
                             Text(
-                                text = stringResource(R.string.ai_ledger_action_confirm_duplicate),
+                                text = stringResource(Res.string.ai_ledger_action_confirm_duplicate),
                                 style = MaterialTheme.typography.labelMedium,
                             )
                         }
@@ -1698,8 +1698,8 @@ private fun EditLedgerOperationDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.ai_ledger_field_customer)) },
-                    placeholder = { Text(stringResource(R.string.ai_ledger_field_customer_placeholder)) },
+                    label = { Text(stringResource(Res.string.ai_ledger_field_customer)) },
+                    placeholder = { Text(stringResource(Res.string.ai_ledger_field_customer_placeholder)) },
                     modifier = Modifier.fillMaxWidth().testTag("ledger-edit-customer-field"),
                     singleLine = true,
                 )
@@ -1714,7 +1714,7 @@ private fun EditLedgerOperationDialog(
                         modifier = Modifier.fillMaxWidth().testTag("ledger-accept-customer-match"),
                     ) {
                         Text(
-                            text = stringResource(R.string.ai_ledger_customer_match_action, candidate.name),
+                            text = stringResource(Res.string.ai_ledger_customer_match_action, candidate.name),
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }
@@ -1729,7 +1729,7 @@ private fun EditLedgerOperationDialog(
                         modifier = Modifier.fillMaxWidth().testTag("ledger-accept-product-match"),
                     ) {
                         Text(
-                            text = stringResource(R.string.ai_ledger_product_match_action, prodCandidate.name),
+                            text = stringResource(Res.string.ai_ledger_product_match_action, prodCandidate.name),
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }
@@ -1738,11 +1738,11 @@ private fun EditLedgerOperationDialog(
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { amount = it },
-                    label = { Text(stringResource(R.string.ai_ledger_field_amount)) },
-                    placeholder = { Text(stringResource(R.string.ai_ledger_field_amount_placeholder)) },
+                    label = { Text(stringResource(Res.string.ai_ledger_field_amount)) },
+                    placeholder = { Text(stringResource(Res.string.ai_ledger_field_amount_placeholder)) },
                     isError = amountIsWrong,
                     supportingText = if (amountIsWrong) {
-                        { Text(stringResource(R.string.ai_ledger_field_amount_invalid)) }
+                        { Text(stringResource(Res.string.ai_ledger_field_amount_invalid)) }
                     } else {
                         null
                     },
@@ -1754,11 +1754,11 @@ private fun EditLedgerOperationDialog(
                 OutlinedTextField(
                     value = dateText,
                     onValueChange = { dateText = it },
-                    label = { Text(stringResource(R.string.ai_ledger_field_date)) },
-                    placeholder = { Text(stringResource(R.string.ai_ledger_field_date_placeholder)) },
+                    label = { Text(stringResource(Res.string.ai_ledger_field_date)) },
+                    placeholder = { Text(stringResource(Res.string.ai_ledger_field_date_placeholder)) },
                     isError = dateIsWrong,
                     supportingText = if (dateIsWrong) {
-                        { Text(stringResource(R.string.ai_ledger_field_date_invalid)) }
+                        { Text(stringResource(Res.string.ai_ledger_field_date_invalid)) }
                     } else {
                         null
                     },
@@ -1775,19 +1775,19 @@ private fun EditLedgerOperationDialog(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     KindChoiceButton(
-                        text = stringResource(R.string.ai_ledger_kind_sale),
+                        text = stringResource(Res.string.ai_ledger_kind_sale),
                         selected = kind == ProposedLedgerKind.SALE,
                         onClick = { kind = ProposedLedgerKind.SALE },
                         modifier = Modifier.testTag("ledger-kind-SALE"),
                     )
                     KindChoiceButton(
-                        text = stringResource(R.string.ai_ledger_kind_payment),
+                        text = stringResource(Res.string.ai_ledger_kind_payment),
                         selected = kind == ProposedLedgerKind.PAYMENT,
                         onClick = { kind = ProposedLedgerKind.PAYMENT },
                         modifier = Modifier.testTag("ledger-kind-PAYMENT"),
                     )
                     KindChoiceButton(
-                        text = stringResource(R.string.ai_ledger_kind_prior_debt),
+                        text = stringResource(Res.string.ai_ledger_kind_prior_debt),
                         selected = kind == ProposedLedgerKind.PRIOR_DEBT,
                         onClick = { kind = ProposedLedgerKind.PRIOR_DEBT },
                         modifier = Modifier.testTag("ledger-kind-PRIOR_DEBT"),
@@ -1806,7 +1806,7 @@ private fun EditLedgerOperationDialog(
                 enabled = chosenKind != null && !dateIsWrong && amountCents != null,
                 modifier = Modifier.testTag("ledger-edit-save-button"),
             ) {
-                Text(stringResource(R.string.ai_ledger_action_save))
+                Text(stringResource(Res.string.ai_ledger_action_save))
             }
         },
         dismissButton = {
@@ -1814,7 +1814,7 @@ private fun EditLedgerOperationDialog(
                 onClick = onDismiss,
                 modifier = Modifier.testTag("ledger-edit-cancel-button"),
             ) {
-                Text(stringResource(R.string.ai_ledger_action_cancel))
+                Text(stringResource(Res.string.ai_ledger_action_cancel))
             }
         },
     )
@@ -1952,26 +1952,26 @@ private fun CrosscheckSummaryCard(
     // contradice.
     val disagreeingRows = verdict.disagreeingRowCount
     val message = when (verdict.outcome) {
-        MexalmCrosscheckOutcome.AGREED -> stringResource(R.string.ai_ledger_crosscheck_summary_agreed)
+        MexalmCrosscheckOutcome.AGREED -> stringResource(Res.string.ai_ledger_crosscheck_summary_agreed)
         MexalmCrosscheckOutcome.DISAGREEMENTS -> pluralStringResource(
-            R.plurals.ai_ledger_crosscheck_summary_disagreements,
+            Res.plurals.ai_ledger_crosscheck_summary_disagreements,
             disagreeingRows,
             disagreeingRows,
         )
         // El Ledger no leyó la página. Se dice una vez, y con el motivo.
         MexalmCrosscheckOutcome.COULD_NOT_READ ->
-            stringResource(R.string.ai_ledger_crosscheck_summary_could_not_read)
+            stringResource(Res.string.ai_ledger_crosscheck_summary_could_not_read)
         // `agreed` falso sin ninguna diferencia: el Ledger no dio veredicto. No es lo mismo que
         // "están de acuerdo", y decirlo como si lo estuviera sería mentir.
         MexalmCrosscheckOutcome.NO_VERDICT ->
-            stringResource(R.string.ai_ledger_crosscheck_summary_no_verdict)
+            stringResource(Res.string.ai_ledger_crosscheck_summary_no_verdict)
     }
     // El motivo, en lenguaje sencillo: qué pasó exactamente, sin jerga de servidor.
     val reason = when (verdict.unreadReason) {
         MexalmCrosscheckUnreadReason.BLOCKED ->
-            stringResource(R.string.ai_ledger_crosscheck_reason_blocked)
+            stringResource(Res.string.ai_ledger_crosscheck_reason_blocked)
         MexalmCrosscheckUnreadReason.REVIEW_REQUIRED ->
-            stringResource(R.string.ai_ledger_crosscheck_reason_review_required)
+            stringResource(Res.string.ai_ledger_crosscheck_reason_review_required)
         null -> null
     }
     // El acento de la app —el mismo borde que llevan las tarjetas del Inicio— para que esta
@@ -2020,7 +2020,7 @@ private fun CrosscheckSummaryCard(
             if (verdict.confirmedRowCount > 0) {
                 Text(
                     text = pluralStringResource(
-                        R.plurals.ai_ledger_crosscheck_confirmed_count,
+                        Res.plurals.ai_ledger_crosscheck_confirmed_count,
                         verdict.confirmedRowCount,
                         verdict.confirmedRowCount,
                     ),
@@ -2029,7 +2029,7 @@ private fun CrosscheckSummaryCard(
                 )
             }
             Text(
-                text = stringResource(R.string.ai_ledger_crosscheck_summary_note),
+                text = stringResource(Res.string.ai_ledger_crosscheck_summary_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2057,15 +2057,15 @@ private fun CrosscheckBadge(
 ) {
     val label = when (disagreement.field) {
         com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.AMOUNT ->
-            stringResource(R.string.ai_ledger_crosscheck_badge_amount)
+            stringResource(Res.string.ai_ledger_crosscheck_badge_amount)
         com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.CUSTOMER ->
-            stringResource(R.string.ai_ledger_crosscheck_badge_customer)
+            stringResource(Res.string.ai_ledger_crosscheck_badge_customer)
         com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.TYPE ->
-            stringResource(R.string.ai_ledger_crosscheck_badge_type)
+            stringResource(Res.string.ai_ledger_crosscheck_badge_type)
         com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.MISSING_IN_LEDGER ->
-            stringResource(R.string.ai_ledger_crosscheck_badge_missing_ledger)
+            stringResource(Res.string.ai_ledger_crosscheck_badge_missing_ledger)
         com.cuentivo.app.ai.ledger.MexalmCrosscheckDisagreementField.MISSING_IN_GEMINI ->
-            stringResource(R.string.ai_ledger_crosscheck_badge_missing_gemini)
+            stringResource(Res.string.ai_ledger_crosscheck_badge_missing_gemini)
     }
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,

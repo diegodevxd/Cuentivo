@@ -24,7 +24,7 @@ class AiDebugLabGuardsTest {
 
     private fun labScreenSource(): String =
         File("src/main/java/com/cuentivo/app/ui/ai/AndroidLedgerCapture.kt").readText() + "\n" +
-            File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+            File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
 
     @Test
     fun `common ai lab sources are actually scanned`() {

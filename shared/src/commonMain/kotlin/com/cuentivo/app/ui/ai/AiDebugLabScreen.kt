@@ -45,7 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -56,14 +56,13 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.ui.res.painterResource
+import com.cuentivo.shared.resources.*
 import com.cuentivo.app.ai.VoiceCaptureMachine
 import com.cuentivo.app.ai.VoiceCaptureModel
 import com.cuentivo.app.ai.VoiceCaptureState
 import com.cuentivo.app.ai.VoiceRecognizer
 import com.cuentivo.app.ai.VoiceUnavailableReason
 import com.cuentivo.app.ai.normalizeRmsDb
-import com.cuentivo.app.R
 import com.cuentivo.app.ai.AiBusinessQueryResult
 import com.cuentivo.app.ai.AiDailyMessageKind
 import com.cuentivo.app.ai.AiInterpretRequest
@@ -97,6 +96,7 @@ import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.data.local.AiDailyChatRepository
 import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -116,7 +116,7 @@ fun AiDebugLabEntryButton(
             ),
     ) {
         TextButton(onClick = onOpen) {
-            Text(stringResource(R.string.ai_debug_lab_entry))
+            Text(stringResource(Res.string.ai_debug_lab_entry))
         }
     }
 }
@@ -659,12 +659,12 @@ fun AiDebugLabScreen(
                 CircularProgressIndicator()
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = stringResource(R.string.ai_ledger_extracting_title),
+                    text = stringResource(Res.string.ai_ledger_extracting_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = stringResource(R.string.ai_ledger_extracting_subtitle),
+                    text = stringResource(Res.string.ai_ledger_extracting_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -865,11 +865,11 @@ fun AiDebugLabScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = stringResource(R.string.ai_debug_lab_title),
+                    text = stringResource(Res.string.ai_debug_lab_title),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = closeLab) { Text(stringResource(R.string.ai_debug_lab_close)) }
+                TextButton(onClick = closeLab) { Text(stringResource(Res.string.ai_debug_lab_close)) }
             }
             // The notice is informational, not a failure: it used to sit here permanently in the
             // error colour, so the first thing a paying user saw on entering was a red alert.
@@ -887,7 +887,7 @@ fun AiDebugLabScreen(
                 exit = fadeOut(),
             ) {
                 Text(
-                    text = stringResource(R.string.ai_debug_lab_warning),
+                    text = stringResource(Res.string.ai_debug_lab_warning),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1043,7 +1043,7 @@ fun AiDebugLabScreen(
             }
             if (cameraUnavailable) {
                 Text(
-                    text = stringResource(R.string.ai_debug_chat_camera_unavailable),
+                    text = stringResource(Res.string.ai_debug_chat_camera_unavailable),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -1066,14 +1066,14 @@ fun AiDebugLabScreen(
                             modifier = Modifier.padding(end = 8.dp),
                         )
                         Text(
-                            text = if (partial.isNotBlank()) partial else stringResource(R.string.ai_voice_listening),
+                            text = if (partial.isNotBlank()) partial else stringResource(Res.string.ai_voice_listening),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(8.dp))
                         TextButton(onClick = cancelVoiceCapture) {
-                            Text(stringResource(R.string.ai_voice_cancel))
+                            Text(stringResource(Res.string.ai_voice_cancel))
                         }
                     }
                 }
@@ -1090,24 +1090,24 @@ fun AiDebugLabScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = if (partial.isNotBlank()) partial else stringResource(R.string.ai_voice_processing),
+                            text = if (partial.isNotBlank()) partial else stringResource(Res.string.ai_voice_processing),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(8.dp))
                         TextButton(onClick = cancelVoiceCapture) {
-                            Text(stringResource(R.string.ai_voice_cancel))
+                            Text(stringResource(Res.string.ai_voice_cancel))
                         }
                     }
                 }
             } else if (voiceModel.state is VoiceCaptureState.Unavailable) {
                 val reason = (voiceModel.state as VoiceCaptureState.Unavailable).reason
                 val message = when (reason) {
-                    VoiceUnavailableReason.NO_RECOGNIZER -> stringResource(R.string.ai_voice_unavailable_no_recognizer)
-                    VoiceUnavailableReason.PERMISSION_DENIED -> stringResource(R.string.ai_voice_unavailable_permission_denied)
-                    VoiceUnavailableReason.NO_SPEECH -> stringResource(R.string.ai_voice_unavailable_no_speech)
-                    VoiceUnavailableReason.RECOGNIZER_ERROR -> stringResource(R.string.ai_voice_unavailable_recognizer_error)
+                    VoiceUnavailableReason.NO_RECOGNIZER -> stringResource(Res.string.ai_voice_unavailable_no_recognizer)
+                    VoiceUnavailableReason.PERMISSION_DENIED -> stringResource(Res.string.ai_voice_unavailable_permission_denied)
+                    VoiceUnavailableReason.NO_SPEECH -> stringResource(Res.string.ai_voice_unavailable_no_speech)
+                    VoiceUnavailableReason.RECOGNIZER_ERROR -> stringResource(Res.string.ai_voice_unavailable_recognizer_error)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1120,7 +1120,7 @@ fun AiDebugLabScreen(
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = cancelVoiceCapture) {
-                        Text(stringResource(R.string.ai_debug_lab_close))
+                        Text(stringResource(Res.string.ai_debug_lab_close))
                     }
                 }
             }
@@ -1131,7 +1131,7 @@ fun AiDebugLabScreen(
                     value = model.text,
                     onValueChange = { model = AiDebugLabMachine.onTextChanged(model, it) },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text(stringResource(R.string.ai_debug_lab_input_hint)) },
+                    placeholder = { Text(stringResource(Res.string.ai_debug_lab_input_hint)) },
                     enabled = isHydrated && model.state != AiDebugLabState.Sending && !isVoiceActive,
                     maxLines = 4,
                 )
@@ -1158,8 +1158,8 @@ fun AiDebugLabScreen(
                     ),
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_mic),
-                        contentDescription = stringResource(R.string.ai_voice_button),
+                        painter = painterResource(Res.drawable.ic_mic),
+                        contentDescription = stringResource(Res.string.ai_voice_button),
                         modifier = Modifier.size(24.dp),
                     )
                 }
@@ -1290,7 +1290,7 @@ fun AiDebugLabScreen(
                     ),
                 ) {
                     Text(
-                        text = stringResource(R.string.ai_debug_lab_send),
+                        text = stringResource(Res.string.ai_debug_lab_send),
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -1316,7 +1316,7 @@ fun AiDebugLabScreen(
                             showLedgerSourceSelector = true
                         },
                     ) {
-                        Text(stringResource(R.string.ai_ledger_import_entry))
+                        Text(stringResource(Res.string.ai_ledger_import_entry))
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -1328,7 +1328,7 @@ fun AiDebugLabScreen(
                     ),
                 ) {
                     Text(
-                        text = stringResource(R.string.ai_daily_chat_clear_today),
+                        text = stringResource(Res.string.ai_daily_chat_clear_today),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -1352,29 +1352,29 @@ fun AiDebugLabScreen(
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.ai_debug_chat_camera)) }
+                    ) { Text(stringResource(Res.string.ai_debug_chat_camera)) }
                     TextButton(
                         onClick = {
                             showLedgerSourceSelector = false
                             ledgerPagePicker.pickFromGallery()
                         },
                         modifier = Modifier.fillMaxWidth().testTag("ai-ledger-source-gallery"),
-                    ) { Text(stringResource(R.string.ai_debug_chat_gallery)) }
+                    ) { Text(stringResource(Res.string.ai_debug_chat_gallery)) }
                     TextButton(
                         onClick = {
                             showLedgerSourceSelector = false
                             discardLedgerCapture()
                         },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.ai_debug_lab_close)) }
+                    ) { Text(stringResource(Res.string.ai_debug_lab_close)) }
                 }
             }
         }
         if (showClearDialog) {
             AlertDialog(
                 onDismissRequest = { showClearDialog = false },
-                title = { Text(stringResource(R.string.ai_daily_chat_clear_dialog_title)) },
-                text = { Text(stringResource(R.string.ai_daily_chat_clear_dialog_message)) },
+                title = { Text(stringResource(Res.string.ai_daily_chat_clear_dialog_title)) },
+                text = { Text(stringResource(Res.string.ai_daily_chat_clear_dialog_message)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
@@ -1390,12 +1390,12 @@ fun AiDebugLabScreen(
                             }
                         },
                     ) {
-                        Text(stringResource(R.string.ai_daily_chat_clear_confirm))
+                        Text(stringResource(Res.string.ai_daily_chat_clear_confirm))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showClearDialog = false }) {
-                        Text(stringResource(R.string.ai_daily_chat_clear_cancel))
+                        Text(stringResource(Res.string.ai_daily_chat_clear_cancel))
                     }
                 },
             )
@@ -1435,25 +1435,25 @@ private fun ChatMessageRow(
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
-        AiChatMessage.AssistantGreeting -> Text(stringResource(R.string.ai_daily_chat_greeting))
+        AiChatMessage.AssistantGreeting -> Text(stringResource(Res.string.ai_daily_chat_greeting))
         is AiChatMessage.AssistantLedgerRecorded -> Text(
-            stringResource(R.string.ai_ledger_recorded, message.operationsCount),
+            stringResource(Res.string.ai_ledger_recorded, message.operationsCount),
         )
-        is AiChatMessage.AssistantLedgerAlreadyRecorded -> Text(stringResource(R.string.ai_ledger_recorded_already))
-        AiChatMessage.AssistantLedgerFailed -> Text(stringResource(R.string.ai_ledger_failed))
-        AiChatMessage.AssistantOutOfScope -> Text(stringResource(R.string.ai_daily_chat_out_of_scope))
+        is AiChatMessage.AssistantLedgerAlreadyRecorded -> Text(stringResource(Res.string.ai_ledger_recorded_already))
+        AiChatMessage.AssistantLedgerFailed -> Text(stringResource(Res.string.ai_ledger_failed))
+        AiChatMessage.AssistantOutOfScope -> Text(stringResource(Res.string.ai_daily_chat_out_of_scope))
         AiChatMessage.AssistantPending -> Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.ai_debug_lab_thinking))
+            Text(stringResource(Res.string.ai_debug_lab_thinking))
         }
-        AiChatMessage.AssistantUnavailable -> Text(stringResource(R.string.ai_debug_lab_unavailable))
-        AiChatMessage.AssistantQuotaExhausted -> Text(stringResource(R.string.ai_debug_lab_quota_exhausted))
-        AiChatMessage.AssistantRateLimited -> Text(stringResource(R.string.ai_debug_lab_rate_limited))
-        AiChatMessage.AssistantDisabled -> Text(stringResource(R.string.ai_debug_lab_disabled))
+        AiChatMessage.AssistantUnavailable -> Text(stringResource(Res.string.ai_debug_lab_unavailable))
+        AiChatMessage.AssistantQuotaExhausted -> Text(stringResource(Res.string.ai_debug_lab_quota_exhausted))
+        AiChatMessage.AssistantRateLimited -> Text(stringResource(Res.string.ai_debug_lab_rate_limited))
+        AiChatMessage.AssistantDisabled -> Text(stringResource(Res.string.ai_debug_lab_disabled))
         AiChatMessage.AssistantEntitlementRequired -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = stringResource(R.string.ai_debug_lab_entitlement_required),
+                text = stringResource(Res.string.ai_debug_lab_entitlement_required),
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (onOpenPaywall != null) {
@@ -1461,29 +1461,29 @@ private fun ChatMessageRow(
                     onClick = onOpenPaywall,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.subscription_upgrade_ai_action))
+                    Text(stringResource(Res.string.subscription_upgrade_ai_action))
                 }
             }
         }
         is AiChatMessage.AssistantClarification -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val reasonText = when (message.reason) {
-                com.cuentivo.app.ai.ClarificationReason.AMBIGUOUS_CUSTOMER -> stringResource(R.string.ai_clarification_reason_ambiguous_customer)
-                com.cuentivo.app.ai.ClarificationReason.AMBIGUOUS_PRODUCT -> stringResource(R.string.ai_clarification_reason_ambiguous_product)
-                com.cuentivo.app.ai.ClarificationReason.MISSING_CUSTOMER -> stringResource(R.string.ai_clarification_reason_missing_customer)
-                com.cuentivo.app.ai.ClarificationReason.MISSING_PRODUCT -> stringResource(R.string.ai_clarification_reason_missing_product)
-                com.cuentivo.app.ai.ClarificationReason.MISSING_AMOUNT -> stringResource(R.string.ai_clarification_reason_missing_amount)
-                com.cuentivo.app.ai.ClarificationReason.UNKNOWN_INPUT -> stringResource(R.string.ai_clarification_reason_unknown_input)
+                com.cuentivo.app.ai.ClarificationReason.AMBIGUOUS_CUSTOMER -> stringResource(Res.string.ai_clarification_reason_ambiguous_customer)
+                com.cuentivo.app.ai.ClarificationReason.AMBIGUOUS_PRODUCT -> stringResource(Res.string.ai_clarification_reason_ambiguous_product)
+                com.cuentivo.app.ai.ClarificationReason.MISSING_CUSTOMER -> stringResource(Res.string.ai_clarification_reason_missing_customer)
+                com.cuentivo.app.ai.ClarificationReason.MISSING_PRODUCT -> stringResource(Res.string.ai_clarification_reason_missing_product)
+                com.cuentivo.app.ai.ClarificationReason.MISSING_AMOUNT -> stringResource(Res.string.ai_clarification_reason_missing_amount)
+                com.cuentivo.app.ai.ClarificationReason.UNKNOWN_INPUT -> stringResource(Res.string.ai_clarification_reason_unknown_input)
             }
             Text(
                 text = reasonText,
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (message.slots.isNotEmpty()) {
-                val customerSlotLabel = stringResource(R.string.ai_slot_customer)
-                val productSlotLabel = stringResource(R.string.ai_slot_product)
-                val amountSlotLabel = stringResource(R.string.ai_slot_amount)
-                val quantitySlotLabel = stringResource(R.string.ai_slot_quantity)
-                val periodSlotLabel = stringResource(R.string.ai_slot_period)
+                val customerSlotLabel = stringResource(Res.string.ai_slot_customer)
+                val productSlotLabel = stringResource(Res.string.ai_slot_product)
+                val amountSlotLabel = stringResource(Res.string.ai_slot_amount)
+                val quantitySlotLabel = stringResource(Res.string.ai_slot_quantity)
+                val periodSlotLabel = stringResource(Res.string.ai_slot_period)
                 val slotsFormatted = message.slots.joinToString { slot ->
                     when (slot) {
                         com.cuentivo.app.ai.UnresolvedSlot.CUSTOMER -> customerSlotLabel
@@ -1494,7 +1494,7 @@ private fun ChatMessageRow(
                     }
                 }
                 Text(
-                    text = stringResource(R.string.ai_clarification_missing_slots_format, slotsFormatted),
+                    text = stringResource(Res.string.ai_clarification_missing_slots_format, slotsFormatted),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1502,7 +1502,7 @@ private fun ChatMessageRow(
         }
         is AiChatMessage.AssistantProposal -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = stringResource(R.string.ai_debug_chat_draft_note),
+                text = stringResource(Res.string.ai_debug_chat_draft_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -1510,7 +1510,7 @@ private fun ChatMessageRow(
         }
         is AiChatMessage.AssistantPaymentPreview -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = stringResource(R.string.ai_payment_preview_draft_note),
+                text = stringResource(Res.string.ai_payment_preview_draft_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -1520,21 +1520,21 @@ private fun ChatMessageRow(
             )
             Text(
                 text = stringResource(
-                    R.string.ai_payment_preview_current_balance,
+                    Res.string.ai_payment_preview_current_balance,
                     formatCents(message.preview.currentBalanceCents),
                 ),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
                 text = stringResource(
-                    R.string.ai_payment_preview_proposed_amount,
+                    Res.string.ai_payment_preview_proposed_amount,
                     formatCents(message.preview.declaredAmountCents),
                 ),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
                 text = stringResource(
-                    R.string.ai_payment_preview_projected_balance,
+                    Res.string.ai_payment_preview_projected_balance,
                     formatCents(message.preview.projectedBalanceCents),
                 ),
                 style = MaterialTheme.typography.bodyMedium,
@@ -1548,24 +1548,24 @@ private fun ChatMessageRow(
                         onClick = onConfirmPayment,
                         enabled = !isConfirming,
                     ) {
-                        Text(stringResource(R.string.ai_payment_confirm_action))
+                        Text(stringResource(Res.string.ai_payment_confirm_action))
                     }
                     TextButton(
                         onClick = onCancelPayment,
                         enabled = !isConfirming,
                     ) {
-                        Text(stringResource(R.string.ai_payment_confirm_cancel))
+                        Text(stringResource(Res.string.ai_payment_confirm_cancel))
                     }
                 }
             }
         }
         AiChatMessage.AssistantPaymentCustomerNotFound -> Text(
-            text = stringResource(R.string.ai_payment_preview_customer_not_found),
+            text = stringResource(Res.string.ai_payment_preview_customer_not_found),
             style = MaterialTheme.typography.bodyMedium,
         )
         is AiChatMessage.AssistantPaymentCustomerSelection -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = stringResource(R.string.ai_payment_preview_selection_required),
+                text = stringResource(Res.string.ai_payment_preview_selection_required),
                 style = MaterialTheme.typography.bodyMedium,
             )
             message.candidates.forEach { candidate ->
@@ -1580,9 +1580,9 @@ private fun ChatMessageRow(
                 AiPaymentBlockReason.NO_OUTSTANDING_DEBT -> {
                     val customerName = message.preview?.customerName
                     val text = if (!customerName.isNullOrBlank()) {
-                        stringResource(R.string.ai_payment_preview_blocked_no_debt_with_name, customerName)
+                        stringResource(Res.string.ai_payment_preview_blocked_no_debt_with_name, customerName)
                     } else {
-                        stringResource(R.string.ai_payment_preview_blocked_no_debt)
+                        stringResource(Res.string.ai_payment_preview_blocked_no_debt)
                     }
                     Text(
                         text = text,
@@ -1595,13 +1595,13 @@ private fun ChatMessageRow(
                         val debtFormatted = formatCents(preview.currentBalanceCents)
                         val paymentFormatted = formatCents(preview.declaredAmountCents)
                         stringResource(
-                            R.string.ai_payment_preview_blocked_exceeds_debt,
+                            Res.string.ai_payment_preview_blocked_exceeds_debt,
                             preview.customerName,
                             debtFormatted,
                             paymentFormatted,
                         )
                     } else {
-                        stringResource(R.string.ai_payment_preview_blocked_exceeds_debt_no_details)
+                        stringResource(Res.string.ai_payment_preview_blocked_exceeds_debt_no_details)
                     }
                     Text(
                         text = text,
@@ -1611,15 +1611,15 @@ private fun ChatMessageRow(
             }
         }
         is AiChatMessage.AssistantPaymentRecorded -> Text(
-            text = stringResource(R.string.ai_payment_recorded_success),
+            text = stringResource(Res.string.ai_payment_recorded_success),
             style = MaterialTheme.typography.bodyMedium,
         )
         AiChatMessage.AssistantPaymentStale -> Text(
-            text = stringResource(R.string.ai_payment_stale_message),
+            text = stringResource(Res.string.ai_payment_stale_message),
             style = MaterialTheme.typography.bodyMedium,
         )
         AiChatMessage.AssistantPaymentRejected -> Text(
-            text = stringResource(R.string.ai_payment_rejected_message),
+            text = stringResource(Res.string.ai_payment_rejected_message),
             style = MaterialTheme.typography.bodyMedium,
         )
         is AiChatMessage.AssistantSalePreview -> AiSalePreviewContent(
@@ -1632,7 +1632,7 @@ private fun ChatMessageRow(
         )
         is AiChatMessage.AssistantSaleCustomerSelection -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = stringResource(R.string.ai_sale_preview_customer_selection_prompt),
+                text = stringResource(Res.string.ai_sale_preview_customer_selection_prompt),
                 style = MaterialTheme.typography.bodyMedium,
             )
             message.candidates.forEach { candidate ->
@@ -1649,20 +1649,20 @@ private fun ChatMessageRow(
                 enabled = onSelectCustomerCandidate != null,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(stringResource(R.string.ai_sale_choice_create_new))
+                Text(stringResource(Res.string.ai_sale_choice_create_new))
             }
             if (onCancelSale != null) {
                 TextButton(
                     onClick = onCancelSale,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.ai_sale_confirm_cancel))
+                    Text(stringResource(Res.string.ai_sale_confirm_cancel))
                 }
             }
         }
         is AiChatMessage.AssistantSaleProductSelection -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = stringResource(R.string.ai_sale_preview_product_selection_prompt, message.requestedName),
+                text = stringResource(Res.string.ai_sale_preview_product_selection_prompt, message.requestedName),
                 style = MaterialTheme.typography.bodyMedium,
             )
             message.candidates.forEach { candidate ->
@@ -1673,7 +1673,7 @@ private fun ChatMessageRow(
                 ) {
                     Text(
                         stringResource(
-                            R.string.ai_sale_preview_candidate_with_price,
+                            Res.string.ai_sale_preview_candidate_with_price,
                             candidate.displayName,
                             formatCents(candidate.salePriceCents),
                         ),
@@ -1685,14 +1685,14 @@ private fun ChatMessageRow(
                 enabled = onSelectProductCandidate != null,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(stringResource(R.string.ai_sale_choice_create_new))
+                Text(stringResource(Res.string.ai_sale_choice_create_new))
             }
             if (onCancelSale != null) {
                 TextButton(
                     onClick = onCancelSale,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.ai_sale_confirm_cancel))
+                    Text(stringResource(Res.string.ai_sale_confirm_cancel))
                 }
             }
         }
@@ -1703,9 +1703,9 @@ private fun ChatMessageRow(
                     val text = if (preview != null) {
                         val initialFormatted = formatCents(preview.initialPaymentCents)
                         val totalFormatted = formatCents(preview.totalCents)
-                        stringResource(R.string.ai_sale_preview_blocked_overpayment, initialFormatted, totalFormatted)
+                        stringResource(Res.string.ai_sale_preview_blocked_overpayment, initialFormatted, totalFormatted)
                     } else {
-                        stringResource(R.string.ai_sale_preview_blocked_overpayment_no_details)
+                        stringResource(Res.string.ai_sale_preview_blocked_overpayment_no_details)
                     }
                     Text(
                         text = text,
@@ -1713,19 +1713,19 @@ private fun ChatMessageRow(
                     )
                 }
                 AiSaleBlockReason.ARITHMETIC_OVERFLOW -> Text(
-                    text = stringResource(R.string.ai_sale_preview_blocked_overflow),
+                    text = stringResource(Res.string.ai_sale_preview_blocked_overflow),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 AiSaleBlockReason.INVALID_LINE_QUANTITY -> Text(
-                    text = stringResource(R.string.ai_sale_preview_blocked_invalid_quantity),
+                    text = stringResource(Res.string.ai_sale_preview_blocked_invalid_quantity),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 AiSaleBlockReason.INVALID_LINE_PRICE -> Text(
-                    text = stringResource(R.string.ai_sale_preview_blocked_invalid_price),
+                    text = stringResource(Res.string.ai_sale_preview_blocked_invalid_price),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 AiSaleBlockReason.INCONSISTENT_NEW_PRODUCT_PRICE -> Text(
-                    text = stringResource(R.string.ai_sale_preview_blocked_inconsistent_new_product_price),
+                    text = stringResource(Res.string.ai_sale_preview_blocked_inconsistent_new_product_price),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -1737,15 +1737,15 @@ private fun ChatMessageRow(
             // con éxito" a secas dejaba a la persona sin saber cuánto debe ahora.
             val text = if (balance != null && !name.isNullOrBlank()) {
                 stringResource(
-                    R.string.ai_sale_recorded_success_balance,
+                    Res.string.ai_sale_recorded_success_balance,
                     when {
-                        balance > 0L -> stringResource(R.string.message_balance_owes, name, formatCents(balance))
-                        balance < 0L -> stringResource(R.string.message_balance_credit, name, formatCents(-balance))
-                        else -> stringResource(R.string.message_balance_settled, name)
+                        balance > 0L -> stringResource(Res.string.message_balance_owes, name, formatCents(balance))
+                        balance < 0L -> stringResource(Res.string.message_balance_credit, name, formatCents(-balance))
+                        else -> stringResource(Res.string.message_balance_settled, name)
                     },
                 )
             } else {
-                stringResource(R.string.ai_sale_recorded_success)
+                stringResource(Res.string.ai_sale_recorded_success)
             }
             Text(
                 text = text,
@@ -1753,15 +1753,15 @@ private fun ChatMessageRow(
             )
         }
         AiChatMessage.AssistantSaleStale -> Text(
-            text = stringResource(R.string.ai_sale_stale_message),
+            text = stringResource(Res.string.ai_sale_stale_message),
             style = MaterialTheme.typography.bodyMedium,
         )
         AiChatMessage.AssistantSaleRejected -> Text(
-            text = stringResource(R.string.ai_sale_rejected_message),
+            text = stringResource(Res.string.ai_sale_rejected_message),
             style = MaterialTheme.typography.bodyMedium,
         )
         AiChatMessage.AssistantSaleLimitReached -> Text(
-            text = stringResource(R.string.ai_sale_limit_reached_message),
+            text = stringResource(Res.string.ai_sale_limit_reached_message),
             style = MaterialTheme.typography.bodyMedium,
         )
         is AiChatMessage.AssistantQueryAnswer -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1773,9 +1773,9 @@ private fun ChatMessageRow(
                     )
                     val balanceFormatted = formatCents(result.balanceCents, absolute = true)
                     val balanceText = when {
-                        result.balanceCents > 0L -> stringResource(R.string.ai_query_customer_balance_format, balanceFormatted)
-                        result.balanceCents == 0L -> stringResource(R.string.ai_query_customer_no_debt, result.customerName)
-                        else -> stringResource(R.string.ai_query_customer_credit_format, balanceFormatted)
+                        result.balanceCents > 0L -> stringResource(Res.string.ai_query_customer_balance_format, balanceFormatted)
+                        result.balanceCents == 0L -> stringResource(Res.string.ai_query_customer_no_debt, result.customerName)
+                        else -> stringResource(Res.string.ai_query_customer_credit_format, balanceFormatted)
                     }
                     Text(
                         text = balanceText,
@@ -1784,19 +1784,19 @@ private fun ChatMessageRow(
                 }
                 is AiBusinessQueryResult.Answer.CustomersWithDebt -> {
                     Text(
-                        text = stringResource(R.string.ai_query_debtors_title),
+                        text = stringResource(Res.string.ai_query_debtors_title),
                         style = MaterialTheme.typography.titleMedium,
                     )
                     if (result.rows.isEmpty()) {
                         Text(
-                            text = stringResource(R.string.ai_query_no_debtors),
+                            text = stringResource(Res.string.ai_query_no_debtors),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     } else {
                         result.rows.forEach { row ->
                             Text(
                                 text = stringResource(
-                                    R.string.ai_query_debtor_row_format,
+                                    Res.string.ai_query_debtor_row_format,
                                     row.customerName,
                                     formatCents(row.balanceCents),
                                 ),
@@ -1805,13 +1805,13 @@ private fun ChatMessageRow(
                         }
                         if (result.rows.size >= 20) {
                             Text(
-                                text = stringResource(R.string.ai_query_debtors_top_20_notice),
+                                text = stringResource(Res.string.ai_query_debtors_top_20_notice),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Text(
-                            text = stringResource(R.string.ai_query_total_debt_all_customers, formatCents(result.totalCents)),
+                            text = stringResource(Res.string.ai_query_total_debt_all_customers, formatCents(result.totalCents)),
                             style = MaterialTheme.typography.titleSmall,
                         )
                     }
@@ -1820,28 +1820,28 @@ private fun ChatMessageRow(
                     val startStr = LocalDate.fromEpochDays(result.startEpochDay.toInt()).toString()
                     val endStr = LocalDate.fromEpochDays(result.endEpochDay.toInt()).toString()
                     Text(
-                        text = stringResource(R.string.ai_query_sales_period_title, startStr, endStr),
+                        text = stringResource(Res.string.ai_query_sales_period_title, startStr, endStr),
                         style = MaterialTheme.typography.titleMedium,
                     )
                     if (result.soldCents == 0L && result.collectedCents == 0L) {
                         Text(
-                            text = stringResource(R.string.ai_query_sales_period_empty),
+                            text = stringResource(Res.string.ai_query_sales_period_empty),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     } else {
                         Text(
-                            text = stringResource(R.string.ai_query_sales_period_sold, formatCents(result.soldCents)),
+                            text = stringResource(Res.string.ai_query_sales_period_sold, formatCents(result.soldCents)),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Text(
-                            text = stringResource(R.string.ai_query_sales_period_collected, formatCents(result.collectedCents)),
+                            text = stringResource(Res.string.ai_query_sales_period_collected, formatCents(result.collectedCents)),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
                 is AiBusinessQueryResult.CustomerSelectionRequired -> {
                     Text(
-                        text = stringResource(R.string.ai_query_customer_selection_prompt),
+                        text = stringResource(Res.string.ai_query_customer_selection_prompt),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     result.candidates.forEach { candidate ->
@@ -1856,15 +1856,15 @@ private fun ChatMessageRow(
                 }
                 is AiBusinessQueryResult.CustomerNotFound -> {
                     Text(
-                        text = stringResource(R.string.ai_query_customer_not_found, result.queriedName),
+                        text = stringResource(Res.string.ai_query_customer_not_found, result.queriedName),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
                 is AiBusinessQueryResult.Blocked -> {
                     val blockedText = when (result.reason) {
-                        com.cuentivo.app.ai.AiQueryBlockReason.INVALID_DATE -> stringResource(R.string.ai_query_blocked_invalid_date)
-                        com.cuentivo.app.ai.AiQueryBlockReason.START_AFTER_END -> stringResource(R.string.ai_query_blocked_start_after_end)
-                        com.cuentivo.app.ai.AiQueryBlockReason.PERIOD_TOO_LONG -> stringResource(R.string.ai_query_blocked_period_too_long)
+                        com.cuentivo.app.ai.AiQueryBlockReason.INVALID_DATE -> stringResource(Res.string.ai_query_blocked_invalid_date)
+                        com.cuentivo.app.ai.AiQueryBlockReason.START_AFTER_END -> stringResource(Res.string.ai_query_blocked_start_after_end)
+                        com.cuentivo.app.ai.AiQueryBlockReason.PERIOD_TOO_LONG -> stringResource(Res.string.ai_query_blocked_period_too_long)
                     }
                     Text(
                         text = blockedText,
@@ -1873,7 +1873,7 @@ private fun ChatMessageRow(
                 }
                 AiBusinessQueryResult.Unavailable -> {
                     Text(
-                        text = stringResource(R.string.ai_debug_lab_unavailable),
+                        text = stringResource(Res.string.ai_debug_lab_unavailable),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -1901,20 +1901,20 @@ fun AiSalePreviewContent(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            text = stringResource(R.string.ai_debug_chat_draft_note),
+            text = stringResource(Res.string.ai_debug_chat_draft_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
         )
         val customerBadge = stringResource(
             if (preview.customerMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
-                R.string.ai_entity_badge_new
+                Res.string.ai_entity_badge_new
             } else {
-                R.string.ai_entity_badge_existing
+                Res.string.ai_entity_badge_existing
             },
         )
         Text(
             text = stringResource(
-                R.string.ai_sale_preview_customer_format,
+                Res.string.ai_sale_preview_customer_format,
                 preview.customerName,
                 customerBadge,
             ),
@@ -1923,14 +1923,14 @@ fun AiSalePreviewContent(
         preview.lines.forEach { line ->
             val productBadge = stringResource(
                 if (line.resolutionMode == com.cuentivo.app.ai.AiEntityResolutionMode.NEW) {
-                    R.string.ai_entity_badge_new
+                    Res.string.ai_entity_badge_new
                 } else {
-                    R.string.ai_entity_badge_existing
+                    Res.string.ai_entity_badge_existing
                 },
             )
             Text(
                 text = stringResource(
-                    R.string.ai_debug_lab_line_format,
+                    Res.string.ai_debug_lab_line_format,
                     line.productName + " (" + productBadge + ")",
                     line.quantity,
                     formatCents(line.lineTotalCents),
@@ -1943,7 +1943,7 @@ fun AiSalePreviewContent(
         }
         Text(
             text = stringResource(
-                R.string.ai_sale_preview_total,
+                Res.string.ai_sale_preview_total,
                 formatCents(preview.totalCents),
             ),
             style = MaterialTheme.typography.bodyMedium,
@@ -1951,14 +1951,14 @@ fun AiSalePreviewContent(
         if (preview.initialPaymentCents > 0L) {
             Text(
                 text = stringResource(
-                    R.string.ai_sale_preview_initial_payment,
+                    Res.string.ai_sale_preview_initial_payment,
                     formatCents(preview.initialPaymentCents),
                 ),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
                 text = stringResource(
-                    R.string.ai_sale_preview_remainder,
+                    Res.string.ai_sale_preview_remainder,
                     formatCents(preview.remainderCents),
                 ),
                 style = MaterialTheme.typography.bodyMedium,
@@ -1968,7 +1968,7 @@ fun AiSalePreviewContent(
             val date = promise as? com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate
             if (date != null) {
                 Text(
-                    stringResource(R.string.ai_debug_lab_promised_date, "${date.year}-${date.month}-${date.day}"),
+                    stringResource(Res.string.ai_debug_lab_promised_date, "${date.year}-${date.month}-${date.day}"),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -1978,7 +1978,7 @@ fun AiSalePreviewContent(
         // entraba al recordatorio (v44). Mismo selector que la venta manual.
         if (onUpdateSaleDueDateDays != null) {
             Text(
-                text = stringResource(R.string.new_sale_due_question),
+                text = stringResource(Res.string.new_sale_due_question),
                 style = MaterialTheme.typography.labelMedium,
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -2007,13 +2007,13 @@ fun AiSalePreviewContent(
                     onClick = onConfirmSale,
                     enabled = !isConfirming,
                 ) {
-                    Text(stringResource(R.string.ai_sale_confirm_action))
+                    Text(stringResource(Res.string.ai_sale_confirm_action))
                 }
                 TextButton(
                     onClick = onCancelSale,
                     enabled = !isConfirming,
                 ) {
-                    Text(stringResource(R.string.ai_sale_confirm_cancel))
+                    Text(stringResource(Res.string.ai_sale_confirm_cancel))
                 }
             }
         }
@@ -2025,43 +2025,43 @@ private fun ProposalPreviewContent(proposal: AiProposal) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when (proposal) {
             is CreateSaleProposal -> {
-                Text(stringResource(R.string.ai_debug_lab_proposal_sale), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(Res.string.ai_debug_lab_proposal_sale), style = MaterialTheme.typography.titleMedium)
                 Text(proposal.customerName)
                 proposal.lines.forEach { line ->
                     Text(
                         stringResource(
-                            R.string.ai_debug_lab_line_format,
+                            Res.string.ai_debug_lab_line_format,
                             line.productName,
                             line.quantity,
                             formatCents(line.unitPriceCents),
                         ),
                     )
                 }
-                Text(stringResource(R.string.ai_debug_lab_declared_payment, formatCents(proposal.declaredInitialPaymentCents)))
+                Text(stringResource(Res.string.ai_debug_lab_declared_payment, formatCents(proposal.declaredInitialPaymentCents)))
                 proposal.promisedPaymentCandidate?.let { promise ->
                     val date = promise as? com.cuentivo.app.ai.PromisedPaymentCandidate.DateCandidate
                     if (date != null) {
-                        Text(stringResource(R.string.ai_debug_lab_promised_date, "${date.year}-${date.month}-${date.day}"))
+                        Text(stringResource(Res.string.ai_debug_lab_promised_date, "${date.year}-${date.month}-${date.day}"))
                     }
                 }
             }
             is RecordPaymentProposal -> {
-                Text(stringResource(R.string.ai_debug_lab_proposal_payment), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(Res.string.ai_debug_lab_proposal_payment), style = MaterialTheme.typography.titleMedium)
                 Text(proposal.customerName)
-                Text(stringResource(R.string.ai_debug_lab_declared_payment, formatCents(proposal.declaredAmountCents)))
+                Text(stringResource(Res.string.ai_debug_lab_declared_payment, formatCents(proposal.declaredAmountCents)))
             }
             is BusinessQueryProposal -> {
                 val queryTitle = when (proposal.queryType) {
-                    com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE -> stringResource(R.string.ai_query_title_balance)
-                    com.cuentivo.app.ai.BusinessQueryType.CUSTOMERS_WITH_DEBT -> stringResource(R.string.ai_query_title_debtors)
-                    com.cuentivo.app.ai.BusinessQueryType.SALES_FOR_PERIOD -> stringResource(R.string.ai_query_title_sales)
+                    com.cuentivo.app.ai.BusinessQueryType.CUSTOMER_BALANCE -> stringResource(Res.string.ai_query_title_balance)
+                    com.cuentivo.app.ai.BusinessQueryType.CUSTOMERS_WITH_DEBT -> stringResource(Res.string.ai_query_title_debtors)
+                    com.cuentivo.app.ai.BusinessQueryType.SALES_FOR_PERIOD -> stringResource(Res.string.ai_query_title_sales)
                 }
                 Text(queryTitle, style = MaterialTheme.typography.titleMedium)
                 proposal.customerName?.let { Text(it) }
                 proposal.period?.let {
                     val start = "${it.startYear}-${it.startMonth}-${it.startDay}"
                     val end = "${it.endYear}-${it.endMonth}-${it.endDay}"
-                    Text(stringResource(R.string.ai_query_proposal_period_format, start, end))
+                    Text(stringResource(Res.string.ai_query_proposal_period_format, start, end))
                 }
             }
             is com.cuentivo.app.ai.RequiresClarificationProposal -> Unit
