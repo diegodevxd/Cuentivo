@@ -17,7 +17,7 @@
 
 ## Tu primer paso
 
-Plan vigente: `docs/superpowers/plans/2026-11-06-ios-raiz-comun.md` (tandas F5-L a F5-P; manda sobre el punto 2 y 3 de abajo donde difiera). **F5-L** subida en `a46f55d`, Android local 1611 sin fallos, auditada; su `ios-build` (run 42335758741) y `android-check` (run 42335758740) estaban en curso: léelos con el veredicto de abajo. **F5-M** enviada a OpenCode (`encargos/2026-11-06-ios-f5m-almacenes-cola.md`), reporte en `build/ios-relevo/f5m-reporte.md`. **No empujes hasta que acabe el run de F5-L.**
+Plan vigente: `docs/superpowers/plans/2026-11-06-ios-raiz-comun.md` (tandas F5-L a F5-P; manda sobre el punto 2 y 3 de abajo donde difiera). **F5-L cerrada:** `a46f55d`, `ios-build` run 42335758741, **1189 pruebas iOS en 141 suites, 0 fallos**, leídas del artefacto, con `LanguageEntryTest` presente, `xcodebuild` correcto y `.app` subido. `android-check` run 42335758740 verde. Android local **1165 + 446 = 1611**, 0 fallos, leído de los XML. `androidTest` solo compiló. **F5-M** enviada a OpenCode (`encargos/2026-11-06-ios-f5m-almacenes-cola.md`), reporte en `build/ios-relevo/f5m-reporte.md`; sigue F5-N.
 
 ## Lo que sigue, en orden
 
