@@ -1379,8 +1379,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val firstDebtPreferenceStore = remember {
-        FirstDebtPreferenceStore(SharedPreferencesFirstDebtFlagStore(this@MainActivity))
-    }
+                    FirstDebtPreferenceStore(SharedPreferencesFirstDebtFlagStore(this@MainActivity))
+                }
                 var hasSkippedFirstDebt by remember(currentUserId) {
                     mutableStateOf(firstDebtPreferenceStore.isDismissed(currentUserId))
                 }
