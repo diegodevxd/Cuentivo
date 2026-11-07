@@ -1,5 +1,7 @@
 package com.cuentivo.app.ai
 
+import com.cuentivo.app.ai.ledger.addExact
+import com.cuentivo.app.ai.ledger.multiplyExact
 import com.cuentivo.app.data.local.AccountMovementEntity
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ExpectedSaleResult
@@ -238,7 +240,7 @@ class AiSaleExecutionService(
                     }
 
                     val expectedLineTotal = try {
-                        Math.multiplyExact(line.quantity.toLong(), line.unitPriceCents)
+                        multiplyExact(line.quantity.toLong(), line.unitPriceCents)
                     } catch (_: ArithmeticException) {
                         return AiSaleExecutionResult.Rejected
                     }
@@ -258,7 +260,7 @@ class AiSaleExecutionService(
             }
 
             calculatedTotal = try {
-                Math.addExact(calculatedTotal, line.lineTotalCents)
+                addExact(calculatedTotal, line.lineTotalCents)
             } catch (_: ArithmeticException) {
                 return AiSaleExecutionResult.Rejected
             }

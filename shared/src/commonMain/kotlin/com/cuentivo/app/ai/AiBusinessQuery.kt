@@ -1,11 +1,12 @@
 package com.cuentivo.app.ai
 
+import com.cuentivo.app.ai.ledger.addExact
+import com.cuentivo.app.ai.ledger.subtractExact
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.domain.CustomerNameNormalizer
-import java.time.LocalDate
-import java.util.Collections
 import kotlinx.coroutines.CancellationException
+import kotlinx.datetime.LocalDate
 
 /**
  * One row in a debtors query answer. Display data and debt amount only; no internal entity state.
@@ -50,7 +51,7 @@ sealed interface AiBusinessQueryResult {
             rawRows: List<AiDebtorRow>,
             val totalCents: Long,
         ) : Answer {
-            val rows: List<AiDebtorRow> = Collections.unmodifiableList(rawRows.toList())
+            val rows: List<AiDebtorRow> = unmodifiableList(rawRows.toList())
 
             companion object {
                 operator fun invoke(rows: List<AiDebtorRow>, totalCents: Long): CustomersWithDebt =
@@ -80,7 +81,7 @@ sealed interface AiBusinessQueryResult {
         rawCandidates: List<AiQueryCustomerCandidate>,
     ) : AiBusinessQueryResult {
         val candidates: List<AiQueryCustomerCandidate> =
-            Collections.unmodifiableList(rawCandidates.toList())
+            unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(candidates: List<AiQueryCustomerCandidate>): CustomerSelectionRequired =
@@ -213,7 +214,7 @@ class AiBusinessQueryResolver(
                     it.customer.deletedAtEpochMillis == null
             }
         val positiveRows = rows.filter { it.balanceCents > 0L }
-        val totalCents = positiveRows.fold(0L) { acc, row -> Math.addExact(acc, row.balanceCents) }
+        val totalCents = positiveRows.fold(0L) { acc, row -> addExact(acc, row.balanceCents) }
         val top20 = positiveRows.take(20).map {
             AiDebtorRow(
                 customerId = it.customer.id,
@@ -244,7 +245,7 @@ class AiBusinessQueryResolver(
         }
 
         val daysCount = try {
-            Math.addExact(Math.subtractExact(endEpochDay, startEpochDay), 1L)
+            addExact(subtractExact(endEpochDay, startEpochDay), 1L)
         } catch (_: ArithmeticException) {
             return AiBusinessQueryResult.Blocked(AiQueryBlockReason.PERIOD_TOO_LONG)
         }
@@ -265,7 +266,7 @@ class AiBusinessQueryResolver(
     }
 
     private fun parseEpochDay(year: Int, month: Int, day: Int): Long? = try {
-        LocalDate.of(year, month, day).toEpochDay()
+        LocalDate(year, month, day).toEpochDays().toLong()
     } catch (_: Exception) {
         null
     }

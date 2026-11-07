@@ -1,8 +1,8 @@
 package com.cuentivo.app.ai
 
+import com.cuentivo.app.ai.ledger.subtractExact
 import com.cuentivo.app.data.local.CustomerEntity
-import java.util.Collections
-import java.util.UUID
+import com.cuentivo.app.platform.newUuid
 
 /** Result of matching a payment customer query against already repository-scoped candidate rows. */
 sealed interface AiPaymentCustomerMatch {
@@ -21,7 +21,7 @@ sealed interface AiPaymentCustomerMatch {
         rawCandidates: List<CustomerEntity>,
     ) : AiPaymentCustomerMatch {
         /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
-        val candidates: List<CustomerEntity> = Collections.unmodifiableList(rawCandidates.toList())
+        val candidates: List<CustomerEntity> = unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(candidates: List<CustomerEntity>): SelectionRequired =
@@ -72,7 +72,7 @@ sealed interface AiPaymentPreviewResult {
     ) : AiPaymentPreviewResult {
         /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
         val candidates: List<AiPaymentCustomerCandidate> =
-            Collections.unmodifiableList(rawCandidates.toList())
+            unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(
@@ -135,7 +135,7 @@ object AiPaymentCandidateMatcher {
 class AiPaymentPreviewResolver(
     private val searchCustomers: suspend (businessId: String, query: String) -> List<CustomerEntity>,
     private val loadBalanceCents: suspend (businessId: String, customerId: String) -> Long,
-    private val newConfirmationKey: () -> String = { UUID.randomUUID().toString() },
+    private val newConfirmationKey: () -> String = { newUuid() },
 ) {
 
     suspend fun resolve(
@@ -175,7 +175,7 @@ class AiPaymentPreviewResolver(
         if (currentBalanceCents <= 0L) {
             return AiPaymentPreviewResult.Blocked(AiPaymentBlockReason.NO_OUTSTANDING_DEBT, null)
         }
-        val projected = Math.subtractExact(currentBalanceCents, proposal.declaredAmountCents)
+        val projected = subtractExact(currentBalanceCents, proposal.declaredAmountCents)
         if (projected < 0L) {
             return AiPaymentPreviewResult.Blocked(
                 AiPaymentBlockReason.AMOUNT_EXCEEDS_DEBT,

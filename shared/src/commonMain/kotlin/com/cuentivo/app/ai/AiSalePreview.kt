@@ -1,10 +1,12 @@
 package com.cuentivo.app.ai
 
+import com.cuentivo.app.ai.ledger.addExact
+import com.cuentivo.app.ai.ledger.multiplyExact
+import com.cuentivo.app.ai.ledger.subtractExact
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.domain.CustomerNameNormalizer
-import java.util.Collections
-import java.util.UUID
+import com.cuentivo.app.platform.newUuid
 
 /** Mode of entity resolution: either existing row or proposal for a new row. */
 enum class AiEntityResolutionMode { EXISTING, NEW }
@@ -21,7 +23,7 @@ class AiSaleResolutionChoices private constructor(
     rawProducts: Map<String, AiEntityChoice>,
 ) {
     val productsByNormalizedName: Map<String, AiEntityChoice> =
-        Collections.unmodifiableMap(rawProducts.toMap())
+        unmodifiableMap(rawProducts.toMap())
 
     companion object {
         operator fun invoke(
@@ -68,7 +70,7 @@ sealed interface AiSaleCustomerMatch {
     class SelectionRequired private constructor(
         rawCandidates: List<CustomerEntity>,
     ) : AiSaleCustomerMatch {
-        val candidates: List<CustomerEntity> = Collections.unmodifiableList(rawCandidates.toList())
+        val candidates: List<CustomerEntity> = unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(candidates: List<CustomerEntity>): SelectionRequired =
@@ -93,7 +95,7 @@ sealed interface AiSaleProductMatch {
     class SelectionRequired private constructor(
         rawCandidates: List<ProductEntity>,
     ) : AiSaleProductMatch {
-        val candidates: List<ProductEntity> = Collections.unmodifiableList(rawCandidates.toList())
+        val candidates: List<ProductEntity> = unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(candidates: List<ProductEntity>): SelectionRequired =
@@ -149,7 +151,7 @@ class AiResolvedSalePreview private constructor(
     val customerName: String get() = customer.displayName
     val sourceCustomerFingerprint: String get() = customer.sourceFingerprint ?: ""
     val customerMode: AiEntityResolutionMode get() = customer.mode
-    val lines: List<AiResolvedSaleLine> = Collections.unmodifiableList(rawLines.toList())
+    val lines: List<AiResolvedSaleLine> = unmodifiableList(rawLines.toList())
 
     val newCustomer: AiNewCustomerSpec?
         get() = if (customer.mode == AiEntityResolutionMode.NEW) {
@@ -261,7 +263,7 @@ sealed interface AiSalePreviewResult {
     class CustomerSelectionRequired private constructor(
         rawCandidates: List<AiSaleCustomerCandidate>,
     ) : AiSalePreviewResult {
-        val candidates: List<AiSaleCustomerCandidate> = Collections.unmodifiableList(rawCandidates.toList())
+        val candidates: List<AiSaleCustomerCandidate> = unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(candidates: List<AiSaleCustomerCandidate>): CustomerSelectionRequired =
@@ -280,7 +282,7 @@ sealed interface AiSalePreviewResult {
         val productName: String,
         rawCandidates: List<AiSaleProductCandidate>,
     ) : AiSalePreviewResult {
-        val candidates: List<AiSaleProductCandidate> = Collections.unmodifiableList(rawCandidates.toList())
+        val candidates: List<AiSaleProductCandidate> = unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(
@@ -351,8 +353,8 @@ object AiSaleCandidateMatcher {
 class AiSalePreviewResolver(
     private val searchCustomers: suspend (businessId: String, query: String) -> List<CustomerEntity>,
     private val searchProducts: suspend (businessId: String, query: String) -> List<ProductEntity>,
-    private val newConfirmationKey: () -> String = { UUID.randomUUID().toString() },
-    private val newEntityId: (kind: String, name: String) -> String = { _, _ -> UUID.randomUUID().toString() },
+    private val newConfirmationKey: () -> String = { newUuid() },
+    private val newEntityId: (kind: String, name: String) -> String = { _, _ -> newUuid() },
 ) {
 
     suspend fun resolve(
@@ -469,7 +471,7 @@ class AiSalePreviewResolver(
 
             val unitPrice = line.unitPriceCents
             val lineTotal = try {
-                Math.multiplyExact(line.quantity.toLong(), unitPrice)
+                multiplyExact(line.quantity.toLong(), unitPrice)
             } catch (_: ArithmeticException) {
                 return AiSalePreviewResult.Blocked(AiSaleBlockReason.ARITHMETIC_OVERFLOW, null)
             }
@@ -579,7 +581,7 @@ class AiSalePreviewResolver(
             }
 
             try {
-                totalCents = Math.addExact(totalCents, lineTotal)
+                totalCents = addExact(totalCents, lineTotal)
             } catch (_: ArithmeticException) {
                 return AiSalePreviewResult.Blocked(AiSaleBlockReason.ARITHMETIC_OVERFLOW, null)
             }
@@ -588,7 +590,7 @@ class AiSalePreviewResolver(
         }
 
         val remainderCents = try {
-            Math.subtractExact(totalCents, proposal.declaredInitialPaymentCents)
+            subtractExact(totalCents, proposal.declaredInitialPaymentCents)
         } catch (_: ArithmeticException) {
             return AiSalePreviewResult.Blocked(AiSaleBlockReason.ARITHMETIC_OVERFLOW, null)
         }
