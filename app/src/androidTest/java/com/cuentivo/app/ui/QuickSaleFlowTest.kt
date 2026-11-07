@@ -113,6 +113,7 @@ class QuickSaleFlowTest {
     @androidx.compose.runtime.Composable
     private fun Harness() {
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 1),
             customers = listOf(customerRow()),
             onCreateCustomer = { draft -> created += draft.name to draft.quickSale },

@@ -94,6 +94,7 @@ class AlertsFlowTest {
     @Composable
     private fun Harness(alerts: List<Alert> = ALERTS) {
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("business-1", "Mi negocio", 480_050, 0, 0, 0, 1),
             alerts = alerts,
             onOpenAlertCustomer = { opened += it },

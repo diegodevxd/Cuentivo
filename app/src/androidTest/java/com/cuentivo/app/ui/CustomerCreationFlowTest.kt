@@ -113,6 +113,7 @@ class CustomerCreationFlowTest {
         isSaving: Boolean = false,
     ) {
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
             onCreateCustomer = { draft -> onCreate(draft.name, draft.phone, draft.creditLimitCents) },
             isSavingCustomer = isSaving,

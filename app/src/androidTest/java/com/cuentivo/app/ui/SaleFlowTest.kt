@@ -390,6 +390,7 @@ class SaleFlowTest {
         var open by remember { mutableStateOf(openCustomer) }
         val statementScope = rememberCoroutineScope()
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("business-1", "Mi negocio", 480_050, 0, 0, 0, 1),
             customers = CUSTOMERS,
             products = PRODUCTS,

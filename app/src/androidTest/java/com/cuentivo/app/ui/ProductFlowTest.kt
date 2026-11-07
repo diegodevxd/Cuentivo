@@ -267,6 +267,7 @@ class ProductFlowTest {
         canImport: Boolean = true,
     ) {
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
             products = products,
             importReport = importReport,

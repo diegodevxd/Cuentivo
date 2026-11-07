@@ -1,7 +1,5 @@
 package com.cuentivo.app.ui
 
-import android.graphics.Bitmap
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,11 +51,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import android.content.Intent
-import android.net.Uri
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -72,10 +66,6 @@ import com.cuentivo.app.ai.AiSaleExecutionResult
 import com.cuentivo.app.ai.AiSalePreviewResult
 import com.cuentivo.app.ai.CreateSaleProposal
 import com.cuentivo.app.ai.RecordPaymentProposal
-import androidx.compose.runtime.DisposableEffect
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import com.cuentivo.app.ai.AiAvailabilityGateway
 import com.cuentivo.app.ai.AiAvailabilityCoordinator
 import com.cuentivo.app.ai.AiAvailabilityPolicy
@@ -85,16 +75,10 @@ import com.cuentivo.app.data.local.AiDailyChatRepository
 import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
-import com.cuentivo.app.data.local.ProductImageStore
-import com.cuentivo.app.ai.AndroidVoiceRecognizer
 import com.cuentivo.app.ui.ai.AiDebugLabScreen
-import com.cuentivo.app.ui.ai.AndroidLedgerCapture
-import com.cuentivo.app.ui.ai.AndroidVoicePermissionGateFactory
-import com.cuentivo.app.ui.ai.debugAiTransport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.UUID
 import com.cuentivo.app.domain.AccessDecision
 import com.cuentivo.app.domain.Alert
 import com.cuentivo.app.domain.CustomerScore
@@ -107,16 +91,16 @@ import com.cuentivo.app.domain.SheetImport
 import com.cuentivo.app.domain.StatementEntry
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.platform.PickedDocument
+import com.cuentivo.app.platform.PlatformBackHandler
+import com.cuentivo.app.platform.PlatformResumeEffect
 import com.cuentivo.app.ui.account.AccountSheet
 import com.cuentivo.app.ui.account.PRIVACY_POLICY_URL
 import com.cuentivo.app.ui.account.AiPaywallSheet
 import com.cuentivo.app.ui.account.LanguageSheet
-import com.cuentivo.app.settings.AndroidLanguageControl
 import com.cuentivo.app.ui.customer.CustomerDetailSheet
 import com.cuentivo.app.ui.customer.CustomerFilter
 import com.cuentivo.app.ui.customer.CustomersScreen
 import com.cuentivo.app.ui.dashboard.DashboardScreen
-import com.cuentivo.app.ui.product.AndroidImagePickerFactory
 import com.cuentivo.app.ui.product.ProductsScreen
 import com.cuentivo.app.ui.transaction.NewSaleScreen
 import com.cuentivo.app.ui.transaction.PaymentScreen
@@ -182,6 +166,7 @@ private const val MAX_LISTED_REJECTIONS = 10
 
 @Composable
 fun CuentivoApp(
+    platform: CuentivoAppPlatform,
     state: DashboardUiState,
     customers: List<CustomerBalanceRow> = emptyList(),
     products: List<ProductEntity> = emptyList(),
@@ -328,8 +313,7 @@ fun CuentivoApp(
     onMessageShown: () -> Unit = {},
 ) {
     // One store for both screens: sharing the instance also shares its 6 MiB bounded bitmap cache.
-    val context = LocalContext.current
-    val photoStore = remember(context) { ProductImageStore(context) }
+    val photoStore = platform.photoStore
     var destination by remember { mutableStateOf(MainDestination.HOME) }
     var showNewSale by remember { mutableStateOf(false) }
     var showAccount by remember { mutableStateOf(false) }
@@ -350,7 +334,7 @@ fun CuentivoApp(
     val aiDisabledMessage = stringResource(R.string.ai_debug_lab_disabled)
     // Transport for AI lab: release builds resolve to null until T6, where AiEntryPolicy routes
     // paying subscribers to an unavailable notice and non-subscribers to the paywall.
-    val debugAiLabTransport = remember { debugAiTransport() }
+    val debugAiLabTransport = platform.aiLabTransport
     // One definition of "the lab can run here": the transport exists and there is a chat store. The
     // robot entry, the notebook-photo shortcut and the lab itself must agree, or a tap leads nowhere.
     val hasAiTransport = debugAiLabTransport != null && aiDailyChatRepository != null
@@ -379,7 +363,6 @@ fun CuentivoApp(
     }
     // In-memory per-session remote service availability flag. Never persisted to Room.
     var isAiServiceAvailable by remember(tier) { mutableStateOf(coordinator?.isAvailable ?: true) }
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     val refreshAiAvailability: () -> Unit = {
         if (coordinator != null) {
@@ -415,17 +398,9 @@ fun CuentivoApp(
         }
     }
 
-    DisposableEffect(lifecycleOwner, tier, mexalmLedgerWarmGateway) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                refreshAiAvailability()
-                warmMexalmLedger()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+    PlatformResumeEffect(key = tier to mexalmLedgerWarmGateway) {
+        refreshAiAvailability()
+        warmMexalmLedger()
     }
     LaunchedEffect(message) {
         message?.let {
@@ -474,7 +449,7 @@ fun CuentivoApp(
     }
     // System Back closes the sale task and nothing else — and it must drop the preselection with
     // it, or the next sale would silently inherit a customer nobody chose for it.
-    BackHandler(enabled = showNewSale) { showNewSale = false; saleCustomer = null }
+    PlatformBackHandler(enabled = showNewSale) { showNewSale = false; saleCustomer = null }
     // Un registro exitoso abre el detalle de la clienta (lo hace el host, vía `onShowStatement`).
     // El detalle manda sobre el formulario, así que mientras está abierto la venta sigue "abierta"
     // por debajo y, al cerrar el detalle, reaparecía el formulario vacío. La venta ya se registró:
@@ -655,7 +630,7 @@ fun CuentivoApp(
             MainDestination.CUSTOMERS -> CustomersScreen(
                 customers = customers,
                 photoStore = photoStore,
-                imagePickers = AndroidImagePickerFactory,
+                imagePickers = platform.imagePickers,
                 // The same dated sales Inicio uses, so a row can say why it is late without a
                 // second query.
                 dueSales = (state as? DashboardUiState.Content)?.dueSales.orEmpty(),
@@ -699,7 +674,7 @@ fun CuentivoApp(
             MainDestination.PRODUCTS -> ProductsScreen(
                 products = products,
                 photoStore = photoStore,
-                imagePickers = AndroidImagePickerFactory,
+                imagePickers = platform.imagePickers,
                 modifier = Modifier.padding(padding),
                 showForm = showProductForm,
                 onShowFormChange = { showProductForm = it },
@@ -723,19 +698,16 @@ fun CuentivoApp(
         }
         if (hasAiTransport && showAiDebugLab) {
             val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
-            val context = LocalContext.current
-            val ledgerCapture = remember(context) { AndroidLedgerCapture(context) }
-            val voiceFactory = remember(context) { { AndroidVoiceRecognizer(context) } }
-            val voiceGate = remember(context) { AndroidVoicePermissionGateFactory(context) }
+            val aiLab = platform.rememberAiLabServices()
             key(aiDailyChatRepository) {
                 AiDebugLabScreen(
                     transport = debugAiLabTransport,
                     repository = aiDailyChatRepository,
                     onClose = { showAiDebugLab = false },
-                    ledgerPagePickerFactory = ledgerCapture,
-                    ledgerPageFiles = ledgerCapture,
-                    voiceRecognizerFactory = voiceFactory,
-                    voicePermissionGateFactory = voiceGate,
+                    ledgerPagePickerFactory = aiLab.ledgerPagePickerFactory,
+                    ledgerPageFiles = aiLab.ledgerPageFiles,
+                    voiceRecognizerFactory = aiLab.voiceRecognizerFactory,
+                    voicePermissionGateFactory = aiLab.voicePermissionGateFactory,
                     paymentPreviewResolver = paymentPreviewResolver,
                     salePreviewResolver = salePreviewResolver,
                     businessQueryResolver = businessQueryResolver,
@@ -816,9 +788,7 @@ fun CuentivoApp(
             aiTrialMonths = aiTrialMonths,
             onSignOut = onSignOut,
             onDeleteAccount = onDeleteAccount,
-            onOpenPrivacyPolicy = {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
-            },
+            onOpenPrivacyPolicy = { platform.openUrl(PRIVACY_POLICY_URL) },
             onDismiss = { showAccount = false },
             backupSection = backupSection,
             isAnonymous = isAnonymous,
@@ -846,7 +816,7 @@ fun CuentivoApp(
     }
     if (showLanguage) {
         LanguageSheet(
-            language = remember(context) { AndroidLanguageControl(context) },
+            language = platform.language,
             onDismiss = { showLanguage = false },
         )
     }

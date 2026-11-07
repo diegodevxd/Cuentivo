@@ -107,6 +107,7 @@ class EmptyStateTest {
     ) {
         var open by remember { mutableStateOf<CustomerBalanceRow?>(null) }
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = state,
             customers = customers,
             statementCustomer = open,

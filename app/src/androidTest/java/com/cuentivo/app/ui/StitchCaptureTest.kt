@@ -54,24 +54,25 @@ class StitchCaptureTest {
     @get:Rule val composeRule = createComposeRule()
 
     @Test fun capture_dashboard_at_every_supported_width() {
-        captureScreen("dashboard-320dp", 320) { CuentivoApp(populatedState(), CUSTOMERS) }
+        captureScreen("dashboard-320dp", 320) { CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), populatedState(), CUSTOMERS) }
     }
 
     @Test fun capture_dashboard_360() {
-        captureScreen("dashboard-360dp", 360) { CuentivoApp(populatedState(), CUSTOMERS) }
+        captureScreen("dashboard-360dp", 360) { CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), populatedState(), CUSTOMERS) }
     }
 
     @Test fun capture_dashboard_412() {
-        captureScreen("dashboard-412dp", 412) { CuentivoApp(populatedState(), CUSTOMERS) }
+        captureScreen("dashboard-412dp", 412) { CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), populatedState(), CUSTOMERS) }
     }
 
     @Test fun capture_dashboard_480() {
-        captureScreen("dashboard-480dp", 480) { CuentivoApp(populatedState(), CUSTOMERS) }
+        captureScreen("dashboard-480dp", 480) { CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), populatedState(), CUSTOMERS) }
     }
 
     @Test fun capture_dashboard_empty_sections() {
         captureScreen("dashboard-empty-360dp", 360) {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 DashboardUiState.Content(
                     businessId = "business-1",
                     businessName = "Mi negocio",
@@ -86,7 +87,7 @@ class StitchCaptureTest {
     }
 
     @Test fun capture_no_business_state() {
-        captureScreen("no-business-360dp", 360) { CuentivoApp(DashboardUiState.NoBusiness) }
+        captureScreen("no-business-360dp", 360) { CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.NoBusiness) }
     }
 
     @Test fun capture_customers_320() = captureCustomers(320)
@@ -99,7 +100,7 @@ class StitchCaptureTest {
 
     @Test fun capture_customers_empty() {
         captureScreen("customers-empty-360dp", 360) {
-            CuentivoApp(state = populatedState(), customers = emptyList())
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), state = populatedState(), customers = emptyList())
         }
         openCustomers()
         shoot("customers-empty-360dp")
@@ -123,7 +124,7 @@ class StitchCaptureTest {
 
     @Test fun capture_products_empty() {
         captureScreen("products-empty-360dp", 360) {
-            CuentivoApp(state = populatedState(), products = emptyList())
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), state = populatedState(), products = emptyList())
         }
         openDestination("Productos")
         shoot("products-empty-360dp")
@@ -140,7 +141,7 @@ class StitchCaptureTest {
     /** The invalid state: the task just opened, nothing chosen, and registering is refused. */
     @Test fun capture_new_sale_empty() {
         captureScreen("new-sale-empty-360dp", 360) {
-            CuentivoApp(state = populatedState(), customers = CUSTOMERS, products = SALE_PRODUCTS)
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), state = populatedState(), customers = CUSTOMERS, products = SALE_PRODUCTS)
         }
         composeRule.onNodeWithContentDescription("Nueva venta").invokeClick()
         shoot("new-sale-empty-360dp")
@@ -157,7 +158,7 @@ class StitchCaptureTest {
     /** The empty state: Abonos reached from the bar with nobody chosen and no balance to show. */
     @Test fun capture_payment_empty() {
         captureScreen("payment-empty-360dp", 360) {
-            CuentivoApp(state = populatedState(), customers = CUSTOMERS)
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), state = populatedState(), customers = CUSTOMERS)
         }
         openDestination("Abonos")
         shoot("payment-empty-360dp")
@@ -170,7 +171,7 @@ class StitchCaptureTest {
      */
     private fun captureNewSale(widthDp: Int) {
         captureScreen("new-sale-${widthDp}dp", widthDp) {
-            CuentivoApp(state = populatedState(), customers = CUSTOMERS, products = SALE_PRODUCTS)
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), state = populatedState(), customers = CUSTOMERS, products = SALE_PRODUCTS)
         }
         composeRule.onNodeWithContentDescription("Nueva venta").invokeClick()
         chooseInSelector("selector-cliente", CUSTOMERS[0].customer.name)
@@ -194,7 +195,7 @@ class StitchCaptureTest {
     /** Abonos with the largest debtor chosen and an amount typed, so both figures are on screen. */
     private fun capturePayment(widthDp: Int) {
         captureScreen("payment-${widthDp}dp", widthDp) {
-            CuentivoApp(state = populatedState(), customers = CUSTOMERS)
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), state = populatedState(), customers = CUSTOMERS)
         }
         openDestination("Abonos")
         chooseInSelector("selector-cliente", CUSTOMERS[0].customer.name)
@@ -303,6 +304,7 @@ class StitchCaptureTest {
         val photo = writeSolidPhoto()
         captureScreen("products-${widthDp}dp", widthDp) {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 state = populatedState(),
                 products = listOf(PRODUCTS[0].copy(imageUri = photo)) + PRODUCTS.drop(1),
             )
@@ -328,7 +330,7 @@ class StitchCaptureTest {
 
     private fun captureCustomers(widthDp: Int) {
         captureScreen("customers-${widthDp}dp", widthDp) {
-            CuentivoApp(state = populatedState(), customers = CUSTOMERS)
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), state = populatedState(), customers = CUSTOMERS)
         }
         openCustomers()
         shoot("customers-${widthDp}dp")
@@ -341,6 +343,7 @@ class StitchCaptureTest {
     private fun captureDetail(widthDp: Int) {
         captureScreen("customer-detail-${widthDp}dp", widthDp) {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 state = populatedState(),
                 customers = CUSTOMERS,
                 statementCustomer = CUSTOMERS[0],

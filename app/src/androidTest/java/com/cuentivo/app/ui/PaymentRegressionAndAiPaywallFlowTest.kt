@@ -143,6 +143,7 @@ class PaymentRegressionAndAiPaywallFlowTest {
         )
 
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("b1", "Mi negocio", 150_000L, 0, 0, 0, 1),
             customers = customers,
             tier = tier,

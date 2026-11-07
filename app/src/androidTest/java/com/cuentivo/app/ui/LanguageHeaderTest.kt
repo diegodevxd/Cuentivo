@@ -23,7 +23,7 @@ class LanguageHeaderTest {
 
     @Test fun header_language_action_opens_compact_single_select_sheet() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
         composeRule.onNodeWithTag("global-language-action").assertIsDisplayed().performClick()
@@ -43,7 +43,7 @@ class LanguageHeaderTest {
 
     @Test fun language_action_has_a_localized_content_description() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
         composeRule.onNodeWithTag("global-language-action")
             .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription))

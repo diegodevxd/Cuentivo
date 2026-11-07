@@ -66,6 +66,7 @@ class CollectionsAndReportTest {
         ),
     ) {
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content(
                 businessId = "business-1",
                 businessName = "Mi negocio",

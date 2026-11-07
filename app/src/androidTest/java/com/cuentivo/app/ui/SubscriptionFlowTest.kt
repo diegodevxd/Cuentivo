@@ -117,6 +117,7 @@ class SubscriptionFlowTest {
     @Composable
     private fun Harness(tier: SubscriptionTier) {
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("business-1", "Mi negocio", 480_050, 0, 0, 0, 1),
             tier = tier,
             proPrice = "$99.00",

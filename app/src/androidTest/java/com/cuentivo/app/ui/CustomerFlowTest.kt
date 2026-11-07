@@ -421,6 +421,7 @@ class CustomerFlowTest {
             LocalConfiguration provides configuration,
         ) {
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("business-1", "Mi negocio", balanceCents, 0, 0, 0, 1),
             customers = CUSTOMERS.map { if (it.customer.id == "juan") it.copy(balanceCents = balanceCents) else it },
             statementCustomer = open,

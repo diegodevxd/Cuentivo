@@ -65,6 +65,7 @@ class Tanda5CaptureTest {
         composeRule.setContent {
             Box(Modifier.requiredWidth(360.dp).requiredHeight(800.dp).testTag("t5-root")) {
                 CuentivoApp(
+                    platform = rememberAndroidCuentivoAppPlatform(),
                     state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
                     customers = emptyList(),
                 )
@@ -83,6 +84,7 @@ class Tanda5CaptureTest {
         composeRule.setContent {
             Box(Modifier.requiredWidth(360.dp).requiredHeight(800.dp).testTag("t5-root")) {
                 CuentivoApp(
+                    platform = rememberAndroidCuentivoAppPlatform(),
                     state = DashboardUiState.Content("business-1", "Mi negocio", 15_000, 0, 0, 0, 1),
                     customers = listOf(rosa),
                 )
@@ -99,6 +101,7 @@ class Tanda5CaptureTest {
         composeRule.setContent {
             Box(Modifier.requiredWidth(360.dp).requiredHeight(900.dp).testTag("t5-root")) {
                 CuentivoApp(
+                    platform = rememberAndroidCuentivoAppPlatform(),
                     state = DashboardUiState.Content("business-1", "Mi negocio", 15_000, 0, 0, 0, 1),
                     customers = listOf(rosa),
                     statementCustomer = rosa,

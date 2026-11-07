@@ -119,6 +119,7 @@ import com.cuentivo.app.ui.product.ImportStart
 import com.cuentivo.app.ui.product.ProductImportPolicy
 import com.cuentivo.app.ui.product.ProductImportRunner
 import com.cuentivo.app.ui.CuentivoApp
+import com.cuentivo.app.ui.rememberAndroidCuentivoAppPlatform
 import com.cuentivo.app.ui.CuentivoClaimBlockedScreen
 import com.cuentivo.app.ui.CuentivoLoadingScreen
 import com.cuentivo.app.ui.PaymentRefundFactory
@@ -1736,6 +1737,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     val ledgerExtractionGateway = remember { com.cuentivo.app.ai.ledger.LedgerExtractionGateway() }
                     CuentivoApp(
+                        platform = rememberAndroidCuentivoAppPlatform(),
                         state,
                         customers,
                         products,

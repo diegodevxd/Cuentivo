@@ -47,7 +47,7 @@ class CuentivoAppTest {
         composeRule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
                 Box(Modifier.width(widthDp.intValue.dp)) {
-                    CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0))
+                    CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0))
                 }
             }
         }
@@ -86,6 +86,7 @@ class CuentivoAppTest {
         )
         composeRule.setContent {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 DashboardUiState.Content(
                     "business-1", "Mi negocio", 15_000, 0, 0, 0, 1,
                     recentActivity = listOf(priorDebt),
@@ -98,7 +99,7 @@ class CuentivoAppTest {
     }
 
     @Test fun empty_dashboard_explains_how_to_start() {
-        composeRule.setContent { CuentivoApp(DashboardUiState.NoBusiness) }
+        composeRule.setContent { CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.NoBusiness) }
 
         composeRule.onNodeWithText("Crea tu primer negocio para comenzar").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Inicio").assertIsDisplayed()
@@ -106,7 +107,7 @@ class CuentivoAppTest {
 
     @Test fun populated_dashboard_shows_exactly_one_primary_sale_action() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
         composeRule.onAllNodesWithContentDescription("Nueva venta").assertCountEquals(1)
@@ -116,7 +117,7 @@ class CuentivoAppTest {
 
     @Test fun dashboard_follows_stitch_payment_first_hierarchy() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
         composeRule.onNodeWithText("Saldo total por cobrar").assertIsDisplayed()
@@ -134,7 +135,7 @@ class CuentivoAppTest {
 
     @Test fun dashboard_structural_sections_are_announced_as_headings() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
         // TalkBack users navigate by headings; the dashboard's structural sections must expose
@@ -148,7 +149,7 @@ class CuentivoAppTest {
 
     @Test fun dashboard_keeps_hero_payment_action_and_task_sections_reachable() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
         // The hierarchy stays reachable: dominant receivable hero, its payment action, then the
@@ -164,7 +165,7 @@ class CuentivoAppTest {
 
     @Test fun compact_shell_has_four_destinations_sale_action_and_account_entry() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
         listOf("Inicio", "Clientes", "Productos", "Abonos").forEach { label ->
@@ -178,7 +179,7 @@ class CuentivoAppTest {
 
     @Test fun central_sale_action_marks_the_sale_and_returns_to_the_tab() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
         composeRule.onNodeWithTag("main-destination-customers").performClick()
@@ -199,6 +200,7 @@ class CuentivoAppTest {
         val row = rosaRow()
         composeRule.setContent {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 DashboardUiState.Content("business-1", "Mi negocio", 15_000, 0, 0, 0, 1),
                 customers = listOf(row),
                 statementCustomer = row,
@@ -213,7 +215,7 @@ class CuentivoAppTest {
 
     @Test fun new_sale_without_customers_offers_to_add_one() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0), customers = emptyList())
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0), customers = emptyList())
         }
 
         composeRule.onNodeWithContentDescription("Nueva venta").performClick()
@@ -236,6 +238,7 @@ class CuentivoAppTest {
         val lastCreated = mutableStateOf<String?>(null)
         composeRule.setContent {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
                 customers = customers.value,
                 customerSavedToken = savedToken.intValue,
@@ -265,7 +268,7 @@ class CuentivoAppTest {
 
     @Test fun reminder_setting_is_accessible_and_disabled_by_default() {
         composeRule.setContent {
-            CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
         }
 
         composeRule.onNodeWithContentDescription("Cuenta").performClick()
@@ -282,6 +285,7 @@ class CuentivoAppTest {
     @Test fun reminder_deep_link_opens_customers_with_debt_filter() {
         composeRule.setContent {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2),
                 openOverdueCustomers = true,
                 onOpenOverdueCustomersConsumed = {},
@@ -300,7 +304,7 @@ class CuentivoAppTest {
     private fun compactNavigationStaysAccessible(fontScale: Float) {
         composeRule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = fontScale)) {
-                CuentivoApp(DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
+                CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), DashboardUiState.Content("business-1", "Mi negocio", 12_500, 8_000, 3_000, 500, 2))
             }
         }
 

@@ -59,13 +59,13 @@ class PlayStoreCaptureTest {
     /** First in the list, so it is the one that shows up in search results. */
     @Test fun capture_1_dashboard() {
         capture("1-panel") {
-            CuentivoApp(CaptureFixtures.populatedState(), CaptureFixtures.CUSTOMERS)
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), CaptureFixtures.populatedState(), CaptureFixtures.CUSTOMERS)
         }
     }
 
     @Test fun capture_2_customers() {
         capture("2-clientes") {
-            CuentivoApp(CaptureFixtures.populatedState(), CaptureFixtures.CUSTOMERS)
+            CuentivoApp(platform = rememberAndroidCuentivoAppPlatform(), CaptureFixtures.populatedState(), CaptureFixtures.CUSTOMERS)
         }
         open("Clientes")
         shoot("2-clientes")
@@ -75,6 +75,7 @@ class PlayStoreCaptureTest {
     @Test fun capture_3_customer_detail() {
         capture("3-detalle-cliente") {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 state = CaptureFixtures.populatedState(),
                 customers = CaptureFixtures.CUSTOMERS,
                 statementCustomer = CaptureFixtures.CUSTOMERS[0],
@@ -87,6 +88,7 @@ class PlayStoreCaptureTest {
     @Test fun capture_4_new_sale() {
         capture("4-nueva-venta") {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 state = CaptureFixtures.populatedState(),
                 customers = CaptureFixtures.CUSTOMERS,
                 products = CaptureFixtures.SALE_PRODUCTS,

@@ -226,6 +226,7 @@ class PaymentFlowTest {
         var open by remember { mutableStateOf<CustomerBalanceRow?>(null) }
         val statementScope = rememberCoroutineScope()
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("business-1", "Mi negocio", 570_050, 0, 0, 0, 2),
             customers = CUSTOMERS,
             statementCustomer = open,

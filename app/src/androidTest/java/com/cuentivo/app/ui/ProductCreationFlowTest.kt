@@ -90,6 +90,7 @@ class ProductCreationFlowTest {
         isSaving: Boolean = false,
     ) {
         CuentivoApp(
+            platform = rememberAndroidCuentivoAppPlatform(),
             state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
             onCreateProduct = onCreate,
             isSavingProduct = isSaving,

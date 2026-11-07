@@ -28,6 +28,7 @@ class ProductPhotoSourceTest {
         val created = mutableListOf<String>()
         composeRule.setContent {
             CuentivoApp(
+                platform = rememberAndroidCuentivoAppPlatform(),
                 state = DashboardUiState.Content("business-1", "Mi negocio", 0, 0, 0, 0, 0),
                 onCreateProduct = { name, _, _ -> created += name },
             )
