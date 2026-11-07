@@ -20,6 +20,7 @@ internal fun subtractExact(a: Long, b: Long): Long {
 }
 
 internal fun multiplyExact(a: Long, b: Long): Long {
+    if (a == -1L && b == Long.MIN_VALUE) throw ArithmeticException("long overflow")
     if (a == 0L || b == 0L) return 0L
     val result = a * b
     if (result / a != b) throw ArithmeticException("long overflow")
