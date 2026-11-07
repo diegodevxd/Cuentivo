@@ -15,7 +15,7 @@ import java.io.InputStream
 object LedgerCropHelper {
 
     /** Longest edge, in pixels, a row crop is decoded at. Enough to read handwriting, far from OOM. */
-    const val MAX_CROP_EDGE_PIXELS = 1600
+    const val MAX_CROP_EDGE_PIXELS = LedgerCropGeometry.MAX_CROP_EDGE_PIXELS
 
     /**
      * Decodes a cropped thumbnail for a given [region] from [file].
@@ -45,17 +45,13 @@ object LedgerCropHelper {
 
             val imageWidth = decoder.width
             val imageHeight = decoder.height
-            if (imageWidth <= 0 || imageHeight <= 0) {
+            val crop = LedgerCropGeometry.pixelRect(region, imageWidth, imageHeight)
+            if (crop == null || crop.width <= 0 || crop.height <= 0) {
                 decoder.recycle()
                 return null
             }
 
-            val left = (region.x * imageWidth).toInt().coerceIn(0, imageWidth - 1)
-            val top = (region.y * imageHeight).toInt().coerceIn(0, imageHeight - 1)
-            val right = ((region.x + region.width) * imageWidth).toInt().coerceIn(left + 1, imageWidth)
-            val bottom = ((region.y + region.height) * imageHeight).toInt().coerceIn(top + 1, imageHeight)
-
-            val rect = Rect(left, top, right, bottom)
+            val rect = Rect(crop.left, crop.top, crop.right, crop.bottom)
             if (rect.width() <= 0 || rect.height() <= 0) {
                 decoder.recycle()
                 return null

@@ -85,6 +85,9 @@ import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ui.transaction.DueOption
 import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
+import com.cuentivo.app.platform.newUuid
+import com.cuentivo.app.platform.nowEpochMillis
+import com.cuentivo.app.platform.todayEpochDay
 import com.cuentivo.app.platform.PlatformBackHandler
 import com.cuentivo.app.platform.PlatformLeaveForegroundEffect
 import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
@@ -92,9 +95,7 @@ import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
 import com.cuentivo.app.data.local.AiDailyChatRepository
-import java.math.BigDecimal
-import java.time.LocalDate
-import java.util.UUID
+import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -225,7 +226,7 @@ fun AiDebugLabScreen(
     LaunchedEffect(startLedgerImport, activeBusinessId, extractLedgerPage) {
         if (!startLedgerImport) return@LaunchedEffect
         if (extractLedgerPage == null || activeBusinessId.isNullOrBlank()) return@LaunchedEffect
-        ledgerSessionId = java.util.UUID.randomUUID().toString()
+        ledgerSessionId = newUuid()
         ledgerBusinessId = activeBusinessId
         showLedgerSourceSelector = true
         onStartLedgerImportConsumed()
@@ -533,17 +534,17 @@ fun AiDebugLabScreen(
                     emptyList()
                 }
                 // One photo, one paid call: the clock around it is the cost metric of this import.
-                val startedAt = System.currentTimeMillis()
+                val startedAt = nowEpochMillis()
                 val outcome = withContext(Dispatchers.IO) {
                     val bytes = ledgerPageFiles.readBytes(path)
                     if (bytes == null) {
                         null
                     } else {
-                        val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                        call(java.util.UUID.randomUUID().toString(), encoded, mimeType)
+                        val encoded = encodeLedgerImage(bytes)
+                        call(newUuid(), encoded, mimeType)
                     }
                 }
-                val callDurationMillis = System.currentTimeMillis() - startedAt
+                val callDurationMillis = nowEpochMillis() - startedAt
                 // The failure path checks the token too. Without it a slow extraction that failed
                 // could cancel the review of a later photo and delete its file underneath it.
                 if (token == model.generation) {
@@ -567,7 +568,7 @@ fun AiDebugLabScreen(
                                         geminiCalls = 1,
                                         geminiDurationMillis = callDurationMillis,
                                         contractVersion = outcome.extraction.contractVersion,
-                                        nowEpochMillis = System.currentTimeMillis(),
+                                        nowEpochMillis = nowEpochMillis(),
                                     )
                                 }
                             }
@@ -767,7 +768,7 @@ fun AiDebugLabScreen(
                             operations,
                             lineIndex,
                             date,
-                            java.time.LocalDate.now().toEpochDay(),
+                            todayEpochDay(),
                         )
                     }
                 },
@@ -945,7 +946,7 @@ fun AiDebugLabScreen(
                                 val outcome = AiDebugLabMachine.onConfirmSale(
                                     model,
                                     activeBusinessId,
-                                    todayEpochDay = java.time.LocalDate.now().toEpochDay(),
+                                    todayEpochDay = todayEpochDay(),
                                 )
                                 if (outcome is AiSaleConfirmOutcome.Started) {
                                     model = outcome.model
@@ -1169,7 +1170,7 @@ fun AiDebugLabScreen(
                         val trimmedText = model.text.trim()
                         val request = AiInterpretRequest(
                             text = trimmedText,
-                            requestId = UUID.randomUUID().toString(),
+                            requestId = newUuid(),
                         )
                         val outcome = AiDebugLabMachine.onSubmit(model)
                         if (outcome is AiDebugLabSubmitOutcome.Submitted) {
@@ -1310,7 +1311,7 @@ fun AiDebugLabScreen(
                             // The import session is named before the camera opens, so a result
                             // that arrives late, or from a photo taken for a different page,
                             // cannot land on the review the person is looking at.
-                            ledgerSessionId = java.util.UUID.randomUUID().toString()
+                            ledgerSessionId = newUuid()
                             ledgerBusinessId = activeBusinessId
                             showLedgerSourceSelector = true
                         },
@@ -1816,8 +1817,8 @@ private fun ChatMessageRow(
                     }
                 }
                 is AiBusinessQueryResult.Answer.SalesForPeriod -> {
-                    val startStr = LocalDate.ofEpochDay(result.startEpochDay).toString()
-                    val endStr = LocalDate.ofEpochDay(result.endEpochDay).toString()
+                    val startStr = LocalDate.fromEpochDays(result.startEpochDay.toInt()).toString()
+                    val endStr = LocalDate.fromEpochDays(result.endEpochDay.toInt()).toString()
                     Text(
                         text = stringResource(R.string.ai_query_sales_period_title, startStr, endStr),
                         style = MaterialTheme.typography.titleMedium,
@@ -2068,13 +2069,6 @@ private fun ProposalPreviewContent(proposal: AiProposal) {
     }
 }
 
-/** Candidate-only centavo formatting; the domain still computes any real totals. */
-internal fun formatCents(cents: Long, absolute: Boolean = false): String {
-    val decimal = BigDecimal.valueOf(cents, 2)
-    val formatted = if (absolute) decimal.abs() else decimal
-    return "$" + formatted.toPlainString()
-}
-
 /**
  * How long the informational notice stays on screen before fading out. Long enough to be read
  * without hurrying by someone who does not read fast, short enough to stop being furniture.
@@ -2128,7 +2122,7 @@ private suspend fun loadRegisteredAround(
     pageDateEpochDay: Long? = null,
 ): List<com.cuentivo.app.domain.RegisteredOperationProjection> {
     if (resolver == null) return emptyList()
-    val today = java.time.LocalDate.now().toEpochDay()
+    val today = todayEpochDay()
     val (min, max) = com.cuentivo.app.domain.LedgerEffectiveDate.queryWindow(
         operations = operations,
         pageDateEpochDay = pageDateEpochDay,

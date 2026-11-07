@@ -84,6 +84,8 @@ import com.cuentivo.app.domain.LedgerYearBulkCorrection
 import com.cuentivo.app.domain.LedgerYearCorrection
 import com.cuentivo.app.domain.ProductCandidate
 import com.cuentivo.app.ui.transaction.DueOption
+import com.cuentivo.app.platform.todayEpochDay
+import kotlinx.datetime.LocalDate
 import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import com.cuentivo.app.ui.theme.NeoSlow
 import kotlinx.coroutines.Dispatchers
@@ -659,14 +661,13 @@ private fun PageDateCard(
     var dateText by remember {
         mutableStateOf(
             pageDateEpochDay?.let {
-                val localDate = java.time.LocalDate.ofEpochDay(it)
-                String.format("%04d-%02d-%02d", localDate.year, localDate.monthValue, localDate.dayOfMonth)
+                LocalDate.fromEpochDays(it.toInt()).toString()
             } ?: ""
         )
     }
     val parsedDate = parseLedgerDateInput(dateText)
     val dateIsBlank = dateText.isBlank()
-    val todayEpochDay = remember { java.time.LocalDate.now().toEpochDay() }
+    val todayEpochDay = remember { todayEpochDay() }
     val isValidDate = parsedDate != null && LedgerReviewEdits.isAcceptableDate(parsedDate, todayEpochDay)
     val dateIsWrong = !dateIsBlank && !isValidDate
 
@@ -678,9 +679,9 @@ private fun PageDateCard(
     // the paper outranks the model's.
     val offerableDetectedDate = detectedPageDate?.takeIf { dateIsBlank }?.let { detected ->
         val asCalendarDay = runCatching {
-            java.time.LocalDate.of(detected.date.year, detected.date.month, detected.date.day)
+            LocalDate(detected.date.year, detected.date.month, detected.date.day)
         }.getOrNull()
-        asCalendarDay?.takeIf { it.toEpochDay() <= todayEpochDay }?.let { detected }
+        asCalendarDay?.takeIf { it.toEpochDays().toLong() <= todayEpochDay }?.let { detected }
     }
 
     Card(
@@ -705,7 +706,7 @@ private fun PageDateCard(
                     dateText = newText
                     val candidate = parseLedgerDateInput(newText)
                     if (candidate != null && LedgerReviewEdits.isAcceptableDate(candidate, todayEpochDay)) {
-                        val epochDay = java.time.LocalDate.of(candidate.year, candidate.month, candidate.day).toEpochDay()
+                        val epochDay = LocalDate(candidate.year, candidate.month, candidate.day).toEpochDays().toLong()
                         onUpdatePageDate(epochDay)
                     } else {
                         onUpdatePageDate(null)
@@ -721,7 +722,7 @@ private fun PageDateCard(
                 singleLine = true,
             )
             if (offerableDetectedDate != null) {
-                val detectedCalendarDay = java.time.LocalDate.of(
+                val detectedCalendarDay = LocalDate(
                     offerableDetectedDate.date.year,
                     offerableDetectedDate.date.month,
                     offerableDetectedDate.date.day,
@@ -739,7 +740,7 @@ private fun PageDateCard(
                         // The tap is the acceptance. Until it happens, the detected date has
                         // changed nothing: not the field, not the review, not a single row.
                         dateText = detectedText
-                        onUpdatePageDate(detectedCalendarDay.toEpochDay())
+                        onUpdatePageDate(detectedCalendarDay.toEpochDays().toLong())
                     },
                     modifier = Modifier.fillMaxWidth().testTag("ledger-page-date-detected-offer"),
                 ) {
@@ -1386,7 +1387,7 @@ private fun LedgerOperationRow(
                     text = if (rowDate != null) {
                         stringResource(
                             R.string.ai_ledger_row_date,
-                            String.format("%04d-%02d-%02d", rowDate.year, rowDate.month, rowDate.day),
+                            ledgerIsoDate(rowDate.year, rowDate.month, rowDate.day),
                         )
                     } else {
                         stringResource(R.string.ai_ledger_row_date_missing)
@@ -1521,7 +1522,7 @@ private fun EditLedgerOperationDialog(
     var kind by remember { mutableStateOf(operation.proposedKind) }
     var dateText by remember {
         mutableStateOf(
-            operation.date?.let { String.format("%04d-%02d-%02d", it.year, it.month, it.day) } ?: "",
+            operation.date?.let { ledgerIsoDate(it.year, it.month, it.day) } ?: "",
         )
     }
     val parsedDate = parseLedgerDateInput(dateText)
@@ -1641,7 +1642,7 @@ private fun EditLedgerOperationDialog(
 
                 if (duplicateMatch != null) {
                     val dateStr = runCatching {
-                        java.time.LocalDate.ofEpochDay(duplicateMatch.effectiveDateEpochDay).toString()
+                        LocalDate.fromEpochDays(duplicateMatch.effectiveDateEpochDay.toInt()).toString()
                     }.getOrDefault("")
                     val descSuffix = if (!duplicateMatch.description.isNullOrBlank()) ": ${duplicateMatch.description}" else ""
                     val kindStr = when (duplicateMatch.kind) {
@@ -1858,7 +1859,7 @@ internal fun parseLedgerDateInput(text: String): SafeDateCandidate? {
     val month = parts[1].toIntOrNull() ?: return null
     val day = parts[2].toIntOrNull() ?: return null
     return runCatching {
-        java.time.LocalDate.of(year, month, day)
+        LocalDate(year, month, day)
         SafeDateCandidate(year, month, day)
     }.getOrNull()
 }
