@@ -185,8 +185,8 @@ class LedgerRestoreConfirmSingleWriteTest {
             detectedPageDate = null,
             reviewSchemaVersion = com.cuentivo.app.domain.LedgerReviewSchema.CURRENT,
         )
-        val restored = com.cuentivo.app.ui.ai.LedgerReviewSaver.fromBundle(
-            com.cuentivo.app.ui.ai.LedgerReviewSaver.toBundle(saved),
+        val restored = com.cuentivo.app.ui.ai.LedgerReviewBundle.fromBundle(
+            com.cuentivo.app.ui.ai.LedgerReviewBundle.toBundle(saved),
         )
         assertNotNull("el guardado tiene que volver del Bundle", restored)
 

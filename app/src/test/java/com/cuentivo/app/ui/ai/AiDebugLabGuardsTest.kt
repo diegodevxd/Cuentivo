@@ -738,7 +738,7 @@ class AiDebugLabGuardsTest {
         assertFalse("confirmationKey is never displayed in UI text", screenSource.contains(".confirmationKey"))
         assertFalse("paymentId is never displayed in UI text", screenSource.contains(".paymentId"))
 
-        val modelSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt").readText()
+        val modelSource = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/ai/AiDebugLabModel.kt").readText()
         val historyLoadedBlock = modelSource.substring(
             modelSource.indexOf("fun onHistoryLoaded"),
             modelSource.indexOf("fun onOutOfScope"),
@@ -932,7 +932,7 @@ class AiDebugLabGuardsTest {
         assertFalse("sale confirmationKey is never displayed in UI text", screenSource.contains(".confirmationKey"))
         assertFalse("saleId is never displayed in UI text", screenSource.contains(".saleId"))
 
-        val modelSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabModel.kt").readText()
+        val modelSource = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/ai/AiDebugLabModel.kt").readText()
         val historyLoadedBlock = modelSource.substring(
             modelSource.indexOf("fun onHistoryLoaded"),
             modelSource.indexOf("fun onOutOfScope"),
@@ -997,7 +997,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `business query code path performs no writes, mutations, outbox enqueuing or audit logging`() {
-        val resolverSource = File("src/main/java/com/cuentivo/app/ai/AiBusinessQuery.kt").readLines()
+        val resolverSource = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ai/AiBusinessQuery.kt").readLines()
             .filter { !it.trimStart().startsWith("//") && !it.trimStart().startsWith("*") && !it.trimStart().startsWith("/*") }
             .joinToString("\n")
         assertFalse("must not reference syncQueue", resolverSource.contains("syncQueue") || resolverSource.contains("SyncQueue"))

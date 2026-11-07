@@ -16,6 +16,7 @@ import com.cuentivo.app.ai.ledger.ProposedLedgerKind
 import com.cuentivo.app.ai.ledger.SafeDateCandidate
 import com.cuentivo.app.ai.ledger.UncertainLedgerField
 import com.cuentivo.app.domain.LedgerReviewSchema
+import com.cuentivo.app.ui.ai.LedgerReviewBundle
 import com.cuentivo.app.ui.ai.LedgerReviewSaver
 import com.cuentivo.app.ui.transaction.DueOption
 import org.junit.Assert.assertEquals
@@ -86,7 +87,7 @@ class LedgerReviewSaverBundleTest {
             listOf(heavyOperation(0, edited = true), heavyOperation(1, edited = false)),
         )
 
-        val restored = LedgerReviewSaver.fromBundle(LedgerReviewSaver.toBundle(original))
+        val restored = LedgerReviewBundle.fromBundle(LedgerReviewBundle.toBundle(original))
 
         assertNotNull(restored)
         assertEquals(original, restored)
@@ -96,23 +97,23 @@ class LedgerReviewSaverBundleTest {
     fun an_empty_bundle_restores_as_no_review() {
         // The screen's Saver writes an empty Bundle when there is no review; that must come back
         // as null, not as a crash and not as a phantom review.
-        assertNull(LedgerReviewSaver.fromBundle(Bundle()))
+        assertNull(LedgerReviewBundle.fromBundle(Bundle()))
     }
 
     @Test
     fun a_bundle_missing_its_session_is_not_a_review() {
-        val bundle = LedgerReviewSaver.toBundle(savedReview(listOf(heavyOperation(0))))
+        val bundle = LedgerReviewBundle.toBundle(savedReview(listOf(heavyOperation(0))))
         bundle.remove("sessionId")
 
-        assertNull(LedgerReviewSaver.fromBundle(bundle))
+        assertNull(LedgerReviewBundle.fromBundle(bundle))
     }
 
     @Test
     fun the_schema_version_mark_survives_the_bundle_round_trip() {
         // Sin marca no se sabe si lo que hay en el libro es esta pagina, asi que una revision
         // restaurada no se puede registrar. La marca tiene que llegar viva al otro lado.
-        val restored = LedgerReviewSaver.fromBundle(
-            LedgerReviewSaver.toBundle(savedReview(listOf(heavyOperation(0)))),
+        val restored = LedgerReviewBundle.fromBundle(
+            LedgerReviewBundle.toBundle(savedReview(listOf(heavyOperation(0)))),
         )
 
         assertNotNull(restored)
@@ -123,10 +124,10 @@ class LedgerReviewSaverBundleTest {
     fun a_bundle_written_before_the_mark_restores_without_one() {
         // Un guardado de la version anterior no trae la clave. La restauracion tiene que devolver
         // null en la marca, que es lo que despues bloquea el registro.
-        val bundle = LedgerReviewSaver.toBundle(savedReview(listOf(heavyOperation(0))))
+        val bundle = LedgerReviewBundle.toBundle(savedReview(listOf(heavyOperation(0))))
         bundle.remove("reviewSchemaVersion")
 
-        val restored = LedgerReviewSaver.fromBundle(bundle)
+        val restored = LedgerReviewBundle.fromBundle(bundle)
 
         assertNotNull(restored)
         assertNull("sin marca, la revision no se puede registrar", restored!!.reviewSchemaVersion)
@@ -139,7 +140,7 @@ class LedgerReviewSaverBundleTest {
         // 30 dias elegidos a mano: al volver, el selector tiene que seguir en 30.
         val original = savedReview(listOf(heavyOperation(0))).copy(dueDateDays = 30L)
 
-        val restored = LedgerReviewSaver.fromBundle(LedgerReviewSaver.toBundle(original))
+        val restored = LedgerReviewBundle.fromBundle(LedgerReviewBundle.toBundle(original))
 
         assertNotNull(restored)
         assertEquals("el plazo elegido vuelve entero", 30L, restored!!.dueDateDays)
@@ -150,7 +151,7 @@ class LedgerReviewSaverBundleTest {
         // "Sin fecha" es una eleccion, no la falta del campo: tiene que volver en null.
         val original = savedReview(listOf(heavyOperation(0))).copy(dueDateDays = null)
 
-        val restored = LedgerReviewSaver.fromBundle(LedgerReviewSaver.toBundle(original))
+        val restored = LedgerReviewBundle.fromBundle(LedgerReviewBundle.toBundle(original))
 
         assertNotNull(restored)
         assertNull("sin fecha elegido vuelve sin fecha", restored!!.dueDateDays)
@@ -161,10 +162,10 @@ class LedgerReviewSaverBundleTest {
         // Un borrador de antes de este cambio no trae la clave. Si volviera en null, la persona
         // registraria sin fecha una pagina que vio con "15 dias" marcado — o peor: creeria que
         // tenia plazo y no lo tendria. Vuelve con 15, que es lo que la pantalla mostrara.
-        val bundle = LedgerReviewSaver.toBundle(savedReview(listOf(heavyOperation(0))))
+        val bundle = LedgerReviewBundle.toBundle(savedReview(listOf(heavyOperation(0))))
         bundle.remove("dueDateDays")
 
-        val restored = LedgerReviewSaver.fromBundle(bundle)
+        val restored = LedgerReviewBundle.fromBundle(bundle)
 
         assertNotNull(restored)
         assertEquals("el borrador viejo vuelve con 15 marcado", DueOption.FIFTEEN.days, restored!!.dueDateDays)
@@ -179,7 +180,7 @@ class LedgerReviewSaverBundleTest {
         val operations = (0..24).map { heavyOperation(it) }
         val saved = savedReview(operations)
 
-        val bundle = LedgerReviewSaver.toBundle(saved)
+        val bundle = LedgerReviewBundle.toBundle(saved)
         val bytes = parcelledSizeBytes(bundle)
 
         assertTrue(

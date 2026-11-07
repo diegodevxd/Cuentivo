@@ -27,13 +27,14 @@ import com.cuentivo.app.ai.RecordPaymentProposal
 import com.cuentivo.app.ai.RequiresClarificationProposal
 import com.cuentivo.app.ai.SafeAiProposalValidator
 import com.cuentivo.app.ai.UnresolvedSlot
+import com.cuentivo.app.ai.unmodifiableList
+import com.cuentivo.app.ai.unmodifiableMap
 import com.cuentivo.app.ai.ledger.CustomerReviewGroup
 import com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReview
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
-import java.time.LocalDate
-import java.util.Collections
+import kotlinx.datetime.LocalDate
 
 /**
  * Pure, non-executable AI debug lab states. Nothing in here can confirm, save or execute a
@@ -183,7 +184,7 @@ data class LedgerImportEndParams(
 
 fun AiDebugLabState.LedgerReviewing.toImportEndParams(
     registered: Boolean,
-    nowEpochMillis: Long = System.currentTimeMillis(),
+    nowEpochMillis: Long = com.cuentivo.app.platform.nowEpochMillis(),
 ): LedgerImportEndParams = LedgerImportEndParams(
     sessionId = sessionId,
     registered = registered,
@@ -233,7 +234,7 @@ data class AiDebugLabModel(
     val state: AiDebugLabState = AiDebugLabState.TextEditing,
     val text: String = "",
     val messages: List<AiChatMessage> = emptyList(),
-    internal val generation: Long = 0L,
+    val generation: Long = 0L,
 ) {
     /** Blank text or an in-flight request must not send; the gateway is never called then. */
     val canSubmit: Boolean
@@ -292,7 +293,7 @@ sealed interface AiChatMessage {
     ) : AiChatMessage {
         /** Truly unmodifiable: mutation attempts throw [UnsupportedOperationException]. */
         val candidates: List<AiPaymentCustomerCandidate> =
-            Collections.unmodifiableList(rawCandidates.toList())
+            unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(
@@ -323,7 +324,7 @@ sealed interface AiChatMessage {
         rawCandidates: List<com.cuentivo.app.ai.AiSaleCustomerCandidate>,
     ) : AiChatMessage {
         val candidates: List<com.cuentivo.app.ai.AiSaleCustomerCandidate> =
-            Collections.unmodifiableList(rawCandidates.toList())
+            unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(
@@ -344,7 +345,7 @@ sealed interface AiChatMessage {
         rawCandidates: List<com.cuentivo.app.ai.AiSaleProductCandidate>,
     ) : AiChatMessage {
         val candidates: List<com.cuentivo.app.ai.AiSaleProductCandidate> =
-            Collections.unmodifiableList(rawCandidates.toList())
+            unmodifiableList(rawCandidates.toList())
 
         companion object {
             operator fun invoke(
@@ -894,7 +895,7 @@ object AiDebugLabMachine {
             }
             is PromisedPaymentCandidate.DateCandidate -> {
                 try {
-                    LocalDate.of(promise.year, promise.month, promise.day).toEpochDay()
+                    LocalDate(promise.year, promise.month, promise.day).toEpochDays().toLong()
                 } catch (_: Exception) {
                     return AiSaleConfirmOutcome.Ignored
                 }
@@ -1108,7 +1109,7 @@ object AiDebugLabMachine {
         productCandidates: List<com.cuentivo.app.domain.ProductCandidate> = emptyList(),
         registeredOperations: List<com.cuentivo.app.domain.RegisteredOperationProjection> = emptyList(),
         generation: Long,
-        todayEpochDay: Long = java.time.LocalDate.now().toEpochDay(),
+        todayEpochDay: Long = com.cuentivo.app.platform.todayEpochDay(),
         detectedPageDate: com.cuentivo.app.ai.ledger.LedgerDetectedPageDate? = null,
         pageType: com.cuentivo.app.ai.ledger.LedgerPageType? = null,
         pageTotals: List<com.cuentivo.app.ai.ledger.LedgerPageTotal> = emptyList(),
@@ -1124,7 +1125,7 @@ object AiDebugLabMachine {
         val state = model.state as? AiDebugLabState.LedgerExtracting ?: return model
         if (state.sessionId != sessionId || state.businessId != businessId) return model
 
-        val frozenBalances: Map<String, Long> = Collections.unmodifiableMap(
+        val frozenBalances: Map<String, Long> = unmodifiableMap(
             LinkedHashMap(existingCustomerBalances)
         )
 
@@ -1146,11 +1147,11 @@ object AiDebugLabMachine {
                 sessionId = sessionId,
                 businessId = businessId,
                 review = review,
-                originalOperations = java.util.Collections.unmodifiableList(ArrayList(operations)),
+                originalOperations = unmodifiableList(ArrayList(operations)),
                 existingCustomerBalances = frozenBalances,
-                customerCandidates = java.util.Collections.unmodifiableList(ArrayList(customerCandidates)),
-                productCandidates = java.util.Collections.unmodifiableList(ArrayList(productCandidates)),
-                registeredOperations = java.util.Collections.unmodifiableList(ArrayList(registeredOperations)),
+                customerCandidates = unmodifiableList(ArrayList(customerCandidates)),
+                productCandidates = unmodifiableList(ArrayList(productCandidates)),
+                registeredOperations = unmodifiableList(ArrayList(registeredOperations)),
             ),
         )
     }
@@ -1164,7 +1165,7 @@ object AiDebugLabMachine {
      * registered rows arrive reloaded from Room, because they are derivable and were never saved.
      * Nothing here calls the callable — the extraction result is inside [saved].
      */
-    internal fun onRestoreLedgerReview(
+    fun onRestoreLedgerReview(
         model: AiDebugLabModel,
         sessionId: String,
         businessId: String,
@@ -1183,7 +1184,7 @@ object AiDebugLabMachine {
         }
         if (saved.sessionId != sessionId || saved.businessId != businessId) return model
 
-        val frozenBalances: Map<String, Long> = Collections.unmodifiableMap(
+        val frozenBalances: Map<String, Long> = unmodifiableMap(
             LinkedHashMap(existingCustomerBalances)
         )
         val review = LedgerReviewEngine.build(
@@ -1203,12 +1204,12 @@ object AiDebugLabMachine {
                 sessionId = sessionId,
                 businessId = businessId,
                 review = review,
-                originalOperations = java.util.Collections.unmodifiableList(ArrayList(saved.originalOperations)),
+                originalOperations = unmodifiableList(ArrayList(saved.originalOperations)),
                 initialDuplicateCount = saved.initialDuplicateCount,
                 existingCustomerBalances = frozenBalances,
-                customerCandidates = Collections.unmodifiableList(ArrayList(customerCandidates)),
-                productCandidates = Collections.unmodifiableList(ArrayList(productCandidates)),
-                registeredOperations = Collections.unmodifiableList(ArrayList(registeredOperations)),
+                customerCandidates = unmodifiableList(ArrayList(customerCandidates)),
+                productCandidates = unmodifiableList(ArrayList(productCandidates)),
+                registeredOperations = unmodifiableList(ArrayList(registeredOperations)),
                 isLegacySaveWithoutSessionKey = !com.cuentivo.app.domain.LedgerReviewSchema.canRegisterRestoredReview(saved.reviewSchemaVersion),
                 dueDateDays = saved.dueDateDays,
             ),
@@ -1229,7 +1230,7 @@ object AiDebugLabMachine {
         val state = model.state as? AiDebugLabState.LedgerReviewing ?: return model
         if (state.sessionId != sessionId) return model
 
-        val effectiveTodayEpochDay = todayEpochDay ?: state.review.todayEpochDay ?: java.time.LocalDate.now().toEpochDay()
+        val effectiveTodayEpochDay = todayEpochDay ?: state.review.todayEpochDay ?: com.cuentivo.app.platform.todayEpochDay()
 
         val updatedReview = LedgerReviewEngine.build(
             operations = state.review.operations,
@@ -1267,7 +1268,7 @@ object AiDebugLabMachine {
         if (state.sessionId != sessionId) return model
         return model.copy(
             state = state.copy(
-                registeredOperations = java.util.Collections.unmodifiableList(ArrayList(registeredOperations)),
+                registeredOperations = unmodifiableList(ArrayList(registeredOperations)),
             ),
         )
     }
@@ -1286,11 +1287,11 @@ object AiDebugLabMachine {
         val state = model.state as? AiDebugLabState.LedgerReviewing ?: return model
         if (state.sessionId != sessionId) return model
 
-        val balancesToUse = Collections.unmodifiableMap(
+        val balancesToUse = unmodifiableMap(
             LinkedHashMap(existingCustomerBalances ?: state.existingCustomerBalances)
         )
         val updatedOps = transform(state.review.operations)
-        val effectiveTodayEpochDay = todayEpochDay ?: state.review.todayEpochDay ?: java.time.LocalDate.now().toEpochDay()
+        val effectiveTodayEpochDay = todayEpochDay ?: state.review.todayEpochDay ?: com.cuentivo.app.platform.todayEpochDay()
         val updatedReview = LedgerReviewEngine.build(
             operations = updatedOps,
             discards = state.review.discards,

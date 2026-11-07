@@ -160,8 +160,8 @@ private val CaptureUriSaver = Saver<Uri?, String>(
  * enough to hold it would exceed the transaction limit and kill the app.
  */
 private val LedgerReviewStateSaver = Saver<com.cuentivo.app.ui.ai.LedgerReviewSaver.SavedLedgerReview?, Bundle>(
-    save = { it?.let(LedgerReviewSaver::toBundle) ?: Bundle() },
-    restore = { bundle -> if (bundle.isEmpty) null else LedgerReviewSaver.fromBundle(bundle) },
+    save = { it?.let(LedgerReviewBundle::toBundle) ?: Bundle() },
+    restore = { bundle -> if (bundle.isEmpty) null else LedgerReviewBundle.fromBundle(bundle) },
 )
 
 /**
