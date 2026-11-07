@@ -1,6 +1,7 @@
 package com.cuentivo.app.ui
 
 import androidx.compose.runtime.Composable
+import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
 import com.cuentivo.app.auth.PlatformAuthHost
 import com.cuentivo.app.domain.SubscriptionTier
 import com.cuentivo.app.platform.Sharer
@@ -43,5 +44,7 @@ class CuentivoRootPlatform(
     val backup: BackupControl,
     val deleteProductPhoto: (String) -> Unit,
     val clearLocalData: suspend () -> Unit,
+    /** El gateway de la libreta por foto es Android-only; así la raíz no lo nombra. */
+    val extractLedgerPage: suspend (requestId: String, imageBase64: String, imageMimeType: String) -> LedgerExtractionCallResult,
     val rememberAppPlatform: @Composable () -> CuentivoAppPlatform,
 )

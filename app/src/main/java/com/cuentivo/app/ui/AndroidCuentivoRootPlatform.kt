@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import com.cuentivo.app.ai.ledger.LedgerExtractionGateway
 import com.cuentivo.app.backup.DatabaseBackup
 import com.cuentivo.app.billing.BillingGateway
 import com.cuentivo.app.data.local.CuentivoDatabase
@@ -100,6 +101,7 @@ fun androidCuentivoRootPlatform(
 ): CuentivoRootPlatform {
     val context = activity.applicationContext
     val productImages = ProductImageStore(context)
+    val ledgerExtractionGateway = lazy { LedgerExtractionGateway() }
     return CuentivoRootPlatform(
         appScope = appScope,
         isDebugBuild = isDebugBuild,
@@ -113,6 +115,9 @@ fun androidCuentivoRootPlatform(
         backup = AndroidBackupControl(context, database, onRestored),
         deleteProductPhoto = { fileName -> productImages.delete(fileName) },
         clearLocalData = { database.clearAllTables() },
+        extractLedgerPage = { requestId, imageBase64, imageMimeType ->
+            ledgerExtractionGateway.value.extractPage(requestId, imageBase64, imageMimeType)
+        },
         rememberAppPlatform = { rememberAndroidCuentivoAppPlatform() },
     )
 }

@@ -481,7 +481,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `main activity creates AiDailyChatRepository bound to currentUserId and dao`() {
-        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoRoot.kt").readText()
         assertTrue("must pass aiDailyMessageDao", source.contains("database.aiDailyMessageDao()"))
         assertTrue("must bind ownerUserId to currentUserId", source.contains("ownerUserId = currentUserId"))
         assertTrue("must check for blank currentUserId", source.contains("currentUserId.isBlank()"))
@@ -490,7 +490,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `main activity constructs AiPaymentPreviewResolver once using read only method references`() {
-        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoRoot.kt").readText()
         assertTrue("must construct CustomerRepository", source.contains("CustomerRepository(database.customerDao())"))
         assertTrue("must construct AiPaymentPreviewResolver", source.contains("AiPaymentPreviewResolver("))
         assertTrue("must use customerRepository search reference", source.contains("customerRepository::search"))
@@ -500,7 +500,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `main activity constructs AiPaymentExecutionService using local repository and sync queue and passes confirmPayment to CuentivoApp`() {
-        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoRoot.kt").readText()
         assertTrue("must construct PaymentRepository", source.contains("PaymentRepository(database.financialDao())"))
         assertTrue("must construct AiPaymentExecutionService", source.contains("AiPaymentExecutionService("))
         assertTrue("must wire registerAgainstExpectedBalance", source.contains("paymentRepository::registerAgainstExpectedBalance"))
@@ -516,7 +516,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `main activity constructs AiSalePreviewResolver once using read only method references`() {
-        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoRoot.kt").readText()
         assertTrue("must construct ProductRepository", source.contains("ProductRepository(database.productDao())"))
         assertTrue("must construct AiSalePreviewResolver", source.contains("AiSalePreviewResolver("))
         assertTrue("must use customerRepository search reference", source.contains("customerRepository::search"))
@@ -526,7 +526,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `main activity constructs AiSaleExecutionService using local repository and sync queue and passes confirmSale to CuentivoApp`() {
-        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoRoot.kt").readText()
         assertTrue("must construct SaleRepository", source.contains("SaleRepository(database.financialDao())"))
         assertTrue("must construct AiSaleExecutionService", source.contains("AiSaleExecutionService("))
         assertTrue("must wire registerCompositeAgainstPreview", source.contains("saleRepository::registerCompositeAgainstPreview"))
@@ -585,7 +585,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `main activity constructs AiBusinessQueryResolver once using the five existing DAO method references and passes it to CuentivoApp`() {
-        val source = File("src/main/java/com/example/organizationlabs/MainActivity.kt").readText()
+        val source = File("../shared/src/commonMain/kotlin/com/cuentivo/app/ui/CuentivoRoot.kt").readText()
         assertTrue("must construct AiBusinessQueryResolver", source.contains("AiBusinessQueryResolver("))
         assertTrue("must use customerRepository search reference", source.contains("searchCustomers = customerRepository::search"))
         assertTrue("must use customerBalance reference", source.contains("customerBalance = database.financialDao()::customerBalanceCents"))
