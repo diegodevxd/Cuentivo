@@ -27,7 +27,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.datetime.Clock
@@ -120,6 +119,9 @@ import com.cuentivo.app.ui.product.ProductImportPolicy
 import com.cuentivo.app.ui.product.ProductImportRunner
 import com.cuentivo.app.ui.CuentivoApp
 import com.cuentivo.app.ui.CuentivoRootState
+import com.cuentivo.shared.resources.*
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
 import com.cuentivo.app.data.local.databaseDispatcher
 import com.cuentivo.app.data.local.inTransaction
 import com.cuentivo.app.platform.PlatformBackHandler
@@ -606,7 +608,9 @@ class MainActivity : ComponentActivity() {
                     } else {
                         // The setting stays off. Android decides when the system dialog may be
                         // asked again, so this never becomes a request loop.
-                        accountMessageState.value = getString(R.string.reminder_permission_denied)
+                        appScope.launch {
+                            accountMessageState.value = getString(Res.string.reminder_permission_denied)
+                        }
                     }
                 }
                 val emailAccess = remember(authenticatedUserId, verificationKey) {
@@ -628,14 +632,14 @@ class MainActivity : ComponentActivity() {
                     } else if (anonymousStartupCause != null && !showManualAuthentication) {
                         val cause = anonymousStartupCause
                         val title = when (cause) {
-                            AnonymousStartupFailureCause.PROVIDER_DISABLED -> stringResource(R.string.auth_first_launch_provider_disabled_title)
-                            AnonymousStartupFailureCause.SERVICE_ERROR -> stringResource(R.string.auth_first_launch_service_error_title)
-                            else -> stringResource(R.string.auth_first_launch_offline_title)
+                            AnonymousStartupFailureCause.PROVIDER_DISABLED -> stringResource(Res.string.auth_first_launch_provider_disabled_title)
+                            AnonymousStartupFailureCause.SERVICE_ERROR -> stringResource(Res.string.auth_first_launch_service_error_title)
+                            else -> stringResource(Res.string.auth_first_launch_offline_title)
                         }
                         val message = when (cause) {
-                            AnonymousStartupFailureCause.PROVIDER_DISABLED -> stringResource(R.string.auth_first_launch_provider_disabled_message)
-                            AnonymousStartupFailureCause.SERVICE_ERROR -> stringResource(R.string.auth_first_launch_service_error_message)
-                            else -> stringResource(R.string.auth_first_launch_offline_message)
+                            AnonymousStartupFailureCause.PROVIDER_DISABLED -> stringResource(Res.string.auth_first_launch_provider_disabled_message)
+                            AnonymousStartupFailureCause.SERVICE_ERROR -> stringResource(Res.string.auth_first_launch_service_error_message)
+                            else -> stringResource(Res.string.auth_first_launch_offline_message)
                         }
                         val showRetryButton = cause != AnonymousStartupFailureCause.PROVIDER_DISABLED
 
@@ -680,7 +684,7 @@ class MainActivity : ComponentActivity() {
                                         Spacer(Modifier.height(8.dp))
                                         if (showRetryButton) {
                                             NeoAction(
-                                                label = stringResource(R.string.auth_first_launch_offline_retry),
+                                                label = stringResource(Res.string.auth_first_launch_offline_retry),
                                                 enabled = !isStartingAnonymousSession,
                                                 onClick = { startAnonymousSession() },
                                                 modifier = Modifier.fillMaxWidth(),
@@ -689,11 +693,11 @@ class MainActivity : ComponentActivity() {
                                                 onClick = { showManualAuthentication = true },
                                                 modifier = Modifier.fillMaxWidth(),
                                             ) {
-                                                Text(stringResource(R.string.auth_first_launch_offline_switch_to_sign_in))
+                                                Text(stringResource(Res.string.auth_first_launch_offline_switch_to_sign_in))
                                             }
                                         } else {
                                             NeoAction(
-                                                label = stringResource(R.string.auth_first_launch_provider_disabled_action),
+                                                label = stringResource(Res.string.auth_first_launch_provider_disabled_action),
                                                 onClick = { showManualAuthentication = true },
                                                 modifier = Modifier.fillMaxWidth(),
                                             )
@@ -703,11 +707,11 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } else {
-                        val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
-                        val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
-                        val emailInUseMessage = stringResource(R.string.auth_email_in_use)
-                        val googleFailedMessage = stringResource(R.string.auth_google_failed)
-                        val googleManualPasswordMessage = stringResource(R.string.auth_google_manual_password_needed)
+                        val signInFailedMessage = stringResource(Res.string.auth_sign_in_failed)
+                        val signUpFailedMessage = stringResource(Res.string.auth_sign_up_failed)
+                        val emailInUseMessage = stringResource(Res.string.auth_email_in_use)
+                        val googleFailedMessage = stringResource(Res.string.auth_google_failed)
+                        val googleManualPasswordMessage = stringResource(Res.string.auth_google_manual_password_needed)
                         val handleGoogleResult: (GoogleAuthenticationResult) -> Unit = { result ->
                             isAuthenticating = false
                             when (result) {
@@ -807,9 +811,9 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 } else if (emailAccess == EmailVerificationAccess.MUST_VERIFY) {
-                    val stillPendingMessage = stringResource(R.string.verify_still_pending)
-                    val resentMessage = stringResource(R.string.verify_resent)
-                    val sendFailedMessage = stringResource(R.string.verify_send_failed)
+                    val stillPendingMessage = stringResource(Res.string.verify_still_pending)
+                    val resentMessage = stringResource(Res.string.verify_resent)
+                    val sendFailedMessage = stringResource(Res.string.verify_send_failed)
                     EmailVerificationScreen(
                         email = authenticationGateway.currentUserEmail,
                         isWorking = isAuthenticating,
@@ -915,7 +919,7 @@ class MainActivity : ComponentActivity() {
                     platform.purchases.refresh(currentUserId)
 
                     if (sessionGuard.adopt(currentUserId)) {
-                        uiMessage = getString(R.string.message_account_wiped)
+                        uiMessage = getString(Res.string.message_account_wiped)
                     }
                     // Backfills the owner membership for businesses created before it was published,
                     // whose queued rows are otherwise parked on PERMISSION_DENIED forever.
@@ -949,7 +953,7 @@ class MainActivity : ComponentActivity() {
                             reminders.cancel()
                             authenticatedUserId = null
                             showManualAuthentication = true
-                            uiMessage = getString(R.string.message_account_delete_data_gone_auth_failed)
+                            uiMessage = getString(Res.string.message_account_delete_data_gone_auth_failed)
                             return@LaunchedEffect
                         }
                     }
@@ -967,7 +971,7 @@ class MainActivity : ComponentActivity() {
                         reminders.cancel()
                         authenticatedUserId = null
                         showManualAuthentication = true
-                        uiMessage = getString(R.string.message_account_delete_data_gone_auth_failed)
+                        uiMessage = getString(Res.string.message_account_delete_data_gone_auth_failed)
                     }
                     pendingDeletionResume = false
                 }
@@ -1106,7 +1110,7 @@ class MainActivity : ComponentActivity() {
                     // button is never reachable while its data is still on its way back.
                     when (val result = cloudRestore.restore(currentUserId)) {
                         is CloudRestoreResult.Restored -> {
-                            uiMessage = getString(R.string.message_cloud_restored, result.customers)
+                            uiMessage = getString(Res.string.message_cloud_restored, result.customers)
                             refreshKey++
                         }
                         // Nothing in the cloud is the normal path for a new Pro account: say nothing
@@ -1122,7 +1126,7 @@ class MainActivity : ComponentActivity() {
                             // La frase se traduce; los códigos técnicos stage/failure viajan tal
                             // cual, que son lo único que sirve para diagnosticar.
                             uiMessage = getString(
-                                R.string.message_cloud_restore_failed,
+                                Res.string.message_cloud_restore_failed,
                                 result.stage,
                                 result.failure.message.substringBefore(":").take(40),
                             )
@@ -1275,8 +1279,8 @@ class MainActivity : ComponentActivity() {
 
                 // Recomputed from the ledger on every refresh rather than stored: pay a sale and its
                 // alert simply stops existing, with no row left anywhere to go stale.
-                val verifyAlertTitle = stringResource(R.string.verify_pending_alert_title)
-                val verifyAlertDetail = stringResource(R.string.verify_pending_alert_detail)
+                val verifyAlertTitle = stringResource(Res.string.verify_pending_alert_title)
+                val verifyAlertDetail = stringResource(Res.string.verify_pending_alert_detail)
                 // Accounts that predate verification keep working, but they are told every time
                 // they open the alerts: an address nobody proved exists cannot be mailed a password
                 // reset, and their ledger lives on this phone alone.
@@ -1392,11 +1396,11 @@ class MainActivity : ComponentActivity() {
                 if (showAccountLinking) {
                     PlatformBackHandler { showAccountLinking = false }
                     var pendingAccountSwitchAction by remember { mutableStateOf<PendingAccountSwitch?>(null) }
-                    val signInFailedMessage = stringResource(R.string.auth_sign_in_failed)
-                    val signUpFailedMessage = stringResource(R.string.auth_sign_up_failed)
-                    val emailInUseMessage = stringResource(R.string.auth_email_in_use)
-                    val googleFailedMessage = stringResource(R.string.auth_google_failed)
-                    val googleManualPasswordMessage = stringResource(R.string.auth_google_manual_password_needed)
+                    val signInFailedMessage = stringResource(Res.string.auth_sign_in_failed)
+                    val signUpFailedMessage = stringResource(Res.string.auth_sign_up_failed)
+                    val emailInUseMessage = stringResource(Res.string.auth_email_in_use)
+                    val googleFailedMessage = stringResource(Res.string.auth_google_failed)
+                    val googleManualPasswordMessage = stringResource(Res.string.auth_google_manual_password_needed)
 
                     val performSignIn: (String, String) -> Unit = { email, password ->
                         isAuthenticating = true
@@ -1513,20 +1517,20 @@ class MainActivity : ComponentActivity() {
                         val count = customers.size
                         val messageText = if (!targetEmail.isNullOrBlank()) {
                             when (count) {
-                                0 -> stringResource(R.string.auth_guest_switch_confirm_message_generic, targetEmail)
-                                1 -> stringResource(R.string.auth_guest_switch_confirm_message_single, targetEmail)
-                                else -> stringResource(R.string.auth_guest_switch_confirm_message_plural, targetEmail, count)
+                                0 -> stringResource(Res.string.auth_guest_switch_confirm_message_generic, targetEmail)
+                                1 -> stringResource(Res.string.auth_guest_switch_confirm_message_single, targetEmail)
+                                else -> stringResource(Res.string.auth_guest_switch_confirm_message_plural, targetEmail, count)
                             }
                         } else {
                             when (count) {
-                                0 -> stringResource(R.string.auth_guest_switch_confirm_message_no_email_generic)
-                                1 -> stringResource(R.string.auth_guest_switch_confirm_message_no_email_single)
-                                else -> stringResource(R.string.auth_guest_switch_confirm_message_no_email_plural, count)
+                                0 -> stringResource(Res.string.auth_guest_switch_confirm_message_no_email_generic)
+                                1 -> stringResource(Res.string.auth_guest_switch_confirm_message_no_email_single)
+                                else -> stringResource(Res.string.auth_guest_switch_confirm_message_no_email_plural, count)
                             }
                         }
                         AlertDialog(
                             onDismissRequest = { pendingAccountSwitchAction = null },
-                            title = { Text(stringResource(R.string.auth_guest_switch_confirm_title)) },
+                            title = { Text(stringResource(Res.string.auth_guest_switch_confirm_title)) },
                             text = { Text(messageText) },
                             confirmButton = {
                                 TextButton(
@@ -1539,14 +1543,14 @@ class MainActivity : ComponentActivity() {
                                     },
                                 ) {
                                     Text(
-                                        stringResource(R.string.auth_guest_switch_confirm_proceed),
+                                        stringResource(Res.string.auth_guest_switch_confirm_proceed),
                                         color = MaterialTheme.colorScheme.error,
                                     )
                                 }
                             },
                             dismissButton = {
                                 TextButton(onClick = { pendingAccountSwitchAction = null }) {
-                                    Text(stringResource(R.string.auth_guest_switch_confirm_cancel))
+                                    Text(stringResource(Res.string.auth_guest_switch_confirm_cancel))
                                 }
                             },
                         )
@@ -1696,7 +1700,7 @@ class MainActivity : ComponentActivity() {
                                         firstDebtPreferenceStore.markDismissed(currentUserId)
                                         hasSkippedFirstDebt = true
                                         refreshKey++
-                                        uiMessage = getString(R.string.first_debt_created_message)
+                                        uiMessage = getString(Res.string.first_debt_created_message)
                                     }
                                 } finally {
                                     isSavingFirstDebt = false
@@ -1946,7 +1950,7 @@ class MainActivity : ComponentActivity() {
                         syncQueue.enqueue(business.id, "BUSINESS", business.id, now, SyncPayloads.business(business))
                         membershipBootstrap.ensure(business)
                         refreshKey++
-                        uiMessage = getString(R.string.message_business_created)
+                        uiMessage = getString(Res.string.message_business_created)
                     }
                 }, onCreateCustomer = { newCustomer ->
                     val name = newCustomer.name
@@ -1958,11 +1962,13 @@ class MainActivity : ComponentActivity() {
                     customerFormNotice = null
                     val businessId = (state as? DashboardUiState.Content)?.businessId
                     if (businessId == null) {
-                        // Al snackbar y al propio formulario: con el diálogo abierto, el snackbar queda
-                        // detrás del diálogo y "Guardar" parece no hacer nada (v46).
-                        val notice = getString(R.string.message_create_business_first)
-                        uiMessage = notice
-                        customerFormNotice = notice
+                        appScope.launch {
+                            // Al snackbar y al propio formulario: con el diálogo abierto, el snackbar queda
+                            // detrás del diálogo y "Guardar" parece no hacer nada (v46).
+                            val notice = getString(Res.string.message_create_business_first)
+                            uiMessage = notice
+                            customerFormNotice = notice
+                        }
                         return@CuentivoApp
                     }
                     // Plan limit checked before writing: refusing after the insert would leave a
@@ -2074,7 +2080,7 @@ class MainActivity : ComponentActivity() {
                                     throw cancellation
                                 } catch (error: Exception) {
                                     PlatformLog.warn(TAG, "No se pudo guardar el cliente.")
-                                    uiMessage = getString(R.string.message_customer_name_taken)
+                                    uiMessage = getString(Res.string.message_customer_name_taken)
                                     false
                                 }
                                 if (saved) {
@@ -2115,11 +2121,11 @@ class MainActivity : ComponentActivity() {
                                     }
                                     refreshKey++
                                     uiMessage = when {
-                                        quickSale != null -> getString(R.string.message_quick_sale_created, Money.format(quickSale.totalCents))
+                                        quickSale != null -> getString(Res.string.message_quick_sale_created, Money.format(quickSale.totalCents))
                                         // Same order as the writes above: the sale is the headline
                                         // when there is one, the opening balance when there is not.
-                                        opening != null -> getString(R.string.message_opening_balance_created, Money.format(opening.sale.totalCents))
-                                        else -> getString(R.string.message_customer_added)
+                                        opening != null -> getString(Res.string.message_opening_balance_created, Money.format(opening.sale.totalCents))
+                                        else -> getString(Res.string.message_customer_added)
                                     }
                                     // The only signal that closes the form. It advances only here,
                                     // so a failure above leaves it untouched and the dialog stays up.
@@ -2137,7 +2143,9 @@ class MainActivity : ComponentActivity() {
                 }, onImportOpeningBalances = { rows ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId
                     if (businessId == null) {
-                        uiMessage = getString(R.string.message_create_business_first)
+                        appScope.launch {
+                            uiMessage = getString(Res.string.message_create_business_first)
+                        }
                         return@CuentivoApp
                     }
                     appScope.launch {
@@ -2158,7 +2166,7 @@ class MainActivity : ComponentActivity() {
                             // financial can be edited afterwards, so a half-planned batch is not
                             // something to write and apologise for.
                             if (plan.rejected.isNotEmpty() || plan.isEmpty) {
-                                uiMessage = getString(R.string.message_opening_import_failed)
+                                uiMessage = getString(Res.string.message_opening_import_failed)
                                 return@launch
                             }
                             // Both plan limits over the whole batch, before the first write. Checking
@@ -2198,7 +2206,7 @@ class MainActivity : ComponentActivity() {
                                 throw cancellation
                             } catch (error: Exception) {
                                 PlatformLog.warn(TAG, "No se pudo guardar la libreta de deudas.")
-                                uiMessage = getString(R.string.message_opening_import_failed)
+                                uiMessage = getString(Res.string.message_opening_import_failed)
                                 false
                             }
                             if (saved) {
@@ -2220,7 +2228,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 refreshKey++
                                 uiMessage = getString(
-                                    R.string.message_opening_import_done,
+                                    Res.string.message_opening_import_done,
                                     plan.entries.size,
                                     Money.format(plan.totalCents),
                                 )
@@ -2248,9 +2256,9 @@ class MainActivity : ComponentActivity() {
                         runCatching { database.customerDao().update(updated) }.onSuccess {
                             syncQueue.enqueue(businessId, "CUSTOMER", updated.id, now, SyncPayloads.customer(updated))
                             refreshKey++
-                            uiMessage = getString(R.string.message_customer_updated)
+                            uiMessage = getString(Res.string.message_customer_updated)
                         }.onFailure {
-                            uiMessage = getString(R.string.message_customer_name_taken)
+                            uiMessage = getString(Res.string.message_customer_name_taken)
                         }
                     }
                 }, onArchiveCustomer = { row ->
@@ -2264,9 +2272,9 @@ class MainActivity : ComponentActivity() {
                             val presentation = BalancePresenter.from(balanceCents)
                             uiMessage = getString(
                                 if (presentation.kind == BalanceKind.CUSTOMER_CREDIT) {
-                                    com.cuentivo.app.R.string.customers_archive_has_credit
+                                    Res.string.customers_archive_has_credit
                                 } else {
-                                    com.cuentivo.app.R.string.customers_archive_has_balance
+                                    Res.string.customers_archive_has_balance
                                 },
                                 row.customer.name,
                                 Money.format(presentation.amountCents),
@@ -2285,12 +2293,14 @@ class MainActivity : ComponentActivity() {
                             syncQueue.enqueue(businessId, "CUSTOMER", archived.id, now, SyncPayloads.customer(archived))
                         }
                         refreshKey++
-                        uiMessage = getString(R.string.message_removed, row.customer.name)
+                        uiMessage = getString(Res.string.message_removed, row.customer.name)
                     }
                 }, onCreateProduct = { name, priceCents, imageFileName ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId
                     if (businessId == null) {
-                        uiMessage = getString(R.string.message_create_business_first)
+                        appScope.launch {
+                            uiMessage = getString(Res.string.message_create_business_first)
+                        }
                         return@CuentivoApp
                     }
                     appScope.launch {
@@ -2308,7 +2318,7 @@ class MainActivity : ComponentActivity() {
                                 throw cancellation
                             } catch (error: Exception) {
                                 PlatformLog.warn(TAG, "No se pudo guardar el producto.")
-                                uiMessage = getString(R.string.message_product_save_failed)
+                                uiMessage = getString(Res.string.message_product_save_failed)
                                 false
                             }
                             if (saved) {
@@ -2320,7 +2330,7 @@ class MainActivity : ComponentActivity() {
                                     PlatformLog.warn(TAG, "El producto quedó guardado pero no se pudo encolar para sincronizar.")
                                 }
                                 refreshKey++
-                                uiMessage = getString(R.string.message_product_added)
+                                uiMessage = getString(Res.string.message_product_added)
                                 productSavedToken++
                             }
                         } finally {
@@ -2340,7 +2350,7 @@ class MainActivity : ComponentActivity() {
                         product.imageUri?.takeIf { it != imageFileName }?.let { platform.deleteProductPhoto(it) }
                         syncQueue.enqueue(businessId, "PRODUCT", updated.id, now, SyncPayloads.product(updated))
                         refreshKey++
-                        uiMessage = getString(R.string.message_product_updated)
+                        uiMessage = getString(Res.string.message_product_updated)
                     }
                 }, onArchiveProduct = { product ->
                     val businessId = (state as? DashboardUiState.Content)?.businessId ?: return@CuentivoApp
@@ -2357,7 +2367,7 @@ class MainActivity : ComponentActivity() {
                             syncQueue.enqueue(businessId, "PRODUCT", archived.id, now, SyncPayloads.product(archived))
                         }
                         refreshKey++
-                        uiMessage = getString(R.string.message_removed, product.name)
+                        uiMessage = getString(Res.string.message_removed, product.name)
                     }
                 }, onImportProducts = { doc ->
                     // Announced as part of Pro, so it is gated like every other paid feature. Until
@@ -2391,18 +2401,18 @@ class MainActivity : ComponentActivity() {
                                 importReport = result
                                 uiMessage = when {
                                     result.accepted.isEmpty() && result.rejected.isEmpty() ->
-                                        getString(R.string.message_import_no_products)
+                                        getString(Res.string.message_import_no_products)
                                     result.rejected.isEmpty() ->
-                                        getString(R.string.message_import_products_ok, result.accepted.size)
+                                        getString(Res.string.message_import_products_ok, result.accepted.size)
                                     else ->
                                         getString(
-                                            R.string.message_import_products_partial,
+                                            Res.string.message_import_products_partial,
                                             result.accepted.size,
                                             result.rejected.size,
                                         )
                                 }
                             }?.onFailure {
-                                uiMessage = getString(R.string.message_file_read_failed)
+                                uiMessage = getString(Res.string.message_file_read_failed)
                             }
                         }
                     }
@@ -2441,7 +2451,7 @@ class MainActivity : ComponentActivity() {
                                 // pantalla y no había nada visible de que la venta se registró.
                                 val balanceCents = database.financialDao().customerBalanceCents(businessId, customer.customer.id)
                                 uiMessage = getString(
-                                    R.string.message_sale_registered_balance,
+                                    Res.string.message_sale_registered_balance,
                                     balancePhrase(customer.customer.name, balanceCents),
                                 )
                                 // Y se lleva al detalle de esa clienta, que es donde la persona ve
@@ -2477,7 +2487,7 @@ class MainActivity : ComponentActivity() {
                         // quiere saber es cuánto le queda debiendo. El saldo sale del libro mayor.
                         val balanceCents = database.financialDao().customerBalanceCents(businessId, customer.customer.id)
                         uiMessage = getString(
-                            R.string.message_payment_registered_balance,
+                            Res.string.message_payment_registered_balance,
                             balancePhrase(customer.customer.name, balanceCents),
                         )
                         loadStatement(businessId, customer)
@@ -2492,7 +2502,7 @@ class MainActivity : ComponentActivity() {
                         val sale = financialDao.saleForId(item.id)
                         val outstandingCents = sale?.let { it.totalCents - financialDao.activeAllocatedPaymentCents(it.id) }
                         if (sale == null || outstandingCents == null || outstandingCents <= 0) {
-                            uiMessage = getString(R.string.message_sale_not_cancelable)
+                            uiMessage = getString(Res.string.message_sale_not_cancelable)
                             return@launch
                         }
                         val now = nowEpochMillis()
@@ -2505,9 +2515,9 @@ class MainActivity : ComponentActivity() {
                             syncQueue.enqueue(businessId, "MOVEMENT", cancellation.id, now, SyncPayloads.movement(cancellation))
                             refreshKey++
                             loadStatement(businessId, row)
-                            uiMessage = getString(R.string.message_sale_canceled, Money.format(outstandingCents))
+                            uiMessage = getString(Res.string.message_sale_canceled, Money.format(outstandingCents))
                         }.onFailure {
-                            uiMessage = getString(R.string.message_sale_cancel_failed)
+                            uiMessage = getString(Res.string.message_sale_cancel_failed)
                         }
                     }
                 }, saleCorrection = saleCorrection, onDismissCorrection = { saleCorrection = null }, onEditSale = { item ->
@@ -2518,7 +2528,7 @@ class MainActivity : ComponentActivity() {
                         // cancels it, and the DAO refuses a cancellation with nothing left unpaid.
                         val outstandingCents = sale?.let { it.totalCents - financialDao.activeAllocatedPaymentCents(it.id) }
                         if (sale == null || sale.isCanceled || outstandingCents == null || outstandingCents <= 0) {
-                            uiMessage = getString(R.string.message_sale_not_editable)
+                            uiMessage = getString(Res.string.message_sale_not_editable)
                             return@launch
                         }
                         val soldItems = financialDao.saleItemsForSale(sale.id)
@@ -2527,7 +2537,7 @@ class MainActivity : ComponentActivity() {
                         // it was sold, which is also what makes a hand-written line correctable and
                         // what finally lets the sales imported from the old web app be fixed.
                         if (soldItems.isEmpty()) {
-                            uiMessage = getString(R.string.message_sale_not_editable)
+                            uiMessage = getString(Res.string.message_sale_not_editable)
                             return@launch
                         }
                         saleCorrection = SaleCorrection(
@@ -2557,7 +2567,7 @@ class MainActivity : ComponentActivity() {
                         val financialDao = database.financialDao()
                         val previous = financialDao.saleForId(correction.saleId)
                         if (previous == null || previous.isCanceled) {
-                            uiMessage = getString(R.string.message_sale_correct_failed)
+                            uiMessage = getString(Res.string.message_sale_correct_failed)
                             return@launch
                         }
                         val now = nowEpochMillis()
@@ -2604,18 +2614,18 @@ class MainActivity : ComponentActivity() {
                             saleCorrection = null
                             refreshKey++
                             loadStatement(businessId, row)
-                            uiMessage = getString(R.string.message_sale_corrected)
+                            uiMessage = getString(Res.string.message_sale_corrected)
                         }.onFailure {
-                            uiMessage = getString(R.string.message_sale_correct_failed)
+                            uiMessage = getString(Res.string.message_sale_correct_failed)
                         }
                     }
                 }, backupSection = {
-                    val exportDone = stringResource(R.string.backup_export_done)
-                    val exportFailed = stringResource(R.string.backup_export_failed)
-                    val restoreFailed = stringResource(R.string.backup_restore_failed)
-                    val notABackup = stringResource(R.string.backup_restore_not_a_backup)
-                    val newerApp = stringResource(R.string.backup_restore_newer_app)
-                    val wrongPassword = stringResource(R.string.backup_restore_wrong_password)
+                    val exportDone = stringResource(Res.string.backup_export_done)
+                    val exportFailed = stringResource(Res.string.backup_export_failed)
+                    val restoreFailed = stringResource(Res.string.backup_restore_failed)
+                    val notABackup = stringResource(Res.string.backup_restore_not_a_backup)
+                    val newerApp = stringResource(Res.string.backup_restore_newer_app)
+                    val wrongPassword = stringResource(Res.string.backup_restore_wrong_password)
                     BackupSection(
                         isWorking = isBackupWorking,
                         // The same tier the plan card below is drawn from, so the two cannot
@@ -2676,7 +2686,9 @@ class MainActivity : ComponentActivity() {
                     // reminder is "you owe this much", not a full account history.
                     val row = customers.firstOrNull { it.customer.id == customerId }
                     if (row == null) {
-                        uiMessage = getString(com.cuentivo.app.R.string.detail_payment_not_found)
+                        appScope.launch {
+                            uiMessage = getString(Res.string.detail_payment_not_found)
+                        }
                     } else {
                         sharer.shareText(
                             row.customer.name,
@@ -2691,11 +2703,11 @@ class MainActivity : ComponentActivity() {
                         val current = financialDao.correctionPaymentsForCustomer(businessId, row.customer.id)
                             .firstOrNull { it.id == item.id }
                         if (current == null) {
-                            uiMessage = getString(com.cuentivo.app.R.string.detail_payment_not_found)
+                            uiMessage = getString(Res.string.detail_payment_not_found)
                             return@launch
                         }
                         if (current.blockedByCanceledSale) {
-                            uiMessage = getString(com.cuentivo.app.R.string.detail_payment_cancel_blocked)
+                            uiMessage = getString(Res.string.detail_payment_cancel_blocked)
                             return@launch
                         }
                         val now = nowEpochMillis()
@@ -2711,9 +2723,9 @@ class MainActivity : ComponentActivity() {
                             syncQueue.enqueue(businessId, "MOVEMENT", refund.id, now, SyncPayloads.movement(refund))
                             refreshKey++
                             loadStatement(businessId, row)
-                            uiMessage = getString(R.string.message_payment_canceled, Money.format(current.amountCents))
+                            uiMessage = getString(Res.string.message_payment_canceled, Money.format(current.amountCents))
                         }.onFailure {
-                            uiMessage = getString(com.cuentivo.app.R.string.detail_payment_guard_failed)
+                            uiMessage = getString(Res.string.detail_payment_guard_failed)
                         }
                     }
                 }, onCallCustomer = { phone -> sharer.dial(phone) }, onShowStatement = { row ->
@@ -2729,7 +2741,7 @@ class MainActivity : ComponentActivity() {
                             syncQueue.enqueue(businessId, "CUSTOMER", updated.id, now, SyncPayloads.customer(updated))
                             refreshKey++
                             suggestedCreditLimitCents = null
-                            uiMessage = getString(R.string.message_credit_limit_updated, row.customer.name, Money.format(newLimitCents))
+                            uiMessage = getString(Res.string.message_credit_limit_updated, row.customer.name, Money.format(newLimitCents))
                         }
                     }
                 }, onDismissCreditLimitSuggestion = { suggestedCents ->
@@ -2737,13 +2749,16 @@ class MainActivity : ComponentActivity() {
                     suggestedCreditLimitCents = null
                 }, onShareStatementCsv = {
                     statementCustomer?.let { row ->
-                        sharer.shareText(
-                            getString(R.string.share_statement_subject, row.customer.name),
-                            CustomerStatementCsv.build(statementEntries),
-                        )
+                        appScope.launch {
+                            sharer.shareText(
+                                getString(Res.string.share_statement_subject, row.customer.name),
+                                CustomerStatementCsv.build(statementEntries),
+                            )
+                        }
                     }
                 }, onShareStatementText = {
                     statementCustomer?.let { row ->
+                        appScope.launch {
                         // Both payloads are built from this one customer's already-scoped statement.
                         // The pure image builder receives today's date at this Android boundary, never
                         // reads a clock itself, so its content remains deterministic in JVM tests.
@@ -2752,7 +2767,7 @@ class MainActivity : ComponentActivity() {
                         // Si la imagen falla, se comparte el texto completo de siempre: la persona
                         // pierde la imagen, no el estado de cuenta. La elección vive en el objeto
                         // puro `StatementShareTextChoice`, no aquí.
-                        val subject = getString(R.string.share_statement_subject, row.customer.name)
+                        val subject = getString(Res.string.share_statement_subject, row.customer.name)
                         val shortText = DebtorShareText.forCustomerWithImage(
                             shareTier,
                             businessName,
@@ -2775,10 +2790,13 @@ class MainActivity : ComponentActivity() {
                             statementDateIso = localDayIso(nowEpochMillis()),
                         )
                         sharer.shareStatementImage(subject = subject, shortText = shortText, fullText = fullText, content = content)
+                        }
                     }
                 }, onShareDebtorList = {
                     val debtors = customers.map { Debtor(it.customer.name, it.balanceCents) }
-                    sharer.shareText(getString(R.string.share_debtor_list_subject), DebtorShareText.forBusiness(shareTier, businessName, debtors))
+                    appScope.launch {
+                        sharer.shareText(getString(Res.string.share_debtor_list_subject), DebtorShareText.forBusiness(shareTier, businessName, debtors))
+                    }
                 }, alerts = alerts, onOpenAlertCustomer = { customerId ->
                     // The alert only knows who; the statement sheet needs the row with the balance,
                     // which the screen already has loaded.
@@ -2828,9 +2846,9 @@ class MainActivity : ComponentActivity() {
                                     if (reauth !is GoogleAuthenticationResult.SignedIn) {
                                         uiMessage = when (reauth) {
                                             GoogleAuthenticationResult.Cancelled ->
-                                                getString(R.string.message_account_delete_reauth_cancelled)
+                                                getString(Res.string.message_account_delete_reauth_cancelled)
                                             else ->
-                                                getString(R.string.message_account_delete_reauth_failed)
+                                                getString(Res.string.message_account_delete_reauth_failed)
                                         }
                                         return@launch
                                     }
@@ -2853,7 +2871,7 @@ class MainActivity : ComponentActivity() {
                                         // Nada destructivo ocurrió todavía: se puede reintentar con todo
                                         // intacto, así que la marca se retira.
                                         pendingAccountDeletionStore.clear()
-                                        uiMessage = getString(R.string.message_account_delete_cloud_failed)
+                                        uiMessage = getString(Res.string.message_account_delete_cloud_failed)
                                         return@launch
                                     }
                                 }
@@ -2901,11 +2919,11 @@ class MainActivity : ComponentActivity() {
                                         showManualAuthentication = true
                                         uiMessage = when {
                                             authenticationGateway.classifyFailure(error).kind == AuthFailureKind.RECENT_LOGIN_REQUIRED ->
-                                                getString(R.string.message_account_delete_recent_login)
+                                                getString(Res.string.message_account_delete_recent_login)
                                             action == com.cuentivo.app.domain.AccountDeletionPlan.FailureAction.ASK_RECENT_LOGIN ->
-                                                getString(R.string.message_account_delete_recent_login)
+                                                getString(Res.string.message_account_delete_recent_login)
                                             else ->
-                                                getString(R.string.message_account_delete_data_gone_auth_failed)
+                                                getString(Res.string.message_account_delete_data_gone_auth_failed)
                                         }
                                     }
                                 }
@@ -2951,15 +2969,15 @@ class MainActivity : ComponentActivity() {
      * llega del libro mayor (`customerBalanceCents`) y la presentación la decide `BalancePresenter`,
      * la misma que usa el archivo de clientes.
      */
-    private fun balancePhrase(customerName: String, balanceCents: Long): String {
+    private suspend fun balancePhrase(customerName: String, balanceCents: Long): String {
         val presentation = com.cuentivo.app.ui.customer.BalancePresenter.from(balanceCents)
         return when (presentation.kind) {
             com.cuentivo.app.ui.customer.BalanceKind.OWED ->
-                getString(R.string.message_balance_owes, customerName, Money.format(presentation.amountCents))
+                getString(Res.string.message_balance_owes, customerName, Money.format(presentation.amountCents))
             com.cuentivo.app.ui.customer.BalanceKind.CUSTOMER_CREDIT ->
-                getString(R.string.message_balance_credit, customerName, Money.format(presentation.amountCents))
+                getString(Res.string.message_balance_credit, customerName, Money.format(presentation.amountCents))
             com.cuentivo.app.ui.customer.BalanceKind.SETTLED ->
-                getString(R.string.message_balance_settled, customerName)
+                getString(Res.string.message_balance_settled, customerName)
         }
     }
 
