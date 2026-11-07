@@ -1,6 +1,5 @@
 package com.cuentivo.app.ui.ai
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -47,7 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -87,7 +86,6 @@ import com.cuentivo.app.domain.ProductCandidate
 import com.cuentivo.app.ui.transaction.DueOption
 import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import com.cuentivo.app.ui.theme.NeoSlow
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -99,7 +97,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun LedgerReviewContent(
     review: LedgerReview,
-    captureFile: File?,
+    captureFile: LedgerCaptureRef?,
     onUpdateAmount: (lineIndex: Int, amountCents: String) -> Unit,
     onUpdateCustomer: (lineIndex: Int, customerName: String) -> Unit,
     onUpdateKind: (lineIndex: Int, kind: ProposedLedgerKind) -> Unit,
@@ -1090,7 +1088,7 @@ private fun FinancialErrorBanner(
 @Composable
 private fun CustomerGroupCard(
     group: CustomerReviewGroup,
-    captureFile: File?,
+    captureFile: LedgerCaptureRef?,
     fieldHealth: Map<Int, com.cuentivo.app.domain.OperationFieldHealth>,
     duplicateMatches: Map<Int, com.cuentivo.app.domain.LedgerDuplicateMatch>,
     /** The Ledger de MexaLM differences, by line index. Empty when the server sent no block. */
@@ -1191,7 +1189,7 @@ private fun CustomerGroupCard(
 @Composable
 private fun LedgerOperationRow(
     operation: LedgerOperation,
-    captureFile: File?,
+    captureFile: LedgerCaptureRef?,
     health: com.cuentivo.app.domain.OperationFieldHealth? = null,
     duplicateMatch: com.cuentivo.app.domain.LedgerDuplicateMatch? = null,
     /** What the Ledger de MexaLM read differently on this row. Empty when there is no block. */
@@ -1435,17 +1433,18 @@ private fun LedgerOperationRow(
 
 @Composable
 private fun RowCropThumbnail(
-    captureFile: File?,
+    captureFile: LedgerCaptureRef?,
     operation: LedgerOperation,
     modifier: Modifier = Modifier,
 ) {
-    var bitmap by remember(captureFile, operation.region) { mutableStateOf<Bitmap?>(null) }
+    var bitmap by remember(captureFile, operation.region) { mutableStateOf<ImageBitmap?>(null) }
     var loaded by remember(captureFile, operation.region) { mutableStateOf(false) }
+    val region = operation.region
 
-    LaunchedEffect(captureFile, operation.region) {
-        if (captureFile != null && operation.region != null) {
+    LaunchedEffect(captureFile, region) {
+        if (captureFile != null && region != null) {
             val decoded = withContext(Dispatchers.IO) {
-                LedgerCropHelper.decodeCrop(captureFile, operation.region)
+                captureFile.files.decodeCrop(captureFile.path, region)
             }
             bitmap = decoded
         } else {
@@ -1483,7 +1482,7 @@ private fun RowCropThumbnail(
     ) {
         if (currentBitmap != null) {
             Image(
-                bitmap = currentBitmap.asImageBitmap(),
+                bitmap = currentBitmap,
                 contentDescription = stringResource(R.string.ai_ledger_crop_content_description),
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
@@ -1496,7 +1495,7 @@ private fun RowCropThumbnail(
 @Composable
 private fun EditLedgerOperationDialog(
     operation: LedgerOperation,
-    captureFile: File?,
+    captureFile: LedgerCaptureRef?,
     pageDateEpochDay: Long? = null,
     todayEpochDay: Long? = null,
     customerMatch: com.cuentivo.app.domain.EntityMatchResult<com.cuentivo.app.domain.CustomerCandidate>? = null,

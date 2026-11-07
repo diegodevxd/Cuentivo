@@ -22,6 +22,10 @@ class AiDebugLabGuardsTest {
     private fun sourcesOf(dir: File): List<String> =
         dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.map { it.readText() }.toList()
 
+    private fun labScreenSource(): String =
+        File("src/main/java/com/cuentivo/app/ui/ai/AndroidLedgerCapture.kt").readText() + "\n" +
+            File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+
     @Test
     fun `common ai lab sources are actually scanned`() {
         // The policies moved to commonMain. If the scan path is wrong the guards below would walk
@@ -71,7 +75,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `closing the lab invalidates the in-flight result before closing`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
         // The close action must run the machine cancel (generation bump) before invoking onClose.
         assertTrue(
             "close must cancel through the machine first",
@@ -85,7 +89,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `screen wires daily chat repository and turn policy safely without persisting proposals`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
         assertTrue(
             "submit must go through AiDebugLabTurnPolicy.run",
             screenSource.contains("AiDebugLabTurnPolicy.run("),
@@ -130,7 +134,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `debug lab is a fullscreen opaque modal instead of dashboard content`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
 
         assertTrue(
             "the lab must use a Dialog so the dashboard cannot remain interactive or visible below it",
@@ -167,7 +171,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `chat UI renders a transcript and bottom composer with neutral assistant cards`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         assertTrue("transcript must use LazyColumn", source.contains("LazyColumn"))
         assertTrue("transcript must render user messages", source.contains("AiChatMessage.UserText"))
         assertTrue("capture sheet must offer camera", source.contains("ai_debug_chat_camera"))
@@ -177,7 +181,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `composer and capture are enabled for non-sending states`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         assertTrue(
             "composer must be enabled whenever not Sending",
             source.contains("state != AiDebugLabState.Sending"),
@@ -205,7 +209,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `screen resets hydration to false before IO loading on repository change`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         val block = source.substring(
             source.indexOf("LaunchedEffect(repository)"),
             source.indexOf("repository.openToday()"),
@@ -218,7 +222,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `camera capture uses existing store and take picture contract without permissions or network`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         // The ledger camera is the only camera in this screen now: the old OCR capture was the
         // second button people confused with it, and it is gone.
         val cameraBlock = source.substring(
@@ -237,18 +241,19 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `voice capture releases recognizer on screen exit and cleans up on dispose`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         assertTrue("must use DisposableEffect for recognizer cleanup", source.contains("DisposableEffect(effectiveVoiceRecognizer)"))
         assertTrue("must call destroy on dispose", source.contains("effectiveVoiceRecognizer.destroy()"))
         assertTrue("closeLab must destroy recognizer", source.contains("effectiveVoiceRecognizer.destroy()"))
-        assertTrue("must cancel voice capture on ON_PAUSE or ON_STOP", source.contains("Lifecycle.Event.ON_PAUSE") && source.contains("Lifecycle.Event.ON_STOP"))
+        val foregroundSource = File("../shared/src/androidMain/kotlin/com/cuentivo/app/platform/PlatformForeground.android.kt").readText()
+        assertTrue("must cancel voice capture on ON_PAUSE or ON_STOP", foregroundSource.contains("Lifecycle.Event.ON_PAUSE") && foregroundSource.contains("Lifecycle.Event.ON_STOP"))
         assertTrue("must use VoiceCaptureMachine for state transitions", source.contains("VoiceCaptureMachine"))
         assertFalse("must not create direct SpeechRecognizer in screen", source.contains("SpeechRecognizer.createSpeechRecognizer"))
     }
 
     @Test
     fun `voice transcription fills text field without auto-submitting`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         val onFinalResultBlock = source.substring(
             source.indexOf("onFinalResult = {"),
             source.indexOf("onError = {"),
@@ -265,7 +270,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `pending capture uri survives activity recreation via rememberSaveable`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         assertTrue("must use rememberSaveable for the pending URI", source.contains("rememberSaveable"))
         assertTrue("must define a URI saver", source.contains("Saver<Uri?, String>"))
         assertTrue("must bind the saver via stateSaver", source.contains("stateSaver"))
@@ -279,7 +284,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `screen uses isolated AI camera store not product camera`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         assertTrue("must use AiCameraCaptureStore", source.contains("AiCameraCaptureStore"))
         assertFalse(
             "must not import product CameraCaptureStore",
@@ -631,7 +636,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `screen accepts nullable resolver and active business id and resolves on IO only for payment proposal`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         assertTrue(
             "screen parameter paymentPreviewResolver must be nullable",
             source.contains("paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null"),
@@ -656,7 +661,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `chat message row renders all sealed payment variants with confirmation action only on preview`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         assertTrue("must handle AssistantPaymentPreview", source.contains("is AiChatMessage.AssistantPaymentPreview"))
         assertTrue("must handle AssistantPaymentCustomerNotFound", source.contains("AiChatMessage.AssistantPaymentCustomerNotFound"))
         assertTrue("must handle AssistantPaymentCustomerSelection", source.contains("is AiChatMessage.AssistantPaymentCustomerSelection"))
@@ -671,7 +676,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `no confirm action exists for blocked, unresolved, unavailable or arbitrary proposal messages`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         val chatMessageRowBlock = source.substring(
             source.indexOf("private fun ChatMessageRow("),
             source.indexOf("private fun ProposalPreviewContent("),
@@ -703,7 +708,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `no callable or Gemini invocation occurs during confirmation`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         val confirmCallIndex = source.indexOf("confirmPayment(outcome.request)")
         assertTrue("confirmPayment is called with local request", confirmCallIndex != -1)
         val surroundingBlock = source.substring(
@@ -717,7 +722,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `confirmPayment rethrows CancellationException and falls back to Unavailable only for other exceptions`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
         val confirmCallIndex = screenSource.indexOf("confirmPayment(outcome.request)")
         assertTrue("confirmPayment is called", confirmCallIndex != -1)
         val confirmationBlock = screenSource.substring(
@@ -734,7 +739,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `confirmation key and payment ID are not shown in UI or persisted in daily chat`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
         assertFalse("confirmationKey is never displayed in UI text", screenSource.contains(".confirmationKey"))
         assertFalse("paymentId is never displayed in UI text", screenSource.contains(".paymentId"))
 
@@ -776,7 +781,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `payment and query blocked states render distinct actionable messages without generic walls`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         assertTrue("must handle blocked with customer name", source.contains("ai_payment_preview_blocked_no_debt_with_name"))
         assertTrue("must handle blocked debt with no details fallback", source.contains("ai_payment_preview_blocked_exceeds_debt_no_details"))
         assertTrue("must handle invalid query date with actionable text", source.contains("ai_query_blocked_invalid_date"))
@@ -822,7 +827,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `sale blocked states render distinct actionable messages without generic walls`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         assertTrue("must handle overpayment with details", source.contains("ai_sale_preview_blocked_overpayment"))
         assertTrue("must handle overpayment no details fallback", source.contains("ai_sale_preview_blocked_overpayment_no_details"))
         assertTrue("must handle overflow with actionable text", source.contains("ai_sale_preview_blocked_overflow"))
@@ -854,7 +859,7 @@ class AiDebugLabGuardsTest {
             assertTrue("English strings must contain $key", enXml.contains("name=\"$key\""))
         }
 
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         val clarificationBlock = source.substring(
             source.indexOf("is AiChatMessage.AssistantClarification"),
             source.indexOf("is AiChatMessage.AssistantProposal"),
@@ -866,7 +871,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `confirmSale rethrows CancellationException and falls back to Unavailable only for other exceptions`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
         val confirmCallIndex = screenSource.indexOf("confirmSale(outcome.request)")
         assertTrue("confirmSale is called", confirmCallIndex != -1)
         val confirmationBlock = screenSource.substring(
@@ -883,7 +888,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `no callable or Gemini invocation occurs during sale confirmation`() {
-        val source = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val source = labScreenSource()
         val confirmCallIndex = source.indexOf("confirmSale(outcome.request)")
         assertTrue("confirmSale is called with local request", confirmCallIndex != -1)
         val surroundingBlock = source.substring(
@@ -897,7 +902,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `resolvers rethrow CancellationException and map only other Exceptions to Unavailable without runCatching`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
 
         val paymentResolverIndex = screenSource.indexOf("paymentPreviewResolver(activeBusinessId, paymentProposal)")
         assertTrue("payment resolver is called", paymentResolverIndex != -1)
@@ -928,7 +933,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `confirmation key and sale ID are not shown in UI or persisted in daily chat`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
         assertFalse("sale confirmationKey is never displayed in UI text", screenSource.contains(".confirmationKey"))
         assertFalse("saleId is never displayed in UI text", screenSource.contains(".saleId"))
 
@@ -943,7 +948,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `confirmation and resolution UI callbacks require activeBusinessId isNotBlank`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
         assertTrue("onConfirmPayment requires isNotBlank", screenSource.contains("onConfirmPayment = if (isCurrentPaymentPreview && isHydrated && confirmPayment != null && activeBusinessId?.isNotBlank() == true)"))
         assertTrue("onConfirmSale requires isNotBlank", screenSource.contains("onConfirmSale = if (isCurrentSalePreview && isHydrated && confirmSale != null && activeBusinessId?.isNotBlank() == true)"))
         assertTrue("payment resolution requires isNotBlank", screenSource.contains("paymentPreviewResolver != null && activeBusinessId?.isNotBlank() == true"))
@@ -953,7 +958,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `chat message row renders natural query results with localized strings and candidate selection`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
         assertTrue("must handle AssistantQueryAnswer", screenSource.contains("is AiChatMessage.AssistantQueryAnswer"))
         assertTrue("must handle CustomerBalance", screenSource.contains("is AiBusinessQueryResult.Answer.CustomerBalance"))
         assertTrue("must handle CustomersWithDebt", screenSource.contains("is AiBusinessQueryResult.Answer.CustomersWithDebt"))
@@ -970,7 +975,7 @@ class AiDebugLabGuardsTest {
 
     @Test
     fun `business query resolution handles cancellation and maps exceptions safely`() {
-        val screenSource = File("src/main/java/com/cuentivo/app/ui/ai/AiDebugLabScreen.kt").readText()
+        val screenSource = labScreenSource()
         val queryResolverIndex = screenSource.indexOf("businessQueryResolver(activeBusinessId, queryProposal, null)")
         assertTrue("query resolver is called in onSubmit", queryResolverIndex != -1)
         val queryResolutionBlock = screenSource.substring(

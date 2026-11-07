@@ -1,5 +1,6 @@
 package com.cuentivo.app.ui.ai
 
+import androidx.compose.runtime.saveable.Saver
 import com.cuentivo.app.ai.ledger.LedgerDetectedPageDate
 import com.cuentivo.app.ai.ledger.LedgerDiscardDiagnostic
 import com.cuentivo.app.ai.ledger.LedgerOperation
@@ -79,3 +80,5 @@ object LedgerReviewSaver {
         detectedPageDate = saved.detectedPageDate,
     )
 }
+
+expect fun ledgerReviewStateSaver(): Saver<LedgerReviewSaver.SavedLedgerReview?, *>

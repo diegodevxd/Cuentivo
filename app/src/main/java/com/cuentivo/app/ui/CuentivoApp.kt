@@ -86,7 +86,10 @@ import com.cuentivo.app.data.local.CustomerBalanceRow
 import com.cuentivo.app.data.local.CustomerEntity
 import com.cuentivo.app.data.local.ProductEntity
 import com.cuentivo.app.data.local.ProductImageStore
+import com.cuentivo.app.ai.AndroidVoiceRecognizer
 import com.cuentivo.app.ui.ai.AiDebugLabScreen
+import com.cuentivo.app.ui.ai.AndroidLedgerCapture
+import com.cuentivo.app.ui.ai.AndroidVoicePermissionGateFactory
 import com.cuentivo.app.ui.ai.debugAiTransport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -720,10 +723,19 @@ fun CuentivoApp(
         }
         if (hasAiTransport && showAiDebugLab) {
             val activeBusinessId = (state as? DashboardUiState.Content)?.businessId
+            val context = LocalContext.current
+            val ledgerCapture = remember(context) { AndroidLedgerCapture(context) }
+            val voiceFactory = remember(context) { { AndroidVoiceRecognizer(context) } }
+            val voiceGate = remember(context) { AndroidVoicePermissionGateFactory(context) }
             key(aiDailyChatRepository) {
                 AiDebugLabScreen(
                     transport = debugAiLabTransport,
                     repository = aiDailyChatRepository,
+                    onClose = { showAiDebugLab = false },
+                    ledgerPagePickerFactory = ledgerCapture,
+                    ledgerPageFiles = ledgerCapture,
+                    voiceRecognizerFactory = voiceFactory,
+                    voicePermissionGateFactory = voiceGate,
                     paymentPreviewResolver = paymentPreviewResolver,
                     salePreviewResolver = salePreviewResolver,
                     businessQueryResolver = businessQueryResolver,
@@ -739,7 +751,6 @@ fun CuentivoApp(
                     ledgerImportMetricDao = ledgerImportMetricDao,
                     startLedgerImport = pendingLedgerImport,
                     onStartLedgerImportConsumed = { pendingLedgerImport = false },
-                    onClose = { showAiDebugLab = false },
                     onOpenPaywall = {
                         showAiDebugLab = false
                         showAiPaywall = true

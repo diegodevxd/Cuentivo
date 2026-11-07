@@ -1,13 +1,5 @@
 package com.cuentivo.app.ui.ai
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Bundle
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,19 +40,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.sizeIn
@@ -68,7 +57,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.ui.res.painterResource
-import com.cuentivo.app.ai.AndroidVoiceRecognizer
 import com.cuentivo.app.ai.VoiceCaptureMachine
 import com.cuentivo.app.ai.VoiceCaptureModel
 import com.cuentivo.app.ai.VoiceCaptureState
@@ -93,21 +81,17 @@ import com.cuentivo.app.ai.BusinessQueryProposal
 import com.cuentivo.app.ai.CallableAiProposalResult
 import com.cuentivo.app.ai.CreateSaleProposal
 import com.cuentivo.app.ai.RecordPaymentProposal
-import com.cuentivo.app.ai.capture.AiCameraCaptureStore
-import com.cuentivo.app.ai.capture.AiCapturePolicy
 import com.cuentivo.app.ai.ledger.LedgerReviewEdits
 import com.cuentivo.app.ui.transaction.DueOption
 import com.cuentivo.app.ui.transaction.NeoChoiceChip
 import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
+import com.cuentivo.app.platform.PlatformBackHandler
+import com.cuentivo.app.platform.PlatformLeaveForegroundEffect
 import com.cuentivo.app.ai.ledger.AiLedgerImagePolicy
-import com.cuentivo.app.ai.ledger.LedgerImagePreparer
 import com.cuentivo.app.ai.ledger.LedgerOperation
 import com.cuentivo.app.ai.ledger.LedgerReviewEngine
 import com.cuentivo.app.ai.ledger.isRegisterableLedgerOperation
-import com.cuentivo.app.ai.capture.AiCaptureStore
-import com.cuentivo.app.ai.capture.AiOcrEngine
 import com.cuentivo.app.data.local.AiDailyChatRepository
-import java.io.File
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.UUID
@@ -137,34 +121,6 @@ fun AiDebugLabEntryButton(
 }
 
 /**
- * Survives Activity recreation while the camera app is in front.
- *
- * The camera runs in another process, so this one can be destroyed while it is on screen. A plain
- * `remember` would forget where the photo was being written and the returning result would be
- * dropped even though the file landed on disk.
- */
-private val CaptureUriSaver = Saver<Uri?, String>(
-    save = { it?.toString() },
-    restore = { Uri.parse(it) },
-)
-
-/**
- * Saves and restores the review under way across Activity recreation.
- *
- * The saved value is always a Bundle, never null: a null save would make the state itself vanish
- * from the registry, and the screen needs the slot to exist so an ended import writes "empty"
- * over a previously saved one. An empty Bundle restores as null — no review to bring back.
- *
- * The heavy, derivable half of the review — balances, candidates, registered rows — is
- * deliberately not here: it is reloaded from Room by the restore effect, and a Bundle big
- * enough to hold it would exceed the transaction limit and kill the app.
- */
-private val LedgerReviewStateSaver = Saver<com.cuentivo.app.ui.ai.LedgerReviewSaver.SavedLedgerReview?, Bundle>(
-    save = { it?.let(LedgerReviewBundle::toBundle) ?: Bundle() },
-    restore = { bundle -> if (bundle.isEmpty) null else LedgerReviewBundle.fromBundle(bundle) },
-)
-
-/**
  * The Room-loaded context a review needs: what each known customer already owes, the candidates a
  * misread name can be matched against, the catalogue, and what is already registered around the
  * page's dates. All of it derivable, none of it saved — it is reloaded after every restore.
@@ -192,6 +148,10 @@ fun AiDebugLabScreen(
     transport: AiDebugTransport,
     repository: AiDailyChatRepository,
     onClose: () -> Unit,
+    ledgerPagePickerFactory: LedgerPagePickerFactory,
+    ledgerPageFiles: LedgerPageFiles,
+    voiceRecognizerFactory: () -> VoiceRecognizer,
+    voicePermissionGateFactory: VoicePermissionGateFactory,
     modifier: Modifier = Modifier,
     paymentPreviewResolver: (suspend (businessId: String, proposal: RecordPaymentProposal) -> AiPaymentPreviewResult)? = null,
     salePreviewResolver: (suspend (businessId: String, proposal: CreateSaleProposal, choices: com.cuentivo.app.ai.AiSaleResolutionChoices) -> AiSalePreviewResult)? = null,
@@ -200,7 +160,6 @@ fun AiDebugLabScreen(
     confirmPayment: (suspend (AiPaymentConfirmationRequest) -> AiPaymentExecutionResult)? = null,
     confirmSale: (suspend (AiSaleConfirmationRequest) -> AiSaleExecutionResult)? = null,
     onOpenPaywall: (() -> Unit)? = null,
-    voiceRecognizer: VoiceRecognizer? = null,
     extractLedgerPage: (suspend (requestId: String, imageBase64: String, imageMimeType: String) -> LedgerExtractionCallResult)? = null,
     ledgerBalancesResolver: (suspend (businessId: String) -> Map<String, Long>)? = null,
     /** The customers this business already has, so a misread name can be matched against them. */
@@ -230,22 +189,18 @@ fun AiDebugLabScreen(
     val scope = rememberCoroutineScope()
     var showLedgerSourceSelector by remember { mutableStateOf(false) }
     var cameraUnavailable by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val effectiveVoiceRecognizer = voiceRecognizer ?: remember(context) { AndroidVoiceRecognizer(context) }
-    val captureStore = remember(context) {
-        com.cuentivo.app.ai.capture.AiCaptureStore(java.io.File(context.cacheDir, "ai-capture"))
-    }
-    val cameraStore = remember(context) { AiCameraCaptureStore(context) }
+    val effectiveVoiceRecognizer = remember(voiceRecognizerFactory) { voiceRecognizerFactory() }
     // The photographed page stays on disk for as long as the review needs it: the crop beside each
     // row is the only way to check what the model read against what the notebook says. Deleted when
     // the import ends, whichever way it ends.
     var ledgerCaptureFilePath by rememberSaveable { mutableStateOf<String?>(null) }
-    val ledgerCaptureFile: java.io.File? = ledgerCaptureFilePath?.let { java.io.File(it) }
+    val ledgerCaptureFile: LedgerCaptureRef? = remember(ledgerCaptureFilePath, ledgerPageFiles) {
+        ledgerCaptureFilePath?.let { LedgerCaptureRef(it, ledgerPageFiles) }
+    }
     var ledgerSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     // The business the import belongs to, captured when it starts: reading activeBusinessId on the
     // way back would let a page taken for one business land on another.
     var ledgerBusinessId by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingLedgerUri by rememberSaveable(stateSaver = CaptureUriSaver) { mutableStateOf<Uri?>(null) }
 
     // The review under way survives the Activity being recreated (the system killing the process
     // in the background, a uiMode change, the camera app taking the front). Only the irrepeatable
@@ -253,7 +208,7 @@ fun AiDebugLabScreen(
     // cannot hold the 552 products and blowing the transaction limit kills the app. The derivable
     // half (balances, candidates, registered rows) is reloaded from Room on the way back, and the
     // callable is never called again: the extraction result is right here.
-    var savedLedgerReview by rememberSaveable(stateSaver = LedgerReviewStateSaver) {
+    var savedLedgerReview by rememberSaveable(stateSaver = ledgerReviewStateSaver()) {
         mutableStateOf<com.cuentivo.app.ui.ai.LedgerReviewSaver.SavedLedgerReview?>(null)
     }
     // The Room-loaded context of the review, kept out of the saved state on purpose. It is
@@ -282,22 +237,13 @@ fun AiDebugLabScreen(
         }
     }
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, effectiveVoiceRecognizer) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE || event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                // Cancel active capture when leaving foreground (e.g. opening camera or backgrounding).
-                // Do NOT cancel when state is PermissionRequired: Android system permission dialog causes
-                // ON_PAUSE and cancelling here would revert to Idle before the user can grant permission.
-                if (voiceModel.state is VoiceCaptureState.Listening || voiceModel.state is VoiceCaptureState.Processing) {
-                    effectiveVoiceRecognizer.cancel()
-                    voiceModel = VoiceCaptureMachine.onCancel(voiceModel)
-                }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
+    PlatformLeaveForegroundEffect(effectiveVoiceRecognizer) {
+        // Cancel active capture when leaving foreground (e.g. opening camera or backgrounding).
+        // Do NOT cancel when state is PermissionRequired: Android system permission dialog causes
+        // ON_PAUSE and cancelling here would revert to Idle before the user can grant permission.
+        if (voiceModel.state is VoiceCaptureState.Listening || voiceModel.state is VoiceCaptureState.Processing) {
+            effectiveVoiceRecognizer.cancel()
+            voiceModel = VoiceCaptureMachine.onCancel(voiceModel)
         }
     }
 
@@ -421,13 +367,6 @@ fun AiDebugLabScreen(
         )
     }
 
-    // Sweeps captures orphaned by an earlier dialog when this one opens, not in onDispose:
-    // leaving composition can mean the Activity was destroyed while the camera app was still
-    // writing to that very file, and deleting it there threw away the photo the user just took.
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { cameraStore.deleteStaleExcept(listOf(pendingLedgerUri)) }
-    }
-
     /**
      * Stage 2 of the import metric: the import ended, as registered or as abandoned.
      *
@@ -468,8 +407,7 @@ fun AiDebugLabScreen(
         effectiveVoiceRecognizer.destroy()
         voiceModel = VoiceCaptureMachine.onCancel(voiceModel)
         model = AiDebugLabMachine.onCancel(model)
-        captureStore.cleanupAll()
-        cameraStore.deleteStale(except = null)
+        ledgerPageFiles.cleanupAll()
         // Closing the lab ends any import that was under way, review included: a page abandoned
         // this way must not resurrect on the next recreation.
         savedLedgerReview = null
@@ -515,9 +453,7 @@ fun AiDebugLabScreen(
         )
     }
 
-    val audioPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
+    val voicePermissionGate = voicePermissionGateFactory.remember { granted ->
         val nextModel = if (granted) {
             VoiceCaptureMachine.onPermissionGranted(
                 voiceModel,
@@ -533,17 +469,14 @@ fun AiDebugLabScreen(
     }
 
     val onMicTapped = {
-        val hasPermission = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
+        val hasPermission = voicePermissionGate.isGranted()
         val isAvailable = effectiveVoiceRecognizer.isAvailable()
         val nextModel = VoiceCaptureMachine.onMicTapped(voiceModel, hasPermission, isAvailable)
         voiceModel = nextModel
 
         when (nextModel.state) {
             VoiceCaptureState.PermissionRequired -> {
-                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                voicePermissionGate.request()
             }
             is VoiceCaptureState.Listening -> {
                 startVoiceListening(nextModel.generation)
@@ -557,7 +490,7 @@ fun AiDebugLabScreen(
     // Importing a page of a paper notebook: its own launchers, so a photo taken for the chat can
     // never be mistaken for a page under review and the other way round.
     val discardLedgerCapture: () -> Unit = {
-        ledgerCaptureFile?.delete()
+        ledgerCaptureFilePath?.let(ledgerPageFiles::delete)
         ledgerCaptureFilePath = null
         ledgerSessionId = null
         ledgerBusinessId = null
@@ -566,15 +499,15 @@ fun AiDebugLabScreen(
         savedLedgerReview = null
     }
 
-    val runLedgerExtraction: (java.io.File, String) -> Unit = { file, mimeType ->
+    val runLedgerExtraction: (String, String) -> Unit = { path, mimeType ->
         val call = extractLedgerPage
         val businessId = ledgerBusinessId
         val sessionId = ledgerSessionId
         if (call == null || businessId.isNullOrBlank() || sessionId == null) {
-            file.delete()
+            ledgerPageFiles.delete(path)
             discardLedgerCapture()
         } else {
-            ledgerCaptureFilePath = file.absolutePath
+            ledgerCaptureFilePath = path
             model = AiDebugLabMachine.onStartLedgerExtraction(model, sessionId, businessId)
             val token = model.generation
             scope.launch {
@@ -602,7 +535,7 @@ fun AiDebugLabScreen(
                 // One photo, one paid call: the clock around it is the cost metric of this import.
                 val startedAt = System.currentTimeMillis()
                 val outcome = withContext(Dispatchers.IO) {
-                    val bytes = runCatching { file.readBytes() }.getOrNull()
+                    val bytes = ledgerPageFiles.readBytes(path)
                     if (bytes == null) {
                         null
                     } else {
@@ -693,69 +626,16 @@ fun AiDebugLabScreen(
         }
     }
 
-    val ledgerCameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicture(),
-    ) { success ->
-        val uri = pendingLedgerUri ?: return@rememberLauncherForActivityResult
-        pendingLedgerUri = null
-        if (!success) {
-            cameraStore.delete(uri)
+    val ledgerPagePicker = ledgerPagePickerFactory.remember(
+        onPrepared = { runLedgerExtraction(it.path, it.mimeType) },
+        onCancelled = { discardLedgerCapture() },
+        onFailed = {
             discardLedgerCapture()
-            return@rememberLauncherForActivityResult
-        }
-        val file = cameraStore.fileFor(uri)
-        scope.launch {
-            // A camera photo at full resolution does not fit, and refusing it would make the main
-            // way of using this feature useless. It is scaled and rotated instead.
-            val mimeType = withContext(Dispatchers.IO) { LedgerImagePreparer.prepareInPlace(file) }
-            if (mimeType == null) {
-                cameraStore.delete(uri)
-                discardLedgerCapture()
-                model = model.copy(messages = model.messages + AiChatMessage.AssistantLedgerFailed)
-            } else {
-                runLedgerExtraction(file, mimeType)
-            }
-        }
-    }
+            model = model.copy(messages = model.messages + AiChatMessage.AssistantLedgerFailed)
+        },
+    )
 
-    val ledgerPickLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        if (uri == null) {
-            discardLedgerCapture()
-            return@rememberLauncherForActivityResult
-        }
-        scope.launch {
-            val prepared = withContext(Dispatchers.IO) {
-                val mimeType = context.contentResolver.getType(uri)
-                if (!AiCapturePolicy.isAllowedMime(mimeType)) return@withContext null
-                val target = captureStore.createCaptureFile(mimeType!!) ?: return@withContext null
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        target.outputStream().use { output -> input.copyTo(output) }
-                    } ?: return@runCatching null
-                    val preparedMime = LedgerImagePreparer.prepareInPlace(target)
-                    if (preparedMime == null) {
-                        target.delete()
-                        null
-                    } else {
-                        target to preparedMime
-                    }
-                }.getOrNull()
-            }
-            if (prepared == null) {
-                // A copy that failed halfway still left a file behind. And say so: the camera path
-                // already did, and a gallery pick that ends in silence is indistinguishable from
-                // the button doing nothing.
-                discardLedgerCapture()
-                model = model.copy(messages = model.messages + AiChatMessage.AssistantLedgerFailed)
-            } else {
-                runLedgerExtraction(prepared.first, prepared.second)
-            }
-        }
-    }
-
-    BackHandler(onBack = closeLab)
+    PlatformBackHandler(enabled = true, onBack = closeLab)
 
     // Reviewing a photographed ledger page takes over the whole surface: it is a different task
     // from the chat, and mixing them would let a stray dictation edit a page under review.
@@ -1465,15 +1345,7 @@ fun AiDebugLabScreen(
                         onClick = {
                             showLedgerSourceSelector = false
                             cameraUnavailable = false
-                            cameraStore.deleteStaleExcept(listOf(pendingLedgerUri))
-                            val attempt = runCatching {
-                                val uri = cameraStore.createCaptureUri()
-                                pendingLedgerUri = uri
-                                ledgerCameraLauncher.launch(uri)
-                            }
-                            if (attempt.isFailure) {
-                                pendingLedgerUri?.let(cameraStore::delete)
-                                pendingLedgerUri = null
+                            if (!ledgerPagePicker.takePhoto()) {
                                 discardLedgerCapture()
                                 cameraUnavailable = true
                             }
@@ -1483,9 +1355,7 @@ fun AiDebugLabScreen(
                     TextButton(
                         onClick = {
                             showLedgerSourceSelector = false
-                            ledgerPickLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
+                            ledgerPagePicker.pickFromGallery()
                         },
                         modifier = Modifier.fillMaxWidth().testTag("ai-ledger-source-gallery"),
                     ) { Text(stringResource(R.string.ai_debug_chat_gallery)) }
@@ -1508,7 +1378,7 @@ fun AiDebugLabScreen(
                     TextButton(
                         onClick = {
                             showClearDialog = false
-                            cameraStore.deleteStale(except = null)
+                            ledgerPageFiles.deleteStaleCaptures()
                             scope.launch {
                                 val cleared = withContext(Dispatchers.IO) {
                                     runCatching { repository.clearToday() }.getOrNull()

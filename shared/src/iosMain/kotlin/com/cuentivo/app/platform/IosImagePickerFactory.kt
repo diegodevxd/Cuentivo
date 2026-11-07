@@ -43,14 +43,33 @@ class IosImagePickerFactory(
 ) : ImagePickerFactory {
 
     @Composable
-    override fun remember(onPicked: suspend (PickedImage) -> Unit): ImagePicker {
+    override fun remember(onPicked: suspend (PickedImage) -> Unit): ImagePicker =
+        rememberIosImagePicker(onPicked = onPicked, onNoImage = {})
+
+    /**
+     * El selector con un aviso para cuando no llega ninguna imagen: selección vacía, datos nulos o
+     * cancelación de la cámara. La factoría pública lo deja vacío, así que las fotos de producto no
+     * cambian; la libreta lo usa para distinguir cancelar de fallar.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    @Composable
+    internal fun rememberIosImagePicker(
+        onPicked: suspend (PickedImage) -> Unit,
+        onNoImage: () -> Unit,
+    ): ImagePicker {
         val scope = rememberCoroutineScope()
         val pickerHost = composeRemember { IosPickerHost() }
         DisposableEffect(pickerHost) {
             onDispose { pickerHost.release() }
         }
         return composeRemember(pickerHost, scope, onPicked) {
-            IosImagePicker(pickerHost = pickerHost, host = host, scope = scope, onPicked = onPicked)
+            IosImagePicker(
+                pickerHost = pickerHost,
+                host = host,
+                scope = scope,
+                onPicked = onPicked,
+                onNoImage = onNoImage,
+            )
         }
     }
 }
@@ -61,6 +80,7 @@ private class IosImagePicker(
     private val host: () -> UIViewController?,
     private val scope: CoroutineScope,
     private val onPicked: suspend (PickedImage) -> Unit,
+    private val onNoImage: () -> Unit,
 ) : ImagePicker {
 
     override fun pickFromGallery() {
@@ -71,6 +91,7 @@ private class IosImagePicker(
 
         val picker = PHPickerViewController(configuration = configuration)
         picker.delegate = pickerHost
+        pickerHost.onNoImage = onNoImage
         pickerHost.onImage = onImage@{ data ->
             if (data == null) return@onImage
             // El selector corre `onPicked` en su propio scope y limpia lo temporal en `finally`.
@@ -93,6 +114,7 @@ private class IosImagePicker(
         val picker = UIImagePickerController()
         picker.sourceType = UIImagePickerControllerSourceType.UIImagePickerControllerSourceTypeCamera
         picker.delegate = pickerHost
+        pickerHost.onNoImage = onNoImage
         pickerHost.onImage = onImage@{ data ->
             if (data == null) return@onImage
             scope.launch {
@@ -122,18 +144,24 @@ private class IosPickerHost :
     UINavigationControllerDelegateProtocol {
 
     var onImage: ((NSData?) -> Unit)? = null
+    var onNoImage: (() -> Unit)? = null
 
     fun release() {
         onImage = null
+        onNoImage = null
     }
 
     override fun picker(picker: PHPickerViewController, didFinishPicking: List<*>) {
         picker.dismissViewControllerAnimated(true, completion = null)
-        val result = didFinishPicking.firstOrNull() as? PHPickerResult ?: return
+        val result = didFinishPicking.firstOrNull() as? PHPickerResult
+        if (result == null) {
+            dispatch_async(dispatch_get_main_queue()) { onNoImage?.invoke() }
+            return
+        }
         result.itemProvider.loadDataRepresentationForTypeIdentifier(PUBLIC_IMAGE) { data: NSData?, _: NSError? ->
             // La carga termina en una cola de fondo; la UI y el scope de Compose son del hilo principal.
             dispatch_async(dispatch_get_main_queue()) {
-                onImage?.invoke(data)
+                if (data == null) onNoImage?.invoke() else onImage?.invoke(data)
             }
         }
     }
@@ -145,12 +173,13 @@ private class IosPickerHost :
         picker.dismissViewControllerAnimated(true, completion = null)
         val image = didFinishPickingMediaWithInfo[UIImagePickerControllerOriginalImage] as? UIImage
         val data = image?.let { UIImageJPEGRepresentation(it, JPEG_QUALITY) }
-        onImage?.invoke(data)
+        if (data == null) onNoImage?.invoke() else onImage?.invoke(data)
     }
 
     override fun imagePickerControllerDidCancel(picker: UIImagePickerController) {
         picker.dismissViewControllerAnimated(true, completion = null)
         onImage = null
+        onNoImage?.invoke()
     }
 }
 

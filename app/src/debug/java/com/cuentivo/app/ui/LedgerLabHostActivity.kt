@@ -7,6 +7,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultRegistry
 import androidx.activity.result.ActivityResultRegistryOwner
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import com.cuentivo.app.ai.AndroidVoiceRecognizer
 import com.cuentivo.app.ai.ledger.LedgerExtractionCallResult
 import com.cuentivo.app.ai.ledger.LedgerExtractionPayload
 import com.cuentivo.app.ai.ledger.LedgerOperation
@@ -17,6 +20,8 @@ import com.cuentivo.app.data.local.AiDailyMessageDao
 import com.cuentivo.app.data.local.AiDailyMessageEntity
 import com.cuentivo.app.ui.ai.AiDebugLabScreen
 import com.cuentivo.app.ui.ai.AiDebugTransport
+import com.cuentivo.app.ui.ai.AndroidLedgerCapture
+import com.cuentivo.app.ui.ai.AndroidVoicePermissionGateFactory
 
 /**
  * Hosts the AI lab on an Activity with no configChanges, so rotating it recreates the Activity
@@ -35,6 +40,10 @@ class LedgerLabHostActivity : ComponentActivity() {
             CompositionLocalProvider(
                 LocalActivityResultRegistryOwner provides PickerRegistryOwner(ImmediatePickerRegistry()),
             ) {
+                val context = LocalContext.current
+                val ledgerCapture = remember(context) { AndroidLedgerCapture(context) }
+                val voiceFactory = remember(context) { { AndroidVoiceRecognizer(context) } }
+                val voiceGate = remember(context) { AndroidVoicePermissionGateFactory(context) }
                 AiDebugLabScreen(
                     transport = object : AiDebugTransport {
                         override suspend fun submit(request: com.cuentivo.app.ai.AiInterpretRequest) =
@@ -42,6 +51,10 @@ class LedgerLabHostActivity : ComponentActivity() {
                     },
                     repository = repositoryStub(),
                     onClose = {},
+                    ledgerPagePickerFactory = ledgerCapture,
+                    ledgerPageFiles = ledgerCapture,
+                    voiceRecognizerFactory = voiceFactory,
+                    voicePermissionGateFactory = voiceGate,
                     activeBusinessId = "business-1",
                     extractLedgerPage = { _, _, _ ->
                         extractionCalls++
