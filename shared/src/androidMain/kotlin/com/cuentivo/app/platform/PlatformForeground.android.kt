@@ -23,3 +23,16 @@ actual fun PlatformLeaveForegroundEffect(key: Any?, onLeave: () -> Unit) {
         }
     }
 }
+
+@Composable
+actual fun PlatformResumeEffect(key: Any?, onResume: () -> Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentOnResume = rememberUpdatedState(onResume)
+    DisposableEffect(lifecycleOwner, key) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) currentOnResume.value()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+}
