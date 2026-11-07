@@ -17,7 +17,7 @@
 
 ## Tu primer paso
 
-Escribe el plan de la raíz común en `docs/superpowers/plans/` y, de ahí, el encargo para OpenCode. No hay nada en vuelo ni OpenCode trabajando. **Este archivo tiene cambios sin commit: súbelos con el próximo encargo,** porque un push solo de docs gasta un run.
+Plan vigente: `docs/superpowers/plans/2026-11-06-ios-raiz-comun.md` (tandas F5-L a F5-P; manda sobre el punto 2 y 3 de abajo donde difiera). **F5-L** subida en `a46f55d`, Android local 1611 sin fallos, auditada; su `ios-build` (run 42335758741) y `android-check` (run 42335758740) estaban en curso: léelos con el veredicto de abajo. **F5-M** enviada a OpenCode (`encargos/2026-11-06-ios-f5m-almacenes-cola.md`), reporte en `build/ios-relevo/f5m-reporte.md`. **No empujes hasta que acabe el run de F5-L.**
 
 ## Lo que sigue, en orden
 

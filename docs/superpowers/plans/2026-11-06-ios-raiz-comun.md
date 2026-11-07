@@ -25,8 +25,8 @@
 | Tanda | Contenido | Cierra cuando |
 |---|---|---|
 | **F5-L** | `CuentivoApp.kt` a común con `CuentivoAppPlatform`; `PlatformResumeEffect`; entrada de idioma; 52 llamadas de `androidTest` en 18 archivos. Encargo: `encargos/2026-11-06-ios-f5l-cuentivoapp-comun.md`. | Puerta Android y `ios-build` verdes |
-| **F5-M** | Almacenes y cola a común: `SyncQueue`, `OutboxBackfill`, `OwnerMembershipBootstrap`, `LocalSessionGuard`, `CreditLimitSuggestionStore`, `EntitlementStore`, con su implementación iOS en `NSUserDefaults`. Costuras `ReminderControl` (`sync`/`cancel`) y `SyncTrigger`. Clasificación común de errores de autenticación. | Igual |
-| **F5-N** | `setContent` a `CuentivoRoot` en común, por secciones: sesión y cuenta, datos y mensajes, lambdas de `CuentivoApp`, respaldo y borrado. `MainActivity` queda en crear dependencias, `CuentivoRootPlatform` y `setContent { CuentivoRoot(...) }`. | Igual, con `androidTest` compilado |
+| **F5-M** | Almacenes y cola a común: `SyncQueue`, `OutboxBackfill`, `OwnerMembershipBootstrap`, `LocalSessionGuard`, `CreditLimitSuggestionStore`, `EntitlementStore`, con su implementación iOS en `NSUserDefaults`. Clasificación común de errores de autenticación. Encargo: `encargos/2026-11-06-ios-f5m-almacenes-cola.md`. | Igual |
+| **F5-N** | `setContent` a `CuentivoRoot` en común, por secciones, con la costura `ReminderControl` (`sync`/`cancel`): sesión y cuenta, datos y mensajes, lambdas de `CuentivoApp`, respaldo y borrado. `MainActivity` queda en crear dependencias, `CuentivoRootPlatform` y `setContent { CuentivoRoot(...) }`. | Igual, con `androidTest` compilado |
 | **F5-O** | Raíz de iOS: `MainViewController` crea la base, los gateways y `CuentivoRootPlatform`, con todo lo que lista el relevo en su punto 2. Pantalla real en vez de la mínima. Arranque de la `.app` en simulador en CI, si cabe. | `ios-build` verde y, si cabe, arranque en simulador |
 | **F5-P** | Respaldo en iOS según la decisión 6. | Fixture de Android abierto en la prueba iOS |
 
