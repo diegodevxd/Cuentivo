@@ -120,6 +120,7 @@ import com.cuentivo.app.ui.product.ProductImportPolicy
 import com.cuentivo.app.ui.product.ProductImportRunner
 import com.cuentivo.app.ui.CuentivoApp
 import com.cuentivo.app.ui.CuentivoRootState
+import com.cuentivo.app.ui.androidCuentivoRootPlatform
 import com.cuentivo.app.ui.rememberAndroidCuentivoAppPlatform
 import com.cuentivo.app.ui.CuentivoClaimBlockedScreen
 import com.cuentivo.app.ui.CuentivoLoadingScreen
@@ -500,6 +501,17 @@ class MainActivity : ComponentActivity() {
         // Started for whoever is signed in right now — usually nobody on a cold start, in which case
         // the answer is deliberately discarded and asked again once somebody signs in.
         billing.start(authenticationGateway.currentUserId)
+        val rootPlatform = androidCuentivoRootPlatform(
+            activity = this,
+            database = database,
+            billing = billing,
+            firestoreGateway = firestoreGateway,
+            deletionGateway = deletionGateway,
+            appScope = lifecycleScope,
+            isDebugBuild = BuildConfig.DEBUG,
+            sharer = sharer,
+            onRestored = { restartAfterRestore() },
+        )
         setContent {
             CuentivoTheme {
                 var authenticatedUserId by remember { mutableStateOf(authenticationGateway.currentUserId) }
