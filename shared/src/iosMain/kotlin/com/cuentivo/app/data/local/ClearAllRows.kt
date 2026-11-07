@@ -15,7 +15,7 @@ suspend fun CuentivoDatabase.clearAllRows() {
             buildList { while (statement.step()) add(statement.getText(0)) }
         }
         transactor.immediateTransaction {
-            tables.forEach { table -> execSQL("DELETE FROM `$table`") }
+            tables.forEach { table -> usePrepared("DELETE FROM `$table`") { it.step() } }
         }
     }
 }
